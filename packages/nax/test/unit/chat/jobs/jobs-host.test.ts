@@ -148,6 +148,54 @@ describe("createHostJobs approve", () => {
 
 const KODA: KodaBlock = { url: "https://koda.example/api", headers: { Authorization: "Bearer agent-key" } };
 
+/** The roles and the capped handoff step a full-mode chain proposes. */
+const HANDOFF_ROLES = { reviewer: "acp:codex", supervisor: "acp:claude" };
+const RUN_NONE = { kind: "run", input: { feature: "f1", publish: "none" } };
+const HANDOFF = { kind: "handoff", input: { feature: "f1", roles: HANDOFF_ROLES, costCapUsd: 5 } };
+
+/** Run the jobs provider's chain tool over `steps`. */
+async function proposeChain(
+  f: Awaited<ReturnType<typeof compose>>,
+  steps: readonly unknown[],
+): Promise<{ readonly isError?: boolean; readonly content: string }> {
+  const chain = f.tools.find((tool) => tool.localName === "chain");
+  assertDefined(chain, "chain tool");
+  return await chain.run({ steps }, { root: f.repoRoot, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 });
+}
+
+describe("createHostJobs full mode and a handoff chain (B1)", () => {
+  test("asks the real question before activating a chain that carries a handoff", async () => {
+    const f = await compose(() => "full", KODA);
+
+    const result = await proposeChain(f, [RUN_NONE, HANDOFF]);
+
+    expect(result.isError).not.toBe(true);
+    expect(f.approve).toHaveBeenCalledTimes(1);
+    expect(f.approve.mock.calls[0]?.[0]).toMatchObject({ tool: "nax-jobs__chain", requiresHostApproval: true });
+    expect(f.composed.chains.active()).toBeDefined();
+  });
+
+  test("a denied card in full mode leaves the handoff chain inactive", async () => {
+    const f = await compose(() => "full", KODA);
+    f.approve.mockResolvedValue("deny");
+
+    const result = await proposeChain(f, [RUN_NONE, HANDOFF]);
+
+    expect(result.content).toContain("the user declined the chain");
+    expect(f.composed.chains.active()).toBeUndefined();
+  });
+
+  test("still activates a job-only chain in full mode without a card", async () => {
+    const f = await compose(() => "full", KODA);
+
+    const result = await proposeChain(f, [RUN_NONE]);
+
+    expect(result.isError).not.toBe(true);
+    expect(f.approve).not.toHaveBeenCalled();
+    expect(f.composed.chains.active()).toBeDefined();
+  });
+});
+
 const providerIds = (composed: ReturnType<typeof createHostJobs>) => composed.providers.map((entry) => entry.id);
 
 /** Every `memory.koda` block that is not a usable connection, and which part is missing. */
@@ -169,6 +217,21 @@ const ABSENT_KODA: { why: string; koda: KodaBlock }[] = [
 ];
 
 describe("createHostJobs providers", () => {
+  test("US-008 AC-12 passes handoffAvailable for exactly the configs with a koda connection", async () => {
+    const factory = spyOn(_jobsHostDeps, "createJobsProvider");
+    try {
+      await compose(() => "guarded");
+      for (const { koda } of ABSENT_KODA) await compose(() => "guarded", koda);
+      await compose(() => "guarded", KODA);
+      expect(factory.mock.calls.map(([opts]) => opts.handoffAvailable)).toEqual([
+        false,
+        ...ABSENT_KODA.map(() => false),
+        true,
+      ]);
+    } finally {
+      factory.mockRestore();
+    }
+  });
   test("AC-5 with a koda connection offers nax-jobs then nax-flow", async () => {
     const f = await compose(() => "guarded", KODA);
     expect(providerIds(f.composed)).toEqual(["nax-jobs", "nax-flow"]);

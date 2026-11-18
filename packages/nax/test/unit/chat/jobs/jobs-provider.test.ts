@@ -91,6 +91,16 @@ describe("createJobsProvider", () => {
       expect(tool.description).toContain("asks the user");
     }
   });
+  test("US-001 AC-16 the run tool offers a publish mode bounded by the config's own modes", async () => {
+    const tool = (await createJobsProvider(options).tools(repoRoot)).find((t) => t.localName === "run");
+    assertDefined(tool, "run tool");
+
+    expect(Object.entries(tool.inputSchema.properties ?? {}).find(([key]) => key === "publish")?.[1]).toEqual({
+      type: "string",
+      enum: ["pr", "push", "none"],
+      description: expect.any(String),
+    });
+  });
   test.each(["list", "cancel"])("%s schema is closed", async (name) => {
     const tool = (await createJobsProvider(options).tools(repoRoot)).find((t) => t.localName === name);
     assertDefined(tool, name);

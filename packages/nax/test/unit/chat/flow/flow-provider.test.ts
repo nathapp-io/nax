@@ -16,6 +16,7 @@ import {
   FLOW_SEND_INPUT_SCHEMA,
   type FlowCreateBody,
   type FlowCreateOutcome,
+  type FlowHandoffCreateBody,
   type FlowProviderOptions,
   type FlowRepoReady,
   type KodaFlowConnection,
@@ -64,7 +65,17 @@ interface PushCall {
 
 interface KodaCall {
   readonly connection: KodaFlowConnection;
-  readonly body: FlowCreateBody;
+  readonly body: FlowCreateBody | FlowHandoffCreateBody;
+}
+
+/**
+ * The body the spec form sent, which always carries `features`. The create accepts the
+ * handoff body too, so the form a test drove has to be checked before its fields are read.
+ */
+function specBodyOf(call: KodaCall | undefined): FlowCreateBody {
+  assertDefined(call, "the koda create call");
+  if (!("features" in call.body)) throw new Error("the spec form sent a handoff body");
+  return call.body;
 }
 
 let approveCalls: HostApprovalCard[];
@@ -145,16 +156,27 @@ describe("createFlowProvider", () => {
     expect(tools.map((tool) => tool.localName)).toEqual(["send"]);
   });
 
-  test("declares the request schema with no extra keys and three required fields (AC-1)", async () => {
+  test("declares the request schema with no extra keys and the two fields both forms share (AC-1, US-005 AC-8)", async () => {
     const tool = (await createFlowProvider(options).tools(REPO_ROOT))[0];
     if (tool === undefined) throw new Error("the nax-flow provider exposes no tools");
 
     expect(tool.inputSchema).toBe(FLOW_SEND_INPUT_SCHEMA);
     expect(FLOW_SEND_INPUT_SCHEMA.additionalProperties).toBe(false);
-    expect(FLOW_SEND_INPUT_SCHEMA.required).toEqual(["features", "roles", "costCapUsd"]);
+    // `features` is no longer required: the handoff form omits it.
+    expect(FLOW_SEND_INPUT_SCHEMA.required).toEqual(["roles", "costCapUsd"]);
     expect(FLOW_SEND_INPUT_SCHEMA.properties.features.type).toBe("array");
     expect(FLOW_SEND_INPUT_SCHEMA.properties.roles.type).toBe("object");
     expect(FLOW_SEND_INPUT_SCHEMA.properties.costCapUsd.type).toBe("number");
+  });
+
+  test("advertises the handoff form as an object of one required feature name (US-005 AC-8)", () => {
+    const handoff = FLOW_SEND_INPUT_SCHEMA.properties.handoff;
+
+    expect(handoff.type).toBe("object");
+    expect(handoff.required).toEqual(["feature"]);
+    expect(handoff.additionalProperties).toBe(false);
+    expect(handoff.properties.feature.type).toBe("string");
+    expect(handoff.description).toContain("handoff");
   });
 
   test("describes the cost cap's decimal limit, not only its range (M1)", () => {
@@ -624,7 +646,7 @@ describe("send — a carded value cannot forge the card", () => {
     expect(card.reason).toContain("spec\\u000a1. evil");
     expect(result.isError).toBeUndefined();
     // The request body carries the path exactly as the request wrote it.
-    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(INJECTED);
+    expect(specBodyOf(kodaCalls[0]).features[0]?.specPath).toBe(INJECTED);
   });
 
   test("escapes bidirectional formatting characters in a carded spec path (F2)", async () => {
@@ -642,7 +664,7 @@ describe("send — a carded value cannot forge the card", () => {
     // Nothing on the card can reorder what the user reads.
     expect(card.reason).not.toContain("\u202e");
     expect(result.isError).toBeUndefined();
-    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(BIDI);
+    expect(specBodyOf(kodaCalls[0]).features[0]?.specPath).toBe(BIDI);
   });
 
   test("gives each supplementary-plane format character its own escape (M2)", async () => {

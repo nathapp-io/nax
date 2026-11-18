@@ -22,10 +22,13 @@ import {
   newFeatureRecord,
   summariseStories,
 } from "./feature-record";
-import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
+import { commitsSince, onlyLedgerChangedSince, readCurrentBranch, readHead } from "./git";
+import { handoffMarkRefusal, readPublishBlockingMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
+
 import { isTransientDraft, type MovedCommit, publishOnlyStart } from "./publish-only";
+import { type LockedFeatureWriter, withLockedFeatureResult } from "./result";
 import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
@@ -225,14 +228,88 @@ function isFinishedAtHead(
   return prior?.step === "done" && head !== undefined && head !== "" && prior.head === head && done;
 }
 
+/**
+ * Check the newest run (the one a handoff sends) and the run we would publish from: a newer story
+ * checkpoint cannot supersede a handoff, and neither can an older record the publish reader falls back to.
+ */
+async function refuseHandedOffFeature(fc: FeatureContext, runDir: string | undefined): Promise<void> {
+  const found = await readPublishBlockingMark(fc.featureDir, runDir);
+  if (found === null) return;
+  throw new NaxError(
+    `[workflow] --publish-only: ${handoffMarkRefusal(fc.feature, found)}`,
+    "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    {
+      stage: "workflow",
+      feature: fc.feature,
+    },
+  );
+}
+
+/**
+ * The branch was resolved before the lock wait, and publish pushes and opens the PR for that name while
+ * committing the ledger on whatever is checked out. A checkout switched during the wait at the same
+ * commit passes the HEAD check, so the name is compared again under the lock.
+ */
+async function refuseSwitchedBranch(fc: FeatureContext): Promise<void> {
+  const current = await readCurrentBranch(fc.projectDir);
+  if (current === fc.branch) return;
+  throw new NaxError(
+    `[workflow] --publish-only: the checkout is on "${current || "(detached HEAD)"}", not "${fc.branch}", which this run publishes; check out ${fc.branch} and run again`,
+    "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    { stage: "workflow", feature: fc.feature },
+  );
+}
+
+function publishAborted(fc: FeatureContext, cause: unknown): NaxError {
+  return new NaxError("Run aborted during the feature workflow", "WORKFLOW_ABORTED", {
+    stage: "workflow",
+    feature: fc.feature,
+    cause,
+  });
+}
+
+/** Reload the mark, result and HEAD under the same lock held by handoff senders and result writers. */
+async function runPublishOnlyUnderLock(
+  fc: FeatureContext,
+  input: WorkflowFeatureInput,
+  meter: TokenMeter,
+): Promise<WorkflowFeatureResult> {
+  try {
+    return await withLockedFeatureResult(
+      fc,
+      (writeResult) => prepareAndRun(fc, input, { meter, writeResult }),
+      fc.runSignal,
+    );
+  } catch (error) {
+    if (fc.runSignal?.aborted && !(error instanceof NaxError && error.code === "WORKFLOW_ABORTED")) {
+      throw publishAborted(fc, error);
+    }
+    throw error;
+  }
+}
+
 async function runInContext(
   fc: FeatureContext,
   input: WorkflowFeatureInput,
   meter: TokenMeter,
 ): Promise<WorkflowFeatureResult> {
   await ensureLedger(fc.runDir, fc.runId, fc.feature);
+  if (input.publishOnly === true) return await runPublishOnlyUnderLock(fc, input, meter);
+  return await prepareAndRun(fc, input, { meter });
+}
+
+async function prepareAndRun(
+  fc: FeatureContext,
+  input: WorkflowFeatureInput,
+  options: { readonly meter: TokenMeter; readonly writeResult?: LockedFeatureWriter },
+): Promise<WorkflowFeatureResult> {
+  const located = await loadPriorFeature(fc.featureDir, fc.runId);
+  if (input.publishOnly === true) {
+    await refuseHandedOffFeature(fc, located?.runDir);
+    await refuseSwitchedBranch(fc);
+  }
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
-  const prior = await loadPriorFeature(fc.featureDir, fc.runId);
+  const prior = located?.record ?? null;
   const head = await currentHead(fc);
   const publishOnly =
     input.publishOnly === true ? publishOnlyStart(prior, head, await movedSinceRecord(fc, prior, head)) : undefined;
@@ -261,13 +338,14 @@ async function runInContext(
     stories,
     ledgerItems: await collectLedgerItems(fc.featureDir),
     record,
-    meter,
+    ...options,
     preflight: await newestPreflight(fc.featureDir),
     specPath: await specPathFor(fc.feature, fc.projectDir),
   });
   // US-003: preparation succeeded and `record.step` is where the machine will start — the resumed
   // step when there is one. Emitted here, immediately before the machine, and never on the
   // already-finished, dry-run or aborted returns above.
+  if (input.publishOnly === true) fc.runSignal?.throwIfAborted();
   pipelineEventBus.emit({ type: "workflow:started", step: record.step });
   const final = await _featureRunDeps.runFeatureMachine(env);
   logComplete(stories, final);

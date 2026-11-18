@@ -1,15 +1,27 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
-import { createJobsProvider, type JobsProviderOptions, PROFILES_SCHEMA } from "@/chat/jobs/jobs-provider";
+import {
+  createJobsProvider,
+  type JobsProviderOptions,
+  PROFILES_SCHEMA,
+  PUBLISH_SCHEMA,
+} from "@/chat/jobs/jobs-provider";
 import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
 import { type ChatWorkflowConfig, featureDir } from "@/config";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import { type FoundHandoffMark, writeHandoffMark } from "@/workflow/handoff-mark";
 import { workflowFeatureDir } from "@/workflow/paths";
+import { newStoryRecord, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
+
+function locatedPrior(record: WorkflowFeatureRecord) {
+  return { record, runDir: join(workflowFeatureDir(options.repoRoot, "f1"), "run-1") };
+}
 
 const originalDeps = { ..._jobsLaunchDeps };
 const originalWorkflowDeps = { ..._workflowDefaultsDeps };
@@ -107,7 +119,7 @@ describe("createJobsProvider", () => {
   });
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
-    ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
+    ["run", { feature: { type: "string" }, maxCost: { type: "number" }, publish: PUBLISH_SCHEMA }, "feature"],
     ["publish", { feature: { type: "string" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [
@@ -534,7 +546,7 @@ describe("createJobsProvider US-002 publish refusal", () => {
 
   test("AC-10 a published draft at HEAD refuses before any card", async () => {
     await allPassedPrd();
-    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => locatedPrior(published));
     _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
     expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: refusal });
     expect(approve).not.toHaveBeenCalled();
@@ -543,7 +555,7 @@ describe("createJobsProvider US-002 publish refusal", () => {
 
   test("AC-11 the refusal names no URL when the record has none", async () => {
     await allPassedPrd();
-    _jobsLaunchDeps.loadPriorFeature = mock(async () => ({ ...published, url: undefined }));
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => locatedPrior({ ...published, url: undefined }));
     _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
     expect(await launch("publish", { feature: "f1" })).toEqual({
       isError: true,
@@ -554,7 +566,7 @@ describe("createJobsProvider US-002 publish refusal", () => {
 
   test("AC-12 an unreadable HEAD does not refuse", async () => {
     await allPassedPrd();
-    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => locatedPrior(published));
     _jobsLaunchDeps.headSha = mock(async () => null);
     await launch("publish", { feature: "f1" });
     expect(card().summary).toBe("nax run f1 --publish-only");
@@ -575,7 +587,7 @@ describe("createJobsProvider US-002 publish refusal", () => {
 
   test("AC-13 a rejected HEAD read does not refuse", async () => {
     await allPassedPrd();
-    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => locatedPrior(published));
     _jobsLaunchDeps.headSha = mock(async () => {
       throw new Error("git failed");
     });
@@ -604,5 +616,119 @@ describe("createJobsProvider US-002 publish refusal", () => {
     const result = await launch("publish", { feature: "f1" });
     expect(result.isError).toBe(true);
     expect(result.content).toStartWith("[chat] f1 is already published at HEAD abcdef0");
+  });
+});
+/**
+ * US-004: a feature a chat chain handed to koda already has koda as its publisher, so the local publish
+ * launch refuses it. The read sits after the pending-story guard, whose report is the more actionable one.
+ */
+describe("createJobsProvider US-004 handoff mark refusal", () => {
+  const found: FoundHandoffMark = {
+    mark: { schemaVersion: 1, at: "2026-11-18T00:00:00.000Z", flowId: "fl1", url: "https://koda/flows/fl1" },
+    path: "/r/handoff.json",
+  };
+  const refusal =
+    "f1 was handed off to koda (flow fl1 https://koda/flows/fl1) at 2026-11-18T00:00:00.000Z; koda publishes it. Delete /r/handoff.json to publish it here instead";
+  const finished: WorkflowFeatureRecord = {
+    ...newFeatureRecord({ now: found.mark.at, seed: null, minors: [] }),
+    step: "done",
+    head: "abcdef0123",
+    outcome: "local-only",
+  };
+
+  async function allPassedPrd(): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+  }
+
+  test("AC-10 a marked feature is refused before any card", async () => {
+    await allPassedPrd();
+    const prior = locatedPrior(finished);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => prior);
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => found);
+    expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: `[chat] ${refusal}` });
+    expect(_jobsLaunchDeps.readPublishBlockingMark).toHaveBeenCalledWith(
+      workflowFeatureDir(options.repoRoot, "f1"),
+      prior.runDir,
+    );
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test.each(["story-only checkpoint", "finished run"])(
+    "a newer %s supersedes the marked run only if it supplies a feature record",
+    async (newer) => {
+      await allPassedPrd();
+      _jobsLaunchDeps.loadPriorFeature = originalDeps.loadPriorFeature;
+      _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+      const dir = workflowFeatureDir(options.repoRoot, "f1");
+      const marked = join(dir, "run-1");
+      await upsertFeatureRecord(marked, { runId: "run-1", feature: "f1" }, finished);
+      await writeHandoffMark(marked, found.mark);
+      await utimes(join(marked, "result.json"), 1, 1);
+      const header = { runId: "run-2", feature: "f1" };
+      const runDir = join(dir, header.runId);
+      await upsertStoryRecord(runDir, header, newStoryRecord("US-001", 5, found.mark.at));
+      if (newer === "finished run") await upsertFeatureRecord(runDir, header, finished);
+
+      const result = await launch("publish", { feature: "f1" });
+      if (newer === "story-only checkpoint") {
+        expect(result).toMatchObject({ isError: true, content: expect.stringContaining(join(marked, "handoff.json")) });
+        expect(approve).not.toHaveBeenCalled();
+        expect(start).not.toHaveBeenCalled();
+      } else {
+        expect(result.isError).not.toBe(true);
+        expect(card().summary).toBe("nax run f1 --publish-only");
+        expect(start).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+
+  test("a marked newest run the publish reader skips refuses the card for an older unmarked run", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = originalDeps.loadPriorFeature;
+    _jobsLaunchDeps.readPublishBlockingMark = originalDeps.readPublishBlockingMark;
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    const dir = workflowFeatureDir(options.repoRoot, "f1");
+    const older = join(dir, "run-1");
+    await upsertFeatureRecord(older, { runId: "run-1", feature: "f1" }, finished);
+    await utimes(join(older, "result.json"), 1, 1);
+    const newest = join(dir, "run-2");
+    const { nextFindingId: _dropped, ...partial } = finished;
+    await Bun.write(
+      join(newest, "result.json"),
+      JSON.stringify({ schemaVersion: 1, runId: "run-2", feature: "f1", stories: {}, featureWorkflow: partial }),
+    );
+    await writeHandoffMark(newest, found.mark);
+
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({
+      isError: true,
+      content: expect.stringContaining(join(newest, "handoff.json")),
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("AC-11 an unmarked feature reaches the published-at-head check and the normal card", async () => {
+    await allPassedPrd();
+    const prior = locatedPrior(finished);
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => null);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => prior);
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    await launch("publish", { feature: "f1" });
+    expect(_jobsLaunchDeps.headSha).toHaveBeenCalledWith(options.repoRoot);
+    expect(card().summary).toBe("nax run f1 --publish-only");
+  });
+
+  test("AC-12 pending stories keep their own refusal and never read the mark", async () => {
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => found);
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
+    });
+    expect(_jobsLaunchDeps.readPublishBlockingMark).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
   });
 });

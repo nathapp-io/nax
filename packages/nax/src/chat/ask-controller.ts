@@ -26,6 +26,12 @@ export interface HostApprovalCard {
   readonly summary: string;
   readonly command?: string;
   readonly reason: string;
+  /**
+   * Set when the action must have a real answer even in full mode, which otherwise skips the
+   * card. A chain carrying a handoff sets it: the handoff pushes a branch and uploads a run
+   * record, and koda's own approval of anything billed cannot undo either.
+   */
+  readonly requiresHostApproval?: true;
   readonly signal?: AbortSignal;
 }
 

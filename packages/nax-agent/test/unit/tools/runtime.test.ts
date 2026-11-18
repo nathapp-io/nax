@@ -5,7 +5,6 @@ import { ASK_DENIED_REASON, ASK_NO_CHANNEL_REASON, ASK_TIMEOUT_REASON, type AskR
 import type { ToolCallRecord } from "@nathapp/nax-agent/internal";
 import {
   _codingToolDeps,
-  _gitDeps,
   _resetBuiltinsForTest,
   _resetRegistryForTest,
   type CodingTool,
@@ -13,6 +12,7 @@ import {
   createCodingToolRuntime,
   registerCodingTool,
 } from "@nathapp/nax-agent/internal";
+import { gitWithTimeout } from "#src/internal/git-exec";
 import { cleanupTempDir, makeLogger, makeTempDir } from "#test/helpers/index";
 
 const tempDirs: string[] = [];
@@ -28,28 +28,14 @@ afterAll(() => {
 });
 
 let root: string;
-let gitRoot: string;
 
-beforeAll(async () => {
+beforeAll(() => {
   root = makeTestDir("nax-runtime-");
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "a.ts"), "const a = 1;\n");
   // The ask-resolution tests below read `file.txt`; without it a missing file
   // would surface as kind:"error" and masquerade as a broken ask path.
   writeFileSync(join(root, "file.txt"), "hello");
-
-  // A real git repo, for the Git-tool hard-boundary and no-regression tests
-  // below — status/log/show run for real rather than through a mock, so a
-  // regression in the argv builder would surface as a genuine git failure.
-  gitRoot = makeTestDir("nax-runtime-git-");
-  mkdirSync(join(gitRoot, "src"), { recursive: true });
-  writeFileSync(join(gitRoot, "src", "a.ts"), "const a = 1;\n");
-  const run = (args: string[]) => _gitDeps.spawn(["git", ...args], { cwd: gitRoot, stdout: "pipe", stderr: "pipe" });
-  await run(["init", "-q"]).exited;
-  await run(["config", "user.email", "test@example.com"]).exited;
-  await run(["config", "user.name", "Test"]).exited;
-  await run(["add", "-A"]).exited;
-  await run(["commit", "-q", "-m", "initial"]).exited;
 });
 
 function runtimeWith(grants: { tool: string; patterns: string[] }[], forRoot: string = root) {
@@ -309,6 +295,25 @@ describe("advertised", () => {
 });
 
 describe("Git — paths and refs are contained within the permitted root", () => {
+  let gitRoot: string;
+
+  beforeAll(async () => {
+    // Use a real repo so the allowed log/show calls catch regressions in the argv builder.
+    gitRoot = makeTestDir("nax-runtime-git-");
+    mkdirSync(join(gitRoot, "src"), { recursive: true });
+    writeFileSync(join(gitRoot, "src", "a.ts"), "const a = 1;\n");
+    const run = async (args: string[]) => {
+      const { exitCode, stderr, timedOut } = await gitWithTimeout(args, gitRoot);
+      expect(exitCode, `git ${args.join(" ")}: ${timedOut ? "timed out" : stderr}`).toBe(0);
+    };
+    await run(["init", "-q", "--template="]);
+    await run(["config", "user.email", "test@example.com"]);
+    await run(["config", "user.name", "Test"]);
+    await run(["add", "--", "src/a.ts"]);
+    // A fixture commit must not run the developer's hooks or signing program.
+    await run(["-c", "core.hooksPath=/dev/null", "commit", "--no-gpg-sign", "-q", "-m", "initial"]);
+  });
+
   test("an escaping paths entry is denied as a breach", async () => {
     const rt = runtimeWith([{ tool: "Git", patterns: ["*"] }], gitRoot);
     const out = await rt.callTool("Git", { subcommand: "diff", paths: ["../outside/secret.txt"] });
@@ -336,7 +341,7 @@ describe("Git — paths and refs are contained within the permitted root", () =>
     // git syntax, and exactly the "no path to check" case the policy must
     // not crash on.
     const out = await rt.callTool("Git", { subcommand: "show", refs: ["HEAD:"] });
-    expect(out.kind).not.toBe("denied");
+    expect(out.kind).toBe("ok");
   });
 });
 

@@ -7,9 +7,9 @@ import type { ChatJob, ChatJobState } from "@/chat/jobs/job-types";
 
 const originalDeps = { ..._chainStoreDeps };
 const now = "2026-10-28T00:00:00.000Z";
-const first: ChainStep = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" };
-const second: ChainStep = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" };
-const review: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" };
+const first = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" } satisfies ChainStep;
+const second = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" } satisfies ChainStep;
+const review = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" } satisfies ChainStep;
 const jobId = "run-1a2b3c4d";
 let dir: string;
 let chains: ChatChains;
@@ -26,7 +26,7 @@ async function saved(chain: Pick<ChatChain, "id">, state: string): Promise<ChatC
   }, 1_000);
   return readChainRecord(dir, chain.id);
 }
-async function start(steps: readonly ChainStep[] = [first, second, review], costCap?: number): Promise<ChatChain> {
+async function start(steps = [first, second, review], costCap?: number): Promise<ChatChain> {
   const chain = await chains.activate({ steps, ...(costCap === undefined ? {} : { costCap }) });
   expect(chains.admit(steps[0] ?? first).kind).toBe("auto");
   setJob(jobId, "running");

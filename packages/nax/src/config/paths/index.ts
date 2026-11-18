@@ -24,6 +24,23 @@ const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
 const FEATURE_ID_PATTERN = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}$/;
 
 /**
+ * The reason `featureId` cannot name a feature directory, or `undefined` when it can.
+ *
+ * `featureDir` throws this reason as `INVALID_FEATURE_ID`. A caller that checks a name a
+ * user or a model supplied reports it as a field error instead, so the name is refused
+ * before approval rather than by a throw from the path helper afterwards.
+ */
+export function featureIdInvalidReason(featureId: string): string | undefined {
+  if (!featureId || featureId.length === 0) return "Feature ID cannot be empty";
+  if (featureId.includes("..")) return "Feature ID cannot contain path traversal (..)";
+  if (featureId.startsWith("--")) return "Feature ID cannot start with git flags (--)";
+  if (!FEATURE_ID_PATTERN.test(featureId)) {
+    return `Feature ID must match pattern [a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}. Got: ${featureId}`;
+  }
+  return undefined;
+}
+
+/**
  * SEC-3 (code review 2026-08-17): `featureDir` is the SSOT anchor for every
  * feature-tree path (~38 call sites — `mkdir(recursive)`, artifact writes) but,
  * unlike `validateStoryId`, took `featureId` unvalidated. `featureId` today only
@@ -31,28 +48,9 @@ const FEATURE_ID_PATTERN = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}$/;
  * story-ID path was a real gap should that ever change.
  */
 function validateFeatureId(featureId: string): void {
-  if (!featureId || featureId.length === 0) {
-    throw new NaxError("Feature ID cannot be empty", "INVALID_FEATURE_ID", { stage: "config" });
-  }
-  if (featureId.includes("..")) {
-    throw new NaxError("Feature ID cannot contain path traversal (..)", "INVALID_FEATURE_ID", {
-      stage: "config",
-      featureId,
-    });
-  }
-  if (featureId.startsWith("--")) {
-    throw new NaxError("Feature ID cannot start with git flags (--)", "INVALID_FEATURE_ID", {
-      stage: "config",
-      featureId,
-    });
-  }
-  if (!FEATURE_ID_PATTERN.test(featureId)) {
-    throw new NaxError(
-      `Feature ID must match pattern [a-zA-Z0-9_][a-zA-Z0-9._-]{0,63}. Got: ${featureId}`,
-      "INVALID_FEATURE_ID",
-      { stage: "config", featureId },
-    );
-  }
+  const reason = featureIdInvalidReason(featureId);
+  if (reason === undefined) return;
+  throw new NaxError(reason, "INVALID_FEATURE_ID", { stage: "config", featureId });
 }
 
 /**

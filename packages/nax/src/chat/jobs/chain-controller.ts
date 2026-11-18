@@ -4,9 +4,9 @@ import { getLogger } from "@/logger";
 import { heldItemList, heldItemNoun } from "@/prompts";
 import { resolveStepArgv } from "./chain-argv";
 import { createChainRecord, newChainId, writeChainRecord } from "./chain-store";
-import type { ChainCheck, ChainState, ChainStep, ChatChain } from "./chain-types";
+import type { ChainCheck, ChainState, ChainStep, ChainStepEnd, ChainStepKind, ChatChain } from "./chain-types";
 import type { ChatJobs } from "./job-runner";
-import type { ChatJobKind, ChatJobState, HeldDraft } from "./job-types";
+import type { ChatJobState, HeldDraft } from "./job-types";
 
 const CHAIN_ID_MAX_ATTEMPTS = 16;
 
@@ -24,7 +24,7 @@ function heldStopReason(step: number, held: HeldDraft): string {
 }
 
 export interface ChainLaunch {
-  readonly kind: ChatJobKind;
+  readonly kind: ChainStepKind;
   readonly argv: readonly string[];
   readonly pr?: number;
 }
@@ -38,10 +38,11 @@ export interface ChainSummary {
   readonly next?: number;
   readonly steps: readonly {
     readonly step: number;
-    readonly kind: ChatJobKind;
+    readonly kind: ChainStepKind;
     readonly argv: readonly string[];
     readonly checkBefore?: string;
     readonly check?: ChainCheck;
+    readonly ended?: ChainStepEnd;
     readonly job?: string;
     readonly jobState?: ChatJobState;
   }[];
@@ -56,6 +57,7 @@ export interface ChatChains {
   isActive(chainId: string): boolean;
   started(chainId: string, step: number, jobId: string): void;
   startFailed(chainId: string, step: number, message: string): void;
+  stepEnded(chainId: string, step: number, state: ChainStepEnd["state"], note: string): void;
   recordCheck(
     step: number,
     passed: boolean,
@@ -241,6 +243,26 @@ class ChainController implements ChatChains {
     if (this.current?.id === chainId) this.stop(`step ${step} could not start: ${message}`);
   }
 
+  stepEnded(chainId: string, step: number, state: ChainStepEnd["state"], note: string): void {
+    const chain = this.current;
+    if (chain?.id !== chainId || step !== this.next - 1) return;
+    const admitted = chain.steps[step - 1];
+    if (admitted?.kind !== "handoff" || admitted.ended !== undefined) return;
+
+    const ended = { state, note, at: this.options.now().toISOString() };
+    const steps = chain.steps.map((entry, i) => (i === step - 1 ? { ...entry, ended } : entry));
+    // A stop during the send doesn't undo an admitted handoff, but its result cannot reopen the chain.
+    this.current = { ...chain, steps };
+    if (chain.state === "active") {
+      if (state === "failed") {
+        this.stop(`step ${step} handoff failed: ${note}`);
+        return;
+      }
+      if (step === steps.length) this.current = { ...this.current, state: "completed", endedAt: ended.at };
+    }
+    this.persist(this.current);
+  }
+
   recordCheck(
     step: number,
     passed: boolean,
@@ -290,6 +312,7 @@ class ChainController implements ChatChains {
         argv: entry.argv,
         ...(entry.checkBefore === undefined ? {} : { checkBefore: entry.checkBefore }),
         ...(entry.check === undefined ? {} : { check: entry.check }),
+        ...(entry.ended === undefined ? {} : { ended: entry.ended }),
         ...(entry.jobId === undefined ? {} : { job: entry.jobId, jobState: this.options.jobs.get(entry.jobId)?.state }),
       })),
       ...(chain.costCap === undefined ? {} : { costCap: chain.costCap }),

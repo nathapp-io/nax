@@ -71,6 +71,16 @@ export async function readHead(projectDir: string): Promise<string> {
   return result.stdout.trim();
 }
 
+/**
+ * The checked-out branch name, "" on a detached HEAD. Throws `WORKFLOW_GIT_FAILED` on a git failure,
+ * so a caller comparing it to the branch it will push cannot mistake a failed read for a match.
+ */
+export async function readCurrentBranch(projectDir: string): Promise<string> {
+  const result = await _workflowDeps.git(["branch", "--show-current"], projectDir);
+  if (result.exitCode !== 0) throw gitReadError("branch --show-current", result);
+  return result.stdout.trim();
+}
+
 /** Repo-rooted paths changed between `base` and HEAD (#2496 second-fix eligibility). Throws on a git failure. */
 export async function changedFilesSince(projectDir: string, base: string): Promise<string[]> {
   const { stdout, stderr, exitCode } = await _workflowDeps.git(["diff", "--name-only", `${base}..HEAD`], projectDir);

@@ -111,6 +111,7 @@ import {
   maybeRunPlanPhase,
   parseRunPreconditionFlags,
   readRunChatAskSecret,
+  refuseInvalidPublishOverride,
   resolveRunLogMode,
   resolveRunProjectContext,
   resolveRunScheduleAndPlanFlags,
@@ -269,6 +270,7 @@ program
     "Rerun only the workflow's publish step for a finished feature that has no PR (needs every story passed)",
     false,
   )
+  .option("--publish <mode>", "Override workflow.publish for this run: pr, push or none")
   .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
   // Sentinel default — when the user does NOT pass `--no-resume`, commander
   // leaves `options.resume` as the string `"__UNSET__"`. When the user DOES
@@ -280,6 +282,11 @@ program
     new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default("__UNSET__"),
   )
   .action(async (options) => {
+    // US-001: a --publish value that names no mode is refused before bake-off, --schedule or any
+    // other preflight can answer first, so the refusal is the last thing printed. A run whose
+    // publish mode is wrong would otherwise reach a bake-off confirmation prompt or a schedule
+    // error before it is told the mode is invalid.
+    refuseInvalidPublishOverride(options);
     const workdir = resolveRunWorkdir(options);
     const { chatAsksDir } = parseRunPreconditionFlags(options);
     await validateBakeoffPreflight(options, workdir);

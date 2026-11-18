@@ -10,6 +10,13 @@
  * round of retries fixes a request with several mistakes. Errors name the field
  * (`features[1].specPath`) and quote the offending value through `quoted()`, which
  * escapes a NUL byte instead of copying a control character into a tool result.
+ *
+ * The tool takes one of two forms: this `features` form, and the single-feature
+ * `handoff` form `flow-handoff-input.ts` checks. A body carrying both or neither is
+ * refused here, because only this parser sees the whole request. The role and
+ * cost-cap checks are exported so the handoff form applies them rather than
+ * restating them: koda bills one cap against one pair of role models, whatever the
+ * form.
  */
 /** koda's ceiling on a flow's feature list. */
 export const FLOW_MAX_FEATURES = 20;
@@ -29,9 +36,11 @@ const SPEC_PATH_SUFFIX = ".md";
 const PARENT_SEGMENT = "..";
 const NUL = "\u0000";
 const SEPARATOR = "/";
-const TOP_LEVEL_KEYS = ["features", "roles", "costCapUsd"] as const;
+const TOP_LEVEL_KEYS = ["features", "handoff", "roles", "costCapUsd"] as const;
 const FEATURE_KEYS = ["feature", "specPath", "dependsOn"] as const;
 const ROLE_KEYS = ["reviewer", "supervisor"] as const;
+/** The one form the tool takes: a body with both forms, or with neither, is refused. */
+const EXACTLY_ONE_FORM_ERROR = "exactly one of features or handoff is required";
 
 /** One feature of the flow, in dependency order. */
 export interface FlowSendFeature {
@@ -60,22 +69,22 @@ export interface FlowSendInput {
 export type FlowSendParseResult = FlowSendInput | { errors: string[] };
 
 /** A section's best-effort value beside the rules it broke. */
-interface Collected<T> {
+export interface Collected<T> {
   readonly value: T;
   readonly errors: string[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** A value as the request wrote it, JSON-escaped so a control byte cannot reach a tool result. */
-function quoted(value: unknown): string {
+export function quoted(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
 /** One error per key the request carries that the schema does not declare. */
-function unknownKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): string[] {
+export function unknownKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): string[] {
   return Object.keys(value)
     .filter((key) => !allowed.includes(key))
     .map((key) => `${where} has an unknown key ${quoted(key)}`);
@@ -184,7 +193,7 @@ function roleModel(value: unknown, where: string): Collected<string> {
 }
 
 /** The two role model strings, both required and both inside koda's charset. */
-function collectRoles(value: unknown): Collected<FlowSendRoles> {
+export function collectRoles(value: unknown): Collected<FlowSendRoles> {
   if (!isRecord(value)) return { value: { reviewer: "", supervisor: "" }, errors: ["roles must be an object"] };
   const reviewer = roleModel(value.reviewer, "roles.reviewer");
   const supervisor = roleModel(value.supervisor, "roles.supervisor");
@@ -193,7 +202,7 @@ function collectRoles(value: unknown): Collected<FlowSendRoles> {
 }
 
 /** The cap: a JSON number above 0 and at most 1000, whose `String()` form koda accepts. */
-function collectCostCap(value: unknown): Collected<number> {
+export function collectCostCap(value: unknown): Collected<number> {
   if (typeof value !== "number") return { value: 0, errors: ["costCapUsd must be a number"] };
   if (!(value > 0)) return { value, errors: [`costCapUsd ${value} must be greater than 0`] };
   if (value > FLOW_MAX_COST_CAP_USD) {
@@ -222,11 +231,17 @@ function collectInput(raw: Record<string, unknown>): Collected<FlowSendInput> {
 /**
  * Check a `nax-flow__send` request before the approval card is shown.
  *
+ * The tool takes one of two forms: this one and the single-feature `handoff` form.
+ * A body carrying both keys, or neither, is refused before any section is read —
+ * the rest of the request is written for one form, so its other errors would only
+ * bury the one mistake worth fixing first.
+ *
  * @param raw - The tool input as the model produced it; of unknown shape on purpose
  * @returns The parsed input with every `dependsOn` defaulted to `[]`, or every error
  */
 export function parseFlowSendInput(raw: unknown): FlowSendParseResult {
   if (!isRecord(raw)) return { errors: ["the flow input must be an object"] };
+  if (Object.hasOwn(raw, "features") === Object.hasOwn(raw, "handoff")) return { errors: [EXACTLY_ONE_FORM_ERROR] };
   const collected = collectInput(raw);
   return collected.errors.length > 0 ? { errors: collected.errors } : collected.value;
 }

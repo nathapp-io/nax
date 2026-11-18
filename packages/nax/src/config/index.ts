@@ -27,6 +27,7 @@ export { parseDeclaredStallDetection } from "./package-layer";
 export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "./path-security";
 export {
   featureDir,
+  featureIdInvalidReason,
   featuresDir,
   findProjectDir,
   globalConfigDir,
@@ -186,6 +187,7 @@ export {
   resolveWorkflowConfig,
   WORKFLOW_DEFAULTS,
   WORKFLOW_ITEM_PUBLISH_DEFAULTS,
+  WORKFLOW_PUBLISH_MODES,
   WORKFLOW_REVIEW_DEFAULTS,
   WorkflowConfigObjectSchema,
 } from "./schemas-workflow";

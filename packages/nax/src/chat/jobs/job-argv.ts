@@ -1,6 +1,6 @@
 import { isAbsolute, win32 } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { CHAT_MODEL_PATTERN, CHAT_PROFILE_PATTERN } from "@/config";
+import { CHAT_MODEL_PATTERN, CHAT_PROFILE_PATTERN, WORKFLOW_PUBLISH_MODES, type WorkflowPublishMode } from "@/config";
 import { NaxError } from "@/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 import { type ChatJobKind, isFeatureJobKind } from "./job-types";
@@ -14,6 +14,8 @@ type JobLaunchBody =
       readonly feature: string;
       readonly profiles: readonly string[];
       readonly maxCost?: number;
+      /** US-001: the run's own `--publish <mode>`; omitted means the configured `workflow.publish`. */
+      readonly publish?: WorkflowPublishMode;
     }
   | { readonly kind: "publish"; readonly feature: string; readonly profiles: readonly string[] }
   | {
@@ -69,23 +71,31 @@ function parsePlan(
   return { kind: "plan", feature, profiles, spec: raw.spec };
 }
 
+/** The refusal for a `publish` value that names no mode; built from the config schema's own list. */
+const PUBLISH_REFUSAL = `[chat] publish must be one of ${WORKFLOW_PUBLISH_MODES.map((mode) => `"${mode}"`).join(", ")}`;
+
 function parseRun(
   feature: string,
   raw: Record<string, unknown>,
   profiles: readonly string[],
 ): JobLaunchBody | InputError {
-  const { maxIterations, maxCost } = raw;
+  const { maxIterations, maxCost, publish } = raw;
   if (maxIterations !== undefined) {
     return { error: "[chat] maxIterations was removed: workflow mode bounds a run by its stories" };
   }
   if (maxCost !== undefined && (typeof maxCost !== "number" || !Number.isFinite(maxCost) || maxCost <= 0)) {
     return { error: "[chat] maxCost must be a positive number" };
   }
+  // US-001: omitted means the configured workflow.publish; anything outside the schema's own
+  // modes is refused here rather than being passed on to a flag that would reject it later.
+  const publishMode = publish === undefined ? undefined : WORKFLOW_PUBLISH_MODES.find((mode) => mode === publish);
+  if (publish !== undefined && publishMode === undefined) return { error: PUBLISH_REFUSAL };
   return {
     kind: "run",
     feature,
     profiles,
     ...(maxCost === undefined ? {} : { maxCost }),
+    ...(publishMode === undefined ? {} : { publish: publishMode }),
   };
 }
 
@@ -186,6 +196,8 @@ export function buildJobArgv(
       "--headless",
       ...profiles,
       ...(input.maxCost === undefined ? [] : ["--max-cost", String(input.maxCost)]),
+      // US-001: appended after the cost arguments, so a run step's argv ends with its publish mode.
+      ...(input.publish === undefined ? [] : ["--publish", input.publish]),
     ];
   }
   return [
