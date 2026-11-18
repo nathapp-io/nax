@@ -123,7 +123,14 @@ async function tryCreateExclusive(path: string): Promise<boolean> {
   // Keep the exact directory prefix (joining could normalize a symlink followed by `..`).
   const directory = path.slice(0, path.length - basename(path).length);
   const staged = `${directory}.lock-${randomUUID()}.pid`;
-  await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
+  try {
+    await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
+  } catch (error) {
+    // A write can create the file and then fail (ENOSPC); the staged name is ours unless it
+    // already existed, so remove it rather than leave it beside the files the lock guards.
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") await unlinkQuiet(staged);
+    throw error;
+  }
   try {
     await _fileLockDeps.link(staged, path);
     return true;

@@ -331,6 +331,23 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     cleanupTempDir(dir);
   });
 
+  test("a staged pid write that creates its file and then fails leaves nothing behind", async () => {
+    const { dir, lockPath } = makeLockDir();
+    const realWriteFile = _fileLockDeps.writeFile;
+    Object.assign(_fileLockDeps, {
+      writeFile: async (path: string, _data: string, options?: { flag?: string }) => {
+        await realWriteFile(path, "", options);
+        throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+      },
+    });
+    try {
+      await expect(withFileLock(lockPath, async () => {}, PATH_LOCK_OPTS)).rejects.toThrow(/no space left/);
+      expect(await readdir(dir)).toEqual([]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("two contending waiters leave an aged claim and its abandoned lock intact", async () => {
     const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
