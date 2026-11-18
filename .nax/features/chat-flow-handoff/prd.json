@@ -3,7 +3,7 @@
   "feature": "chat-flow-handoff",
   "branchName": "feat/chat-flow-handoff",
   "createdAt": "2026-11-18T02:53:13.468Z",
-  "updatedAt": "2026-11-18T03:39:44.951Z",
+  "updatedAt": "2026-11-18T03:52:02.974Z",
   "userStories": [
     {
       "id": "US-001",
@@ -162,14 +162,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds ordered validation to one existing collector using the established Git stub seam, so real run fixtures and stubbed Git replies cover it without an integration session."
+        "reasoning": "Adds ordered validation to one existing collector using the established Git stub seam, so real run fixtures and stubbed Git replies cover it without an integration session.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/handoff-record.ts",
@@ -185,7 +188,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "241f53a2261aa6aa987a5ec9214f4ba0711364a9"
     },
     {
       "id": "US-004",
