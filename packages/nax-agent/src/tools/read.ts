@@ -25,6 +25,7 @@
 import { readPrefix } from "#src/internal/bounded-io";
 import { credentialReadRefusal } from "./credential-read-deny.ts";
 import { applyCapCut, limitStopFooter, shouldAppendLimitStopFooter } from "./read-continuation.ts";
+import { readImageResult } from "./read-image.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 import { MODEL_MAX_BYTES, MODEL_MAX_LINES, READ_CEILING, splitModelLines } from "./truncate.ts";
 
@@ -84,6 +85,7 @@ export const readTool: CodingTool = {
     "Use Read to examine files instead of cat, sed, head, tail or awk in Bash. " +
     "A read that stops before the end of the file ends with a line naming the offset to continue from. " +
     "For a large file, read the part you need with offset/limit; when you need the whole file, continue with offset until complete. " +
+    "PNG, JPEG, GIF and WebP files are returned as images. " +
     `Output is capped at ${MODEL_MAX_LINES} lines or ${MODEL_MAX_BYTES} bytes.`,
   inputSchema: {
     type: "object",
@@ -112,6 +114,13 @@ export const readTool: CodingTool = {
     const range = parseRange(input);
     if ("error" in range) return { content: range.error, isError: true };
     const { offset, limit } = range;
+
+    // US-004: the file's leading bytes decide whether this is an image, before
+    // any of the text path runs. Called outside the `try` below because it never
+    // throws -- it answers its own read failures -- and `run` is one point under
+    // the strict complexity limit.
+    const image = await readImageResult(target, input, hasOffset, hasLimit);
+    if (image !== undefined) return image;
 
     try {
       if (!hasOffset && !hasLimit) {

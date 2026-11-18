@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { ArgvExecResult, RunArgvOptions } from "#src/internal/argv-exec";
 import { _bashToolDeps, createBashTool } from "#src/tools/bash";
-import type { BackgroundCommandHandle, BackgroundCommandPort } from "#src/tools/bash-background";
+import {
+  type BackgroundCommandHandle,
+  type BackgroundCommandPort,
+  withBackgroundSentence,
+} from "#src/tools/bash-background";
 import { assertDefined } from "#test/helpers/index";
 
 const originalRun = _bashToolDeps.runArgv;
@@ -63,9 +67,21 @@ function fixture() {
 }
 
 const sentence =
-  'Set "runInBackground": true to return at once with a task id; a notice arrives when the command ends.';
+  'Set "runInBackground": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.';
 const oldDescription =
   "Run one shell command string under /bin/sh. PREFER the structured tools when they express the task -- Read, Glob, Grep, Git and RunCommand return bounded, parseable output, and Bash exists for what they cannot express. no command forms are granted for this stage; anything else is refused. Each segment of a `&&`/`||`/`;`/`|` chain is checked separately, and command substitution ($(...), backticks), process substitution, here-documents and `2>&1` are refused outright because they cannot be analysed. Paths and redirect targets must stay inside the repository root. background processes still holding the command's output are killed when the command exits. ";
+
+describe("withBackgroundSentence", () => {
+  test("AC-23 appends the wake sentence when a background port is present", () => {
+    expect(withBackgroundSentence("Run a command.", fixture().port)).toBe(
+      'Run a command. Set "runInBackground": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.',
+    );
+  });
+
+  test("AC-24 returns the description unchanged when there is no background port", () => {
+    expect(withBackgroundSentence("Run a command.", undefined)).toBe("Run a command.");
+  });
+});
 
 describe("createBashTool background", () => {
   test("background uses the sandbox launcher and rewrite but never postProcess", async () => {

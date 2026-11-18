@@ -146,6 +146,7 @@ type HarmOption
 IMAGE_MIME_TYPES
 IMAGE_TOKEN_ESTIMATE
 type ImageAttachment
+type ImageFormat
 type ImportOutcome
 type InteractionExchange
 type InteractionHandler
@@ -322,6 +323,7 @@ type ShadowCall
 type ShadowTap
 type ShellInterceptRequest
 type ShellInterceptResult
+type SniffedImage
 type SpillRequest
 type StderrTail
 type SteerChannel
@@ -538,6 +540,7 @@ sessionTmpDirUnder
 setAgentLogger
 setAgentRuntime
 shadowCacheKey
+sniffImage
 spillRelativePath
 strayCommonDirTripwire
 substituteCommand

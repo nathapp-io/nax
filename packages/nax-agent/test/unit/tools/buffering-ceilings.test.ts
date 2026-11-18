@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { drainBounded, readPrefix } from "#src/internal/bounded-io";
+import { drainBounded, readBytesPrefix, readPrefix } from "#src/internal/bounded-io";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
 import { assertNaxError, isConfinedTestRun } from "#test/helpers/index";
 
@@ -161,6 +161,41 @@ describe("readPrefix — reads no more than the ceiling", () => {
     writeFileSync(path, "hello");
 
     expect(await readPrefix(path, 100)).toBe("hello");
+  });
+});
+
+describe("readBytesPrefix — raw bytes plus the file's size", () => {
+  test("AC-21 returns at most maxBytes raw bytes and the whole-file size", async () => {
+    const path = join(root, "hundred.bin");
+    writeFileSync(path, Uint8Array.from(Array.from({ length: 100 }, (_, index) => index)));
+
+    const result = await readBytesPrefix(path, 10);
+
+    expect([...result.bytes]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(result.size).toBe(100);
+  });
+
+  test("AC-21 carries bytes readPrefix could not: a PNG signature is not valid UTF-8", async () => {
+    const path = join(root, "signature.bin");
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    writeFileSync(path, Uint8Array.from([...signature, 0x00, 0x00]));
+
+    const result = await readBytesPrefix(path, 8);
+
+    expect([...result.bytes]).toEqual(signature);
+    expect(result.size).toBe(10);
+  });
+
+  test("AC-21 rejects a directory with READ_NOT_REGULAR_FILE", async () => {
+    let caught: unknown;
+    try {
+      await readBytesPrefix(root, 10);
+    } catch (error) {
+      caught = error;
+    }
+
+    assertNaxError(caught);
+    expect(caught.code).toBe("READ_NOT_REGULAR_FILE");
   });
 });
 

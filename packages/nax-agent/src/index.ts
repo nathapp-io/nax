@@ -374,7 +374,6 @@ export {
   type SessionStorage,
   type SessionStorageDeps,
 } from "#src/session-store/index";
-
 export type { AdapterFailure } from "#src/session/adapter-failure";
 export { createAgentSession, resumeAgentSession } from "#src/session/agent-session";
 export { AgentSessionError, type AgentSessionErrorCode } from "#src/session/agent-session-errors";
@@ -420,6 +419,7 @@ export {
   type SendInput,
   validateImageAttachments,
 } from "#src/session/image-input";
+export { type ImageFormat, type SniffedImage, sniffImage } from "#src/session/image-sniff";
 export {
   type AdapterInteraction,
   type AdapterInteractionResponse,
