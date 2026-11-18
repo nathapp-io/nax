@@ -3,7 +3,7 @@
   "feature": "chat-flow-handoff",
   "branchName": "feat/chat-flow-handoff",
   "createdAt": "2026-11-18T02:53:13.468Z",
-  "updatedAt": "2026-11-18T04:15:18.078Z",
+  "updatedAt": "2026-11-18T04:28:23.593Z",
   "userStories": [
     {
       "id": "US-001",
@@ -270,14 +270,17 @@
         "validation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The parser, schema, and prompt change is local; reviewer and supervisor are model identifiers whose syntax is checked, not user roles or permissions."
+        "reasoning": "The parser, schema, and prompt change is local; reviewer and supervisor are model identifiers whose syntax is checked, not user roles or permissions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/flow/flow-input.ts",
@@ -305,7 +308,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "57399eb098dbf6c20be8af73a48e12c8129eed9f"
     },
     {
       "id": "US-006",
