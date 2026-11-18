@@ -3,7 +3,7 @@
   "feature": "chat-read-images-bundle",
   "branchName": "feat/chat-read-images-bundle",
   "createdAt": "2026-11-18T14:29:05.689Z",
-  "updatedAt": "2026-11-18T14:41:07.031Z",
+  "updatedAt": "2026-11-18T15:00:47.142Z",
   "userStories": [
     {
       "id": "US-001",
@@ -80,14 +80,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Crosses policy-sensitive tool execution and native session request seams, including error handling and audit timing; strict test isolation applies."
+        "reasoning": "Crosses policy-sensitive tool execution and native session request seams, including error handling and audit timing; strict test isolation applies.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/runtime.ts",
@@ -110,7 +113,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b1023bc058cee5d1558858ac7246fcd2b4b89342"
     },
     {
       "id": "US-003",
