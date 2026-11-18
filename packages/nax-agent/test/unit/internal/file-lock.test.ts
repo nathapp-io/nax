@@ -366,6 +366,52 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     }
   });
 
+  test.each(["EPERM", "ENOTSUP", "ENOSYS"])(
+    "falls back to an exclusive create when hard links fail with %s",
+    async (code) => {
+      // SMB, FAT and some bind mounts refuse link(); the lock must still work there.
+      const { dir, lockPath } = makeLockDir();
+      Object.assign(_fileLockDeps, {
+        link: async () => {
+          throw Object.assign(new Error("hard links not supported"), { code });
+        },
+      });
+      try {
+        let holder: string | undefined;
+        await withFileLock(
+          lockPath,
+          async () => {
+            holder = await Bun.file(lockPath).text();
+          },
+          PATH_LOCK_OPTS,
+        );
+        expect(holder).toBe(`${process.pid}\n`);
+        expect(await readdir(dir)).toEqual([]);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  test("the exclusive-create fallback still reports contention as a wait, not an error", async () => {
+    const { dir, lockPath } = makeLockDir();
+    await Bun.write(lockPath, "7777\n");
+    Object.assign(_fileLockDeps, {
+      isPidAlive: (pid: number) => pid === 7777,
+      link: async () => {
+        throw Object.assign(new Error("hard links not supported"), { code: "ENOTSUP" });
+      },
+    });
+    try {
+      await expect(
+        withFileLock(lockPath, async () => {}, { ...PATH_LOCK_OPTS, timeoutMs: 80, retryMs: 10 }),
+      ).rejects.toMatchObject({ code: "FILE_LOCK_TIMEOUT" });
+      expect(await Bun.file(lockPath).text()).toBe("7777\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("two contending waiters leave an aged claim and its abandoned lock intact", async () => {
     const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;

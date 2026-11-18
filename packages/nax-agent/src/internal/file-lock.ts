@@ -12,7 +12,8 @@
  * steps; a creator paused between them past `EMPTY_LOCK_EVICT_AGE_MS` looked
  * crashed, a waiter evicted it and entered, and the creator resumed into the
  * critical section beside it. `link` fails with EEXIST exactly like an
- * exclusive create. A crash can leave a private `.lock-<pid>-<uuid>.pid`
+ * exclusive create. On a filesystem that refuses hard links (EPERM, ENOTSUP,
+ * ENOSYS) the lock falls back to that two-step create rather than failing. A crash can leave a private `.lock-<pid>-<uuid>.pid`
  * file behind in the lock directory; the next acquisition there removes
  * staged files whose pid is proven dead, so an auto-commit does not keep
  * finding them.
@@ -143,6 +144,25 @@ async function sweepOrphanedStagedFiles(path: string): Promise<void> {
   }
 }
 
+/** errno codes a filesystem without hard links (SMB, FAT, some bind mounts) answers `link` with. */
+const LINK_UNSUPPORTED_CODES: ReadonlySet<string> = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
+
+/**
+ * The pre-link create, for a filesystem that refuses hard links: exclusive create, then the pid write.
+ * The two steps are not atomic there, so a creator paused between them can look abandoned once its
+ * empty file ages past `EMPTY_LOCK_EVICT_AGE_MS`; that is the previous behaviour, kept only where the
+ * linked create cannot run.
+ */
+async function createInPlace(path: string): Promise<boolean> {
+  try {
+    await _fileLockDeps.writeFile(path, `${process.pid}\n`, { flag: "wx" });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+}
+
 /**
  * Publish a file holding this process's pid at `path`, or report that `path` already exists. The pid
  * is complete before the path exists: see the module doc.
@@ -161,7 +181,9 @@ async function tryCreateExclusive(path: string): Promise<boolean> {
     await _fileLockDeps.link(staged, path);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return false;
+    if (code !== undefined && LINK_UNSUPPORTED_CODES.has(code)) return await createInPlace(path);
     // Any other create failure (EACCES, ENOSPC, …) is environmental, not
     // contention — fail fast instead of burning the whole timeout as a
     // misleading "Timed out".
