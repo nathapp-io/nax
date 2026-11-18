@@ -362,12 +362,17 @@ async function createFlow(request: FlowAllowRequest, target: FlowSendTarget): Pr
  */
 export async function afterAllow(request: FlowAllowRequest, target: FlowSendTarget): Promise<PostAllowResult> {
   const { state, signal } = request;
+  // US-006 AC-15: a turn cancelled before the push answers with the cancel, even when the
+  // asynchronous check it interrupted also refused.
+  const refused = (result: ToolResult): PostAllowResult => ({
+    result: turnCancelled(signal) ? failure(CANCELLED_MESSAGE) : result,
+  });
   if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
-  if (await branchMoved(state, target.repoRoot)) return { result: failure(BRANCH_CHANGED_MESSAGE) };
+  if (await branchMoved(state, target.repoRoot)) return refused(failure(BRANCH_CHANGED_MESSAGE));
   const moved = await pushTargetFailure(state, request.specPaths, target.repoRoot);
-  if (moved !== undefined) return { result: moved };
+  if (moved !== undefined) return refused(moved);
   const destination = await pushDestination(state, target.repoRoot);
-  if (!destination.ok) return { result: destination.result };
+  if (!destination.ok) return refused(destination.result);
   // The handoff guard is itself asynchronous. Skip it if Git verification was interrupted,
   // and check cancellation again after it returns, before acting on its result or pushing.
   if (request.beforePush !== undefined && turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };

@@ -556,6 +556,27 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
     expectNoTransfer();
   });
 
+  test.each(["push URL", "branch"] as const)(
+    "reports the cancel, not the refusal, when the %s check fails after the turn was cancelled (AC-15)",
+    async (step) => {
+      const controller = new AbortController();
+      if (step === "push URL") {
+        _flowProviderDeps.readFlowPushUrl = async () => {
+          controller.abort();
+          return { ok: false, message: "[chat] the push URL could not be read" };
+        };
+      } else {
+        _flowProviderDeps.headSha = async () => {
+          controller.abort();
+          return "moved-sha";
+        };
+      }
+
+      expect(await send(handoffInput, controller.signal)).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
+      expectNoTransfer();
+    },
+  );
+
   test.each([true, false])("a rejecting mark check preserves cancellation only if aborted (%s)", async (aborted) => {
     const controller = new AbortController();
     _flowHandoffDeps.readRunMark = async () => {
