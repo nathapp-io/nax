@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { lstat, open as openFile, readdir, symlink, utimes } from "node:fs/promises";
+import { join } from "node:path";
 import { _fileLockDeps, withFileLock } from "#src/internal/file-lock";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
@@ -40,6 +41,23 @@ function makeLockDir(): { dir: string; target: string; lockPath: string } {
 }
 
 describe("withFileLock — mutual exclusion", () => {
+  test("acquires a valid long lock basename without leaving a staging file", async () => {
+    const dir = makeTempDir("nax-file-lock-test-");
+    const lockPath = join(dir, `${"x".repeat(230)}.lock`);
+    try {
+      await withFileLock(
+        lockPath,
+        async () => {
+          expect(await Bun.file(lockPath).text()).toBe(`${process.pid}\n`);
+        },
+        PATH_LOCK_OPTS,
+      );
+      expect(await readdir(dir)).toEqual([]);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("serializes 8 concurrent read-modify-write writers (no lost update, BUG-6)", async () => {
     const { dir, target, lockPath } = makeLockDir();
     await Bun.write(target, "[]");

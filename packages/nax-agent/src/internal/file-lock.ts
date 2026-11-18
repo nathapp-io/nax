@@ -12,8 +12,8 @@
  * steps; a creator paused between them past `EMPTY_LOCK_EVICT_AGE_MS` looked
  * crashed, a waiter evicted it and entered, and the creator resumed into the
  * critical section beside it. `link` fails with EEXIST exactly like an
- * exclusive create. A crash can leave the private `<lock>.<pid>.<uuid>.pid`
- * file behind; nothing reads it.
+ * exclusive create. A crash can leave a private `.lock-<uuid>.pid` file
+ * behind in the lock directory; nothing reads it.
  *
  * #1731: the previous design created timestamped candidate files and polled
  * until it saw itself as the "oldest live" candidate. That protocol is only
@@ -71,6 +71,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { type FileHandle, link, open, unlink, writeFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
 import { isProcessAlive } from "./process-alive.ts";
@@ -119,7 +120,9 @@ function unlinkQuiet(path: string): Promise<void> {
  * is complete before the path exists: see the module doc.
  */
 async function tryCreateExclusive(path: string): Promise<boolean> {
-  const staged = `${path}.${process.pid}.${randomUUID()}.pid`;
+  // Keep the exact directory prefix (joining could normalize a symlink followed by `..`).
+  const directory = path.slice(0, path.length - basename(path).length);
+  const staged = `${directory}.lock-${randomUUID()}.pid`;
   await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
   try {
     await _fileLockDeps.link(staged, path);
