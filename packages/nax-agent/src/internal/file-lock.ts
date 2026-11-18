@@ -39,24 +39,10 @@
  * - The gravedigger RE-VERIFIES abandonment after winning the claim (a
  *   stale observation must not kill a lock that a new live holder has
  *   since created) and only then unlinks.
- * - The claim itself is never unlinked by anyone but its own holder:
- *   `stillHolding` compares the file's inode against the one the holder
- *   created, so a release cannot delete a claim a waiter re-created in its
- *   place.
- * The claim is held for microseconds, so it is stolen purely on age
- * (`CLAIM_MAX_AGE_MS`): a claim older than that proves its gravedigger died
- * mid-reclaim. The steal MOVES the aged claim (`rename` to a unique
- * graveyard name) instead of unlinking the path and re-creating it, so of
- * two waiters that both read the same aged claim exactly one moves it, and
- * a claim another gravedigger re-created in between is recognised by its
- * inode and left alone — that waiter then fails closed rather than
- * reclaiming on a claim it does not hold. A crashed gravedigger otherwise
- * pauses reclamation until the claim ages — fail closed, never fail into
- * someone else's live lock.
- * Residual: the age bound is what keeps this sound. A holder that stalls
- * past `CLAIM_MAX_AGE_MS` mid-reclaim can be stolen from, and the steal is
- * what it then observes through `stillHolding` — it refrains, but a lock it
- * had already unlinked stays unlinked until the next waiter reclaims it.
+ * - Only the claimant releases its claim. An existing claim is never replaced, even if it looks
+ *   stale: neither unlink nor rename can be conditioned on the file still having the identity we
+ *   inspected. A crashed claimant can therefore block reclamation. If waiters time out, stop all
+ *   users of the lock before removing an orphaned claim manually.
  *
  * Release unlinks the lock file in the `finally` block. The unlink is
  * swallowed because release runs from the same process that created the
@@ -72,9 +58,8 @@
  * concurrently. This self-heals once old-version processes exit.
  */
 
-import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, lstat, open, rename, unlink, writeFile } from "node:fs/promises";
+import { type FileHandle, open, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
 import { isProcessAlive } from "./process-alive.ts";
@@ -91,14 +76,6 @@ const MAX_PID_BYTES = String(MAX_PID).length + 1;
  * between creating the file and writing its pid (crash, kill -9).
  */
 const EMPTY_LOCK_EVICT_AGE_MS = 10_000;
-/**
- * A gravedigger holds the claim file for microseconds (verify + one
- * unlink). A claim older than this bound proves its process died before
- * releasing it. Kept comfortably above any scheduling delay a live
- * reclaim could take.
- */
-const CLAIM_MAX_AGE_MS = 10_000;
-
 export interface FileLockOptions {
   /** Milliseconds between acquisition retries. Default 10. */
   retryMs?: number;
@@ -116,35 +93,10 @@ export const _fileLockDeps = {
   writeFile,
   open,
   unlink,
-  rename,
-  lstat,
   now: () => Date.now(),
   sleep: (ms: number, signal?: AbortSignal) => delay(ms, undefined, { signal }),
   isPidAlive: isProcessAlive,
 };
-
-/**
- * What identifies one file across two looks. A replacement gets a new inode even when its content
- * and mtime match, which is what lets a claimant tell its own claim from one a waiter re-created
- * in its place.
- */
-interface FileIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
-/** The path's own identity, or undefined when it is not there or not a regular file. */
-async function fileIdentity(path: string): Promise<FileIdentity | undefined> {
-  const stats = await _fileLockDeps.lstat(path).catch(() => undefined);
-  if (stats === undefined || !stats.isFile()) return undefined;
-  return { dev: stats.dev, ino: stats.ino };
-}
-
-/** Whether the claim at `claimPath` is still the exact file this process created. */
-async function stillHolding(claimPath: string, mine: FileIdentity): Promise<boolean> {
-  const current = await fileIdentity(claimPath);
-  return current !== undefined && current.dev === mine.dev && current.ino === mine.ino;
-}
 
 function unlinkQuiet(path: string): Promise<void> {
   return _fileLockDeps.unlink(path).catch(() => {});
@@ -218,78 +170,17 @@ async function abandonedPid(path: string): Promise<number | null | undefined> {
   return lock.ageMs >= EMPTY_LOCK_EVICT_AGE_MS ? null : undefined;
 }
 
-/**
- * Take the claim slot with an exclusive create, or report that someone else holds it. The identity
- * is what later proves the claim is still ours, so a claim a waiter moved and re-created in our
- * place cannot be mistaken for the one we took.
- */
-async function createClaim(claimPath: string): Promise<FileIdentity | undefined> {
-  if (!(await tryCreateExclusive(claimPath))) return undefined;
-  return await fileIdentity(claimPath);
-}
-
-/**
- * Move an aged claim out of the way and take the slot, verifying the file we moved is the one we
- * judged aged. `rename` is atomic and single-winner, so of two waiters that both read the same aged
- * claim exactly one moves it; the loser gets ENOENT. A claim another gravedigger re-created between
- * the read and the move has a different inode, and is neither reclaimed on that gravedigger's behalf
- * nor left in its place to be unlinked by a later release — we simply fail closed.
- */
-async function stealClaim(claimPath: string, observed: FileIdentity): Promise<FileIdentity | undefined> {
-  const graveyard = `${claimPath}.aged-${process.pid}-${randomUUID()}`;
-  try {
-    await _fileLockDeps.rename(claimPath, graveyard);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; // Another waiter moved it.
-    throw error;
-  }
-  const moved = await fileIdentity(graveyard);
-  await unlinkQuiet(graveyard);
-  if (moved === undefined || moved.dev !== observed.dev || moved.ino !== observed.ino) return undefined;
-  return await createClaim(claimPath);
-}
-
-/**
- * Elect one gravedigger, returning the claim's own identity so the reclaim can prove it still holds
- * it. A fresh claim held by someone else means reclamation is already in progress — back off. An
- * aged claim proves its gravedigger died mid-reclaim and is stolen (age-based, without checking the
- * PID's liveness: a live gravedigger releases within microseconds).
- */
-async function claimForReclaim(claimPath: string): Promise<FileIdentity | undefined> {
-  const created = await createClaim(claimPath);
-  if (created !== undefined) return created;
-  // Read the claim through the checked reader first: a link, a FIFO or garbage content is a refusal,
-  // not something to steal.
-  const claim = await readLockMetadata(claimPath);
-  if (claim === undefined || claim.ageMs < CLAIM_MAX_AGE_MS) return undefined;
-  const observed = await fileIdentity(claimPath);
-  if (observed === undefined) return undefined;
-  return await stealClaim(claimPath, observed);
-}
-
-/**
- * Reclaim `path` if it is STILL the abandoned lock that was observed — the
- * observation can be stale (a new live holder may have been created since,
- * or another gravedigger may have already removed the file). Runs under
- * the claim, so no concurrent unlink can make the path flip between absent
- * and present during this verification.
- */
-async function reclaimIfStillAbandoned(path: string, observedPid: number | null): Promise<void> {
-  if ((await abandonedPid(path)) === observedPid) await unlinkQuiet(path);
-}
-
-/**
- * One reclamation attempt: take the claim, reclaim only while it is still ours, and release only our
- * own claim. A waiter that loses the claim — or whose claim another waiter moved and re-created in
- * its place — does nothing this round and retries.
- */
+/** Only the claimant may recheck the observation and remove the abandoned lock. */
 async function reclaimAbandonedLock(lockPath: string, claimPath: string, observedPid: number | null): Promise<void> {
-  const mine = await claimForReclaim(claimPath);
-  if (mine === undefined) return;
+  if (!(await tryCreateExclusive(claimPath))) {
+    // Preserve the invalid-lock diagnosis, but no metadata authorizes replacing a claim.
+    await readLockMetadata(claimPath);
+    return;
+  }
   try {
-    if (await stillHolding(claimPath, mine)) await reclaimIfStillAbandoned(lockPath, observedPid);
+    if ((await abandonedPid(lockPath)) === observedPid) await unlinkQuiet(lockPath);
   } finally {
-    if (await stillHolding(claimPath, mine)) await unlinkQuiet(claimPath);
+    await unlinkQuiet(claimPath);
   }
 }
 

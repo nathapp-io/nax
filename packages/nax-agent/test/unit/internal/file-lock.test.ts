@@ -313,116 +313,46 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     cleanupTempDir(dir);
   });
 
-  test("steals an aged claim left by a crashed gravedigger and reclaims the dead lock", async () => {
+  test("two contending waiters leave an aged claim and its abandoned lock intact", async () => {
     const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
     await Bun.write(lockPath, "424242\n");
     await Bun.write(claimPath, "999999\n");
-    const aged = new Date(_fileLockDeps.now() - 20_000);
+    let now = _fileLockDeps.now();
+    const aged = new Date(now - 20_000);
     await utimes(claimPath, aged, aged);
-    Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
-
-    const state = { ran: false };
-    await withFileLock(
-      lockPath,
-      async () => {
-        state.ran = true;
-      },
-      PATH_LOCK_OPTS,
-    );
-
-    // The aged claim was stolen, the dead lock reclaimed, and the new
-    // claim released after the reclaim.
-    expect(state.ran).toBe(true);
-    expect(await Bun.file(claimPath).exists()).toBe(false);
-
-    cleanupTempDir(dir);
-  });
-
-  test("never unlinks a claim another waiter re-created while ours was being stolen", async () => {
-    const { dir, lockPath } = makeLockDir();
-    const claimPath = `${lockPath}.claim`;
-    await Bun.write(lockPath, "424242\n");
-    await Bun.write(claimPath, "999999\n");
-    const aged = new Date(_fileLockDeps.now() - 20_000);
-    await utimes(claimPath, aged, aged);
-    Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
-
-    const rename = _fileLockDeps.rename;
-    const unlink = _fileLockDeps.unlink;
-    /** The pid the claim held at each moment a waiter removed it by path. */
-    const removed: string[] = [];
-    let replaced = false;
+    const attempted = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let retries = 0;
+    const operation = mock(async () => {});
     Object.assign(_fileLockDeps, {
-      // The interleaving the old unlink-then-recreate could not survive: by the time our steal
-      // moves the path, another gravedigger has already re-created it with a fresh claim.
-      rename: async (from: string, to: string) => {
-        if (!replaced) {
-          replaced = true;
-          await Bun.write(claimPath, "31337\n");
-          const now = new Date();
-          await utimes(claimPath, now, now);
-        }
-        return rename(from, to);
-      },
-      unlink: async (path: string) => {
-        if (path === claimPath)
-          removed.push(
-            (
-              await Bun.file(claimPath)
-                .text()
-                .catch(() => "")
-            ).trim(),
-          );
-        return unlink(path);
+      now: () => now,
+      isPidAlive: () => false,
+      sleep: async () => {
+        if (++retries === 2) attempted.resolve();
+        await resume.promise;
       },
     });
-
-    const state = { ran: false };
-    await withFileLock(
-      lockPath,
-      async () => {
-        state.ran = true;
-      },
-      { ...PATH_LOCK_OPTS, retryMs: 5 },
-    );
-
-    // The other gravedigger's claim is moved out of the way, never deleted from under it, and the
-    // dead lock is still reclaimed — by the same waiter, on a claim it took afterwards.
-    expect(replaced).toBe(true);
-    expect(removed).not.toContain("31337");
-    expect(state.ran).toBe(true);
-    expect(await Bun.file(claimPath).exists()).toBe(false);
-
-    cleanupTempDir(dir);
-  });
-
-  test("two waiters that both see the same aged claim never enter together", async () => {
-    const { dir, lockPath } = makeLockDir();
-    const claimPath = `${lockPath}.claim`;
-    await Bun.write(lockPath, "424242\n");
-    await Bun.write(claimPath, "999999\n");
-    const aged = new Date(_fileLockDeps.now() - 20_000);
-    await utimes(claimPath, aged, aged);
-    Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
-
-    let inside = 0;
-    let maxInside = 0;
-    const operation = async () => {
-      inside++;
-      maxInside = Math.max(maxInside, inside);
-      await Bun.sleep(10);
-      inside--;
-    };
-
-    await Promise.all([
-      withFileLock(lockPath, operation, { ...PATH_LOCK_OPTS, retryMs: 5 }),
-      withFileLock(lockPath, operation, { ...PATH_LOCK_OPTS, retryMs: 5 }),
+    const waiters = Promise.allSettled([
+      withFileLock(lockPath, operation, PATH_LOCK_OPTS),
+      withFileLock(lockPath, operation, PATH_LOCK_OPTS),
     ]);
-
-    expect(maxInside).toBe(1);
-
-    cleanupTempDir(dir);
+    try {
+      await Promise.race([attempted.promise, waiters]);
+      now += 5_001;
+      resume.resolve();
+      for (const waiter of await waiters) {
+        expect(waiter.status).toBe("rejected");
+        if (waiter.status === "rejected") expect(waiter.reason).toMatchObject({ code: "FILE_LOCK_TIMEOUT" });
+      }
+      expect(operation).not.toHaveBeenCalled();
+      expect(await Bun.file(lockPath).text()).toBe("424242\n");
+      expect(await Bun.file(claimPath).text()).toBe("999999\n");
+    } finally {
+      resume.resolve();
+      await waiters;
+      cleanupTempDir(dir);
+    }
   });
 
   test("never steals a lock whose holder pid is alive (BUG-10) — times out instead", async () => {
