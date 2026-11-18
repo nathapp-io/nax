@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { lstat, symlink, utimes } from "node:fs/promises";
+import { lstat, open as openFile, readdir, symlink, utimes } from "node:fs/promises";
 import { _fileLockDeps, withFileLock } from "#src/internal/file-lock";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
@@ -405,6 +405,76 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
 
     cleanupTempDir(dir);
   });
+
+  test("a creator paused before its pid write is never evicted by a waiter", async () => {
+    // The create and the pid write are two steps. If the lock path existed between them, a creator
+    // paused past EMPTY_LOCK_EVICT_AGE_MS would look crashed: a waiter would evict it and enter,
+    // and the creator would resume believing it held the lock.
+    const { dir, lockPath } = makeLockDir();
+    const realWriteFile = _fileLockDeps.writeFile;
+    const paused = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    let firstCreate = true;
+    Object.assign(_fileLockDeps, {
+      writeFile: async (path: string, data: string, options?: { flag?: string }) => {
+        if (!firstCreate) return realWriteFile(path, data, options);
+        firstCreate = false;
+        const handle = await openFile(path, "wx");
+        const aged = new Date(Date.now() - 20_000);
+        await utimes(path, aged, aged);
+        paused.resolve();
+        await resume.promise;
+        await handle.writeFile(data);
+        await handle.close();
+      },
+    });
+    let inside = 0;
+    let maxInside = 0;
+    let bInside = false;
+    const aEntered = Promise.withResolvers<void>();
+    const aRetried = Promise.withResolvers<void>();
+    const sleep = _fileLockDeps.sleep;
+    _fileLockDeps.sleep = (ms, signal) => {
+      if (bInside) aRetried.resolve();
+      return sleep(ms, signal);
+    };
+    const enter = () => {
+      inside++;
+      maxInside = Math.max(maxInside, inside);
+    };
+    try {
+      const creatorA = withFileLock(
+        lockPath,
+        async () => {
+          enter();
+          aEntered.resolve();
+          inside--;
+        },
+        PATH_LOCK_OPTS,
+      );
+      await paused.promise;
+      const waiterB = withFileLock(
+        lockPath,
+        async () => {
+          enter();
+          bInside = true;
+          resume.resolve();
+          await Promise.race([aEntered.promise, aRetried.promise]);
+          bInside = false;
+          inside--;
+        },
+        PATH_LOCK_OPTS,
+      );
+      await Promise.all([creatorA, waiterB]);
+      expect(maxInside).toBe(1);
+      expect(await Bun.file(lockPath).exists()).toBe(false);
+      // Each creator removes its staged pid file whether or not its link won.
+      expect(await readdir(dir)).toEqual([]);
+    } finally {
+      resume.resolve();
+      cleanupTempDir(dir);
+    }
+  }, 10_000);
 
   test("reclaim never lets two stealers enter — claim blocks the second gravedigger", async () => {
     // Deterministic pin for the steal race: stealer A wins the claim and is

@@ -2,9 +2,18 @@
  * Shared single-file lock used by `withPathFileLock` and `withQueueFileLock`.
  *
  * Mutual exclusion derives from the atomicity of an exclusive create: the
- * lock is ONE file at `<target>.lock`, and the writer whose
- * `writeFile(path, pid, { flag: "wx" })` succeeds holds the lock. There is
- * no candidate ordering, no filesystem birthtime, and no polling race.
+ * lock is ONE file at `<target>.lock`, and the writer whose hard link to it
+ * succeeds holds the lock. There is no candidate ordering, no filesystem
+ * birthtime, and no polling race.
+ *
+ * The pid is written to a private file first and only then linked into
+ * place, so the lock path never names an empty file of a live creator. With
+ * `writeFile(path, pid, { flag: "wx" })` the create and the write were two
+ * steps; a creator paused between them past `EMPTY_LOCK_EVICT_AGE_MS` looked
+ * crashed, a waiter evicted it and entered, and the creator resumed into the
+ * critical section beside it. `link` fails with EEXIST exactly like an
+ * exclusive create. A crash can leave the private `<lock>.<pid>.<uuid>.pid`
+ * file behind; nothing reads it.
  *
  * #1731: the previous design created timestamped candidate files and polled
  * until it saw itself as the "oldest live" candidate. That protocol is only
@@ -22,8 +31,9 @@
  * - The holder's pid is stored in the lock file. A waiter that loses the
  *   create race reads the pid; a PROVEN-dead holder (ESRCH) means the lock
  *   is abandoned and may be reclaimed.
- * - An empty regular file (e.g. the creator crashed between the create and
- *   the pid write) is respected until it ages past `EMPTY_LOCK_EVICT_AGE_MS`.
+ * - An empty regular file is respected until it ages past
+ *   `EMPTY_LOCK_EVICT_AGE_MS`. This version never publishes one; the bound
+ *   recovers a lock left by an older version's crashed creator.
  *   Special files, symlinks and invalid PID data are refused, not reclaimed.
  *   Inconclusive liveness fails closed: the waiter times out and throws
  *   rather than entering over a possible holder.
@@ -58,8 +68,9 @@
  * concurrently. This self-heals once old-version processes exit.
  */
 
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, open, unlink, writeFile } from "node:fs/promises";
+import { type FileHandle, link, open, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
 import { isProcessAlive } from "./process-alive.ts";
@@ -71,9 +82,9 @@ const LOCK_READ_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_
 const MAX_PID = 2_147_483_647;
 const MAX_PID_BYTES = String(MAX_PID).length + 1;
 /**
- * A live holder writes its pid within the same tick as the create, so
- * an empty lock older than this bound proves the creator died
- * between creating the file and writing its pid (crash, kill -9).
+ * An empty lock older than this bound is taken as an older version's creator
+ * that died between its create and its pid write (crash, kill -9). This
+ * version links a complete pid file into place and never leaves one empty.
  */
 const EMPTY_LOCK_EVICT_AGE_MS = 10_000;
 export interface FileLockOptions {
@@ -91,6 +102,7 @@ export interface FileLockOptions {
 
 export const _fileLockDeps = {
   writeFile,
+  link,
   open,
   unlink,
   now: () => Date.now(),
@@ -102,9 +114,15 @@ function unlinkQuiet(path: string): Promise<void> {
   return _fileLockDeps.unlink(path).catch(() => {});
 }
 
+/**
+ * Publish a file holding this process's pid at `path`, or report that `path` already exists. The pid
+ * is complete before the path exists: see the module doc.
+ */
 async function tryCreateExclusive(path: string): Promise<boolean> {
+  const staged = `${path}.${process.pid}.${randomUUID()}.pid`;
+  await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
   try {
-    await _fileLockDeps.writeFile(path, `${process.pid}\n`, { flag: "wx" });
+    await _fileLockDeps.link(staged, path);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
@@ -112,6 +130,8 @@ async function tryCreateExclusive(path: string): Promise<boolean> {
     // contention — fail fast instead of burning the whole timeout as a
     // misleading "Timed out".
     throw error;
+  } finally {
+    await unlinkQuiet(staged);
   }
 }
 
