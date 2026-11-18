@@ -11,6 +11,12 @@
  * never throws — a header or body read failure comes back as an `isError`
  * result the model can react to, exactly as the text path's `catch` does.
  *
+ * One open handle serves the header, the size check and the body. Reading the
+ * body by reopening the path let a screenshot replaced between the two opens
+ * produce either a truncated image labelled as a success or a non-image labelled
+ * with the header's MIME type; both are refused as "changed while it was being
+ * read" instead.
+ *
  * Two ceilings, and the image one replaces both of the text path's: a file is
  * refused outright past `MAX_IMAGE_FILE_BYTES`, which is the raw size whose
  * base64 fits the per-image character limit the send path enforces. Over it
@@ -21,7 +27,7 @@
  */
 
 import { errorMessage } from "#src/infra/errors";
-import { type BytesPrefix, readBytesPrefix } from "#src/internal/bounded-io";
+import { type BoundedFile, openBoundedFile } from "#src/internal/bounded-io";
 import { MAX_IMAGE_BASE64_CHARS } from "#src/session/image-input";
 import { type SniffedImage, sniffImage } from "#src/session/image-sniff";
 import type { ToolResult } from "./registry.ts";
@@ -77,35 +83,42 @@ function rangeResult(input: Record<string, unknown>, sniffed: SniffedImage): Too
   };
 }
 
-/** Everything `wholeImageResult` needs about the file the header already matched. */
-interface WholeImageRequest {
-  readonly target: string;
-  /** The path as the caller gave it — `source` and the labels name it this way. */
-  readonly displayPath: string;
-  readonly header: SniffedImage;
-  readonly size: number;
+/**
+ * The body is not the file the header described: it shrank under the handle, or
+ * its bytes are no longer the format the header matched. Base64-ing a truncated
+ * or reinterpreted body would hand the model an image the wire cannot carry, and
+ * saving it would bake the failure into the transcript — so we refuse instead.
+ */
+function changedResult(displayPath: string): ToolResult {
+  return { content: `"${displayPath}" changed while it was being read; run Read again`, isError: true };
 }
 
-/** Read the whole file the header matched, and describe it. */
-async function wholeImageResult(request: WholeImageRequest): Promise<ToolResult> {
-  let body: BytesPrefix;
-  try {
-    body = await readBytesPrefix(request.target, request.size);
-  } catch (error) {
-    return errorResult(error);
-  }
+/**
+ * Read the whole file the header matched, and describe it.
+ *
+ * Every read comes from the SAME handle as the header and the size check: a
+ * screenshot replaced at the path between two opens used to be able to hand back
+ * a truncated body (labelled a success) or a body that was no longer an image at
+ * all (labelled with the old MIME type).
+ */
+async function wholeImageResult(file: BoundedFile, header: SniffedImage, displayPath: string): Promise<ToolResult> {
+  const bytes = await file.prefix(file.size);
+  if (bytes.length !== file.size) return changedResult(displayPath);
   // Sniff the whole file again: a header bigger than IMAGE_HEADER_BYTES can be
   // truncated mid-segment, in which case the full bytes give the dimensions the
-  // header alone could not. The header's verdict is the fallback.
-  const sniffed = sniffImage(body.bytes) ?? request.header;
+  // header alone could not. The body is a superset of the header's bytes, so its
+  // verdict must agree with the header's -- a different one means the file
+  // changed under the handle, not that the header was mis-sniffed.
+  const sniffed = sniffImage(bytes);
+  if (sniffed === undefined || sniffed.mimeType !== header.mimeType) return changedResult(displayPath);
   const pixels = pixelSize(sniffed);
   const image = {
     mimeType: sniffed.mimeType,
-    data: Buffer.from(body.bytes).toString("base64"),
+    data: Buffer.from(bytes).toString("base64"),
     ...(pixels ?? {}),
-    source: request.displayPath,
+    source: displayPath,
   };
-  return { content: imageLabel(sniffed.mimeType, pixels, body.bytes.length), images: [image] };
+  return { content: imageLabel(sniffed.mimeType, pixels, bytes.length), images: [image] };
 }
 
 /**
@@ -113,7 +126,8 @@ async function wholeImageResult(request: WholeImageRequest): Promise<ToolResult>
  * and belongs on the text path.
  *
  * `hasOffset`/`hasLimit` are the caller's already-parsed range flags: a range
- * on an image is refused before a byte of the body is read.
+ * on an image is refused before a byte of the body is read. One open handle
+ * serves the header, the size check and the body.
  */
 export async function readImageResult(
   target: string,
@@ -121,15 +135,22 @@ export async function readImageResult(
   hasOffset: boolean,
   hasLimit: boolean,
 ): Promise<ToolResult | undefined> {
-  let head: BytesPrefix;
+  let file: BoundedFile;
   try {
-    head = await readBytesPrefix(target, IMAGE_HEADER_BYTES);
+    file = await openBoundedFile(target);
   } catch (error) {
     return errorResult(error);
   }
-  const sniffed = sniffImage(head.bytes);
-  if (sniffed === undefined) return undefined;
-  if (head.size > MAX_IMAGE_FILE_BYTES) return tooLargeResult(head.size);
-  if (hasOffset || hasLimit) return rangeResult(input, sniffed);
-  return wholeImageResult({ target, displayPath: String(input.path), header: sniffed, size: head.size });
+  try {
+    const head = await file.prefix(IMAGE_HEADER_BYTES);
+    const sniffed = sniffImage(head);
+    if (sniffed === undefined) return undefined;
+    if (file.size > MAX_IMAGE_FILE_BYTES) return tooLargeResult(file.size);
+    if (hasOffset || hasLimit) return rangeResult(input, sniffed);
+    return await wholeImageResult(file, sniffed, String(input.path));
+  } catch (error) {
+    return errorResult(error);
+  } finally {
+    await file.close();
+  }
 }

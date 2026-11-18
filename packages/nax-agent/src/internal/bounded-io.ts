@@ -17,12 +17,40 @@
  */
 
 import { constants } from "node:fs";
-import { type FileHandle, open, stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import { NaxError } from "#src/infra/index";
 
 function notRegularFileError(path: string): NaxError {
   return new NaxError(`"${path}" is not a regular file`, "READ_NOT_REGULAR_FILE", { stage: "read", path });
 }
+
+/** What an opened file's `stat()` must answer for the regular-file check and the size. */
+export interface OpenedFileStat {
+  readonly size: number;
+  isFile(): boolean;
+}
+
+/**
+ * The part of a `FileHandle` this module uses. Declared structurally so a test
+ * can supply a fake one (`_boundedIoDeps.open`) with no cast: a short read, a
+ * file that shrinks after the open, or a handle whose `stat` says "not a file".
+ */
+export interface BoundedHandle {
+  stat(): Promise<OpenedFileStat>;
+  read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
+  close(): Promise<void>;
+}
+
+/**
+ * The filesystem operations `readPrefix`/`readBytesPrefix`/`openBoundedFile`
+ * perform. At least one caller needs more than one read from ONE open file (the
+ * image branch sniffs a header and then reads the body), and the open is the
+ * thing that has to be shared, not the read.
+ */
+export const _boundedIoDeps: {
+  open(path: string, flags: number): Promise<BoundedHandle>;
+  stat(path: string): Promise<OpenedFileStat>;
+} = { open, stat };
 
 /** At most `maxBytes` leading bytes of a file, and the file's size when it was opened. */
 export interface BytesPrefix {
@@ -30,13 +58,60 @@ export interface BytesPrefix {
   readonly size: number;
 }
 
-/** Read at most `maxBytes + 1` bytes of a UTF-8 file, never the whole file. */
-export async function readPrefix(path: string, maxBytes: number): Promise<string> {
-  let handle: FileHandle;
+/**
+ * One open regular file, readable from the start as many times as a caller
+ * needs. Both reads come from the same handle, so a path replaced between them
+ * cannot hand the caller a body that is not the file the first read described.
+ */
+export interface BoundedFile {
+  /** The file's size when it was opened. */
+  readonly size: number;
+  /** The first `maxBytes` bytes, or fewer at end of file. */
+  prefix(maxBytes: number): Promise<Uint8Array>;
+  close(): Promise<void>;
+}
+
+/**
+ * Read exactly the wanted bytes from the start of the file, looping over short
+ * reads: POSIX allows `read` to return fewer bytes than asked without being at
+ * EOF, so one call is not "the prefix". A file that shrank under the handle
+ * simply yields fewer bytes than asked; the caller compares with `size`.
+ */
+async function readFromStart(handle: BoundedHandle, want: number): Promise<Uint8Array> {
+  const buffer = Buffer.alloc(want);
+  let total = 0;
+  while (total < want) {
+    const { bytesRead } = await handle.read(buffer, total, want - total, total);
+    if (bytesRead <= 0) break;
+    total += bytesRead;
+  }
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, total);
+}
+
+function wrapHandle(handle: BoundedHandle, size: number): BoundedFile {
+  return {
+    size,
+    // Ask for no more than the file holds, so a 20-byte header read costs 20
+    // bytes rather than a full header buffer's worth.
+    prefix: (maxBytes: number) => readFromStart(handle, Math.max(0, Math.min(maxBytes, size))),
+    close: () => handle.close(),
+  };
+}
+
+/**
+ * Open `path` as a regular file, or throw `READ_NOT_REGULAR_FILE`.
+ *
+ * The open itself is the non-blocking one (`readPrefix` has to open a FIFO
+ * without hanging on it and then refuse it); a path that cannot be opened at
+ * all is re-checked with `stat` so a directory or a FIFO is reported by name
+ * rather than as a raw `EISDIR`/`EACCES`.
+ */
+export async function openBoundedFile(path: string): Promise<BoundedFile> {
+  let handle: BoundedHandle;
   try {
-    handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    handle = await _boundedIoDeps.open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   } catch (error) {
-    const pathIsNonRegular = await stat(path).then(
+    const pathIsNonRegular = await _boundedIoDeps.stat(path).then(
       (info) => !info.isFile(),
       () => false,
     );
@@ -44,12 +119,22 @@ export async function readPrefix(path: string, maxBytes: number): Promise<string
     throw error;
   }
   try {
-    if (!(await handle.stat()).isFile()) throw notRegularFileError(path);
-    const buffer = Buffer.alloc(maxBytes + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return buffer.subarray(0, bytesRead).toString("utf8");
-  } finally {
+    const info = await handle.stat();
+    if (!info.isFile()) throw notRegularFileError(path);
+    return wrapHandle(handle, info.size);
+  } catch (error) {
     await handle.close();
+    throw error;
+  }
+}
+
+/** Read at most `maxBytes + 1` bytes of a UTF-8 file, never the whole file. */
+export async function readPrefix(path: string, maxBytes: number): Promise<string> {
+  const file = await openBoundedFile(path);
+  try {
+    return Buffer.from(await file.prefix(maxBytes + 1)).toString("utf8");
+  } finally {
+    await file.close();
   }
 }
 
@@ -63,27 +148,11 @@ export async function readPrefix(path: string, maxBytes: number): Promise<string
  * second stat against a path that may have been replaced in between.
  */
 export async function readBytesPrefix(path: string, maxBytes: number): Promise<BytesPrefix> {
-  let handle: FileHandle;
+  const file = await openBoundedFile(path);
   try {
-    handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
-  } catch (error) {
-    const pathIsNonRegular = await stat(path).then(
-      (info) => !info.isFile(),
-      () => false,
-    );
-    if (pathIsNonRegular) throw notRegularFileError(path);
-    throw error;
-  }
-  try {
-    const info = await handle.stat();
-    if (!info.isFile()) throw notRegularFileError(path);
-    // Ask for no more than the file holds, so a 20-byte header read costs 20
-    // bytes rather than a full header buffer's worth.
-    const buffer = Buffer.alloc(Math.max(0, Math.min(maxBytes, info.size)));
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return { bytes: new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead), size: info.size };
+    return { bytes: await file.prefix(maxBytes), size: file.size };
   } finally {
-    await handle.close();
+    await file.close();
   }
 }
 

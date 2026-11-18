@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { drainBounded, readBytesPrefix, readPrefix } from "#src/internal/bounded-io";
+import { _boundedIoDeps, drainBounded, readBytesPrefix, readPrefix } from "#src/internal/bounded-io";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
 import { assertNaxError, isConfinedTestRun } from "#test/helpers/index";
 
@@ -190,6 +190,80 @@ describe("readBytesPrefix — raw bytes plus the file's size", () => {
     let caught: unknown;
     try {
       await readBytesPrefix(root, 10);
+    } catch (error) {
+      caught = error;
+    }
+
+    assertNaxError(caught);
+    expect(caught.code).toBe("READ_NOT_REGULAR_FILE");
+  });
+});
+
+/**
+ * `_boundedIoDeps` is the seam the binary read path goes through. A fake handle
+ * is the only deterministic way to produce the two failures a real filesystem
+ * will not: a short read, and a handle that shrinks under the caller.
+ */
+describe("bounded I/O — the dependency seam", () => {
+  const realOpen = _boundedIoDeps.open;
+
+  afterEach(() => {
+    _boundedIoDeps.open = realOpen;
+  });
+
+  function fakeHandle(source: Uint8Array, options: { size?: number; readable?: number; truncateAfter?: number } = {}) {
+    const handle = {
+      reads: 0,
+      stat: async () => ({ size: options.size ?? source.length, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        handle.reads += 1;
+        const readable = handle.reads > (options.truncateAfter ?? Number.POSITIVE_INFINITY) ? 0 : source.length;
+        const available = Math.max(0, Math.min(readable - position, length));
+        buffer.set(source.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    };
+    return handle;
+  }
+
+  test("a short read is retried until the requested prefix is full", async () => {
+    const source = Uint8Array.from(Array.from({ length: 100 }, (_, index) => index));
+    _boundedIoDeps.open = async () => {
+      const handle = fakeHandle(source);
+      const realRead = handle.read;
+      // One byte per call: a caller that trusted a single `read` would return 1.
+      handle.read = async (buffer: Buffer, offset: number, length: number, position: number) =>
+        realRead(buffer, offset, Math.min(1, length), position);
+      return handle;
+    };
+
+    const result = await readBytesPrefix("/fake/short.bin", 10);
+
+    expect([...result.bytes]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(result.size).toBe(100);
+  });
+
+  test("a handle that goes empty before its reported size ends the read early", async () => {
+    const source = Uint8Array.from([1, 2, 3, 4]);
+    _boundedIoDeps.open = async () => fakeHandle(source, { size: 10, truncateAfter: 1 });
+
+    const result = await readBytesPrefix("/fake/truncated.bin", 10);
+
+    expect([...result.bytes]).toEqual([1, 2, 3, 4]);
+    expect(result.size).toBe(10);
+  });
+
+  test("a handle whose stat is not a file is READ_NOT_REGULAR_FILE", async () => {
+    _boundedIoDeps.open = async () => ({
+      stat: async () => ({ size: 0, isFile: () => false }),
+      read: async () => ({ bytesRead: 0 }),
+      close: async () => {},
+    });
+
+    let caught: unknown;
+    try {
+      await readBytesPrefix("/fake/pipe", 10);
     } catch (error) {
       caught = error;
     }

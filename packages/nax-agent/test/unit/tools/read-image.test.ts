@@ -10,10 +10,11 @@
  * pixel dimensions are the only part of the payload the sniffer reads.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { _boundedIoDeps, type BoundedHandle } from "#src/internal/bounded-io";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
 import { readImageResult } from "#src/tools/read-image";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
@@ -342,5 +343,96 @@ describe("readTool — description", () => {
     );
     expect(readTool.description.endsWith("Output is capped at 1000 lines or 40000 bytes.")).toBe(true);
     expect(readTool.description.startsWith("Read a UTF-8 text file from the repository.")).toBe(true);
+  });
+});
+
+/**
+ * The header, the size check and the body all come from ONE open handle, so a
+ * path replaced between two opens can no longer hand back a body the header did
+ * not describe. A fake handle is the only deterministic way to drive that: the
+ * real filesystem refuses to swap a file mid-read.
+ */
+describe("readTool — the body must be the file the header described", () => {
+  const realOpen = _boundedIoDeps.open;
+
+  afterEach(() => {
+    _boundedIoDeps.open = realOpen;
+  });
+
+  /** A handle over `source`, reporting `size` and never serving past `readable` bytes. */
+  function fakeHandle(source: Uint8Array, overrides: { size?: number; readable?: number } = {}): BoundedHandle {
+    const readable = overrides.readable ?? source.length;
+    return {
+      stat: async () => ({ size: overrides.size ?? source.length, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const available = Math.max(0, Math.min(readable - position, length));
+        buffer.set(source.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    };
+  }
+
+  /** Serves `first` for the header read and `next` for every read after it. */
+  function switchingHandle(first: Uint8Array, next: Uint8Array, size: number): BoundedHandle {
+    let calls = 0;
+    return {
+      stat: async () => ({ size, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        calls += 1;
+        const source = calls === 1 ? first : next;
+        const available = Math.max(0, Math.min(source.length - position, length));
+        buffer.set(source.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    };
+  }
+
+  test("a file that shrank after the header read is an error, not a truncated image", async () => {
+    const png = Uint8Array.from(pngHeader(100, 50));
+    _boundedIoDeps.open = async () => fakeHandle(png, { size: 4096, readable: png.length });
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result).toEqual({
+      content: '"shot.png" changed while it was being read; run Read again',
+      isError: true,
+    });
+    expect(result !== undefined && Object.hasOwn(result, "images")).toBe(false);
+  });
+
+  test("bytes that are no longer the header's format are an error, not the old MIME type", async () => {
+    const header = Uint8Array.from(pngHeader(100, 50));
+    const replacement = new TextEncoder().encode("x".repeat(header.length));
+    _boundedIoDeps.open = async () => switchingHandle(header, replacement, header.length);
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result).toEqual({
+      content: '"shot.png" changed while it was being read; run Read again',
+      isError: true,
+    });
+  });
+
+  test("a short body read is retried until the file's size is reached", async () => {
+    const png = Uint8Array.from([...pngHeader(100, 50), 0x00, 0x01, 0x02]);
+    // A handle that answers one byte at a time: POSIX allows this, and a single
+    // `read` call would otherwise base64-encode a fragment as a whole image.
+    _boundedIoDeps.open = async () => ({
+      stat: async () => ({ size: png.length, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const available = Math.max(0, Math.min(1, length));
+        buffer.set(png.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    });
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result?.isError).toBeUndefined();
+    expect(result?.images?.[0]?.data).toBe(Buffer.from(png).toString("base64"));
+    expect(result?.content).toBe(`[image: image/png 100x50, ${png.length} bytes]`);
   });
 });

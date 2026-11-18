@@ -847,6 +847,7 @@ _argvExecDeps
 _atomicWriteDeps
 _authDeps
 _bashToolDeps
+_boundedIoDeps
 _clientDeps
 _codingToolDeps
 _commandShadowDeps
