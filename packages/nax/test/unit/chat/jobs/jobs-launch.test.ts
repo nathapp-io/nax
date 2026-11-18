@@ -647,9 +647,12 @@ describe("createJobsProvider US-004 handoff mark refusal", () => {
     await allPassedPrd();
     const prior = locatedPrior(finished);
     _jobsLaunchDeps.loadPriorFeature = mock(async () => prior);
-    _jobsLaunchDeps.readRunMark = mock(async () => found);
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => found);
     expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: `[chat] ${refusal}` });
-    expect(_jobsLaunchDeps.readRunMark).toHaveBeenCalledWith(prior.runDir);
+    expect(_jobsLaunchDeps.readPublishBlockingMark).toHaveBeenCalledWith(
+      workflowFeatureDir(options.repoRoot, "f1"),
+      prior.runDir,
+    );
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
@@ -683,10 +686,35 @@ describe("createJobsProvider US-004 handoff mark refusal", () => {
     },
   );
 
+  test("a marked newest run the publish reader skips refuses the card for an older unmarked run", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = originalDeps.loadPriorFeature;
+    _jobsLaunchDeps.readPublishBlockingMark = originalDeps.readPublishBlockingMark;
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    const dir = workflowFeatureDir(options.repoRoot, "f1");
+    const older = join(dir, "run-1");
+    await upsertFeatureRecord(older, { runId: "run-1", feature: "f1" }, finished);
+    await utimes(join(older, "result.json"), 1, 1);
+    const newest = join(dir, "run-2");
+    const { nextFindingId: _dropped, ...partial } = finished;
+    await Bun.write(
+      join(newest, "result.json"),
+      JSON.stringify({ schemaVersion: 1, runId: "run-2", feature: "f1", stories: {}, featureWorkflow: partial }),
+    );
+    await writeHandoffMark(newest, found.mark);
+
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({
+      isError: true,
+      content: expect.stringContaining(join(newest, "handoff.json")),
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
   test("AC-11 an unmarked feature reaches the published-at-head check and the normal card", async () => {
     await allPassedPrd();
     const prior = locatedPrior(finished);
-    _jobsLaunchDeps.readRunMark = mock(async () => null);
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => null);
     _jobsLaunchDeps.loadPriorFeature = mock(async () => prior);
     _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
     await launch("publish", { feature: "f1" });
@@ -695,12 +723,12 @@ describe("createJobsProvider US-004 handoff mark refusal", () => {
   });
 
   test("AC-12 pending stories keep their own refusal and never read the mark", async () => {
-    _jobsLaunchDeps.readRunMark = mock(async () => found);
+    _jobsLaunchDeps.readPublishBlockingMark = mock(async () => found);
     expect(await launch("publish", { feature: "f1" })).toEqual({
       isError: true,
       content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
     });
-    expect(_jobsLaunchDeps.readRunMark).not.toHaveBeenCalled();
+    expect(_jobsLaunchDeps.readPublishBlockingMark).not.toHaveBeenCalled();
     expect(approve).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,7 @@ import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { loadPriorFeature } from "../../workflow/feature-record";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
-import { handoffMarkRefusal, readRunMark } from "../../workflow/handoff-mark";
+import { handoffMarkRefusal, readPublishBlockingMark } from "../../workflow/handoff-mark";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { workflowFeatureDir } from "../../workflow/paths";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
@@ -29,7 +29,7 @@ export const _jobsLaunchDeps = {
   exists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   loadPRD,
   loadPriorFeature,
-  readRunMark,
+  readPublishBlockingMark,
   headSha,
 };
 
@@ -303,11 +303,11 @@ function isRefusedPublishStep(
 
 /** Advisory preflight: inspect the same record the CLI would select under the handoff lock. */
 async function publishRefusal(feature: string, repoRoot: string): Promise<string | undefined> {
-  const prior = await _jobsLaunchDeps.loadPriorFeature(workflowFeatureDir(repoRoot, feature), "").catch(() => null);
-  if (prior !== null) {
-    const handedOff = await _jobsLaunchDeps.readRunMark(prior.runDir);
-    if (handedOff !== null) return `[chat] ${handoffMarkRefusal(feature, handedOff)}`;
-  }
+  const workflowDir = workflowFeatureDir(repoRoot, feature);
+  const prior = await _jobsLaunchDeps.loadPriorFeature(workflowDir, "").catch(() => null);
+  // The newest run (what a handoff sends) and the record the publish would resume, as the CLI checks.
+  const handedOff = await _jobsLaunchDeps.readPublishBlockingMark(workflowDir, prior?.runDir);
+  if (handedOff !== null) return `[chat] ${handoffMarkRefusal(feature, handedOff)}`;
   const head = await _jobsLaunchDeps.headSha(repoRoot).catch(() => null);
   const published = publishedAtHead(prior?.record ?? null, head ?? undefined);
   if (head === null || published === undefined) return undefined;

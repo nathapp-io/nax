@@ -23,7 +23,7 @@ import {
   summariseStories,
 } from "./feature-record";
 import { commitsSince, onlyLedgerChangedSince, readCurrentBranch, readHead } from "./git";
-import { handoffMarkRefusal, readRunMark } from "./handoff-mark";
+import { handoffMarkRefusal, readPublishBlockingMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
 
@@ -228,10 +228,12 @@ function isFinishedAtHead(
   return prior?.step === "done" && head !== undefined && head !== "" && prior.head === head && done;
 }
 
-/** A newer story checkpoint cannot supersede a handoff: check the run we would publish from. */
+/**
+ * Check the newest run (the one a handoff sends) and the run we would publish from: a newer story
+ * checkpoint cannot supersede a handoff, and neither can an older record the publish reader falls back to.
+ */
 async function refuseHandedOffFeature(fc: FeatureContext, runDir: string | undefined): Promise<void> {
-  if (runDir === undefined) return;
-  const found = await readRunMark(runDir);
+  const found = await readPublishBlockingMark(fc.featureDir, runDir);
   if (found === null) return;
   throw new NaxError(
     `[workflow] --publish-only: ${handoffMarkRefusal(fc.feature, found)}`,

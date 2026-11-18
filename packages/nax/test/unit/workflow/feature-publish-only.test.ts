@@ -116,6 +116,38 @@ describe("runWorkflowFeature --publish-only", () => {
     },
   );
 
+  test("a marked newest run the publish reader skips still refuses publish-only of an older run", async () => {
+    // The handoff accepts a finished record on schema, step, outcome and HEAD; loadPriorFeature also
+    // needs fields such as nextFindingId, so it falls back to the older, unmarked run at the same HEAD.
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+    await utimes(join(featureDir, "r-old", "result.json"), 1, 1);
+    const newest = join(featureDir, "r-new");
+    const { nextFindingId: _dropped, ...partial } = {
+      ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+      step: "done" as const,
+      head: "headX",
+      outcome: "local-only" as const,
+    };
+    await Bun.write(
+      join(newest, "result.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        runId: "r-new",
+        feature: input.feature,
+        stories: {},
+        featureWorkflow: partial,
+      }),
+    );
+    await writeHandoffMark(newest, { schemaVersion: 1, at: "T", flowId: "fl2", url: "https://koda/flows/fl2" });
+
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      message: expect.stringContaining(join(newest, "handoff.json")),
+    });
+    expect(envs).toHaveLength(0);
+  });
+
   /** Start the publisher while another process holds the lock, then mutate state or abort. */
   async function withWaitingPublisher(
     setupRun: ReturnType<typeof setup>,

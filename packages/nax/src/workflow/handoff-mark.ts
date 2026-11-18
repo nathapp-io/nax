@@ -127,6 +127,21 @@ export async function readNewestHandoffMark(featureWorkflowDir: string): Promise
 }
 
 /**
+ * The mark that stops a local publish: the newest run's (the run a handoff sends, accepted on fewer
+ * fields than the publish reader requires) or the run the publish would resume. Either one means koda
+ * may already hold the feature. A later run that supplies a full record and is itself unmarked is the
+ * escape hatch: it is both the newest and the selected run.
+ */
+export async function readPublishBlockingMark(
+  featureWorkflowDir: string,
+  selectedRunDir: string | undefined,
+): Promise<FoundHandoffMark | null> {
+  const newest = await readNewestHandoffMark(featureWorkflowDir);
+  if (newest !== null || selectedRunDir === undefined) return newest;
+  return await readRunMark(selectedRunDir);
+}
+
+/**
  * How the refusal names what koda holds: the created flow with its URL, the approval request it held the
  * create for, or an unknown outcome — the push happened and koda's answer never arrived, so only koda's
  * own flows can say whether a publisher exists.
