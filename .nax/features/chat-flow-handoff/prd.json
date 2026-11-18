@@ -3,7 +3,7 @@
   "feature": "chat-flow-handoff",
   "branchName": "feat/chat-flow-handoff",
   "createdAt": "2026-11-18T02:53:13.468Z",
-  "updatedAt": "2026-11-18T03:22:15.856Z",
+  "updatedAt": "2026-11-18T03:39:44.951Z",
   "userStories": [
     {
       "id": "US-001",
@@ -102,14 +102,17 @@
         "protocol"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Contained filesystem reader using ordinary stat, encoding and limit checks, with no cross-process integration in this story."
+        "reasoning": "Contained filesystem reader using ordinary stat, encoding and limit checks, with no cross-process integration in this story.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/result.ts",
@@ -123,7 +126,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e18582619fbbb9d2f4a7dbb6b011b811673c4789"
     },
     {
       "id": "US-003",
