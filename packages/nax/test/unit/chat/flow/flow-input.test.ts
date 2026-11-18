@@ -3,6 +3,8 @@ import { type FlowSendInput, parseFlowSendInput } from "@/chat/flow";
 
 const SEND_SPEC = ".nax/features/nax-flow-send/spec.md";
 const DOCS_SPEC = ".nax/features/nax-flow-docs/spec.md";
+/** The refusal both-or-neither bodies get; only this parser sees the whole request. */
+const EXACTLY_ONE_FORM_ERROR = "exactly one of features or handoff is required";
 
 /** The brief's own example: two features, one dependency, two role models, a $5 cap. */
 function validInput(): Record<string, unknown> {
@@ -75,6 +77,14 @@ describe("parseFlowSendInput", () => {
     expect(singleError({ ...validInput(), features: [] })).toContain("features");
   });
 
+  test("keeps the empty-list error for a spec-form body that carries features alone (AC-10)", () => {
+    expect(singleError({ ...validInput(), features: [] })).toBe("features must list at least one feature");
+  });
+
+  test("returns the exactly-one error when the body carries both forms (AC-5)", () => {
+    expect(singleError({ ...validInput(), handoff: { feature: "f1" } })).toBe(EXACTLY_ONE_FORM_ERROR);
+  });
+
   test("returns errors naming features when it is not an array", () => {
     expect(singleError({ ...validInput(), features: "nax-flow-send" })).toContain("features");
   });
@@ -85,14 +95,14 @@ describe("parseFlowSendInput", () => {
     }
   });
 
-  test("returns errors naming features when it is missing", () => {
+  test("returns the exactly-one error when the body carries neither form (AC-6)", () => {
     const rest = validInput();
     delete rest.features;
 
-    expect(singleError(rest)).toContain("features");
+    expect(singleError(rest)).toBe(EXACTLY_ONE_FORM_ERROR);
   });
 
-  test("returns errors naming the extra key when the input has a key other than features, roles and costCapUsd", () => {
+  test("returns errors naming the extra key when the input has a key other than features, handoff, roles and costCapUsd", () => {
     expect(singleError({ ...validInput(), repo: "nax" })).toContain("repo");
   });
 

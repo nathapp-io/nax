@@ -31,6 +31,14 @@ describe("buildFlowInstructions", () => {
     expect(buildFlowInstructions()).toContain("dependency order");
   });
 
+  test("tells the brain the handoff form for a feature this chat already ran (AC-9)", () => {
+    const text = buildFlowInstructions();
+
+    expect(text).toContain("handoff: { feature }");
+    expect(text).toContain('publish: "none"');
+    expect(text).toContain("instead of `features`");
+  });
+
   test("tells the brain the user approves twice: the card, then koda", () => {
     const text = buildFlowInstructions();
 

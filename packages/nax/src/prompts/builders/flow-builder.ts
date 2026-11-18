@@ -12,5 +12,6 @@ export function buildFlowInstructions(): string {
     "List the features in dependency order, each with its own spec path; a `dependsOn` entry must name a feature that appears earlier in the list.",
     "The user approves an approval card in this chat that names the repository, branch, commit and cost cap, and then approves the flow again in koda: koda asks for its own approval before anything billed starts.",
     "A denial is final for that call; do not retry with changed arguments unless the user asks, and report the flow's link once koda has created it.",
+    'For a feature already run in this chat that should be published and finished by koda, call `nax-flow__send` with `handoff: { feature }` instead of `features`; its run must have ended without a PR (`publish: "none"`).',
   ].join("\n");
 }

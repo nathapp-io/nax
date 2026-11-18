@@ -103,6 +103,10 @@ const FEATURES_DESCRIPTION =
 const ROLES_DESCRIPTION =
   "The two model strings koda passes to its review steps (for example acp:codex), each matching " +
   "^[A-Za-z0-9._:/\\[\\]=,-]{1,200}$. They are model strings, not nax alias names: nax sends them as given.";
+const HANDOFF_DESCRIPTION =
+  "One feature this chat already ran, handed to koda to publish and finish it. Send either `handoff` or " +
+  "`features`, never both and never neither: the handoff form carries no spec paths, because the feature's specs " +
+  'are already on the branch. Its workflow run must have ended without a PR (publish "none").';
 const COST_DESCRIPTION =
   `koda's billing ceiling for the flow in USD: a JSON number (not a numeric string) greater than 0 and at most ` +
   `${FLOW_MAX_COST_CAP_USD}. koda compares the number's string form, so its decimal form carries at most ` +
@@ -112,7 +116,9 @@ const COST_DESCRIPTION =
 export const FLOW_SEND_INPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["features", "roles", "costCapUsd"],
+  // `features` is not required: the handoff form sends one `feature` name instead, and
+  // the runtime parser refuses a body carrying both forms or neither.
+  required: ["roles", "costCapUsd"],
   properties: {
     features: {
       type: "array",
@@ -138,6 +144,18 @@ export const FLOW_SEND_INPUT_SCHEMA = {
             items: { type: "string" },
             description: "Features this one waits for; omit it for none.",
           },
+        },
+      },
+    },
+    handoff: {
+      type: "object",
+      additionalProperties: false,
+      required: ["feature"],
+      description: HANDOFF_DESCRIPTION,
+      properties: {
+        feature: {
+          type: "string",
+          description: "The feature's name: matches ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$, with a finished workflow run.",
         },
       },
     },

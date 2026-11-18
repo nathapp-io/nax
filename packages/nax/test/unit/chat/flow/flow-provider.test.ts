@@ -145,16 +145,27 @@ describe("createFlowProvider", () => {
     expect(tools.map((tool) => tool.localName)).toEqual(["send"]);
   });
 
-  test("declares the request schema with no extra keys and three required fields (AC-1)", async () => {
+  test("declares the request schema with no extra keys and the two fields both forms share (AC-1, US-005 AC-8)", async () => {
     const tool = (await createFlowProvider(options).tools(REPO_ROOT))[0];
     if (tool === undefined) throw new Error("the nax-flow provider exposes no tools");
 
     expect(tool.inputSchema).toBe(FLOW_SEND_INPUT_SCHEMA);
     expect(FLOW_SEND_INPUT_SCHEMA.additionalProperties).toBe(false);
-    expect(FLOW_SEND_INPUT_SCHEMA.required).toEqual(["features", "roles", "costCapUsd"]);
+    // `features` is no longer required: the handoff form omits it.
+    expect(FLOW_SEND_INPUT_SCHEMA.required).toEqual(["roles", "costCapUsd"]);
     expect(FLOW_SEND_INPUT_SCHEMA.properties.features.type).toBe("array");
     expect(FLOW_SEND_INPUT_SCHEMA.properties.roles.type).toBe("object");
     expect(FLOW_SEND_INPUT_SCHEMA.properties.costCapUsd.type).toBe("number");
+  });
+
+  test("advertises the handoff form as an object of one required feature name (US-005 AC-8)", () => {
+    const handoff = FLOW_SEND_INPUT_SCHEMA.properties.handoff;
+
+    expect(handoff.type).toBe("object");
+    expect(handoff.required).toEqual(["feature"]);
+    expect(handoff.additionalProperties).toBe(false);
+    expect(handoff.properties.feature.type).toBe("string");
+    expect(handoff.description).toContain("handoff");
   });
 
   test("describes the cost cap's decimal limit, not only its range (M1)", () => {
