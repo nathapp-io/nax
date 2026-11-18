@@ -1,0 +1,10 @@
+{
+  "kind": "captured",
+  "source": "preflight",
+  "capturedAt": "2026-11-18T02:57:17.171Z",
+  "baseRef": "0d1282ab26601de89ec6b3d0e49d38b8e91dc5b1",
+  "packageDirs": [
+    "packages/nax"
+  ],
+  "entries": []
+}
