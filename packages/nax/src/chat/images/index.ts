@@ -1,3 +1,4 @@
+export { type ImageFormat, type SniffedImage, sniffImage } from "@nathapp/nax-agent";
 export {
   imageDescription,
   imageFormatOf,
@@ -7,4 +8,3 @@ export {
   imageSizeLabel,
   MAX_IMAGE_EDGE_PX,
 } from "./image-file";
-export { type ImageFormat, type SniffedImage, sniffImage } from "./image-sniff";

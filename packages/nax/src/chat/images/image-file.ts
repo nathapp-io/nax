@@ -1,5 +1,4 @@
-import { type ImageAttachment, MAX_IMAGE_BASE64_CHARS } from "@nathapp/nax-agent";
-import { type SniffedImage, sniffImage } from "./image-sniff";
+import { type ImageAttachment, MAX_IMAGE_BASE64_CHARS, type SniffedImage, sniffImage } from "@nathapp/nax-agent";
 
 /** Longest side, in pixels, an image may declare before it is refused. */
 export const MAX_IMAGE_EDGE_PX = 8000;
