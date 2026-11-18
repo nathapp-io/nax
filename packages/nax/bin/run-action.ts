@@ -30,7 +30,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import chalk from "chalk";
-import { planCommand, promptForConfirmation, resolveRunProfileOverride, runReplanLoop } from "../src/cli";
+import {
+  planCommand,
+  promptForConfirmation,
+  resolvePublishCliOverride,
+  resolveRunProfileOverride,
+  runReplanLoop,
+} from "../src/cli";
 import { CHAT_ASK_SECRET_READ_MS, parseChatAsksFlag, readChatAskSecret } from "../src/cli/run-chat-asks";
 import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
 import { resolveUseHeadless } from "../src/cli/run-mode";
@@ -78,6 +84,8 @@ export interface RunActionOptions {
   contextFile?: string;
   /** #2819: rerun only the workflow's publish step for a feature whose stories all passed. */
   publishOnly?: boolean;
+  /** US-001: `--publish <mode>` overrides `workflow.publish` for this run (pr, push or none). */
+  publish?: string;
 }
 
 export type LoadedPrd = Awaited<ReturnType<typeof loadPRD>>;
@@ -161,6 +169,19 @@ export async function readRunChatAskSecret(chatAsksDir: string | undefined): Pro
   if (!chatAsksDir) return undefined;
   // The reader takes a Web stream; Bun exposes the same stdin fd natively.
   return readChatAskSecret(Bun.stdin.stream(), CHAT_ASK_SECRET_READ_MS);
+}
+
+/**
+ * Refuse a `--publish` value that names no mode (US-001). It runs before
+ * `resolveRunProjectContext`, so no config is loaded, no project is trusted, no TUI
+ * is mounted and no run starts — the refusal is the last thing printed. The mapping
+ * itself lives in src/cli/run-publish-override.ts, where it has its own unit test.
+ */
+export function refuseInvalidPublishOverride(options: RunActionOptions): void {
+  const override = resolvePublishCliOverride(options.publish);
+  if (override === undefined || !("error" in override)) return;
+  console.error(chalk.red(override.error));
+  process.exit(1);
 }
 
 /**
@@ -304,6 +325,14 @@ export async function resolveRunProjectContext(
   const contextOverrides = resolveContextCliOverrides(workdir, options);
   if (contextOverrides !== undefined) {
     cliOverrides.context = contextOverrides;
+  }
+  // US-001: --publish becomes `workflow.publish` and nothing else. The CLI layer deep-merges
+  // last, so every other configured `workflow` key keeps its value for this run. An invalid
+  // value is the caller's to report (bin/nax.ts exits on it before this function runs); here
+  // it simply contributes no override.
+  const publishOverride = resolvePublishCliOverride(options.publish);
+  if (publishOverride !== undefined && !("error" in publishOverride)) {
+    cliOverrides.workflow = publishOverride.workflow;
   }
   return { naxDir, cliOverrides };
 }

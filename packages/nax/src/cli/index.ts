@@ -216,6 +216,7 @@ export {
   type PlanMigrationOptions,
   planMigration,
 } from "./rules-migrate-plan";
+export { resolvePublishCliOverride } from "./run-publish-override";
 export {
   type RunsListOptions,
   type RunsShowOptions,

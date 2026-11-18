@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import chalk from "chalk";
-// biome-ignore lint/style/noRestrictedImports: CLI entry helpers live in bin/, outside the @/ source alias.
-import { applyRunCliOverrides, parseRunPreconditionFlags, type RunActionOptions } from "../../../bin/run-action";
+import {
+  applyRunCliOverrides,
+  parseRunPreconditionFlags,
+  type RunActionOptions,
+  refuseInvalidPublishOverride,
+  resolveRunProjectContext,
+  // biome-ignore lint/style/noRestrictedImports: CLI entry helpers live in bin/, outside the @/ source alias.
+} from "../../../bin/run-action";
 
 function options(overrides: Partial<RunActionOptions> = {}): RunActionOptions {
   return { feature: "demo", dir: "/tmp", dryRun: false, ...overrides };
@@ -110,5 +116,75 @@ describe("applyRunCliOverrides", () => {
     expect(result.agent?.default).toBe("codex");
     expect(result.execution.costLimit).toBe(12.5);
     expect(makeNaxConfig()).toEqual(defaultsBefore);
+  });
+});
+
+describe("refuseInvalidPublishOverride (US-001)", () => {
+  const exitError = new Error("exit");
+  let stderr: ReturnType<typeof spyOn<typeof console, "error">>;
+  let exit: ReturnType<typeof spyOn<typeof process, "exit">>;
+  const colorLevel = chalk.level;
+
+  beforeEach(() => {
+    chalk.level = 1;
+    stderr = spyOn(console, "error").mockImplementation(() => {});
+    exit = spyOn(process, "exit").mockImplementation(() => {
+      throw exitError;
+    });
+  });
+  afterEach(() => {
+    stderr.mockRestore();
+    exit.mockRestore();
+    chalk.level = colorLevel;
+  });
+
+  test("a mode the flag accepts passes without printing or exiting", () => {
+    expect(() => refuseInvalidPublishOverride(options({ publish: "none" }))).not.toThrow();
+    expect(() => refuseInvalidPublishOverride(options())).not.toThrow();
+    expect(stderr).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  test("an unknown mode is printed in red and exits 1", () => {
+    expect(() => refuseInvalidPublishOverride(options({ publish: "draft" }))).toThrow(exitError);
+    expect(stderr.mock.calls).toEqual([
+      ['\u001b[31mnax run --publish must be one of pr, push, none (got "draft")\u001b[39m'],
+    ]);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+});
+
+describe("resolveRunProjectContext — --publish (US-001)", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    // A directory with no `.nax` above it: findProjectDir returns null, so no profile or
+    // context override is added and the `workflow` key is the only thing under test.
+    workdir = makeTempDir("nax-run-publish-context-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(workdir);
+  });
+
+  test("AC-7 a publish mode becomes the workflow block of cliOverrides", async () => {
+    const { cliOverrides } = await resolveRunProjectContext(workdir, options({ feature: "f1", publish: "none" }));
+
+    expect(cliOverrides.workflow).toEqual({ publish: "none" });
+  });
+
+  test("AC-8 without --publish cliOverrides carries no workflow key", async () => {
+    const { cliOverrides } = await resolveRunProjectContext(workdir, options({ feature: "f1" }));
+
+    expect(cliOverrides).not.toHaveProperty("workflow");
+  });
+
+  test("AC-17 --publish combines with --publish-only, selecting the rerun's publish depth", async () => {
+    const { cliOverrides } = await resolveRunProjectContext(
+      workdir,
+      options({ feature: "f1", publishOnly: true, publish: "push" }),
+    );
+
+    expect(cliOverrides.workflow).toEqual({ publish: "push" });
   });
 });

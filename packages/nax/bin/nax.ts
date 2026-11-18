@@ -111,6 +111,7 @@ import {
   maybeRunPlanPhase,
   parseRunPreconditionFlags,
   readRunChatAskSecret,
+  refuseInvalidPublishOverride,
   resolveRunLogMode,
   resolveRunProjectContext,
   resolveRunScheduleAndPlanFlags,
@@ -269,6 +270,7 @@ program
     "Rerun only the workflow's publish step for a finished feature that has no PR (needs every story passed)",
     false,
   )
+  .option("--publish <mode>", "Override workflow.publish for this run: pr, push or none")
   .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
   // Sentinel default — when the user does NOT pass `--no-resume`, commander
   // leaves `options.resume` as the string `"__UNSET__"`. When the user DOES
@@ -286,6 +288,9 @@ program
     const scheduleGate = resolveRunScheduleAndPlanFlags(options);
 
     const { logLevel, formatterMode } = resolveRunLogMode(options);
+    // US-001: a --publish value that names no mode is refused before the config layer can
+    // build an override from it, so nothing loads, trusts, plans or starts.
+    refuseInvalidPublishOverride(options);
     const { naxDir, cliOverrides } = await resolveRunProjectContext(workdir, options);
 
     // BUG-15: loadConfig can reject on a corrupt/invalid config (SEC-5 strict

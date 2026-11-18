@@ -186,6 +186,7 @@ export {
   resolveWorkflowConfig,
   WORKFLOW_DEFAULTS,
   WORKFLOW_ITEM_PUBLISH_DEFAULTS,
+  WORKFLOW_PUBLISH_MODES,
   WORKFLOW_REVIEW_DEFAULTS,
   WorkflowConfigObjectSchema,
 } from "./schemas-workflow";

@@ -9,6 +9,13 @@ import { ConfiguredModelSchema } from "./schemas-model";
 export const ExecutionModeSchema = z.enum(["pipeline", "workflow"]);
 
 /**
+ * The modes `workflow.publish` accepts (US-001). SSOT for the schema default, `nax run
+ * --publish`, a chat run's `publish` field and the `nax-jobs__run` tool's enum — a fourth
+ * copy of the list would let the flag accept a mode the config refuses.
+ */
+export const WORKFLOW_PUBLISH_MODES = ["pr", "push", "none"] as const;
+
+/**
  * US-002 (nax#2858): the branch review's coverage retry budget. Split out so
  * `WORKFLOW_REVIEW_DEFAULTS` is the parsed form of exactly this object, and a consumer holding a
  * hand-built `workflow` block (which omits `review`) reads the same numbers.
@@ -54,7 +61,7 @@ export const WorkflowConfigObjectSchema = z.object({
   finalGateRepairRounds: z.number().int().min(0).default(1),
   ciRepairRounds: z.number().int().min(0).default(1),
   preflight: z.boolean().default(true),
-  publish: z.enum(["pr", "push", "none"]).default("pr"),
+  publish: z.enum(WORKFLOW_PUBLISH_MODES).default("pr"),
   review: WorkflowReviewConfigSchema,
   itemPublish: WorkflowItemPublishConfigSchema,
   // US-003: an implementer turn that hits its step limit gets a continue turn on the same warm
