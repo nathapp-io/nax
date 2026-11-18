@@ -13,6 +13,8 @@
  * event; the three genuine sites use both.
  */
 
+import type { ImageAttachment } from "#src/cost/standard-types";
+
 /**
  * A refusal the model is meant to act on. Structural (ADR-029 s5), never a
  * string convention: `{ answer }` alone cannot distinguish "refused, and here
@@ -29,6 +31,8 @@ export interface ToolResultMessage {
   readonly content: string;
   readonly isError?: boolean;
   readonly denied?: DenialInfo;
+  /** Images the tool produced (US-002); absent when it produced none. */
+  readonly images?: readonly ImageAttachment[];
 }
 
 export interface BuildToolResultArgs {
@@ -36,6 +40,7 @@ export interface BuildToolResultArgs {
   readonly content: string;
   readonly isError?: boolean;
   readonly denied?: DenialInfo;
+  readonly images?: readonly ImageAttachment[];
 }
 
 export function buildToolResult(args: BuildToolResultArgs): ToolResultMessage {
@@ -47,5 +52,9 @@ export function buildToolResult(args: BuildToolResultArgs): ToolResultMessage {
     // key, so the field is spread in only when it has a value.
     ...(args.isError === undefined ? {} : { isError: args.isError }),
     ...(args.denied === undefined ? {} : { denied: args.denied }),
+    // Same rule as `isError`, plus an empty list is no images: the images come
+    // from the handler's answer, never from the `after_tool` patch, so a policy
+    // that rewrites content cannot invent or drop a picture.
+    ...(args.images === undefined || args.images.length === 0 ? {} : { images: args.images }),
   };
 }

@@ -8,7 +8,7 @@
  * See docs/superpowers/specs/2026-09-04-native-context-compaction-design.md.
  */
 
-import type { ConversationMessage } from "@nathapp/nax-ai";
+import type { ConversationMessage, ImageAttachment } from "@nathapp/nax-ai";
 import { IMAGE_TOKEN_ESTIMATE } from "#src/session/image-input";
 import type { AdapterInteractionResponse } from "#src/session/interaction-handler";
 
@@ -29,6 +29,8 @@ export type TranscriptMessage =
       readonly content: string;
       readonly isError?: boolean;
       readonly denied?: AdapterInteractionResponse["denied"];
+      /** Images the tool produced (US-002), mirroring the nax-ai arm above. */
+      readonly images?: readonly ImageAttachment[];
     };
 
 /** Compaction settings after config resolution. Reaches the adapter as a primitive. */
@@ -51,21 +53,32 @@ const MAX_HEADROOM_FRACTION = 0.25;
 const CHARS_PER_TOKEN = 4;
 
 /**
+ * Per-image token estimate. Dimensioned images cost their area at 750 pixels
+ * per token, capped by the flat estimate; everything else costs the flat one.
+ * One helper, so a tool result (US-002) is priced exactly as a user prompt is.
+ */
+function imageTokens(images: readonly ImageAttachment[] | undefined): number {
+  let tokens = 0;
+  for (const image of images ?? []) {
+    tokens +=
+      image.width !== undefined && image.height !== undefined
+        ? Math.min(IMAGE_TOKEN_ESTIMATE, Math.ceil((image.width * image.height) / 750))
+        : IMAGE_TOKEN_ESTIMATE;
+  }
+  return tokens;
+}
+
+/**
  * Characters over four. Deliberately crude and deliberately high: over-estimating
  * compacts slightly early, under-estimating overflows.
  */
 export function estimateTokens(message: TranscriptMessage): number {
   let chars = 0;
-  let imageTokens = 0;
+  let images: readonly ImageAttachment[] | undefined;
   switch (message.role) {
     case "user":
       chars = message.content.length;
-      for (const image of message.images ?? []) {
-        imageTokens +=
-          image.width !== undefined && image.height !== undefined
-            ? Math.min(IMAGE_TOKEN_ESTIMATE, Math.ceil((image.width * image.height) / 750))
-            : IMAGE_TOKEN_ESTIMATE;
-      }
+      images = message.images;
       break;
     case "assistant":
       chars = message.content.length;
@@ -74,9 +87,10 @@ export function estimateTokens(message: TranscriptMessage): number {
       break;
     case "tool-result":
       chars = message.content.length;
+      images = message.images;
       break;
   }
-  return Math.ceil(chars / CHARS_PER_TOKEN) + imageTokens;
+  return Math.ceil(chars / CHARS_PER_TOKEN) + imageTokens(images);
 }
 
 /**

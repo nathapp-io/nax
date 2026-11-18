@@ -1,3 +1,4 @@
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { NO_OP_INTERACTION_HANDLER as RUNTIME_NO_OP_INTERACTION_HANDLER } from "#src/session/no-op-interaction-handler";
 
 export type AdapterInteraction =
@@ -46,6 +47,13 @@ export interface AdapterInteractionResponse {
    * conflating the two is exactly what ADR-029 section 5 forbids.
    */
   denied?: { reason: string; breach: boolean };
+  /**
+   * Images a successful coding tool produced (US-002), copied from the
+   * runtime's outcome. Absent, or empty, means the result was text. The native
+   * loop puts them on the tool-result message beside whatever `after_tool`
+   * makes of the content; the `after_tool` patch itself never carries them.
+   */
+  images?: readonly ImageAttachment[];
 }
 
 export interface InteractionHandler {

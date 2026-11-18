@@ -228,6 +228,21 @@ describe("createSessionInteractionHandler", () => {
     expect(err.context).toMatchObject({ sandbox: "unsandboxed" });
   });
 
+  // US-002: a tool that produced images hands them to the loop on its answer,
+  // beside the content — and an empty list stays absent, as `sandbox` does.
+  test("US-002: a tool's images reach the answer; an empty list leaves the key absent", async () => {
+    const png = { mimeType: "image/png", data: "AAAA" };
+    const withImages = harness({ kind: "ok", content: "shot", images: [png] });
+    expect(await createSessionInteractionHandler(withImages.deps).onInteraction(codingTool("Read"))).toEqual({
+      answer: "shot",
+      images: [png],
+    });
+    const empty = harness({ kind: "ok", content: "shot", images: [] });
+    const answer = await createSessionInteractionHandler(empty.deps).onInteraction(codingTool("Read"));
+    expect(answer).toEqual({ answer: "shot" });
+    expect(Object.hasOwn(answer ?? {}, "images")).toBe(false);
+  });
+
   test("an embedder tool runs with the session id, call id and turn signal", async () => {
     const { tool, seen } = embedder();
     const h = harness({ kind: "ok", content: "" }, [tool]);

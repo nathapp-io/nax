@@ -16,12 +16,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { ASK_HUMAN_TOOL_NAME } from "#src/native/session/ask-human";
 import type { TranscriptMessage } from "#src/native/session/compaction";
 import { createInvalidCallBudget } from "#src/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
 import { createNativeSessionState } from "#src/native/session/session";
 import { codingToolsToDefinitions } from "#src/native/session/tool-mapping";
+import { buildToolResult } from "#src/native/session/tool-result";
 import { createTurnEventEmitter } from "#src/native/session/turn-event-emitter";
 import type { NativeTurnActivity } from "#src/native/session/turn-events";
 import { runToolBatch, type ToolBatchArgs } from "#src/native/session/turn-tool-batch";
@@ -309,5 +311,88 @@ describe("runToolBatch — awaiting-human keepalive activity (US-004)", () => {
     requestOnWaiting();
 
     expect(awaitingBeats()).toEqual([{ kind: "awaiting_human" }]);
+  });
+});
+
+// US-002: a tool's images ride the tool-result message into the next model
+// request. The `after_tool` event still shapes content only (the plugin patch
+// has no images field), and the error path builds its result without any.
+const PNG_A: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 2, height: 2 };
+
+describe("buildToolResult — tool-result images (US-002)", () => {
+  test("AC-5: the message carries the images it was given", () => {
+    const message = buildToolResult({ toolCallId: "c1", content: "x", images: [PNG_A] });
+    expect(message).toEqual({ role: "tool-result", toolCallId: "c1", content: "x", images: [PNG_A] });
+  });
+
+  test("AC-6: no images, or an empty list, leaves the key absent", () => {
+    const absent = buildToolResult({ toolCallId: "c1", content: "x" });
+    const empty = buildToolResult({ toolCallId: "c1", content: "x", images: [] });
+    expect(absent).toEqual({ role: "tool-result", toolCallId: "c1", content: "x" });
+    expect(empty).toEqual({ role: "tool-result", toolCallId: "c1", content: "x" });
+    expect(Object.hasOwn(absent, "images")).toBe(false);
+    expect(Object.hasOwn(empty, "images")).toBe(false);
+  });
+});
+
+describe("runToolBatch — tool-result images (US-002)", () => {
+  function imageBatch(answerImages: readonly ImageAttachment[] | undefined, options: { throw?: boolean } = {}) {
+    const opts: SendTurnOpts = {
+      interactionHandler: {
+        onInteraction: async () => {
+          if (options.throw === true) throw new Error("tool blew up");
+          return { answer: "x", ...(answerImages !== undefined ? { images: answerImages } : {}) };
+        },
+      },
+    };
+    const deps: TurnDeps = {
+      sessionState,
+      complete: async () => {
+        throw new Error("unexpected");
+      },
+    };
+    const onlyCall = call("c1", "a.ts");
+    return runToolBatch(
+      batchArgs({
+        deps,
+        opts,
+        messages: messagesWith([onlyCall]),
+        toolCalls: [onlyCall],
+      }),
+    );
+  }
+
+  const toolResults = (messages: readonly TranscriptMessage[]) => messages.filter((m) => m.role === "tool-result");
+
+  test("the answer's images reach the tool result, and an after_tool content patch keeps them", async () => {
+    const registry = createLoopEventRegistry();
+    registry.register("after_tool", () => ({ content: "y" }));
+    const opts: SendTurnOpts = {
+      interactionHandler: { onInteraction: async () => ({ answer: "x", images: [PNG_A] }) },
+    };
+    const deps: TurnDeps = {
+      sessionState,
+      complete: async () => ({ text: "", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 0 }),
+    };
+    const onlyCall = call("c1", "a.ts");
+    const result = await runToolBatch(
+      batchArgs({ deps, opts, messages: messagesWith([onlyCall]), toolCalls: [onlyCall], loopEvents: registry }),
+    );
+    expect(toolResults(result.messages)).toEqual([
+      { role: "tool-result", toolCallId: "c1", content: "y", images: [PNG_A] },
+    ]);
+  });
+
+  test("a tool that returned no images adds no images key", async () => {
+    const result = await imageBatch(undefined);
+    expect(toolResults(result.messages)).toEqual([{ role: "tool-result", toolCallId: "c1", content: "x" }]);
+  });
+
+  test("a failed tool's result carries no images key", async () => {
+    const result = await imageBatch([PNG_A], { throw: true });
+    const results = toolResults(result.messages);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.content).toBe("tool blew up");
+    expect(Object.hasOwn(results[0] ?? {}, "images")).toBe(false);
   });
 });

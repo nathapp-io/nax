@@ -295,6 +295,11 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         content: finalContent,
         isError: patch.isError,
         denied: answer?.denied,
+        // The images come from the handler's answer, beside the patch rather
+        // than through it: `after_tool` shapes content only, so a policy cannot
+        // invent a picture or drop the one the tool produced. The builder keeps
+        // an absent or empty list off the message, as it does for `isError`.
+        images: answer?.images,
       });
       messages.push(result);
       turnEvents.toolResult(result, answer?.sandbox);

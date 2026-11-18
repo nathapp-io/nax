@@ -19,10 +19,11 @@
 import { randomUUID } from "node:crypto";
 import { type CommandGuard, type CommandShadow, openShadowTap } from "#src/command-safety/index";
 import type { BashApprovalMode } from "#src/config/bash-approval";
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdict } from "#src/permissions/index";
-import type { SandboxRecord } from "../sandbox/index.ts";
+import { type SandboxRecord, sandboxStatusField } from "../sandbox/index.ts";
 import { askDenyReason, askSummary, unsandboxedReasonSuffix } from "./ask-request.ts";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect.ts";
 import type { CodingTool } from "./registry.ts";
@@ -93,6 +94,40 @@ export function resolvePolicyIdentity(name: string, tool: CodingTool, input: Rec
 
 /** The content of the refusal a disabled escape request gets (spec US-005). */
 const UNSANDBOXED_NOT_ENABLED = "unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)";
+
+/**
+ * The one place a run's ok/error outcome is assembled, so the three rules it
+ * encodes cannot drift apart: the sandbox status rides along only when the
+ * tool reported one, the images ride only a SUCCESSFUL result that has some
+ * (an error outcome never claims the model was shown a picture, and an empty
+ * list stays absent exactly as `isError` does), and the deferred path hands
+ * the caller `finalizeAudit` instead of settling the ledger here.
+ *
+ * `defer` mirrors `ToolCallContext.deferModelTruncation`: the native loop
+ * shapes the content at its own `after_tool` chokepoint and settles the audit
+ * with the final model-facing text, so nothing is recorded yet.
+ *
+ * Kept out of `runTool` because that function sits at its complexity baseline
+ * and `runtime.ts` at its file-size cap; both would otherwise grow here.
+ */
+export function toolOutcome(p: {
+  readonly kind: "ok" | "error";
+  readonly content: string;
+  readonly sandbox?: SandboxRecord;
+  readonly images?: readonly ImageAttachment[];
+  /** Settles the ledger row with the final model-facing content. */
+  readonly record: (content: string) => void;
+  readonly defer: boolean;
+}): CodingToolOutcome {
+  if (!p.defer) p.record(p.content);
+  return {
+    kind: p.kind,
+    content: p.content,
+    ...sandboxStatusField(p.sandbox),
+    ...(p.kind === "ok" && p.images !== undefined && p.images.length > 0 ? { images: p.images } : {}),
+    ...(p.defer ? { finalizeAudit: p.record } : {}),
+  };
+}
 
 /**
  * What `resolveUnsandboxedCall` answers for a call that really asked to run

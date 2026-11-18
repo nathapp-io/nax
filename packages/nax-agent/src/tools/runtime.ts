@@ -13,9 +13,10 @@ import { randomUUID } from "node:crypto";
 import type { CommandInterceptor } from "#src/command-interceptor/index";
 import type { CommandShadow } from "#src/command-safety/index";
 import type { BashApprovalMode } from "#src/config/bash-approval";
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
-import { type SandboxRecord, type SandboxStatus, sandboxStatusField } from "../sandbox/index.ts";
+import type { SandboxRecord, SandboxStatus } from "../sandbox/index.ts";
 import { deleteTool } from "./delete.ts";
 import { editTool } from "./edit.ts";
 import { gitTool } from "./git.ts";
@@ -36,6 +37,7 @@ import {
   resolveGuardDenial,
   resolvePolicyIdentity,
   resolveUnsandboxedCall,
+  toolOutcome,
 } from "./runtime-calltool.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
@@ -66,6 +68,8 @@ export type CodingToolOutcome =
       readonly kind: "ok" | "error";
       readonly content: string;
       readonly sandbox?: SandboxStatus;
+      /** Images the tool produced, on a successful call that has any (US-002). */
+      readonly images?: readonly ImageAttachment[];
       /** Records the final model-facing content when shaping was deferred. */
       readonly finalizeAudit?: (content: string) => void;
     }
@@ -492,10 +496,8 @@ export function createCodingToolRuntime(opts: {
               },
               result.resultBytesPreTruncation,
             );
-          const where = sandboxStatusField(result.audit?.sandbox);
-          if (context?.deferModelTruncation === true) return { kind, content, ...where, finalizeAudit: record };
-          record(content);
-          return { kind, content, ...where };
+          const defer = context?.deferModelTruncation === true;
+          return toolOutcome({ kind, content, sandbox: result.audit?.sandbox, images: result.images, record, defer });
         } catch (err) {
           const rawContent = err instanceof Error ? err.message : String(err);
           const content = await shapeToolResult(rawContent, policyIdentity, context);
@@ -514,11 +516,8 @@ export function createCodingToolRuntime(opts: {
                 truncated: finalContent !== rawContent,
               },
             );
-          if (context?.deferModelTruncation === true) {
-            return { kind: "error", content, finalizeAudit: record };
-          }
-          record(content);
-          return { kind: "error", content };
+          const defer = context?.deferModelTruncation === true;
+          return toolOutcome({ kind: "error", content, record, defer });
         }
       }
 

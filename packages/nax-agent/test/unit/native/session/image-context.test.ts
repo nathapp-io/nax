@@ -9,6 +9,7 @@ import type { ImageAttachment } from "#src/cost/standard-types";
 import type { TranscriptMessage } from "#src/native/session/compaction";
 import { capRequestImages } from "#src/native/session/image-context";
 import { createTurnEventEmitter } from "#src/native/session/turn-event-emitter";
+import { MAX_REQUEST_IMAGE_BASE64_CHARS } from "#src/session/image-input";
 
 const image = (length = 4, mimeType = "image/png"): ImageAttachment => ({ mimeType, data: "A".repeat(length) });
 const user = (images: readonly ImageAttachment[], content = "look"): TranscriptMessage => ({
@@ -16,8 +17,15 @@ const user = (images: readonly ImageAttachment[], content = "look"): TranscriptM
   content,
   images,
 });
+const toolResult = (images: readonly ImageAttachment[], content = "shot"): TranscriptMessage => ({
+  role: "tool-result",
+  toolCallId: "c1",
+  content,
+  images,
+});
+const imagesOf = (message: TranscriptMessage | undefined) =>
+  message?.role === "user" || message?.role === "tool-result" ? message.images : undefined;
 const history = (count: number): TranscriptMessage[] => Array.from({ length: count }, () => user([image()]));
-const imagesOf = (message: TranscriptMessage | undefined) => (message?.role === "user" ? message.images : undefined);
 const note = "[image from an earlier turn dropped from context: image/png]";
 const countImages = (messages: readonly TranscriptMessage[]) =>
   messages.reduce((sum, message) => sum + (imagesOf(message)?.length ?? 0), 0);
@@ -123,5 +131,46 @@ describe("capRequestImages", () => {
   test("appends one note per dropped image in original image order", () => {
     const result = capRequestImages([user([image(4, "image/jpeg"), image()], ""), ...history(20)]);
     expect(result[0]?.content).toBe(`[image from an earlier turn dropped from context: image/jpeg]\n${note}`);
+  });
+});
+
+// US-002: a tool result may carry images the way a user message does, so the
+// request budget counts both in ONE newest-first pass and a note replaces what
+// it drops, whichever arm the image came from.
+describe("capRequestImages — tool-result images (US-002)", () => {
+  const many = (count: number) => Array.from({ length: count }, () => image());
+
+  test("AC-10: the tool result keeps all ten, the older user images become notes", () => {
+    const [userMessage, result] = capRequestImages([user(many(15)), toolResult(many(10))]);
+    expect(imagesOf(result)).toHaveLength(10);
+    expect(imagesOf(userMessage)).toHaveLength(10);
+    expect(userMessage?.content).toBe(`look\n${note}\n${note}\n${note}\n${note}\n${note}`);
+    expect(Object.hasOwn(result ?? {}, "images")).toBe(true);
+  });
+
+  test("AC-11: the user message keeps all ten, the older tool-result images become notes", () => {
+    const [result, userMessage] = capRequestImages([toolResult(many(15)), user(many(10))]);
+    expect(imagesOf(userMessage)).toHaveLength(10);
+    expect(imagesOf(result)).toHaveLength(10);
+    expect(result?.content).toBe(`shot\n${note}\n${note}\n${note}\n${note}\n${note}`);
+  });
+
+  test("AC-12: combined base64 length stays within the request limit", () => {
+    const big = image(10_000_000);
+    const [oldest, middle, newest] = capRequestImages([user([big]), toolResult([big]), user([big])]);
+    const kept = [middle, newest].flatMap((message) => [...(imagesOf(message) ?? [])]);
+    expect(kept.reduce((sum, attachment) => sum + attachment.data.length, 0)).toBeLessThanOrEqual(
+      MAX_REQUEST_IMAGE_BASE64_CHARS,
+    );
+    // Two of the three fit (20 MB of the 20.97 MB budget); the OLDEST is the
+    // one dropped, and it is dropped whatever arm it came from.
+    expect(kept).toHaveLength(2);
+    expect(imagesOf(oldest)).toBeUndefined();
+    expect(oldest?.content).toBe(`look\n${note}`);
+  });
+
+  test("AC-13: totals that fit both limits return the same array instance", () => {
+    const input = [user(many(2)), toolResult(many(2)), user(many(1))];
+    expect(capRequestImages(input)).toBe(input);
   });
 });
