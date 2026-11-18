@@ -296,7 +296,7 @@ describe("launchJob publish refusal stops the matching chain step", () => {
       join(featureDir(options.repoRoot, "f1"), "prd.json"),
       JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
     );
-    _jobsLaunchDeps.loadPriorFeature = mock(async () => publishedRecord());
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => ({ record: publishedRecord(), runDir: options.repoRoot }));
     _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
   }
   function stageChain(steps: readonly ChainStep[], next: number): void {
@@ -354,7 +354,7 @@ describe("launchJob publish refusal stops the matching chain step", () => {
       mark: { schemaVersion: 1, at: "2026-11-18T00:00:00.000Z", flowId: "fl1", url: "https://koda/flows/fl1" },
       path: "/r/handoff.json",
     };
-    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => found);
+    _jobsLaunchDeps.readRunMark = mock(async () => found);
     const refused =
       "f1 was handed off to koda (flow fl1 https://koda/flows/fl1) at 2026-11-18T00:00:00.000Z; koda publishes it. Delete /r/handoff.json to publish it here instead";
     stageChain(
@@ -370,7 +370,7 @@ describe("launchJob publish refusal stops the matching chain step", () => {
     // The control inside this case: the same feature and chain without a mark stops on the older refusal,
     // so the words the chain receives above are the mark's, not the published-at-head guard's.
     chains.stop = mock(() => undefined);
-    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => null);
+    _jobsLaunchDeps.readRunMark = mock(async () => null);
     await launch("publish", { feature: "f1" });
     expect(chains.stop).toHaveBeenCalledWith(publishedAtHead);
   });

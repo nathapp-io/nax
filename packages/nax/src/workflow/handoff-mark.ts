@@ -118,9 +118,8 @@ export async function readRunMark(runDir: string): Promise<FoundHandoffMark | nu
 }
 
 /**
- * The mark on the feature's newest run (by `result.json` mtime), or null when that run has none or it
- * does not parse. Only the newest run is read: a mark left on an older run stopped applying the moment a
- * later run wrote its own record, which is what lets a fresh `nax run` publish the feature again.
+ * The mark on the feature's newest run (by `result.json` mtime), which is the run a handoff sends.
+ * Publish-only can resume an older run, so it checks that run directly with `readRunMark`.
  */
 export async function readNewestHandoffMark(featureWorkflowDir: string): Promise<FoundHandoffMark | null> {
   const [newest] = await runDirsNewestFirst(featureWorkflowDir);

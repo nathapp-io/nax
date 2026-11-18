@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
+import { newFeatureRecord } from "@/workflow/feature-record";
 import { writeHandoffMark } from "@/workflow/handoff-mark";
 import { handoffLockPath } from "@/workflow/paths";
-import { readResult } from "@/workflow/result";
+import { newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { registerFeatureRunHarness, seedFinished, setup } from "./_feature-run-harness";
 
@@ -77,6 +79,42 @@ describe("runWorkflowFeature --publish-only", () => {
     });
     expect(envs).toHaveLength(0);
   });
+
+  test.each(["story-only checkpoint", "finished run"])(
+    "a newer %s supersedes the marked run only if it supplies a feature record",
+    async (newer) => {
+      const { input, envs, featureDir } = setup();
+      await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+      const marked = join(featureDir, "r-old");
+      await writeHandoffMark(marked, { schemaVersion: 1, at: "T", requestId: "held" });
+      await utimes(join(marked, "result.json"), 1, 1);
+
+      const header = { runId: "r-new", feature: input.feature };
+      const runDir = join(featureDir, header.runId);
+      await upsertStoryRecord(runDir, header, newStoryRecord("US-001", 5, "t"));
+      if (newer === "finished run") {
+        await upsertFeatureRecord(runDir, header, {
+          ...newFeatureRecord({ now: "t", seed: "new seed", minors: [] }),
+          step: "done",
+          head: "headX",
+          outcome: "local-only",
+        });
+      }
+
+      const publish = runWorkflowFeature({ ...input, publishOnly: true });
+      if (newer === "story-only checkpoint") {
+        await expect(publish).rejects.toMatchObject({
+          code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+          message: expect.stringContaining(join(marked, "handoff.json")),
+        });
+        expect(envs).toHaveLength(0);
+      } else {
+        expect(await publish).toMatchObject({ outcome: "draft" });
+        expect(envs).toHaveLength(1);
+        expect(envs[0]?.record).toMatchObject({ step: "publish", seed: "new seed" });
+      }
+    },
+  );
 
   /** Start the publisher while another process holds the lock, then mutate state or abort. */
   async function withWaitingPublisher(

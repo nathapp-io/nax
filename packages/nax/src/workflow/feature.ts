@@ -23,7 +23,7 @@ import {
   summariseStories,
 } from "./feature-record";
 import { commitsSince, onlyLedgerChangedSince, readCurrentBranch, readHead } from "./git";
-import { handoffMarkRefusal, readNewestHandoffMark } from "./handoff-mark";
+import { handoffMarkRefusal, readRunMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
 
@@ -228,13 +228,10 @@ function isFinishedAtHead(
   return prior?.step === "done" && head !== undefined && head !== "" && prior.head === head && done;
 }
 
-/**
- * US-004: a feature a chat chain handed to koda has koda as its publisher, so this run must not publish
- * it too. The mark lives on the newest run, so a later `nax run` that writes a newer record leaves it
- * behind on an older run and the feature is publishable here again — the design's own escape hatch.
- */
-async function refuseHandedOffFeature(fc: FeatureContext): Promise<void> {
-  const found = await readNewestHandoffMark(fc.featureDir);
+/** A newer story checkpoint cannot supersede a handoff: check the run we would publish from. */
+async function refuseHandedOffFeature(fc: FeatureContext, runDir: string | undefined): Promise<void> {
+  if (runDir === undefined) return;
+  const found = await readRunMark(runDir);
   if (found === null) return;
   throw new NaxError(
     `[workflow] --publish-only: ${handoffMarkRefusal(fc.feature, found)}`,
@@ -278,11 +275,7 @@ async function runPublishOnlyUnderLock(
   try {
     return await withLockedFeatureResult(
       fc,
-      async (writeResult) => {
-        await refuseHandedOffFeature(fc);
-        await refuseSwitchedBranch(fc);
-        return await prepareAndRun(fc, input, { meter, writeResult });
-      },
+      (writeResult) => prepareAndRun(fc, input, { meter, writeResult }),
       fc.runSignal,
     );
   } catch (error) {
@@ -308,8 +301,13 @@ async function prepareAndRun(
   input: WorkflowFeatureInput,
   options: { readonly meter: TokenMeter; readonly writeResult?: LockedFeatureWriter },
 ): Promise<WorkflowFeatureResult> {
+  const located = await loadPriorFeature(fc.featureDir, fc.runId);
+  if (input.publishOnly === true) {
+    await refuseHandedOffFeature(fc, located?.runDir);
+    await refuseSwitchedBranch(fc);
+  }
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
-  const prior = await loadPriorFeature(fc.featureDir, fc.runId);
+  const prior = located?.record ?? null;
   const head = await currentHead(fc);
   const publishOnly =
     input.publishOnly === true ? publishOnlyStart(prior, head, await movedSinceRecord(fc, prior, head)) : undefined;

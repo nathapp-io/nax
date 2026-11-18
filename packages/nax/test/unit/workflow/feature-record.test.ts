@@ -112,8 +112,8 @@ describe("loadPriorFeature (P4-R1)", () => {
     const r2 = await writeRun(feature, "run-2", 200, [closed("US-001")]);
     await upsertFeatureRecord(r2, header("run-2"), newFeatureRecord({ now: "t", seed: "s2", minors: [] }));
     await utimes(join(r2, "result.json"), 200, 200);
-    expect((await loadPriorFeature(feature, "run-2"))?.step).toBe("branch-fix");
-    expect((await loadPriorFeature(feature, "run-9"))?.seed).toBe("s2");
+    expect(await loadPriorFeature(feature, "run-2")).toMatchObject({ runDir: r1, record: { step: "branch-fix" } });
+    expect(await loadPriorFeature(feature, "run-9")).toMatchObject({ runDir: r2, record: { seed: "s2" } });
   });
 
   test("a malformed feature record is ignored", async () => {

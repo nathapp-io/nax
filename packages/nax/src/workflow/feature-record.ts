@@ -83,16 +83,18 @@ function isFeatureRecord(v: unknown): v is WorkflowFeatureRecord {
   );
 }
 
-/** The newest OTHER run's feature record (P4-R1); a malformed record is skipped with a warning. */
-export async function loadPriorFeature(
-  featureDir: string,
-  currentRunId: string,
-): Promise<WorkflowFeatureRecord | null> {
+export interface LocatedFeatureRecord {
+  readonly record: WorkflowFeatureRecord;
+  readonly runDir: string;
+}
+
+/** The newest OTHER run's feature record and its directory; a malformed record is skipped with a warning. */
+export async function loadPriorFeature(featureDir: string, currentRunId: string): Promise<LocatedFeatureRecord | null> {
   for (const runDir of await runDirsNewestFirst(featureDir)) {
     if (basename(runDir) === currentRunId) continue;
     const feature = (await readResult(runDir))?.featureWorkflow;
     if (feature === undefined) continue;
-    if (isFeatureRecord(feature)) return feature;
+    if (isFeatureRecord(feature)) return { record: feature, runDir };
     getSafeLogger()?.warn("workflow", "Prior feature record is malformed — ignored", { storyId: "_run", runDir });
   }
   return null;
