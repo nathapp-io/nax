@@ -6,6 +6,7 @@ import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { withFileLock } from "@nathapp/nax-agent/internal";
 import { runStateWrite } from "@/runstate/store";
+import { runAsHandoffLockHolder } from "./handoff-lock-owner";
 import { buildVerdict } from "./open-items";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
 import type {
@@ -35,15 +36,20 @@ async function withResultLock<T>(runDir: string, task: () => Promise<T>, signal?
 
 export type LockedFeatureWriter = (record: WorkflowFeatureRecord) => Promise<void>;
 
-/** A publisher holds the lock across its checks, publication and result writes. */
+/**
+ * A publisher holds the lock across its checks, publication and result writes. Its own call tree is
+ * marked as the holder, so a run-state repair inside it (a CI-repair turn) restores the result under
+ * this hold instead of deferring to it.
+ */
 export function withLockedFeatureResult<T>(
   target: ResultHeader & { readonly runDir: string },
   task: (write: LockedFeatureWriter) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
+  const lockPath = handoffLockPath(dirname(target.runDir));
   return withResultLock(
     target.runDir,
-    () => task((record) => writeFeatureRecord(target.runDir, target, record)),
+    () => runAsHandoffLockHolder(lockPath, () => task((record) => writeFeatureRecord(target.runDir, target, record))),
     signal,
   );
 }

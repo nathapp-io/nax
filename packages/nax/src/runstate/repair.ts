@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
+import { holdsHandoffLock } from "../workflow/handoff-lock-owner";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "../workflow/paths";
 import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
@@ -159,10 +160,14 @@ async function repairResult(
   const workflowDir = dirname(dirname(path));
   try {
     await mkdir(workflowDir, { recursive: true });
+    // Inside the publisher that holds the handoff lock (a CI-repair turn), restore under its hold:
+    // deferring would let its next result write keep the damaged bytes.
+    const lockPath = handoffLockPath(workflowDir);
+    if (holdsHandoffLock(lockPath)) return await repairLocked(keeper, path, state, ctx);
     // Take the handoff lock before the path lock, as result writers do. Recheck the keeper
-    // and disk after acquiring both. Turn/pre-commit repairs may already be inside a publisher's
-    // lock, so only wait at run-end, before the keeper is discarded; crash repair is time-boxed.
-    return await withFileLock(handoffLockPath(workflowDir), () => repairLocked(keeper, path, state, ctx), {
+    // and disk after acquiring both. Another holder may be mid-handoff, so turn/pre-commit
+    // repairs do not wait; run-end waits, before the keeper is discarded; crash repair is time-boxed.
+    return await withFileLock(lockPath, () => repairLocked(keeper, path, state, ctx), {
       lockName: "handoff",
       errorPrefix: "[runstate]",
       timeoutMs: ctx.trigger === "run-end" ? HANDOFF_RESULT_LOCK_WAIT_MS : 0,

@@ -13,7 +13,9 @@ import {
 } from "@/runstate";
 import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
+import { newFeatureRecord } from "@/workflow/feature-record";
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
+import { newStoryRecord, readResult, upsertStoryRecord, withLockedFeatureResult } from "@/workflow/result";
 
 withDepsRestore(_fileLockDeps);
 
@@ -116,6 +118,50 @@ describe("repairRunState (#2497)", () => {
     );
     expect(await repairRunState(ctx)).toMatchObject([{ path, restored: true }]);
     expect(await Bun.file(path).text()).toBe('{"runId":"r1"}');
+  });
+
+  test("a turn repair inside the publisher's own lock restores the checkpoint before its next write", async () => {
+    // A publish-only run holds the handoff lock across its workflow, CI-repair turns included. A repair
+    // at the end of such a turn runs inside that hold: it must restore, not defer, or the publisher's
+    // next write reads the damaged stories and keeps them as its own.
+    const runDir = workflowRunDir(dir, "f", "r1");
+    const header = { runId: "r1", feature: "f" };
+    await upsertStoryRecord(runDir, header, newStoryRecord("US-001", 5, "t"));
+    const path = join(runDir, "result.json");
+    const kept = await Bun.file(path).text();
+
+    await withLockedFeatureResult({ ...header, runDir }, async (write) => {
+      const damaged = JSON.parse(kept);
+      damaged.stories["US-001"].phase = "done";
+      await Bun.write(path, JSON.stringify(damaged));
+      expect(await repairRunState(ctx)).toMatchObject([{ path, damage: ["modified"], restored: true }]);
+      await write(newFeatureRecord({ now: "t", seed: "s", minors: [] }));
+    });
+
+    expect((await readResult(runDir))?.stories["US-001"]?.phase).toBe("implement");
+  });
+
+  test("a turn repair outside the publisher's call tree still defers to its hold", async () => {
+    // Same process, not a descendant of the holder: another chat job must not be treated as the owner.
+    const runDir = workflowRunDir(dir, "f", "r1");
+    const header = { runId: "r1", feature: "f" };
+    await upsertStoryRecord(runDir, header, newStoryRecord("US-001", 5, "t"));
+    const path = join(runDir, "result.json");
+    rmSync(path);
+    const holding = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const publisher = withLockedFeatureResult({ ...header, runDir }, async () => {
+      holding.resolve();
+      await release.promise;
+    });
+    try {
+      await holding.promise;
+      expect(await repairRunState(ctx)).toMatchObject([{ path, damage: ["missing"], restored: false }]);
+      expect(await Bun.file(path).exists()).toBe(false);
+    } finally {
+      release.resolve();
+      await publisher;
+    }
   });
 
   test("run-end waits for a live handoff before restoring a missing checkpoint", async () => {
