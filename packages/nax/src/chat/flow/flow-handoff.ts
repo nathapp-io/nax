@@ -357,25 +357,17 @@ async function recheck(call: SendCall, options: FlowProviderOptions): Promise<To
   }
 }
 
-/**
- * After the asynchronous Git checks, confirm the verified run is still unmarked and newest.
- * A failed read stops the send, but if the turn was cancelled during the read, report the cancel.
- */
+/** After the asynchronous Git checks, confirm the verified run is still unmarked and newest. */
 async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): Promise<ToolResult | undefined> {
   const { input, ready, signal } = call;
   const runDir = workflowRunDir(options.repoRoot, input.feature, ready.collected.newestRunId);
-  try {
-    const found = await _flowHandoffDeps.readRunMark(runDir);
-    if (found !== null) return failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
-    const cancelled = cancellationRefusal(signal);
-    if (cancelled !== undefined) return cancelled;
-    const workflowDir = workflowFeatureDir(options.repoRoot, input.feature);
-    const matches = await _flowHandoffDeps.handoffResultsMatch(workflowDir, options.repoRoot, ready.collected);
-    return matches ? undefined : failure(RECORD_CHANGED_MESSAGE);
-  } catch (error) {
-    if (!turnCancelled(signal)) throw error;
-    return failure(CANCELLED_MESSAGE);
-  }
+  const found = await _flowHandoffDeps.readRunMark(runDir);
+  if (found !== null) return failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
+  const cancelled = cancellationRefusal(signal);
+  if (cancelled !== undefined) return cancelled;
+  const workflowDir = workflowFeatureDir(options.repoRoot, input.feature);
+  const matches = await _flowHandoffDeps.handoffResultsMatch(workflowDir, options.repoRoot, ready.collected);
+  return matches ? undefined : failure(RECORD_CHANGED_MESSAGE);
 }
 
 /**

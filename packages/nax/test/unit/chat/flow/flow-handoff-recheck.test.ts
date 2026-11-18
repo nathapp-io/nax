@@ -577,6 +577,30 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
     },
   );
 
+  test.each([true, false])(
+    "a rejecting dirty-tree check preserves cancellation only if aborted (%s)",
+    async (aborted) => {
+      const controller = new AbortController();
+      const started = Promise.withResolvers<void>();
+      const status = Promise.withResolvers<boolean>();
+      _flowProviderDeps.isDirty = () => {
+        started.resolve();
+        return status.promise;
+      };
+
+      const pending = send(handoffInput, controller.signal);
+      expect(await waitingOrFinished(started.promise, pending)).toBe("waiting");
+      if (aborted) controller.abort();
+      status.reject(new Error("git status failed"));
+
+      expect(await pending).toEqual({
+        isError: true,
+        content: aborted ? CANCELLED_NOTHING_PUSHED : "[chat] flow send failed: git status failed",
+      });
+      expectNoTransfer();
+    },
+  );
+
   test.each([true, false])("a rejecting mark check preserves cancellation only if aborted (%s)", async (aborted) => {
     const controller = new AbortController();
     _flowHandoffDeps.readRunMark = async () => {
