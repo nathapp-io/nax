@@ -548,8 +548,9 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     const firstUnlinkReached = new Promise<void>((resolve) => {
       releaseFirstUnlink = resolve;
     });
+    // Gate the gravedigger's unlink of the lock itself; staged pid files are unlinked too.
     const gatedUnlink = async (path: string) => {
-      if (!firstUnlinkGated) {
+      if (!firstUnlinkGated && path === lockPath) {
         firstUnlinkGated = true;
         releaseFirstUnlink();
         await new Promise<void>((resolve) => {
