@@ -171,7 +171,7 @@ beforeEach(() => {
   };
   _flowHandoffDeps.collectHandoffRecord = async (input) => {
     collectCalls.push(input);
-    return { ok: true, record, newestRunId: NEWEST_RUN_ID };
+    return { ok: true, record, newestRunId: NEWEST_RUN_ID, results: [] };
   };
   _flowHandoffDeps.readNewestHandoffMark = async () => null;
   _flowHandoffDeps.readRunMark = async () => null;

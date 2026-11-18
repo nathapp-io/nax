@@ -6,6 +6,7 @@ import {
   _handoffRecordDeps,
   type HandoffRecordFile,
   type HandoffRecordRead,
+  handoffResultsMatch,
   isStorableRecordText,
   readHandoffRecordFiles,
 } from "@/workflow/handoff-record";
@@ -577,6 +578,37 @@ describe("readHandoffRecordFiles (US-002)", () => {
       expect(expectRefusal(await readHandoffRecordFiles(join(dir, "absent")))).toBe(
         "no finished workflow run for this feature; run nax run first",
       );
+    });
+  });
+});
+
+describe("handoffResultsMatch", () => {
+  async function approvedRead(dir: string): Promise<Extract<HandoffRecordRead, { ok: true }>> {
+    await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+    await makeRun(dir, "r2", { result: resultJson("r2"), resultMtimeMs: 2000 });
+    const read = await readHandoffRecordFiles(dir);
+    if (!read.ok) throw new Error(`expected an accepted record, got the refusal: ${read.reason}`);
+    return read;
+  }
+
+  test("accepts the listing the record was read from", async () => {
+    await withTempDir(async (dir) => {
+      const approved = await approvedRead(dir);
+
+      expect(await handoffResultsMatch(dir, dir, approved)).toBe(true);
+    });
+  });
+
+  test("refuses a newest result replaced atomically under its approved mtime", async () => {
+    await withTempDir(async (dir) => {
+      const approved = await approvedRead(dir);
+      const resultPath = join(dir, "r2", "result.json");
+      const before = await stat(resultPath);
+
+      await replaceResultKeepingMtime(resultPath, resultJson("draft"));
+
+      expect((await stat(resultPath)).mtimeMs).toBe(before.mtimeMs);
+      expect(await handoffResultsMatch(dir, dir, approved)).toBe(false);
     });
   });
 });

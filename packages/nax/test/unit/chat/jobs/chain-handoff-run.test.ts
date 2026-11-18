@@ -215,7 +215,7 @@ describe("createHostJobs handoff", () => {
     _flowProviderDeps.headSha = async () => SHA;
     _flowProviderDeps.isDirty = async () => false;
     _flowProviderDeps.commitAndPush = mock(async () => ({ pushed: true, committed: false }));
-    _flowHandoffDeps.collectHandoffRecord = async () => ({ ok: true, record: [], newestRunId: "r1" });
+    _flowHandoffDeps.collectHandoffRecord = async () => ({ ok: true, record: [], newestRunId: "r1", results: [] });
     _flowHandoffDeps.handoffResultsMatch = async () => true;
     _flowHandoffDeps.readNewestHandoffMark = async () => null;
     _flowHandoffDeps.readRunMark = async () => null;

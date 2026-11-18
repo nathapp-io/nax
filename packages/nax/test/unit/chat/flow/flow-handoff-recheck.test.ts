@@ -161,7 +161,7 @@ beforeEach(async () => {
   };
   _flowHandoffDeps.collectHandoffRecord = async (input) => {
     collectCalls.push(input);
-    return { ok: true, record, newestRunId: NEWEST_RUN_ID };
+    return { ok: true, record, newestRunId: NEWEST_RUN_ID, results: [] };
   };
   _flowHandoffDeps.readNewestHandoffMark = async () => null;
   _flowHandoffDeps.readRunMark = async () => null;
@@ -214,6 +214,7 @@ describe("nax-flow__send — the record is re-checked after approval", () => {
         ok: true,
         record: [{ runId: "r3", file: "result.json", mtimeMs: 3, content: '{"step":"done"}' }],
         newestRunId: "r3",
+        results: [],
       });
     });
 
@@ -265,6 +266,7 @@ describe("nax-flow__send — the record is re-checked after approval", () => {
           entry.file === "ledger.md" ? { ...entry, content: "edited while the card was open" } : entry,
         ),
         newestRunId: NEWEST_RUN_ID,
+        results: [],
       });
     });
 
@@ -477,7 +479,7 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
   function recordOnceThen(interrupt: () => { readonly ok: false; readonly reason: string }): void {
     _flowHandoffDeps.collectHandoffRecord = async (input) => {
       collectCalls.push(input);
-      if (collectCalls.length === 1) return { ok: true, record, newestRunId: NEWEST_RUN_ID };
+      if (collectCalls.length === 1) return { ok: true, record, newestRunId: NEWEST_RUN_ID, results: [] };
       return interrupt();
     };
   }
@@ -545,7 +547,7 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
     const controller = new AbortController();
     _flowHandoffDeps.collectHandoffRecord = async (input) => {
       collectCalls.push(input);
-      if (collectCalls.length === 1) return { ok: true, record, newestRunId: NEWEST_RUN_ID };
+      if (collectCalls.length === 1) return { ok: true, record, newestRunId: NEWEST_RUN_ID, results: [] };
       controller.abort();
       throw new Error("ELOOP");
     };

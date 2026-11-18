@@ -44,8 +44,26 @@ export const HANDOFF_MAX_RUNS = 20;
 /** koda accepts at most this many UTF-8 bytes of `content`, summed over every entry. */
 export const HANDOFF_RECORD_MAX_BYTES = 524288;
 
+/**
+ * One listed result.json as the accepted read saw it: the run, its untruncated mtime and its file
+ * identity. A later check compares against these, because the record's truncated mtime alone cannot
+ * tell an atomic replacement that kept the mtime from the file that was read.
+ */
+export interface HandoffResultIdentity {
+  readonly runId: string;
+  readonly mtimeMs: number;
+  readonly dev: number;
+  readonly ino: number;
+}
+
 export type HandoffRecordRead =
-  | { readonly ok: true; readonly record: readonly HandoffRecordFile[]; readonly newestRunId: string }
+  | {
+      readonly ok: true;
+      readonly record: readonly HandoffRecordFile[];
+      readonly newestRunId: string;
+      /** The listing the record was read from, newest first. */
+      readonly results: readonly HandoffResultIdentity[];
+    }
   | { readonly ok: false; readonly reason: string };
 
 const RESULT_FILE = "result.json";
@@ -67,18 +85,13 @@ const RECORD_CHUNK_BYTES = 65536;
  */
 const RECORD_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 
-/** A run directory that has a result.json, with the stat mtime the ordering uses. */
-interface RunDir {
-  readonly runId: string;
+/**
+ * A run directory that has a result.json, with the stat mtime the ordering uses and the result's own
+ * identity. `result.json` is replaced atomically, so a run whose outcome changed under a replacement
+ * that keeps the mtime is still a different file, and the listing must be able to say so.
+ */
+interface RunDir extends HandoffResultIdentity {
   readonly runDir: string;
-  readonly mtimeMs: number;
-  /**
-   * The listed result.json's own identity. `result.json` is replaced atomically, so a run whose
-   * outcome changed under a replacement that keeps the mtime is still a different file, and the
-   * listing must be able to say so.
-   */
-  readonly dev: number;
-  readonly ino: number;
 }
 
 /** The runs a handoff may read, or the refusal for a run directory it must not read through. */
@@ -362,17 +375,12 @@ export async function handoffResultsMatch(
 ): Promise<boolean> {
   const listing = await listRunDirs(featureWorkflowDir, anchorDir);
   if (!listing.ok || listing.runs[0]?.runId !== approved.newestRunId || newestTie(listing.runs)) return false;
-  const results = approved.record.filter((entry) => entry.file === RESULT_FILE);
-  return (
-    listing.runs.length === results.length &&
-    listing.runs.every((run, index) => {
-      const result = results[index];
-      return result?.runId === run.runId && result.mtimeMs === Math.trunc(run.mtimeMs);
-    })
-  );
+  // The identity the read listed, not the record's truncated mtime: a result replaced atomically under
+  // the same mtime carries a different outcome than the one the record uploads.
+  return sameRunListing(approved.results, listing.runs);
 }
 
-function sameRunListing(before: readonly RunDir[], after: readonly RunDir[]): boolean {
+function sameRunListing(before: readonly HandoffResultIdentity[], after: readonly HandoffResultIdentity[]): boolean {
   return (
     before.length === after.length &&
     before.every((run, index) => {
@@ -419,7 +427,8 @@ export async function readHandoffRecordFiles(
   const current = await listRunDirs(featureWorkflowDir, anchorDir);
   if (!current.ok) return refusal(current.reason);
   if (!sameRunListing(runs, current.runs)) return refusal(RESULTS_CHANGED);
-  return { ok: true, record: built.record, newestRunId: runs[0].runId };
+  const results = runs.map(({ runId, mtimeMs, dev, ino }) => ({ runId, mtimeMs, dev, ino }));
+  return { ok: true, record: built.record, newestRunId: runs[0].runId, results };
 }
 
 /** What the feature-record and PRD preflights read the record against (US-003). */
