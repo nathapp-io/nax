@@ -3,7 +3,7 @@
  * one branch review, one branch fix, one re-review, adjudication, gates again, then publish.
  * Resumes an unfinished prior record; skips when already finished at this HEAD (P4-R1).
  */
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
@@ -13,7 +13,7 @@ import { featurePassed } from "./approval";
 import { specPathFor } from "./brief";
 import { buildFeatureContext, type FeatureContext, type WorkflowFeatureInput } from "./feature-context";
 import { buildFeatureEnv } from "./feature-env";
-import { runFeatureMachine } from "./feature-machine";
+import { type FeatureEnv, runFeatureMachine } from "./feature-machine";
 import {
   collectStoryRecords,
   loadPriorFeature,
@@ -26,6 +26,7 @@ import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
 import { handoffMarkRefusal, readNewestHandoffMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
+import { handoffLockPath } from "./paths";
 import { isTransientDraft, type MovedCommit, publishOnlyStart } from "./publish-only";
 import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
@@ -244,6 +245,37 @@ async function refuseHandedOffFeature(fc: FeatureContext): Promise<void> {
   );
 }
 
+/**
+ * How long a local publisher waits for the feature's handoff lock. A handoff holds it from its
+ * post-approval recheck until koda answers and the mark is written, so the wait has to cover one
+ * koda create; a handoff that never answers leaves the publisher timing out with the lock's own
+ * `FILE_LOCK_TIMEOUT`, which refuses the publish instead of racing koda.
+ */
+const HANDOFF_LOCK_WAIT_MS = 120_000;
+
+/**
+ * The machine behind a publish-only run, under the ownership lock a handoff holds.
+ *
+ * The pre-check above runs before the record is read and can pass while an approved handoff sits
+ * between its re-check and its mark write. Taking the same lock is what makes the publish-only mark
+ * check authoritative: a publisher that starts during a handoff waits for it to finish and then
+ * reads the mark it wrote, and one that starts first holds the lock while it publishes, so the
+ * handoff's own re-check sees the published result.
+ */
+function runPublishOnlyUnderLock(
+  fc: FeatureContext,
+  env: FeatureEnv,
+): Promise<Awaited<ReturnType<typeof runFeatureMachine>>> {
+  return withFileLock(
+    handoffLockPath(fc.featureDir),
+    async () => {
+      await refuseHandedOffFeature(fc);
+      return await _featureRunDeps.runFeatureMachine(env);
+    },
+    { lockName: "handoff", errorPrefix: "[workflow]", timeoutMs: HANDOFF_LOCK_WAIT_MS },
+  );
+}
+
 async function runInContext(
   fc: FeatureContext,
   input: WorkflowFeatureInput,
@@ -290,7 +322,8 @@ async function runInContext(
   // step when there is one. Emitted here, immediately before the machine, and never on the
   // already-finished, dry-run or aborted returns above.
   pipelineEventBus.emit({ type: "workflow:started", step: record.step });
-  const final = await _featureRunDeps.runFeatureMachine(env);
+  const final =
+    input.publishOnly === true ? await runPublishOnlyUnderLock(fc, env) : await _featureRunDeps.runFeatureMachine(env);
   logComplete(stories, final);
   pipelineEventBus.emit(publishedEvent(final));
   return resultOf(final);

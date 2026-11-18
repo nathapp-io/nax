@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import { withFileLock } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeFeatureContext,
@@ -8,6 +10,7 @@ import {
   makeTestPRD,
   makeTestRuntime,
   makeTestStory,
+  waitForCondition,
 } from "@test/helpers";
 import { ledgerPath } from "@/advisor";
 import type { WorkflowStatusBlock } from "@/execution";
@@ -450,6 +453,52 @@ describe("runWorkflowFeature", () => {
       code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
       message: `[workflow] --publish-only: ${input.feature} was handed off to koda (flow fl1 https://koda/flows/fl1) at T; koda publishes it. Delete ${join(runDir, "handoff.json")} to publish it here instead`,
     });
+    expect(envs).toHaveLength(0);
+  });
+
+  /**
+   * Release review (f-629abde): the early mark check can pass while an approved handoff sits between
+   * its re-check and its mark write, so the check that decides a publish-only run has to run under
+   * the lock the handoff holds. A publisher that starts first waits for the handoff, and reads the
+   * mark it wrote — it never publishes a feature koda is about to own.
+   */
+  test("a publish-only run waits for a handoff's lock and refuses the mark it finds after", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+    const runDir = join(featureDir, "r-old");
+    const lockPath = join(featureDir, ".handoff.lock");
+
+    const gate = Promise.withResolvers<void>();
+    const holder = withFileLock(lockPath, () => gate.promise, {
+      lockName: "handoff",
+      errorPrefix: "[test]",
+      timeoutMs: 5_000,
+    });
+    await waitForCondition(() => existsSync(lockPath), 5_000);
+
+    // `rev-parse HEAD` is read after the early mark check, so seeing it proves the publisher passed
+    // that check with no mark on disk and is now heading for the lock.
+    let heads = 0;
+    const readGit = _workflowDeps.git;
+    _workflowDeps.git = async (args, cwd) => {
+      if (args[0] === "rev-parse") heads++;
+      return readGit(args, cwd);
+    };
+
+    const published = runWorkflowFeature({ ...input, publishOnly: true });
+    await waitForCondition(() => heads > 0, 5_000);
+
+    // The handoff marks the run while it still holds the lock, then releases it.
+    await writeHandoffMark(runDir, {
+      schemaVersion: 1,
+      at: "T",
+      flowId: "fl1",
+      url: "https://koda/flows/fl1",
+    });
+    gate.resolve();
+    await holder;
+
+    await expect(published).rejects.toMatchObject({ code: "WORKFLOW_PUBLISH_ONLY_REFUSED" });
     expect(envs).toHaveLength(0);
   });
 

@@ -20,7 +20,6 @@
  * Every collaborator of the record and the mark is behind `_flowHandoffDeps`; the push,
  * the repository reads and the koda create stay on `_flowProviderDeps`.
  */
-import { join } from "node:path";
 import type { ToolResult } from "@nathapp/nax-agent";
 import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
@@ -28,7 +27,7 @@ import { handoffMarkRefusal, readNewestHandoffMark, readRunMark, writeHandoffMar
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { collectHandoffRecord, type HandoffRecordFile, type HandoffRecordRead } from "../../workflow/handoff-record";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
-import { workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
+import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChainAdmission, ChatChains } from "../jobs";
 import { _flowProviderDeps } from "./flow-deps";
@@ -391,7 +390,7 @@ async function sendApprovedHandoff(call: SendCall, options: FlowProviderOptions)
   try {
     // The workflow directory already exists after preflight and is ignored by git. Hold the
     // lock from the post-approval recheck through the mark write, even during cancellation.
-    const lockPath = join(workflowFeatureDir(options.repoRoot, input.feature), ".handoff.lock");
+    const lockPath = handoffLockPath(workflowFeatureDir(options.repoRoot, input.feature));
     const outcome = await _flowHandoffDeps.withFileLock(lockPath, () => handOver(call, options), {
       lockName: "handoff",
       errorPrefix: "[chat]",
