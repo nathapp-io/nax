@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   assertDefined,
@@ -21,6 +22,7 @@ import type { ChatJob } from "@/chat/jobs/job-types";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
+import { workflowFeatureDir } from "@/workflow/paths";
 
 const AT = "2026-11-18T09:30:00.000Z";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -195,6 +197,7 @@ describe("createHostJobs handoff", () => {
   withDepsRestore(_flowHandoffDeps);
 
   async function approvedChain() {
+    await mkdir(workflowFeatureDir(repoRoot, RUN.target), { recursive: true });
     const exited = Promise.withResolvers<number>();
     _jobRunnerDeps.spawn = mock(() => ({ pid: 4242, exited: exited.promise, unref() {} }));
     _jobRunnerDeps.isProcessAlive = () => true;

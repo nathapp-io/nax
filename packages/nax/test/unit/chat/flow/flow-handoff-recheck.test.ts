@@ -12,8 +12,11 @@
  * what a post-approval test reads.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, withDepsRestore } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { _fileLockDeps } from "@nathapp/nax-agent/internal";
+import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import {
   _flowHandoffDeps,
@@ -25,14 +28,15 @@ import {
   type FlowRepoReady,
   type KodaFlowConnection,
 } from "@/chat/flow";
-import type { FoundHandoffMark, HandoffMark } from "@/workflow/handoff-mark";
+import { type HandoffMark, readNewestHandoffMark } from "@/workflow/handoff-mark";
 import type { HandoffRecordFile } from "@/workflow/handoff-record";
-import { workflowRunDir } from "@/workflow/paths";
+import { workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
 
 withDepsRestore(_flowProviderDeps);
 withDepsRestore(_flowHandoffDeps);
+withDepsRestore(_fileLockDeps);
 
-const REPO_ROOT = "/fixture/repo";
+let repoRoot: string;
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98";
 const BRANCH = "feat/x";
@@ -106,7 +110,7 @@ function ready(): FlowRepoReady {
 /** The tool's run context; `signal` is the turn's cancellation. */
 function context(signal?: AbortSignal) {
   return {
-    root: REPO_ROOT,
+    root: repoRoot,
     resolvedPaths: [],
     maxBytes: 300_000,
     maxFileBytes: 300_000,
@@ -116,12 +120,16 @@ function context(signal?: AbortSignal) {
 
 /** Run the provider's `send` tool with `request`. */
 async function send(request: Record<string, unknown>, signal?: AbortSignal) {
-  const tool = (await createFlowProvider(options).tools(REPO_ROOT))[0];
+  const tool = (await createFlowProvider(options).tools(repoRoot))[0];
   assertDefined(tool, "the nax-flow provider's send tool");
   return await tool.run(request, context(signal));
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  repoRoot = makeTempDir("nax-handoff-recheck-");
+  const runDir = workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID);
+  await mkdir(runDir, { recursive: true });
+  await Bun.write(join(runDir, "result.json"), '{"step":"done"}');
   approveCalls = [];
   pushCalls = [];
   kodaCalls = [];
@@ -151,7 +159,7 @@ beforeEach(() => {
   };
   _flowHandoffDeps.now = () => AT;
   options = {
-    repoRoot: REPO_ROOT,
+    repoRoot,
     connection,
     approve: async (card) => {
       approveCalls.push(card);
@@ -159,6 +167,8 @@ beforeEach(() => {
     },
   };
 });
+
+afterEach(() => cleanupTempDir(repoRoot));
 
 describe("nax-flow__send — the record is re-checked after approval", () => {
   const MARK: HandoffMark = { schemaVersion: 1, at: "T", flowId: "fl9", url: "https://koda/flows/fl9" };
@@ -245,44 +255,107 @@ describe("nax-flow__send — the mark is read again at the push boundary", () =>
 
     expect(result.isError).toBe(true);
     expect(result.content.startsWith("[chat] f1 was handed off to koda (flow fl9")).toBe(true);
-    expect(result.content).toContain(`${workflowRunDir(REPO_ROOT, FEATURE, NEWEST_RUN_ID)}/handoff.json`);
+    expect(result.content).toContain(`${workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID)}/handoff.json`);
     expect(pushCalls).toHaveLength(0);
     expect(kodaCalls).toHaveLength(0);
     expect(markCalls).toHaveLength(0);
   });
+});
 
-  test("serializes two handoffs of one feature, so only the first pushes and marks", async () => {
-    // One run directory, one mark: what the first send writes is what every later check reads.
-    let marked: FoundHandoffMark | null = null;
-    _flowHandoffDeps.readNewestHandoffMark = async () => marked;
-    _flowHandoffDeps.readRunMark = async () => marked;
-    _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
-      markCalls.push({ runDir, mark });
-      marked = { mark, path: `${runDir}/handoff.json` };
-    };
-    // Hold the first send inside the push, so the second one has every chance to overtake it.
-    const atPush = Promise.withResolvers<void>();
-    const held = Promise.withResolvers<void>();
-    _flowProviderDeps.commitAndPush = async (_repoRoot, branch, _message, opts) => {
-      pushCalls.push({ branch, opts });
-      atPush.resolve();
-      await held.promise;
-      return { committed: false, pushed: true };
-    };
+/** Model an approved publisher in a separate Bun process, paused just before it writes its mark. */
+async function withOtherPublisher(
+  assertWhileHeld: (holder: {
+    readonly lockPath: string;
+    readonly pid: number;
+    readonly contended: Promise<void>;
+    readonly finish: () => Promise<void>;
+  }) => Promise<void>,
+): Promise<void> {
+  const runDir = workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID);
+  const lockPath = join(workflowFeatureDir(repoRoot, FEATURE), ".handoff.lock");
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `
+      import { withFileLock } from "@nathapp/nax-agent/internal";
+      import { writeHandoffMark } from "@/workflow/handoff-mark";
+      const [lockPath, runDir, at] = process.argv.slice(1);
+      await withFileLock(lockPath, async () => {
+        console.log("ready");
+        await new Response(Bun.stdin.stream()).text();
+        await writeHandoffMark(runDir, { schemaVersion: 1, at, requestId: "held-by-child" });
+      }, { lockName: "handoff", errorPrefix: "[chat]" });
+    `,
+      lockPath,
+      runDir,
+      AT.toISOString(),
+    ],
+    { stdin: "pipe", stdout: "pipe", stderr: "inherit" },
+  );
+  let released = false;
+  const finish = async () => {
+    if (!released) {
+      released = true;
+      child.stdin.end();
+    }
+    expect(await child.exited).toBe(0);
+  };
+  const contended = Promise.withResolvers<void>();
+  const sleep = _fileLockDeps.sleep;
+  _fileLockDeps.sleep = (ms, signal) => {
+    const retry = sleep(ms, signal);
+    contended.resolve(); // An exclusive create failed and the waiter is now in backoff.
+    return retry;
+  };
+  _flowHandoffDeps.readNewestHandoffMark = readNewestHandoffMark;
+  try {
+    const stdout = child.stdout.getReader();
+    const { value } = await stdout.read();
+    stdout.releaseLock();
+    expect(new TextDecoder().decode(value).trim()).toBe("ready");
+    await assertWhileHeld({ lockPath, pid: child.pid, contended: contended.promise, finish });
+  } finally {
+    await finish();
+  }
+}
 
-    const first = send(handoffInput);
-    const second = send(handoffInput);
-    await atPush.promise;
-    await Bun.sleep(20);
-    held.resolve();
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+function waitingOrFinished(contended: Promise<void>, sendResult: Promise<unknown>) {
+  return Promise.race([contended.then(() => "waiting"), sendResult.then(() => "finished")]);
+}
 
-    expect(pushCalls).toHaveLength(1);
-    expect(kodaCalls).toHaveLength(1);
-    expect(markCalls).toHaveLength(1);
-    expect(firstResult.isError).not.toBe(true);
-    expect(secondResult.isError).toBe(true);
-    expect(secondResult.content.startsWith("[chat] f1 was handed off to koda")).toBe(true);
+function expectNoTransfer(): void {
+  expect(pushCalls).toHaveLength(0);
+  expect(kodaCalls).toHaveLength(0);
+  expect(markCalls).toHaveLength(0);
+}
+
+describe("nax-flow__send — cross-process handoff lock", () => {
+  test("an approved send waits for the other publisher's mark before rechecking", async () => {
+    await withOtherPublisher(async ({ contended, finish }) => {
+      const pending = send(handoffInput);
+      expect(await waitingOrFinished(contended, pending)).toBe("waiting");
+      expect(collectCalls).toHaveLength(1); // Only preflight has run.
+      await finish();
+      const result = await pending;
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("was handed off to koda (approval request held-by-child)");
+      expectNoTransfer();
+    });
+  });
+
+  test("a cancelled waiter returns while the other process still holds the lock", async () => {
+    await withOtherPublisher(async ({ lockPath, pid, contended }) => {
+      const controller = new AbortController();
+      const pending = send(handoffInput, controller.signal);
+      expect(await waitingOrFinished(contended, pending)).toBe("waiting");
+      controller.abort();
+
+      expect(await pending).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
+      expect(await Bun.file(lockPath).text()).toBe(`${pid}\n`);
+      expect(collectCalls).toHaveLength(1);
+      expectNoTransfer();
+    });
   });
 });
 
@@ -331,6 +404,36 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
     expect(collectCalls).toHaveLength(2);
     expect(pushCalls).toHaveLength(0);
     expect(markCalls).toHaveLength(0);
+  });
+
+  test("skips the push-boundary mark check if cancelled during Git verification", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.readFlowPushUrl = async () => {
+      controller.abort();
+      return { ok: true, url: PUSH_URL };
+    };
+    const readMark = mock(async () => null);
+    _flowHandoffDeps.readRunMark = readMark;
+
+    expect(await send(handoffInput, controller.signal)).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
+    expect(readMark).not.toHaveBeenCalled();
+    expectNoTransfer();
+  });
+
+  test.each([true, false])("a rejecting mark check preserves cancellation only if aborted (%s)", async (aborted) => {
+    const controller = new AbortController();
+    _flowHandoffDeps.readRunMark = async () => {
+      if (aborted) controller.abort();
+      throw new Error("could not read the run mark");
+    };
+
+    const result = await send(handoffInput, controller.signal);
+
+    expect(result).toEqual({
+      isError: true,
+      content: aborted ? CANCELLED_NOTHING_PUSHED : "[chat] flow send failed: could not read the run mark",
+    });
+    expectNoTransfer();
   });
 
   test("reports the cancel, not a filesystem error, when the interrupted re-read throws", async () => {

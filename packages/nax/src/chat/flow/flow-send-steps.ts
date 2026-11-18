@@ -368,8 +368,9 @@ export async function afterAllow(request: FlowAllowRequest, target: FlowSendTarg
   if (moved !== undefined) return { result: moved };
   const destination = await pushDestination(state, target.repoRoot);
   if (!destination.ok) return { result: destination.result };
-  // The request's own last check, on the state every check above has by now approved. It runs before
-  // the final cancellation read so a cancelled turn keeps answering with the cancel, whatever it found.
+  // The handoff guard is itself asynchronous. Skip it if Git verification was interrupted,
+  // and check cancellation again after it returns, before acting on its result or pushing.
+  if (request.beforePush !== undefined && turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
   const guarded = await request.beforePush?.();
   // The checks above are asynchronous, so the turn can be cancelled while they run —
   // and they are the last thing between the card and the push. Asking once more here

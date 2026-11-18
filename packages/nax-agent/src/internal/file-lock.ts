@@ -64,6 +64,7 @@
  */
 
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
 import { isProcessAlive } from "./process-alive.ts";
 
@@ -88,6 +89,8 @@ export interface FileLockOptions {
   retryMs?: number;
   /** Maximum time to wait for the lock before throwing. Default 5000. */
   timeoutMs?: number;
+  /** Cancels acquisition, but does not interrupt the operation once it starts. */
+  signal?: AbortSignal;
   /** Lock family used in the timeout error, e.g. "path" or "queue". */
   lockName: string;
   /** Log/error prefix, e.g. "[path-lock]". */
@@ -100,7 +103,7 @@ export const _fileLockDeps = {
   stat,
   unlink,
   now: () => Date.now(),
-  sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  sleep: (ms: number, signal?: AbortSignal) => delay(ms, undefined, { signal }),
   isPidAlive: isProcessAlive,
 };
 
@@ -186,10 +189,13 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
   const retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
   const deadline = _fileLockDeps.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const claimPath = `${lockPath}.claim`;
+  const signal = options.signal;
   for (;;) {
+    signal?.throwIfAborted();
     if (await tryCreateExclusive(lockPath)) {
       return () => unlinkQuiet(lockPath);
     }
+    signal?.throwIfAborted();
     if (_fileLockDeps.now() >= deadline) break;
     const { abandoned, observedPid } = await judgeAbandoned(lockPath);
     if (abandoned && (await tryClaim(claimPath))) {
@@ -199,7 +205,7 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
         await unlinkQuiet(claimPath);
       }
     }
-    await _fileLockDeps.sleep(retryMs);
+    await _fileLockDeps.sleep(retryMs, signal);
   }
   throw new NaxError(
     `${options.errorPrefix} Timed out acquiring ${options.lockName} lock: ${lockPath}`,
@@ -224,6 +230,8 @@ export async function withFileLock<T>(
 ): Promise<T> {
   const release = await acquire(lockPath, options);
   try {
+    // The exclusive create may have succeeded while the signal was being aborted.
+    options.signal?.throwIfAborted();
     return await operation();
   } finally {
     await release();

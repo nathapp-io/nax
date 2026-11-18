@@ -178,6 +178,10 @@ beforeEach(() => {
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
+  _flowHandoffDeps.withFileLock = async (_path, operation, { signal }) => {
+    signal?.throwIfAborted();
+    return operation();
+  };
   _flowHandoffDeps.now = () => AT;
   options = {
     repoRoot: REPO_ROOT,

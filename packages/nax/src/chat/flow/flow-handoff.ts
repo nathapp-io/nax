@@ -14,14 +14,15 @@
  *
  * Approval opens a window the local checks have already closed: the record and the mark are re-read
  * after it, the mark is read once more on the run this send will mark at the push boundary, and the
- * whole mark-to-mark sequence of one feature is serialized. So a handoff that finished while this one
- * was checking is seen before anything is pushed, and a cancelled turn answers with the cancel.
+ * whole mark-to-mark sequence of one feature is serialized across processes. So a handoff that finished
+ * while this one was waiting is seen before anything is pushed, and a cancelled turn stops waiting.
  *
  * Every collaborator of the record and the mark is behind `_flowHandoffDeps`; the push,
  * the repository reads and the koda create stay on `_flowProviderDeps`.
  */
+import { join } from "node:path";
 import type { ToolResult } from "@nathapp/nax-agent";
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffMarkRefusal, readNewestHandoffMark, readRunMark, writeHandoffMark } from "../../workflow/handoff-mark";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
@@ -72,8 +73,9 @@ export const _flowHandoffDeps: {
   readNewestHandoffMark: typeof readNewestHandoffMark;
   readRunMark: typeof readRunMark;
   writeHandoffMark: typeof writeHandoffMark;
+  withFileLock: typeof withFileLock;
   now: () => Date;
-} = { collectHandoffRecord, readNewestHandoffMark, readRunMark, writeHandoffMark, now: () => new Date() };
+} = { collectHandoffRecord, readNewestHandoffMark, readRunMark, writeHandoffMark, withFileLock, now: () => new Date() };
 
 /** The record the preflights accepted, and the repository state they read it at. */
 interface HandoffReady {
@@ -342,53 +344,18 @@ async function recheck(call: SendCall, options: FlowProviderOptions): Promise<To
 }
 
 /**
- * The mark read on the run this send is about to mark, at the push boundary. The re-check above ends,
- * and the push follows some git reads later; a handoff that finished in between has written its mark
- * already, so this is the check that keeps a second send from pushing and creating a flow for a feature
- * koda now owns. `undefined` when the run is still unmarked.
- *
- * @param input - The parsed handoff
- * @param collected - The record the re-check accepted, whose newest run the mark belongs to
- * @param options - The chat's repository
- * @returns The `[chat]` refusal to stop with, or `undefined` when nothing marked this run
+ * Read the mark on the verified run at the push boundary, after the asynchronous git checks.
+ * A failed read stops the send, but if the turn was cancelled during the read, report the cancel.
  */
-async function handoffMarkGuard(
-  input: FlowHandoffInput,
-  collected: HandoffReady["collected"],
-  options: FlowProviderOptions,
-): Promise<ToolResult | undefined> {
-  const runDir = workflowRunDir(options.repoRoot, input.feature, collected.newestRunId);
-  const found = await _flowHandoffDeps.readRunMark(runDir);
-  return found === null ? undefined : failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
-}
-
-/** The handoffs this process is running, keyed by feature: one feature is pushed and marked once. */
-const featureLocks = new Map<string, Promise<void>>();
-
-/**
- * Run `work` with no other handoff of the same feature inside it.
- *
- * The mark read, the push, the koda create and the mark write are one step: serialized, a second send
- * of the same feature sees the mark the first one wrote and refuses, instead of pushing a branch the
- * first has already handed over. The queue is per feature and per process — another nax process's send
- * is not ordered by it, and the mark is what a later publish consults either way.
- *
- * @param feature - The feature the handoff is for, which is the queue's key
- * @param work - The mark-to-mark body of one handoff
- * @returns Whatever `work` returns, once every earlier handoff of the feature has finished
- */
-async function withFeatureLock<T>(feature: string, work: () => Promise<T>): Promise<T> {
-  const previous = featureLocks.get(feature) ?? Promise.resolve();
-  const turn = Promise.withResolvers<void>();
-  // The next waiter is released by this call's `finally`, not by its start.
-  const tail = previous.then(() => turn.promise);
-  featureLocks.set(feature, tail);
-  await previous;
+async function handoffMarkGuard(call: SendCall, options: FlowProviderOptions): Promise<ToolResult | undefined> {
+  const { input, ready, signal } = call;
+  const runDir = workflowRunDir(options.repoRoot, input.feature, ready.collected.newestRunId);
   try {
-    return await work();
-  } finally {
-    turn.resolve();
-    if (featureLocks.get(feature) === tail) featureLocks.delete(feature);
+    const found = await _flowHandoffDeps.readRunMark(runDir);
+    return found === null ? undefined : failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
+  } catch (error) {
+    if (!turnCancelled(signal)) throw error;
+    return failure(CANCELLED_MESSAGE);
   }
 }
 
@@ -405,7 +372,7 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
   try {
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
-    const beforePush = () => handoffMarkGuard(input, collected, options);
+    const beforePush = () => handoffMarkGuard(call, options);
     const allow = { state, specPaths: [], body: createBody(state, input, collected.record), signal, beforePush };
     const post = await afterAllow(allow, options);
     const mark = markOf(post, _flowHandoffDeps.now().toISOString(), options.connection.url);
@@ -418,15 +385,23 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
 }
 
 async function sendApprovedHandoff(call: SendCall, options: FlowProviderOptions): Promise<ToolResult> {
-  const { input, auto } = call;
+  const { input, auto, signal } = call;
   let result: ToolResult | undefined;
   let succeeded = false;
   try {
-    // The approved handoff runs under this feature's lock, so a second send of the same feature waits
-    // for this one's mark rather than pushing over it.
-    const outcome = await withFeatureLock(input.feature, () => handOver(call, options));
+    // The workflow directory already exists after preflight and is ignored by git. Hold the
+    // lock from the post-approval recheck through the mark write, even during cancellation.
+    const lockPath = join(workflowFeatureDir(options.repoRoot, input.feature), ".handoff.lock");
+    const outcome = await _flowHandoffDeps.withFileLock(lockPath, () => handOver(call, options), {
+      lockName: "handoff",
+      errorPrefix: "[chat]",
+      signal,
+    });
     result = outcome.result;
     succeeded = outcome.created;
+    return result;
+  } catch (error) {
+    result = cancellationRefusal(signal) ?? sendFailure(error);
     return result;
   } finally {
     if (auto !== undefined) {
