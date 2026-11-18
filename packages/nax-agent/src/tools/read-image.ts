@@ -104,6 +104,11 @@ function changedResult(displayPath: string): ToolResult {
 async function wholeImageResult(file: BoundedFile, header: SniffedImage, displayPath: string): Promise<ToolResult> {
   const bytes = await file.prefix(file.size);
   if (bytes.length !== file.size) return changedResult(displayPath);
+  // Growth is the mirror of shrinkage: a file that grew after the open still
+  // answers `file.size` bytes, so the body is the old prefix -- most likely a
+  // truncated image -- while every other check passes. Re-stat the SAME handle
+  // and refuse a size that no longer matches what the header described.
+  if ((await file.currentSize()) !== file.size) return changedResult(displayPath);
   // Sniff the whole file again: a header bigger than IMAGE_HEADER_BYTES can be
   // truncated mid-segment, in which case the full bytes give the dimensions the
   // header alone could not. The body is a superset of the header's bytes, so its

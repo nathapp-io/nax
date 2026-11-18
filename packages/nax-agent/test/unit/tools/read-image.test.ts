@@ -415,6 +415,34 @@ describe("readTool — the body must be the file the header described", () => {
     });
   });
 
+  test("a file that grew after the header read is an error, not a truncated image", async () => {
+    const png = Uint8Array.from(pngHeader(100, 50));
+    // The open's stat answers the size the header was sniffed against; every
+    // later stat shows the file grew, so reading exactly `file.size` bytes hands
+    // back a truncated image unless the growth is noticed.
+    let stats = 0;
+    _boundedIoDeps.open = async () => ({
+      stat: async () => {
+        stats += 1;
+        return { size: stats === 1 ? png.length : png.length + 1_024, isFile: () => true };
+      },
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const available = Math.max(0, Math.min(png.length - position, length));
+        buffer.set(png.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    });
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result).toEqual({
+      content: '"shot.png" changed while it was being read; run Read again',
+      isError: true,
+    });
+    expect(result !== undefined && Object.hasOwn(result, "images")).toBe(false);
+  });
+
   test("a short body read is retried until the file's size is reached", async () => {
     const png = Uint8Array.from([...pngHeader(100, 50), 0x00, 0x01, 0x02]);
     // A handle that answers one byte at a time: POSIX allows this, and a single

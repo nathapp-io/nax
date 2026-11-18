@@ -68,6 +68,12 @@ export interface BoundedFile {
   readonly size: number;
   /** The first `maxBytes` bytes, or fewer at end of file. */
   prefix(maxBytes: number): Promise<Uint8Array>;
+  /**
+   * The file's size now, taken from the SAME open handle as `size` — a caller
+   * that read exactly `size` bytes needs this to tell a whole file from a
+   * truncation of one that grew after the open.
+   */
+  currentSize(): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -92,8 +98,12 @@ function wrapHandle(handle: BoundedHandle, size: number): BoundedFile {
   return {
     size,
     // Ask for no more than the file holds, so a 20-byte header read costs 20
-    // bytes rather than a full header buffer's worth.
-    prefix: (maxBytes: number) => readFromStart(handle, Math.max(0, Math.min(maxBytes, size))),
+    // bytes rather than a full header buffer's worth. A reported size of 0 is
+    // NOT a trustworthy ceiling: Linux procfs entries are regular files that
+    // report size 0 and still carry their text, so they are read unclamped and
+    // end at EOF like any other file.
+    prefix: (maxBytes: number) => readFromStart(handle, Math.max(0, size > 0 ? Math.min(maxBytes, size) : maxBytes)),
+    currentSize: async () => (await handle.stat()).size,
     close: () => handle.close(),
   };
 }

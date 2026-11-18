@@ -254,6 +254,22 @@ describe("bounded I/O — the dependency seam", () => {
     expect(result.size).toBe(10);
   });
 
+  test("a regular file that reports size 0, like a Linux procfs entry, is still read", async () => {
+    const text = new TextEncoder().encode("MemTotal:       16384 kB\n");
+    _boundedIoDeps.open = async () => ({
+      stat: async () => ({ size: 0, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const available = Math.max(0, Math.min(text.length - position, length));
+        buffer.set(text.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    });
+
+    // Clamping the read to the reported size would answer "" for every procfs file.
+    expect(await readPrefix("/fake/procfs/status", 100)).toBe("MemTotal:       16384 kB\n");
+  });
+
   test("a handle whose stat is not a file is READ_NOT_REGULAR_FILE", async () => {
     _boundedIoDeps.open = async () => ({
       stat: async () => ({ size: 0, isFile: () => false }),
