@@ -3,7 +3,7 @@
   "feature": "chat-flow-handoff",
   "branchName": "feat/chat-flow-handoff",
   "createdAt": "2026-11-18T02:53:13.468Z",
-  "updatedAt": "2026-11-18T04:28:23.593Z",
+  "updatedAt": "2026-11-18T04:47:29.788Z",
   "userStories": [
     {
       "id": "US-001",
@@ -349,14 +349,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The bundle reuses the existing push and create architecture but changes their shared approval-gated path; isolate tests for authorized external writes and post-push outcome classification."
+        "reasoning": "The bundle reuses the existing push and create architecture but changes their shared approval-gated path; isolate tests for authorized external writes and post-push outcome classification.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/flow/flow-provider.ts",
@@ -375,7 +378,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8c9d9ff658cbfd539d002880745719d7e8f689a2"
     },
     {
       "id": "US-007",
