@@ -9,8 +9,9 @@
  * a writer scope ruling can widen or narrow, and `isBlockingFinding` decides severity and class. Status
  * and readiness can therefore not disagree about what still holds the PR.
  *
- * Read-only. Nothing here writes to the forge or to the PR, and a thread with no marker key, a foreign
- * opener or a resolved thread is not a finding at all.
+ * Read-only. Nothing here writes to the forge or to the PR, and a thread with no marker key or a
+ * foreign opener is not a finding at all. Resolution is not read here: the shared settlement reader
+ * owns that question, and it keeps a resolved finding a writer has since reconfirmed open.
  */
 import {
   type ForgeDeps,
@@ -76,13 +77,15 @@ interface OwnFindingThread {
 }
 
 /**
- * Own, unresolved threads whose first comment carries an `f-` marker key. Ownership is the author, never
- * the marker: a marker is what this bot writes, not who wrote it.
+ * Own threads whose first comment carries an `f-` marker key. Ownership is the author, never the
+ * marker: a marker is what this bot writes, not who wrote it. A resolved thread is NOT skipped here —
+ * the settlement reader decides whether resolution closed the finding, and it deliberately keeps one a
+ * writer has since reconfirmed. Filtering on `resolved` would let status and readiness disagree.
  */
 function ownFindingThreads(threads: readonly PrThread[], login: string): OwnFindingThread[] {
   return threads.flatMap((thread) => {
     const first = thread.comments[0];
-    if (first === undefined || first.author !== login || thread.resolved) return [];
+    if (first === undefined || first.author !== login) return [];
     const key = parseNaxBotMarker(first.body)?.key;
     if (key === undefined || !key.startsWith(FINDING_KEY_PREFIX)) return [];
     return [{ key, thread, text: findingText(first.body) }];

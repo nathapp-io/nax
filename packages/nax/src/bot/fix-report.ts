@@ -1,5 +1,4 @@
 /** Repo-scoped post-push forge nodes; a separate review must grade the fixes. */
-import { homedir } from "node:os";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -8,6 +7,7 @@ import {
   hasNaxWorkflowMarker,
   listPrComments,
   listReviewThreads,
+  MAX_FORGE_COMMENT_CHARS,
   type OwnComment,
   ownComments,
   type PrComment,
@@ -38,12 +38,19 @@ import {
 } from "./ci-waiver-ready";
 import { convergenceLines } from "./convergence-summary";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
-import { outcomeText } from "./fix-outcome-text";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { renderFixSummary } from "./fix-summary";
 import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
-import { type BotPushEntry, ledgerBody, ledgerIssue, nextLedgerEntries, readPushLedger } from "./push-ledger";
+import {
+  type BotPushEntry,
+  ledgerIssue,
+  nextLedgerEntries,
+  pushLedgerChars,
+  readPushLedger,
+  withPushLedger,
+} from "./push-ledger";
 import { safeText } from "./render";
 import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
@@ -52,11 +59,11 @@ import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
 const READY_HOLD_FINDINGS_SHOWN = 5;
-const MAX_FAILURE_LENGTH = 500;
+/** Room kept under the forge's comment cap for the header, the marker line and the joins between them. */
+const SUMMARY_CHARS_RESERVE = 512;
 const MAX_ISSUE_LENGTH = 200;
 const OUT_OF_ITEM_FILES_SHOWN = 20;
 export const _fixReportDeps = {
-  homedir,
   replyToThread,
   resolveThread,
   editComment,
@@ -459,37 +466,8 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
   return { patch: { markedReady: true, ...(waived === undefined ? {} : { ciWaived: waived }) }, exit: "report" };
 }
 
-/** `prefix/x` -> `${bare}/x` and a bare `prefix` -> `bare`, only where `prefix` ends at a path boundary. */
-function replacePathPrefix(text: string, prefix: string, bare: string): string {
-  if (prefix.length <= 1) return text;
-  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Not followed by a name character: `/a/repo-old` and `/a/repo.bak` are other paths, `/a/repo.` is this one.
-  return text.replace(new RegExp(`${escaped}(?![\\w-]|\\.[\\w-])(/?)`, "g"), (_m, slash: string) =>
-    slash ? (bare === "." ? "" : `${bare}/`) : bare,
-  );
-}
-
-function stripLocalPaths(text: string, repoRoot: string | undefined): string {
-  return replacePathPrefix(replacePathPrefix(text, repoRoot ?? "", "."), _fixReportDeps.homedir(), "~");
-}
-
-/** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
-export function renderFixSummary(state: BotFixState, details: readonly string[] = [], repoRoot?: string): string {
-  const lines = [outcomeText(state, repoRoot), ...details];
-  if (state.reusedFix)
-    lines.push(
-      `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
-    );
-  if (state.repairMode !== undefined)
-    lines.push(`Repair turn: ${state.repairMode}, round ${state.gateRepairRounds ?? 0}.`);
-  if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
-  if (state.fixFailure !== undefined)
-    lines.push(`Fix session: ${safeText(stripLocalPaths(state.fixFailure, repoRoot), MAX_FAILURE_LENGTH)}`);
-  // Why the PR is still a draft, or what released it. Untrusted text is neutralised in
-  // `readinessLines`, which also rewrites exactly these lines when a waiver readies the PR (US-007).
-  lines.push(...readinessLines(state));
-  return withNaxBotMarker(lines.join("\n"), FIX_SUMMARY_KEY);
-}
+/** The summary text lives in its own module; re-exported here so `fix-report` keeps one public surface. */
+export { type FixSummaryOptions, renderFixSummary } from "./fix-summary";
 
 function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
   if (state.outcome !== "pushed" || !state.changed) return;
@@ -525,44 +503,91 @@ function pushEntry(env: BotFixEnv, state: BotFixState): BotPushEntry | undefined
   };
 }
 
-/** The summary body to write: this execution's text, carrying the ledger the own comment held. */
-function summaryBody(
-  env: BotFixEnv,
-  state: BotFixState,
-  lines: readonly string[],
-  own: OwnComment | undefined,
-): string {
-  const previous = own?.comment.body;
-  const entry = pushEntry(env, state);
-  // An unreadable block is replaced by this execution's entries alone, so the loss is not silent.
-  if (entry !== undefined && previous !== undefined && readPushLedger(previous).unreadable)
-    getLogger()?.warn("bot-fix", "Replaced an unreadable push ledger in the fix summary", {
+/**
+ * The `fix-summary` comment as the forge holds it now. Every write replaces the whole body, and the
+ * ledger inside it is the PR's only record of the bot's own pushes — so the body this run started with
+ * is not good enough at write time: another `nax bot fix`, on another host, may have appended its own
+ * entry while this one ran. A failed read falls back to the run's own snapshot, whose entries the merge
+ * carries over anyway.
+ */
+async function currentSummary(env: BotFixEnv, snapshot: OwnComment | undefined): Promise<OwnComment | undefined> {
+  try {
+    const comments = await _fixReportDeps.listPrComments(env.ref, env.forge, env.repoRoot);
+    return ownComments(comments, env.user.login).find(
+      ({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined,
+    );
+  } catch (error) {
+    getLogger()?.debug("bot-fix", "Could not re-read the fix summary; merging against this run's snapshot", {
       pr: env.ref.number,
-      error: "the ledger block is not base64 JSON this version can read",
+      error: errorMessage(error),
     });
-  return ledgerBody(previous, entry, renderFixSummary(state, lines, env.repoRoot));
+    return snapshot;
+  }
 }
 
-export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
-  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
-  // US-008: the facts are read from the ledger the summary is about to carry — this execution's push
-  // included — so the count stated and the block written can never disagree.
-  const lines = convergenceLines({
-    entries: nextLedgerEntries(own?.comment.body, pushEntry(env, state)),
-    unreachable: env.review.unreachablePushes ?? 0,
-    agreed: env.review.agreed,
-    blocking: reviewBlockingTriggers(env),
-    noticeGeneration: configuredChainNoticeGeneration(env.config),
-  });
-  if (state.outcome === "nothing" && state.pushedSha)
-    lines.push(
-      `Pushed ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`,
-    );
+/**
+ * US-007: the advisor-ledger push — only the carried ledger moved — which the brief lists before the
+ * follow-up sentence a `nothing` outcome otherwise leads with.
+ */
+function advisorLine(env: BotFixEnv, state: BotFixState): string | undefined {
+  if (state.outcome !== "nothing" || state.pushedSha === undefined) return undefined;
+  const sha = state.pushedSha.slice(0, SHORT_SHA_LENGTH);
+  return `Pushed ${sha}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`;
+}
+
+/** The summary's own lines, before the convergence facts the budget is measured against. */
+function summaryDetails(env: BotFixEnv, state: BotFixState): string[] {
+  const lines: string[] = [];
   if (state.ledgerCarried)
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
-  const body = summaryBody(env, state, lines, own);
+  return lines;
+}
+
+/**
+ * The summary body to write: the convergence facts, the outcome, and the ledger the comment holds now.
+ *
+ * The facts are budgeted against everything else the comment spends — the forge refuses an oversized
+ * comment outright, and a refused write records no push at all — so the ledger block, the header, the
+ * marker line and the summary's own text are subtracted before the chain section may use the rest.
+ */
+function summaryBody(env: BotFixEnv, state: BotFixState, own: OwnComment | undefined): string {
+  const snapshot = env.own.find(({ key }) => key === FIX_SUMMARY_KEY)?.comment.body;
+  const current = own?.comment.body;
+  const entry = pushEntry(env, state);
+  // An unreadable block is replaced by this execution's entries alone, so the loss is not silent.
+  if (entry !== undefined && current !== undefined && readPushLedger(current).unreadable)
+    getLogger()?.warn("bot-fix", "Replaced an unreadable push ledger in the fix summary", {
+      pr: env.ref.number,
+      error: "the ledger block is not base64 JSON this version can read",
+    });
+  const entries = nextLedgerEntries(current, entry, snapshot);
+  const lead = advisorLine(env, state);
+  const options = lead === undefined ? {} : { lead: [lead] };
+  const details = summaryDetails(env, state);
+  const facts = convergenceLines(
+    {
+      entries,
+      unreachable: env.review.unreachablePushes ?? 0,
+      agreed: env.review.agreed,
+      blocking: reviewBlockingTriggers(env),
+      noticeGeneration: configuredChainNoticeGeneration(env.config),
+    },
+    MAX_FORGE_COMMENT_CHARS -
+      renderFixSummary(state, details, env.repoRoot, options).length -
+      pushLedgerChars(entries) -
+      SUMMARY_CHARS_RESERVE,
+  );
+  return withPushLedger(renderFixSummary(state, [...facts, ...details], env.repoRoot, options), entries);
+}
+
+export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
+  const own = await currentSummary(
+    env,
+    env.own.find(({ key }) => key === FIX_SUMMARY_KEY),
+  );
+  const body = summaryBody(env, state, own);
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
   return { patch: {}, exit: "done" };

@@ -26,9 +26,8 @@ import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
-import { earlierLineageTargets } from "./post-earlier";
+import { lineageTargets } from "./post-earlier";
 import type { BotPushEntry } from "./push-ledger";
-import { findingKey } from "./render";
 import { type ReviewHistoryInput, reviewConvergence, reviewHistory } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
 import { type BotReviewScope, readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
@@ -125,16 +124,7 @@ async function reviewLineage(
   const { botPushes, worktree } = post;
   if (botPushes === undefined || botPushes.length === 0 || worktree === undefined) return undefined;
   return computeLineage(
-    {
-      // The verdict's findings and the open earlier threads share the keys `mergeEarlier` uses (US-005).
-      targets: [
-        ...verdict.findings.map((f) => ({ key: findingKey(f), file: f.file, line: f.line })),
-        ...earlierLineageTargets({ ...post, verdict }),
-      ],
-      entries: botPushes,
-      worktree,
-      head: post.info.headSha,
-    },
+    { targets: lineageTargets({ ...post, verdict }), entries: botPushes, worktree, head: post.info.headSha },
     { runGit: _botReviewDeps.runGit },
   );
 }

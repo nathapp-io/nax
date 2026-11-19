@@ -47,11 +47,12 @@ const MAX_ITEM_ISSUE_CHARS = 120;
 const LEDGER_PREFIX = "<!-- nax-bot:pushes v1 ";
 const LEDGER_SUFFIX = " -->";
 /**
- * The payload is spelled permissively (`\S*`) on purpose: a block written by another version or
+ * The payload is spelled permissively (`.*?`) on purpose: a block written by another version or
  * damaged in the comment still reads as a block, so `readPushLedger` can report it unreadable
- * instead of silently treating the comment as holding no ledger at all.
+ * instead of silently treating the comment as holding no ledger at all. A payload with an internal
+ * space is exactly such damage, which a `\S*` payload would hide by not matching the line at all.
  */
-const LEDGER_LINE = /<!-- nax-bot:pushes v1 (\S*) -->/;
+const LEDGER_LINE = /<!-- nax-bot:pushes v1 (.*?) -->/;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 /** Padded, canonical base64 in whole groups — the only form `encode` ever writes. */
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
@@ -113,8 +114,12 @@ function parsePayload(payload: string): readonly BotPushEntry[] | undefined {
   // damaged history would look like an empty ledger — which the next push would then overwrite. The
   // payload must be the padded, canonical base64 `encode` writes before anything is decoded.
   if (!BASE64.test(payload)) return undefined;
+  const bytes = Buffer.from(payload, "base64");
+  // Decoding discards padding bits, so `W11=` and the canonical `W10=` both read as `[]`: only the
+  // re-encoding of the decoded bytes proves the payload is byte-for-byte what `encode` wrote.
+  if (bytes.toString("base64") !== payload) return undefined;
   try {
-    return readEntries(JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown);
+    return readEntries(JSON.parse(bytes.toString("utf8")) as unknown);
   } catch {
     // A payload that is not base64 JSON is not a ledger: the caller reports it unreadable.
     return undefined;
@@ -155,8 +160,25 @@ export function ledgerIssue(issue: string): string {
   return firstIssueLine(issue).slice(0, MAX_ITEM_ISSUE_CHARS);
 }
 
+/**
+ * One parent's issue, read from the push `Lineage:` names — never from whichever entry happens to hold
+ * that key. A finding key recurs across pushes (a re-raised finding, an edit that keeps its key), so a
+ * lookup by key alone can report an issue a different push wrote. A parent whose own push the ledger no
+ * longer holds reads without an issue rather than borrowing another push's.
+ */
+export function parentIssue(pushSha: string, parent: string, entries: readonly BotPushEntry[]): string | undefined {
+  return entries.find(({ sha }) => sha === pushSha)?.items.find(({ key }) => key === parent)?.issue;
+}
+
 function fits(entries: readonly BotPushEntry[]): boolean {
   return encode(entries).length <= MAX_LEDGER_CHARS;
+}
+
+/** The newest entries that fit the budget: the entry cap first, then the encoded block's own limit. */
+function fitted(entries: readonly BotPushEntry[]): readonly BotPushEntry[] {
+  let kept = entries.slice(-MAX_PUSH_ENTRIES);
+  while (kept.length > 1 && !fits(kept)) kept = kept.slice(1);
+  return kept;
 }
 
 /** A single entry over the budget keeps only the leading items that fit, so the push is still recorded. */
@@ -171,29 +193,59 @@ function trimItems(entry: BotPushEntry): BotPushEntry {
  * the encoded block fits `MAX_LEDGER_CHARS`. The appended entry is never the one dropped.
  */
 export function appendPushEntry(entries: readonly BotPushEntry[], entry: BotPushEntry): readonly BotPushEntry[] {
-  let kept = [...entries, entry].slice(-MAX_PUSH_ENTRIES);
-  while (kept.length > 1 && !fits(kept)) kept = kept.slice(1);
+  const kept = fitted([...entries, entry]);
   return fits(kept) ? kept : [trimItems(entry)];
 }
 
 /**
- * The entries a report writes: the block the comment it replaces carried, plus this execution's push
- * when it made one. US-008 reads the same list to count the pushes the summary is about to state, so
- * the count and the block can never disagree.
+ * An earlier read's entries the current block no longer holds, ahead of the current ones: the forge has
+ * no conditional comment update, so a writer working from a stale snapshot replaces the whole body and
+ * would otherwise erase a push another run recorded while it worked. Entries are identified by their
+ * full sha, so a re-read never duplicates one.
  */
-export function nextLedgerEntries(
-  previous: string | undefined,
-  entry: BotPushEntry | undefined,
+export function carryOverEntries(
+  current: readonly BotPushEntry[],
+  earlier: readonly BotPushEntry[],
 ): readonly BotPushEntry[] {
-  const kept = previous === undefined ? [] : readPushLedger(previous).entries;
-  return entry === undefined ? kept : appendPushEntry(kept, entry);
+  const known = new Set(current.map(({ sha }) => sha));
+  return [...earlier.filter(({ sha }) => !known.has(sha)), ...current];
+}
+
+/** What this ledger adds to a comment: its block line with its newline, or nothing for an empty ledger. */
+export function pushLedgerChars(entries: readonly BotPushEntry[]): number {
+  return entries.length === 0 ? 0 : encode(entries).length + 1;
+}
+
+function readEntriesOf(body: string | undefined): readonly BotPushEntry[] {
+  return body === undefined ? [] : readPushLedger(body).entries;
 }
 
 /**
- * The body a report writes: the `fix-summary` this execution rendered, carrying the ledger of the
- * comment it replaces plus — only when this execution pushed — its own entry. An unreadable or
- * absent previous block contributes nothing but the new entry (US-004).
+ * The entries a report writes: the block the comment holds now, the entries an earlier read saw that
+ * the current block lost, and this execution's push when it made one. US-008 reads the same list to
+ * count the pushes the summary is about to state, so the count and the block can never disagree.
  */
-export function ledgerBody(previous: string | undefined, entry: BotPushEntry | undefined, body: string): string {
-  return withPushLedger(body, nextLedgerEntries(previous, entry));
+export function nextLedgerEntries(
+  current: string | undefined,
+  entry: BotPushEntry | undefined,
+  snapshot?: string | undefined,
+): readonly BotPushEntry[] {
+  const kept = carryOverEntries(readEntriesOf(current), readEntriesOf(snapshot));
+  return entry === undefined ? fitted(kept) : appendPushEntry(kept, entry);
+}
+
+/**
+ * The body a report writes: the `fix-summary` this execution rendered, carrying the ledger read above.
+ * A write is always a whole-body replace, so callers pass the body the forge holds now as `current`
+ * rather than the snapshot their run started with.
+ */
+export function ledgerBody(input: {
+  /** The comment as the forge holds it at write time. */
+  readonly current?: string | undefined;
+  /** The body this execution first saw; its entries survive a stale rewrite. */
+  readonly snapshot?: string | undefined;
+  readonly entry?: BotPushEntry | undefined;
+  readonly body: string;
+}): string {
+  return withPushLedger(input.body, nextLedgerEntries(input.current, input.entry, input.snapshot));
 }

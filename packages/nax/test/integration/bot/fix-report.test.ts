@@ -9,8 +9,15 @@ import {
   replyStep,
   reportStep,
 } from "@/bot";
-import { ledgerBody, readPushLedger } from "@/bot/push-ledger";
-import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import { type BotPushEntry, readPushLedger, withPushLedger } from "@/bot/push-ledger";
+import {
+  MAX_FORGE_COMMENT_CHARS,
+  NAX_WORKFLOW_PR_MARKER,
+  type PrComment,
+  type PrThread,
+  parseNaxBotMarker,
+  withNaxBotMarker,
+} from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { _ciWaitDeps } from "@/workflow/ci-wait";
 import { safeCode } from "@/workflow/pr-body-safe";
@@ -531,6 +538,9 @@ describe("reportStep push ledger (US-004)", () => {
  */
 describe("reportStep convergence facts (US-008)", () => {
   const S = "abcdef1234567890abcdef1234567890abcdef12";
+  /** A 40-hex head and push for the budget case, which reads the ledger back. */
+  const BASE_SHA = "b".repeat(40);
+  const PUSH = "a".repeat(40);
   const base = makeBotFixEnv();
   /** The same env with an artifact carrying the facts a later push records. */
   const withReview = (review: Partial<typeof base.review>): typeof base => ({
@@ -568,11 +578,9 @@ describe("reportStep convergence facts (US-008)", () => {
       id: "7",
       kind: "comment",
       author: env.user.login,
-      body: ledgerBody(
-        undefined,
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [
         { base: "b".repeat(40), sha: S, at: "", items: [{ key: "f-a", generation: 1, issue: "lock leaks" }] },
-        withNaxBotMarker("earlier summary", "fix-summary"),
-      ),
+      ]),
       createdAt: "",
     };
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
@@ -584,6 +592,41 @@ describe("reportStep convergence facts (US-008)", () => {
     );
     // The count is this PR's whole recorded history: the earlier entry plus this execution's push.
     expect(body).toContain("nax bot fix pushes on this PR: 2");
+  });
+
+  // B2: the forge refuses a comment past its size limit, and a refused summary records no push at all.
+  test("B2: a long ledger plus a long chain still posts a body under the forge limit", async () => {
+    const parents = ["f-p0", "f-p1", "f-p2", "f-p3", "f-p4"];
+    const fat: BotPushEntry = {
+      base: BASE_SHA,
+      sha: "7".repeat(40),
+      at: "",
+      items: parents.map((key) => ({ key, generation: 1, issue: "z".repeat(120) })),
+    };
+    // Enough chained findings that the chain section alone would overrun the forge's comment limit.
+    const agreed = Array.from({ length: 400 }, (_unused, index) => ({
+      kind: "finding" as const,
+      key: `f-x${index}`,
+      issue: `lock leaks again ${index}`,
+      severity: "important" as const,
+      lineage: { generation: 2, parents, pushSha: fat.sha },
+    }));
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: "bot",
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [fat]),
+      createdAt: "",
+    };
+    const env = withReview({ agreed });
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep({ ...env, own: [{ key: "fix-summary", comment: stored }] }, { ...state, pushedSha: PUSH });
+    const body = String(edit.mock.calls[0]?.[2] ?? "");
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    // The push this execution made is still recorded: the record is what must not be truncated.
+    expect(readPushLedger(body).entries.at(-1)?.sha).toBe(PUSH);
+    expect(body).toContain("nax bot fix pushes on this PR:");
+    expect(body).toMatch(/more finding\(s\) not listed/);
   });
 
   test("a fix that changed nothing states no new push but keeps the history's count", async () => {

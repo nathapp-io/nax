@@ -224,7 +224,6 @@ async function fixPromptFacts(
   readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
 }> {
   const entries = ownPushEntries(env.own);
-  const ledger = entries.flatMap(({ items }) => items);
   const blocking = reviewBlockingTriggers(env);
   const growth = await outsideDeclaredGrowth({
     ...(prdPath === undefined ? {} : { prdPath }),
@@ -232,7 +231,10 @@ async function fixPromptFacts(
     entries,
   });
   return {
-    findingFacts: env.review.agreed.map((item) => ({ id: item.key, lines: findingFactLines(item, ledger, blocking) })),
+    findingFacts: env.review.agreed.map((item) => ({
+      id: item.key,
+      lines: findingFactLines(item, entries, blocking),
+    })),
     ...(growth === undefined ? {} : { outsideGrowth: growth }),
   };
 }

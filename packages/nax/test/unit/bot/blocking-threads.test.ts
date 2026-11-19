@@ -74,6 +74,9 @@ function input(overrides: Partial<BlockingFindingThreadsInput> = {}): BlockingFi
   };
 }
 
+/** The answer `hasWriteAccess` reads from the forge: this author may rule. */
+const permission = (level: string) => ({ exitCode: 0, stdout: JSON.stringify({ permission: level }), stderr: "" });
+
 /** A top-level PR comment, the only kind that can rule this PR's blocking scope. */
 const scopeRuling = (body: string, author = "alice"): PrComment => ({
   id: "c1",
@@ -104,9 +107,50 @@ describe("readBlockingFindingThreads", () => {
     ]);
   });
 
-  test("AC-2 leaves out a resolved own finding thread", async () => {
+  test("AC-2: leaves out a resolved own finding thread the settlement reader settles", async () => {
+    // B4: resolution is the settlement reader's question, so a resolved thread is a candidate, not a
+    // skip. Without an authorized ruling, resolution alone settles it — as `readSettledKeys` answers.
+    settled.mockImplementation(async () => new Set([KEY]));
     expect(await readBlockingFindingThreads(input({ threads: [findingThread({ resolved: true })] }))).toEqual([]);
+    expect(settled).toHaveBeenCalledTimes(1);
   });
+
+  test("B4: a resolved thread the settlement reader keeps open stays listed", async () => {
+    // A writer reconfirmed the finding after the thread was resolved, which is exactly the state
+    // readiness holds on: dropping resolved threads here would let status disagree with readiness.
+    settled.mockImplementation(async () => new Set<string>());
+    const items = await readBlockingFindingThreads(input({ threads: [findingThread({ resolved: true })] }));
+    expect(items).toEqual([
+      { id: KEY, kind: "finding", severity: "important", file: PATH, line: LINE, issue: "bot review: lock leaks" },
+    ]);
+  });
+
+  interface ResolvedCase {
+    readonly name: string;
+    readonly replies: readonly string[];
+    readonly expected: readonly string[];
+  }
+  const resolvedThreadCases: ResolvedCase[] = [
+    { name: "no authorized reply — resolution alone closes it", replies: [], expected: [] },
+    { name: "a writer reconfirmed it after the resolve", replies: ["confirm"], expected: [KEY] },
+  ];
+  test.each(resolvedThreadCases)(
+    "B4: the real settlement reader decides a resolved thread ($name)",
+    async ({ replies, expected }) => {
+      // The production reader, not a stub: `readSettledKeys` reads the newest authorized ruling and keeps
+      // a confirming one open whatever the thread's resolution says.
+      Object.assign(_blockingThreadsDeps, { readSettledKeys: original.readSettledKeys });
+      const thread = findingThread({ resolved: true });
+      const withReplies = {
+        ...thread,
+        comments: [...thread.comments, ...replies.map((body) => comment("2", body, "alice"))],
+      };
+      const items = await readBlockingFindingThreads(
+        input({ threads: [withReplies], deps: { run: async () => permission("write"), readText: async () => null } }),
+      );
+      expect(items.map((item) => item.id)).toEqual([...expected]);
+    },
+  );
 
   test("AC-3 leaves out a finding thread whose key readiness reports as settled", async () => {
     settled.mockImplementation(async () => new Set([KEY]));

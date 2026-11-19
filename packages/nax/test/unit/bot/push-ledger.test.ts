@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   appendPushEntry,
   type BotPushEntry,
+  carryOverEntries,
   MAX_LEDGER_CHARS,
   MAX_PUSH_ENTRIES,
+  nextLedgerEntries,
+  parentIssue,
+  pushLedgerChars,
   readPushLedger,
   withPushLedger,
 } from "@/bot/push-ledger";
@@ -87,8 +91,16 @@ describe("readPushLedger", () => {
     // `Buffer.from(…, "base64")` skips what it cannot decode, so this once read as `[]`.
     ["a damaged character appended to a decodable payload", `${payload([])}!`],
     ["a payload truncated mid-group", payload([]).slice(0, 3)],
+    // B10: decoding discards padding bits, so `W11=` and the canonical `W10=` both read as `[]`.
+    ["a payload whose padding bits differ from the canonical encoding", "W11="],
+    ["a payload with an internal space", `${payload([])} ${payload([])}`],
   ])("AC-7 rejects a payload that is %s", (_name, body) => {
     expect(readPushLedger(`${PUSHES}${body} -->\n${MARKER}`)).toEqual({ entries: [], unreadable: true });
+  });
+
+  test("B10: the canonical empty payload the writer emits still reads", () => {
+    expect(payload([])).toBe("W10=");
+    expect(readPushLedger(`${PUSHES}W10= -->\n${MARKER}`)).toEqual({ entries: [], unreadable: false });
   });
 
   test("AC-8 rejects an entry whose sha is not 40 hex characters", () => {
@@ -145,5 +157,63 @@ describe("appendPushEntry", () => {
     expect(kept.items.length).toBeLessThan(400);
     expect(kept.items[0]).toEqual(huge.items[0]);
     expect(kept.items).toEqual(huge.items.slice(0, kept.items.length));
+  });
+});
+
+/**
+ * B1: the ledger is written by replacing the whole comment, and the forge has no conditional update.
+ * These pin the merge that keeps a push recorded by a run whose body this one never saw.
+ */
+describe("nextLedgerEntries", () => {
+  const earlier = entry({ sha: SHA_B });
+  const current = `${MARKER}\n<!-- nax-bot:pushes v1 ${payload([earlier])} -->`;
+
+  test("appends this execution's entry to the block the comment holds now", () => {
+    const out = nextLedgerEntries(current, entry({ sha: SHA_A }));
+    expect(out.map(({ sha }) => sha)).toEqual([SHA_B, SHA_A]);
+  });
+
+  test("carries over an entry a stale snapshot holds that the current block has lost", () => {
+    const stale = `${MARKER}\n<!-- nax-bot:pushes v1 ${payload([entry({ sha: SHA_A })])} -->`;
+    const out = nextLedgerEntries(`<!-- nax-bot:pushes v1 ${payload([earlier])} -->`, undefined, stale);
+    // The lost entry is older than the current one, so it is restored ahead of it, once.
+    expect(out.map(({ sha }) => sha)).toEqual([SHA_A, SHA_B]);
+    // A snapshot the current block already holds adds nothing.
+    expect(nextLedgerEntries(current, undefined, current)).toEqual([earlier]);
+  });
+
+  test("reads a body with no block as an empty ledger", () => {
+    expect(nextLedgerEntries(MARKER, undefined)).toEqual([]);
+  });
+});
+
+describe("carryOverEntries", () => {
+  test("restores only the entries the current block does not already hold", () => {
+    const a = entry({ sha: SHA_A });
+    const b = entry({ sha: SHA_B });
+    expect(carryOverEntries([b], [a, b])).toEqual([a, b]);
+    expect(carryOverEntries([a, b], [a, b])).toEqual([a, b]);
+  });
+});
+
+describe("parentIssue", () => {
+  test("reads the issue the named push recorded, not another push's for the same key", () => {
+    const entries = [
+      entry({ sha: SHA_A, items: [{ key: "f-a", generation: 0, issue: "lock leaks" }] }),
+      entry({ sha: SHA_B, items: [{ key: "f-a", generation: 1, issue: "claim file leaks" }] }),
+    ];
+    expect(parentIssue(SHA_A, "f-a", entries)).toBe("lock leaks");
+    expect(parentIssue(SHA_B, "f-a", entries)).toBe("claim file leaks");
+  });
+
+  test("names no issue for a push the ledger no longer holds", () => {
+    expect(parentIssue(SHA_A, "f-a", [entry({ sha: SHA_B })])).toBeUndefined();
+  });
+});
+
+describe("pushLedgerChars", () => {
+  test("is the block line plus its newline, and nothing for an empty ledger", () => {
+    expect(pushLedgerChars([])).toBe(0);
+    expect(pushLedgerChars([entry()])).toBe((blockIn(withPushLedger(summary, [entry()])) ?? "").length + 1);
   });
 });

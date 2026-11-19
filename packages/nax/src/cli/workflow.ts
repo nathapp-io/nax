@@ -239,6 +239,7 @@ async function readBlockingFindings(
   dir: string,
   url: string,
   forgeDeps: WorkflowForgeDeps,
+  warn: (message: string) => void,
 ): Promise<readonly OpenItem[]> {
   const number = prNumberFromUrl(url);
   if (number === null) return [];
@@ -260,26 +261,38 @@ async function readBlockingFindings(
       cwd: dir,
     });
   } catch (error) {
+    const detail = errorMessage(error);
+    // The CLI boundary answers for this one: a standalone `status` initializes no logger, and its
+    // no-op would swallow the only sign that the report is missing the review's own findings (B6).
+    warn(`[workflow-status] Could not read blocking review findings (PR #${number}): ${detail}`);
     getLogger().warn("workflow-status", "[workflow-status] Could not read blocking review findings", {
       pr: number,
-      error: errorMessage(error),
+      error: detail,
     });
     return [];
   }
 }
 
 /** The verdict of the newest readable run: the report, and the blocking findings the live path appended. */
-async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForgeDeps): Promise<BuiltReport> {
+async function buildReport(
+  dir: string,
+  feature: string,
+  forgeDeps: WorkflowForgeDeps,
+  warn: (message: string) => void,
+): Promise<BuiltReport> {
   const loaded = await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir);
   const report = reportFor(dir, feature, loaded);
   const { outcome, url } = loaded.record;
-  const needsLiveStatus = outcome === "draft" || (outcome === "ready" && report.openItems.length > 0);
+  // A published ready record is read live even with no recorded open item: a bot review can raise a
+  // blocking finding thread afterwards without rewriting the record, and the item index never counts
+  // one, so the recorded list cannot say whether anything still holds the PR (US-008, B5).
+  const needsLiveStatus = outcome === "draft" || outcome === "ready";
   if (!needsLiveStatus || !url || prNumberFromUrl(url) === null) return { report, blocking: [] };
   const live = await readLiveStatus({ url, cwd: dir, deps: forgeDeps.forge, items: report.openItems });
   if (live.source === "run-record")
     return { report: await withSidecar({ ...report, liveError: live.error }, loaded, dir), blocking: [] };
   const settled = new Set(live.settled.map((item) => item.id));
-  const blocking = await readBlockingFindings(dir, url, forgeDeps);
+  const blocking = await readBlockingFindings(dir, url, forgeDeps, warn);
   return {
     blocking,
     report: {
@@ -372,7 +385,7 @@ export async function workflowStatusCommand(
   forgeDeps: WorkflowForgeDeps = _workflowForgeDeps,
 ): Promise<number> {
   try {
-    const { report, blocking } = await buildReport(opts.dir, opts.feature, forgeDeps);
+    const { report, blocking } = await buildReport(opts.dir, opts.feature, forgeDeps, deps.logErr);
     if (opts.json) deps.log(JSON.stringify(report));
     else printPlain(report, deps, blocking);
     return exitCodeFor(report);

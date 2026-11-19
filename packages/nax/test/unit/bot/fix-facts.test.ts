@@ -1,21 +1,29 @@
 import { describe, expect, mock, test } from "bun:test";
-import { makePRD, makeStory } from "@test/helpers";
+import { join } from "node:path";
+import { makePRD, makeStory, withTempDir } from "@test/helpers";
 import type { AgreedItem } from "@/bot";
-import { findingFactLines, outsideDeclaredGrowth } from "@/bot/fix-facts";
-import type { BotPushItem } from "@/bot/push-ledger";
+import { findingFactLines, type OutsideGrowthDeps, outsideDeclaredGrowth } from "@/bot/fix-facts";
+import { botGit } from "@/bot/git";
+import type { BotPushEntry, BotPushItem } from "@/bot/push-ledger";
 import { DEFAULT_BLOCKING_TRIGGERS } from "@/workflow/blocking-findings";
 
 const PUSH_SHA = "abcdef1234567890abcdef1234567890abcdef12";
 const SHORT_PUSH_SHA = PUSH_SHA.slice(0, 7);
+const BASE_SHA = "0".repeat(40);
 
 function finding(overrides: Partial<Extract<AgreedItem, { kind: "finding" }>> = {}): AgreedItem {
   return { kind: "finding", key: "f-new", severity: "important", issue: "Fresh finding", ...overrides };
 }
 
-const ledger: readonly BotPushItem[] = [
+function entry(items: readonly BotPushItem[], sha = PUSH_SHA): BotPushEntry {
+  return { base: BASE_SHA, sha, at: "2026-01-01T00:00:00.000Z", items };
+}
+
+const items: readonly BotPushItem[] = [
   { key: "f-a", generation: 0, issue: "lock leaks" },
   { key: "f-b", generation: 1, issue: "claim files leak" },
 ];
+const ledger: readonly BotPushEntry[] = [entry(items)];
 
 describe("findingFactLines", () => {
   test("AC-1: a triggered finding leads with its class and evidence", () => {
@@ -54,6 +62,34 @@ describe("findingFactLines", () => {
       `Lineage: generation 3, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-a (lock leaks)`,
       `Lineage: generation 3, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-b (claim files leak)`,
     ]);
+  });
+
+  // B7: a finding key recurs across pushes, so the issue must come from the push the lineage names.
+  test("B7: a repeated key reports the issue the lineage's own push recorded", () => {
+    const later = "1".repeat(40);
+    const repeated: readonly BotPushEntry[] = [
+      entry([{ key: "f-a", generation: 0, issue: "lock leaks" }], PUSH_SHA),
+      entry([{ key: "f-a", generation: 1, issue: "claim file leaks instead" }], later),
+    ];
+    const lines = findingFactLines(
+      finding({ lineage: { generation: 2, parents: ["f-a"], pushSha: PUSH_SHA } }),
+      repeated,
+      DEFAULT_BLOCKING_TRIGGERS,
+    );
+    expect(lines).toContain(
+      `Lineage: generation 2, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-a (lock leaks)`,
+    );
+    expect(lines.join("\n")).not.toContain("claim file leaks instead");
+  });
+
+  // B7: a push the ledger has dropped must not lend another push's issue to its parent.
+  test("B7: an evicted push names the parent without borrowing another push's issue", () => {
+    const lines = findingFactLines(
+      finding({ lineage: { generation: 2, parents: ["f-a"], pushSha: "2".repeat(40) } }),
+      ledger,
+      DEFAULT_BLOCKING_TRIGGERS,
+    );
+    expect(lines).toContain(`Lineage: generation 2, on lines added by nax bot fix 2222222 for f-a`);
   });
 
   test("AC-5: a minor finding states it holds no readiness", () => {
@@ -108,35 +144,52 @@ describe("outsideDeclaredGrowth", () => {
     return mock(async (_args: string[], _workdir: string) => ({ exitCode, stdout, stderr: "" }));
   }
 
+  /**
+   * The ADR-032 R3 probe: which repo-relative paths exist in this fixture's tree. Nothing exists unless
+   * a test says so, so every declared path stays exactly as written.
+   */
+  function tree(...paths: readonly string[]): OutsideGrowthDeps["exists"] {
+    return (path) => paths.includes(path);
+  }
+
+  /** `git diff --numstat -z` records, NUL separated, each `<added>\t<deleted>\t<path>`. */
+  const records = (...entries: readonly string[]): string => entries.map((line) => `${line}\0`).join("");
+
+  /** A rename record: numstat carries no path inline, the old and the new path follow as fields. */
+  const rename = (added: number, from: string, to: string): string => `${added}\t0\t\0${from}\0${to}\0`;
+
+  const deps = (overrides: Partial<OutsideGrowthDeps> = {}) =>
+    ({ loadPRD: async () => declaredPRD, runGit: git(""), exists: tree(), ...overrides }) as OutsideGrowthDeps;
+
   test("AC-8: only the undeclared path is reported", async () => {
-    const runGit = git("10\t0\tsrc/a.ts\n20\t2\tsrc/c.ts\n5\t1\tsrc/b.ts");
+    const runGit = git(records("10\t0\tsrc/a.ts", "20\t2\tsrc/c.ts", "5\t1\tsrc/b.ts"));
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD: async () => declaredPRD, runGit },
+      deps({ runGit }),
     );
     expect(growth).toEqual([{ path: "src/c.ts", added: 20 }]);
   });
 
   test("AC-8: a declared modified file is not growth", async () => {
-    const runGit = git("7\t0\ttest/a.test.ts");
+    const runGit = git(records("7\t0\ttest/a.test.ts"));
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD: async () => declaredPRD, runGit },
+      deps({ runGit }),
     );
     expect(growth).toEqual([]);
   });
 
   test("AC-8: a binary file and a pure deletion report no growth", async () => {
-    const runGit = git("-\t-\tassets/logo.png\n0\t9\tsrc/gone.ts");
+    const runGit = git(records("-\t-\tassets/logo.png", "0\t9\tsrc/gone.ts"));
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD: async () => declaredPRD, runGit },
+      deps({ runGit }),
     );
     expect(growth).toEqual([]);
   });
 
   test("AC-9: every ledger entry is diffed as numstat from its base to its sha", async () => {
-    const runGit = git("1\t0\tsrc/c.ts");
+    const runGit = git(records("1\t0\tsrc/c.ts"));
     await outsideDeclaredGrowth(
       {
         prdPath,
@@ -146,30 +199,109 @@ describe("outsideDeclaredGrowth", () => {
           { base: "base-2", sha: "sha-2" },
         ],
       },
-      { loadPRD: async () => declaredPRD, runGit },
+      deps({ runGit }),
     );
     expect(runGit.mock.calls.map(([args]) => args)).toEqual([
-      ["diff", "--numstat", "base-1", "sha-1"],
-      ["diff", "--numstat", "base-2", "sha-2"],
+      ["diff", "--numstat", "-z", "base-1", "sha-1"],
+      ["diff", "--numstat", "-z", "base-2", "sha-2"],
     ]);
-    expect(runGit.mock.calls.every(([, workdir]) => workdir === worktree)).toBe(true);
+    expect(runGit.mock.calls.every(([, dir]) => dir === worktree)).toBe(true);
   });
 
-  test("AC-10: a story's workdir makes the declared path relative to the package", async () => {
+  test("AC-10: a declared path re-spelled into the story's package counts as declared", async () => {
+    // The legacy shape R3 allows: absent at the repo root, present under the package.
     const prd = makePRD({ userStories: [makeStory({ contextFiles: ["src/a.ts"], workdir: "packages/x" })] });
-    const runGit = git("4\t0\tpackages/x/src/a.ts\n3\t0\tpackages/x/src/c.ts");
+    const runGit = git(records("4\t0\tpackages/x/src/a.ts", "3\t0\tpackages/x/src/c.ts"));
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD: async () => prd, runGit },
+      deps({ loadPRD: async () => prd, runGit, exists: tree("/checkout/packages/x/src/a.ts") }),
     );
     expect(growth).toEqual([{ path: "packages/x/src/c.ts", added: 3 }]);
+  });
+
+  // B9 (ADR-032 R3): the root spelling is what the story declares, so a same-named file inside the
+  // package is a different file and stays visible as growth.
+  test("B9: when root and package spellings both exist, only the root one is declared", async () => {
+    const prd = makePRD({ userStories: [makeStory({ contextFiles: ["src/a.ts"], workdir: "packages/x" })] });
+    const runGit = git(records("5\t0\tpackages/x/src/a.ts"));
+    const growth = await outsideDeclaredGrowth(
+      { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
+      deps({
+        loadPRD: async () => prd,
+        runGit,
+        exists: tree("/checkout/src/a.ts", "/checkout/packages/x/src/a.ts"),
+      }),
+    );
+    expect(growth).toEqual([{ path: "packages/x/src/a.ts", added: 5 }]);
+  });
+
+  // B8: plain numstat prints a rename as a compact expression, which is not a repository path.
+  test("B8: a rename counts against its destination path", async () => {
+    const prd = makePRD({ userStories: [makeStory({ expectedFiles: ["src/b.ts"] })] });
+    const runGit = git(rename(42, "src/a.ts", "src/b.ts"));
+    const growth = await outsideDeclaredGrowth(
+      { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
+      deps({ loadPRD: async () => prd, runGit }),
+    );
+    expect(growth).toEqual([]);
+  });
+
+  test("B8: a rename into an undeclared path is growth at the destination", async () => {
+    const runGit = git(rename(6, "src/a.ts", "src/moved.ts"));
+    const growth = await outsideDeclaredGrowth(
+      { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
+      deps({ runGit }),
+    );
+    expect(growth).toEqual([{ path: "src/moved.ts", added: 6 }]);
+  });
+
+  // B8: the real-Git regression. A rename with edits into a declared path reports the destination, and
+  // the destination is declared, so none of its 42 added lines are outside growth.
+  test("B8: real git reports a rename's destination, so an edited rename into a declared path is no growth", async () => {
+    await withTempDir(async (dir) => {
+      const gitIn = (args: readonly string[]) => botGit([...args], dir);
+      const before = Array.from({ length: 100 }, (_unused, index) => `line ${index}\n`).join("");
+      await Bun.write(join(dir, "src/a.ts"), before);
+      for (const args of [
+        ["init", "-q"],
+        ["config", "user.email", "test@example.com"],
+        ["config", "user.name", "Test"],
+        ["add", "."],
+        ["commit", "-q", "-m", "base"],
+      ])
+        expect((await gitIn(args)).exitCode).toBe(0);
+      const base = (await gitIn(["rev-parse", "HEAD"])).stdout.trim();
+      // A real rename: git reports one only where the old path is gone, so `git mv` and then edit.
+      expect((await gitIn(["mv", "src/a.ts", "src/b.ts"])).exitCode).toBe(0);
+      await Bun.write(join(dir, "src/b.ts"), `${before}${"extra\n".repeat(42)}`);
+      for (const args of [
+        ["add", "-A"],
+        ["commit", "-q", "-m", "rename with edits"],
+      ])
+        expect((await gitIn(args)).exitCode).toBe(0);
+      const sha = (await gitIn(["rev-parse", "HEAD"])).stdout.trim();
+      // A rename record carries no inline path: the old path and the destination follow as their own fields.
+      const raw = await gitIn(["diff", "--numstat", "-z", base, sha]);
+      expect(raw.stdout.startsWith("42\t0\t\0src/a.ts\0src/b.ts\0")).toBe(true);
+
+      const prd = makePRD({ userStories: [makeStory({ expectedFiles: ["src/b.ts"] })] });
+      const growth = await outsideDeclaredGrowth(
+        { prdPath: join(dir, "prd.json"), worktree: dir, entries: [{ base, sha }] },
+        {
+          loadPRD: async () => prd,
+          runGit: (args, workdir) => botGit(args, workdir),
+          exists: (path) => Bun.file(path).size > 0,
+        },
+      );
+      expect(growth).toEqual([]);
+    });
   });
 
   test("AC-11: two entries at the same undeclared path are summed", async () => {
     const declaredA = makePRD({ userStories: [makeStory({ contextFiles: ["src/a.ts"] })] });
     const runGit = mock(async (args: string[]) => ({
       exitCode: 0,
-      stdout: args[3] === "sha-1" ? "10\t0\tsrc/c.ts" : "20\t0\tsrc/c.ts",
+      stdout: records(args[4] === "sha-1" ? "10\t0\tsrc/c.ts" : "20\t0\tsrc/c.ts"),
       stderr: "",
     }));
     const growth = await outsideDeclaredGrowth(
@@ -181,17 +313,17 @@ describe("outsideDeclaredGrowth", () => {
           { base: "base", sha: "sha-2" },
         ],
       },
-      { loadPRD: async () => declaredA, runGit },
+      deps({ loadPRD: async () => declaredA, runGit }),
     );
     expect(growth).toEqual([{ path: "src/c.ts", added: 30 }]);
   });
 
   test("AC-12: no PRD path gives no fact", async () => {
     const loadPRD = mock(async () => declaredPRD);
-    const runGit = git("3\t0\tsrc/c.ts");
+    const runGit = git(records("3\t0\tsrc/c.ts"));
     const growth = await outsideDeclaredGrowth(
       { worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD, runGit },
+      deps({ loadPRD, runGit }),
     );
     expect(growth).toBeUndefined();
     expect(loadPRD).not.toHaveBeenCalled();
@@ -199,15 +331,15 @@ describe("outsideDeclaredGrowth", () => {
   });
 
   test("AC-13: an unreadable PRD gives no fact", async () => {
-    const runGit = git("3\t0\tsrc/c.ts");
+    const runGit = git(records("3\t0\tsrc/c.ts"));
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      {
+      deps({
         loadPRD: async () => {
           throw new Error("PRD file is corrupt");
         },
         runGit,
-      },
+      }),
     );
     expect(growth).toBeUndefined();
     expect(runGit).not.toHaveBeenCalled();
@@ -216,7 +348,7 @@ describe("outsideDeclaredGrowth", () => {
   test("AC-14: a failed numstat gives no fact", async () => {
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      { loadPRD: async () => declaredPRD, runGit: git("", 128) },
+      deps({ runGit: git("", 128) }),
     );
     expect(growth).toBeUndefined();
   });
@@ -224,12 +356,11 @@ describe("outsideDeclaredGrowth", () => {
   test("AC-14: a throwing numstat gives no fact", async () => {
     const growth = await outsideDeclaredGrowth(
       { prdPath, worktree, entries: [{ base: "base", sha: "sha" }] },
-      {
-        loadPRD: async () => declaredPRD,
+      deps({
         runGit: async () => {
           throw new Error("posix_spawn 'git' ENOENT");
         },
-      },
+      }),
     );
     expect(growth).toBeUndefined();
   });

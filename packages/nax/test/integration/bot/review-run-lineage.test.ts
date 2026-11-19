@@ -21,6 +21,8 @@ const REVIEWED_BASE = "9".repeat(40);
 const SUMMARY_ID = "900";
 const FILE = "src/a.ts";
 const LINE = 12;
+/** The anchor a re-raised finding moved to while keeping its key (B3). */
+const RE_RAISED_LINE = 22;
 const EARLIER_KEY = `f-${"0".repeat(16)}`;
 
 const original = { ..._botReviewDeps };
@@ -51,6 +53,8 @@ interface GitAnswers {
   readonly ancestry: Readonly<Record<string, number>>;
   /** What blame reports; a failed blame is the missing-answer case. */
   readonly blame?: BlameAnswer;
+  /** One blame answer per line number, for the cases where two anchors blame to different pushes. */
+  readonly blameAt?: Readonly<Record<number, BlameAnswer>>;
 }
 
 let runtime: ReturnType<typeof makeTestRuntime>;
@@ -88,12 +92,12 @@ function summaryComment(entries: readonly BotPushEntry[]): PrComment {
 }
 
 /** An open finding thread an earlier bot review opened, at the line the tests blame. */
-function earlierThread(): PrThread {
+function earlierThread(key = EARLIER_KEY): PrThread {
   const opener = {
     id: "77",
     kind: "thread" as const,
     author: "bot",
-    body: withNaxBotMarker("**Important** (quality): Lock leaks", EARLIER_KEY),
+    body: withNaxBotMarker("**Important** (quality): Lock leaks", key),
     createdAt: "",
   };
   return { id: "T1", replyTo: "77", path: FILE, line: LINE, resolved: false, outdated: false, comments: [opener] };
@@ -103,7 +107,8 @@ function earlierThread(): PrThread {
 function stubGit(answers: GitAnswers) {
   return mock(async (args: string[], _dir: string) => {
     if (args[0] === "blame") {
-      const blame = answers.blame ?? { sha: PUSH };
+      const line = Number.parseInt((args[3] ?? "").split(",")[0] ?? "", 10);
+      const blame = answers.blameAt?.[line] ?? answers.blame ?? { sha: PUSH };
       if ("failed" in blame) return { exitCode: 128, stdout: "", stderr: "fatal: no such path" };
       return { exitCode: 0, stdout: `${blame.sha} 1 1 1\nfilename ${FILE}\n\tconst x = 1;\n`, stderr: "" };
     }
@@ -248,6 +253,30 @@ describe("runBotReview finding lineage", () => {
     expect(postedBodies()).not.toContainEqual(expect.stringContaining("Lineage:"));
     expect(agreedFinding(artifact, findingKey(finding))).not.toHaveProperty("lineage");
     expect(runGit).not.toHaveBeenCalled();
+  });
+  // B3: `findingKey` names the file and the issue, not the line, so a re-raised finding shares its key
+  // with the thread it replaces. The two anchors can blame to different pushes, and the verdict is the
+  // one the artifact records — so its anchor, not the earlier thread's, is what the lineage must read.
+  test("B3: a re-raised finding keeps the lineage of the anchor the verdict names", async () => {
+    const earlierPush = "4".repeat(40);
+    const key = findingKey({ file: FILE, issue: finding.issue });
+    threads = [earlierThread(key)];
+    comments = [summaryComment([push, { ...push, sha: earlierPush }])];
+    verdict = { ...emptyVerdict, findings: [{ ...finding, line: RE_RAISED_LINE }] };
+    _botReviewDeps.runGit = stubGit({
+      ancestry: {
+        [`${PUSH}>${HEAD}`]: 0,
+        [`${earlierPush}>${HEAD}`]: 0,
+        // The two pushes are unrelated, so neither owns the other's lines.
+        [`${earlierPush}>${PUSH}`]: 1,
+        [`${PUSH}>${earlierPush}`]: 1,
+      },
+      blameAt: { [LINE]: { sha: earlierPush }, [RE_RAISED_LINE]: { sha: PUSH } },
+    });
+
+    const artifact = await reviewArtifact();
+
+    expect(agreedFinding(artifact, key)).toMatchObject({ lineage: { pushSha: PUSH } });
   });
   test("AC-21 gives a merged earlier finding the lineage of its own thread key", async () => {
     threads = [earlierThread()];

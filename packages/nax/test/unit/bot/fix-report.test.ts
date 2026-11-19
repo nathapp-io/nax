@@ -142,6 +142,24 @@ describe("reportStep ledger push (US-009)", () => {
       "No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).",
     );
   });
+
+  /* B12: the brief lists the ledger push first, and the follow-up sentence stays one contiguous line. */
+  test("B12: the ledger push is listed before the follow-up sentence", async () => {
+    const env = makeBotFixEnv();
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "report" });
+    await reportStep(env, {
+      step: "report",
+      timings: {},
+      outcome: "nothing",
+      pushedSha: "abcdef1234",
+      followUps: [{ key: "f-1", severity: "minor", trigger: "normal" }],
+    });
+    const lines = String(post.mock.calls[0]?.[1] ?? "").split("\n");
+    expect(lines[2]).toBe("Pushed abcdef1: advisor ledger. Run nax bot review 42 before the next nax bot fix.");
+    expect(lines[3]).toBe(
+      "No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).",
+    );
+  });
 });
 
 /* US-004: the fix summary carries the bot's bounded record of its own pushes. */
@@ -284,6 +302,29 @@ describe("reportStep push ledger (US-004)", () => {
     } finally {
       resetLogger();
     }
+  });
+
+  // B1: a comment write replaces the whole body, and the ledger is the only record of the bot's own
+  // pushes. A run whose push was rejected must not erase a push another run recorded while it worked.
+  test("B1: a stale report cannot erase a push recorded after its own snapshot", async () => {
+    const older = olderEntry();
+    const recorded = olderEntry({ sha: "e".repeat(40) });
+    const env = { ...ledgerEnv([findingA]), own: [{ key: "fix-summary", comment: previousSummary([older]) }] };
+    // Another run appended its push after this run read its env; the forge holds both entries now.
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([previousSummary([older, recorded])]);
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep(env, { step: "report", timings: {}, outcome: "push-rejected" });
+    expect(readPushLedger(edit.mock.calls[0]?.[2] ?? "").entries).toEqual([older, recorded]);
+  });
+
+  test("B1: an entry only the run's own snapshot holds survives a rewrite", async () => {
+    const older = olderEntry();
+    const env = { ...ledgerEnv([findingA]), own: [{ key: "fix-summary", comment: previousSummary([older]) }] };
+    // The fresh read is a body written before this run's snapshot existed, so its entry is carried over.
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([{ ...previousSummary([]), id: "7" }]);
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep(env, { step: "report", timings: {}, outcome: "nothing", pushedSha: PUSH_SHA });
+    expect(readPushLedger(edit.mock.calls[0]?.[2] ?? "").entries).toEqual([older]);
   });
 
   test("AC-21 a rejected summary edit surfaces and records nothing", async () => {

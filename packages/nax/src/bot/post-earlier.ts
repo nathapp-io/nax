@@ -71,15 +71,24 @@ export function earlierIssue(thread: PrThread): string {
 }
 
 /**
- * US-005: the earlier findings a lineage is read for — every open `f-` thread, keyed exactly as
- * `mergeEarlier` keys its item, so a finding carried over from an earlier round keeps its lineage.
+ * US-005: one lineage target per key, with the same precedence the artifact records: the current
+ * verdict wins and only carried-over items use an earlier anchor. A re-raised finding keeps its key
+ * (`findingKey` names the file and the issue, not the line) while a new verdict moves its anchor, so two
+ * targets for one key would let the earlier thread's blame overwrite the anchor the finding now sits on.
  */
-export function earlierLineageTargets(input: PostReviewInput): LineageTarget[] {
-  return effectiveEarlier(input).flatMap(({ key, verdict, thread }) => {
-    if (!key.startsWith("f-") || (verdict !== undefined && verdict.status !== "open")) return [];
+export function lineageTargets(input: PostReviewInput): LineageTarget[] {
+  const current = input.verdict.findings.map((finding) => ({
+    key: findingKey(finding),
+    file: finding.file,
+    line: finding.line,
+  }));
+  const raised = new Set(current.map(({ key }) => key));
+  const carried = effectiveEarlier(input).flatMap<LineageTarget>(({ key, verdict, thread }) => {
+    if (!key.startsWith("f-") || raised.has(key) || (verdict !== undefined && verdict.status !== "open")) return [];
     if (thread.path === undefined || thread.line === undefined) return [];
     return [{ key, file: thread.path, line: thread.line }];
   });
+  return [...current, ...carried];
 }
 
 function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {
