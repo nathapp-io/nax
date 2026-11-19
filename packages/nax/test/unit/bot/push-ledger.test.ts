@@ -82,9 +82,13 @@ describe("readPushLedger", () => {
     expect(readPushLedger(summary)).toEqual({ entries: [], unreadable: false });
   });
 
-  test("AC-7 rejects a payload that is not base64 JSON", () => {
-    const body = `${PUSHES}not-base64-json-at-all -->\n${MARKER}`;
-    expect(readPushLedger(body)).toEqual({ entries: [], unreadable: true });
+  test.each([
+    ["not base64 JSON", "not-base64-json-at-all"],
+    // `Buffer.from(…, "base64")` skips what it cannot decode, so this once read as `[]`.
+    ["a damaged character appended to a decodable payload", `${payload([])}!`],
+    ["a payload truncated mid-group", payload([]).slice(0, 3)],
+  ])("AC-7 rejects a payload that is %s", (_name, body) => {
+    expect(readPushLedger(`${PUSHES}${body} -->\n${MARKER}`)).toEqual({ entries: [], unreadable: true });
   });
 
   test("AC-8 rejects an entry whose sha is not 40 hex characters", () => {

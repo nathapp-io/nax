@@ -53,6 +53,8 @@ const LEDGER_SUFFIX = " -->";
  */
 const LEDGER_LINE = /<!-- nax-bot:pushes v1 (\S*) -->/;
 const FULL_SHA = /^[0-9a-f]{40}$/;
+/** Padded, canonical base64 in whole groups — the only form `encode` ever writes. */
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function isLedgerLine(line: string): boolean {
   return LEDGER_LINE.test(line);
@@ -107,6 +109,10 @@ function readEntries(decoded: unknown): BotPushEntry[] | undefined {
 }
 
 function parsePayload(payload: string): readonly BotPushEntry[] | undefined {
+  // `Buffer.from(…, "base64")` skips characters it cannot decode, so `W10=!` would read as `[]` and a
+  // damaged history would look like an empty ledger — which the next push would then overwrite. The
+  // payload must be the padded, canonical base64 `encode` writes before anything is decoded.
+  if (!BASE64.test(payload)) return undefined;
   try {
     return readEntries(JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown);
   } catch {
