@@ -173,7 +173,7 @@
         "Given two runs with matching recovery files, when `_resultRecoveryDeps.rename` fails for the first run's `result.json`, then the first run's recovery file bytes are unchanged; and, in the same setup: Given two runs with matching recovery files, when `_resultRecoveryDeps.rename` fails for the first run's `result.json`, then `restorePendingResults` resolves with `failed` for the first and `restored` for the second.",
         "When `restorePendingResults` encounters a filesystem failure before committing a run's result (including a read, temp write, or rename failure), then it logs a `[WARN]` for that run and continues without throwing.",
         "When `restorePendingResults` fails to remove a recovery file after writing `result.json`, then it still returns `restored` for that run.",
-        "When `restorePendingResults` runs a second time after a restore whose recovery-file unlink failed, then it returns `superseded` for that run; and, in the same setup: When `restorePendingResults` runs a second time after a restore whose recovery-file unlink failed, then it removes the superseded recovery file."
+        "Given a restore that changes the result so it no longer matches the recorded damage, and an unlink failure injected only on the first call, when `restorePendingResults` runs a second time with the result unchanged since that restore, then it returns `superseded` for the run, removes the recovery file, and leaves the restored result bytes unchanged."
       ],
       "tags": [
         "feature",

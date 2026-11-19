@@ -50,7 +50,7 @@ export interface ResultRecovery {
   readonly schemaVersion: 1;
   /** The result path relative to the repository root, as `KeptFile.rel` spells it. */
   readonly rel: string;
-  /** What the repair saw on disk: no file, or a file whose UTF-8 bytes hash to `sha256` (lowercase hex). */
+  /** What the repair saw on disk: no file, or a file whose raw on-disk bytes hash to `sha256` (lowercase hexadecimal). Do not decode or re-encode the bytes before hashing. */
   readonly damaged: { readonly kind: "missing" } | { readonly kind: "modified"; readonly sha256: string };
   /** The kept (good) result.json text. */
   readonly content: string;
@@ -84,7 +84,7 @@ export const _resultRecoveryDeps: {
 2. reads `result.json` in the same run directory as raw bytes and compares it with `damaged`: missing and still missing, or the SHA-256 (lowercase hex) of its raw bytes equal to `damaged.sha256`;
 3. on a match, writes `content` to `result.json` through `runStateWrite` (tmp + rename, as `writeResult` in `result.ts` does), removes the recovery file, appends `_run: run-state repaired: <rel> (<missing|modified>)` to `<runDir>/ledger.md` when that ledger exists — through `runStateWrite(ledgerPath, { append: line }, ...)` inline, the form `appendLedger` in `workflow/ledger.ts` uses but without its `mirrorLedger` run-log line, so an active keeper records it as nax's own write — logs a `[WARN]` line, and yields `restored`;
 4. on no match (a newer write replaced the damaged result), removes the recovery file, logs a `[WARN]` line, and yields `superseded`;
-5. when any step for one run directory fails before `result.json` is written (a read, the tmp write, the rename), keeps the recovery file unchanged, logs a `[WARN]` line, yields `failed`, and goes on with the remaining run directories. A failure removing the recovery file after `result.json` was written still yields `restored`; the next call then finds the result no longer matches and yields `superseded`.
+5. when any step for one run directory fails before `result.json` is written (a read, the tmp write, the rename), keeps the recovery file unchanged, logs a `[WARN]` line, yields `failed`, and goes on with the remaining run directories. If removing the recovery file fails after `result.json` is committed, report `restored`. On a later scan, compare the current result against the recovery's damage fingerprint again: if it no longer matches, remove the recovery file and report `superseded`; if it still matches, follow the normal restore path.
 
 Every log line uses `storyId: "_run"` as its first key and the `runstate` stage. `result-recovery.ts` imports `runStateWrite` from `@/runstate/store` (as `result.ts` does), never from the `@/runstate` barrel: `repair.ts` imports this module, so the barrel would close a runtime cycle (`check:import-cycles`). `flow-handoff.ts` imports it through the same `biome-ignore lint/style/noRestrictedImports` form its other workflow imports use.
 
@@ -101,7 +101,7 @@ new NaxError(
 );
 ```
 
-The module comment's recovery paragraph gains one sentence naming this error. `tryCreateExclusive` re-stages on `ENOENT` once: a fresh `randomUUID()` staged name, the same `writeFile`/`link` steps, the same `finally` unlink of each staged file it wrote. The sweep reads each candidate's mtime with `_fileLockDeps.stat` and skips one whose age, `_fileLockDeps.now() - mtimeMs` (the basis `readLockMetadata` uses), is below `STAGED_PID_SWEEP_AGE_MS`; a `stat` failure skips that file (best effort, as today). `STAGED_PID_SWEEP_AGE_MS` stays module-private. The module comment's staged-file sentence ("the next acquisition there removes staged files whose pid is proven dead") gains "and that are older than `STAGED_PID_SWEEP_AGE_MS`".
+The module comment's recovery paragraph gains one sentence naming this error. `tryCreateExclusive` re-stages on `ENOENT` once: a fresh `randomUUID()` staged name, the same `writeFile`/`link` steps, the same `finally` unlink of each staged file it wrote. The sweep reads each candidate's mtime with `_fileLockDeps.stat` and skips one whose age, `_fileLockDeps.now() - mtimeMs` (the basis `readLockMetadata` uses), is below `STAGED_PID_SWEEP_AGE_MS`; a `stat` failure skips that file (best effort, as today). `STAGED_PID_SWEEP_AGE_MS` stays module-private. The module comment's staged-file sentence ("the next acquisition there removes staged files whose pid is proven dead") gains "and whose mtime is at least `STAGED_PID_SWEEP_AGE_MS` old": the sweep skips a candidate whose age is below the bound and removes one whose age equals it.
 
 **US-002 — handoff open-PR refusal.** `preflight` runs the check after `collectHandoffRecord` accepts the record and after the mark read, so a feature already handed over (koda then owns its PR) still gets the `handoffMarkRefusal` text. `handoffPushGuard` runs it after the run-mark read and the cancellation read and before `handoffResultsMatch`, so it is the last forge read before the push and runs under the handoff lock. Both use one helper, `openPrRefusal(feature, branch, repoRoot)`, returning a `ToolResult` or `undefined`:
 
@@ -278,7 +278,7 @@ None. The module is new and nothing calls it yet.
 14. [unit] `writeResultRecovery` for a `resultPath` whose run directory does not exist creates the directory and writes the recovery file.
 15. [unit] An `unreadable` outcome logs a `[WARN]` line, `storyId: "_run"` first, naming the recovery file path.
 16. [unit] With two run directories holding matching recovery files and `_resultRecoveryDeps.rename` rejecting for the first run's `result.json`, the first run's recovery file bytes are unchanged and its outcome is `failed`, the second run is `restored`, and the call resolves.
-17. [unit] When removing the recovery file fails after `result.json` was written, the outcome is `restored`, and a second `restorePendingResults` call returns `superseded` for that run and removes the file.
+17. [unit] Given a restore that changes the result so it no longer matches the recorded damage, and an unlink failure injected only on the first call, when `restorePendingResults` runs a second time with the result unchanged since that restore, it returns `superseded` for the run, removes the recovery file, and leaves the restored result bytes unchanged.
 
 ### US-004
 

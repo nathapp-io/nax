@@ -15,8 +15,8 @@
  * exclusive create. On a filesystem that refuses hard links (EPERM, ENOTSUP,
  * ENOSYS) the lock falls back to that two-step create rather than failing. A crash can leave a private `.lock-<pid>-<uuid>.pid`
  * file behind in the lock directory; the next acquisition there removes
- * staged files whose pid is proven dead and that are older than
- * `STAGED_PID_SWEEP_AGE_MS`, so an auto-commit does not keep finding them
+ * staged files whose pid is proven dead and whose mtime is at least
+ * `STAGED_PID_SWEEP_AGE_MS` old, so an auto-commit does not keep finding them
  * while a creator in another pid namespace — whose pid means nothing here —
  * still has time to link its own.
  *
