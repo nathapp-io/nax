@@ -15,8 +15,10 @@
  * exclusive create. On a filesystem that refuses hard links (EPERM, ENOTSUP,
  * ENOSYS) the lock falls back to that two-step create rather than failing. A crash can leave a private `.lock-<pid>-<uuid>.pid`
  * file behind in the lock directory; the next acquisition there removes
- * staged files whose pid is proven dead, so an auto-commit does not keep
- * finding them.
+ * staged files whose pid is proven dead and that are older than
+ * `STAGED_PID_SWEEP_AGE_MS`, so an auto-commit does not keep finding them
+ * while a creator in another pid namespace — whose pid means nothing here —
+ * still has time to link its own.
  *
  * #1731: the previous design created timestamped candidate files and polled
  * until it saw itself as the "oldest live" candidate. That protocol is only
@@ -55,7 +57,9 @@
  * - Only the claimant releases its claim. An existing claim is never replaced, even if it looks
  *   stale: neither unlink nor rename can be conditioned on the file still having the identity we
  *   inspected. A crashed claimant can therefore block reclamation. If waiters time out, stop all
- *   users of the lock before removing an orphaned claim manually.
+ *   users of the lock before removing an orphaned claim manually. A waiter that reaches its
+ *   deadline against such a claim throws `FILE_LOCK_CLAIM_ORPHANED` — naming the claim, the dead
+ *   pid and this recovery — instead of the `FILE_LOCK_TIMEOUT` a live holder causes.
  *
  * Release unlinks the lock file in the `finally` block. The unlink is
  * swallowed because release runs from the same process that created the
@@ -73,7 +77,7 @@
 
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, link, open, readdir, unlink, writeFile } from "node:fs/promises";
+import { type FileHandle, link, open, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
@@ -91,6 +95,14 @@ const MAX_PID_BYTES = String(MAX_PID).length + 1;
  * version links a complete pid file into place and never leaves one empty.
  */
 const EMPTY_LOCK_EVICT_AGE_MS = 10_000;
+/**
+ * A staged pid file is swept only once it is at least this old. A creator in
+ * another pid namespace (a bwrap or container sandbox sharing the directory)
+ * writes a pid that means nothing locally, so a sweep that trusted liveness
+ * alone could remove the staged file between that creator's write and its
+ * link — and its link would then fail with ENOENT.
+ */
+const STAGED_PID_SWEEP_AGE_MS = 10_000;
 export interface FileLockOptions {
   /** Milliseconds between acquisition retries. Default 10. */
   retryMs?: number;
@@ -110,6 +122,7 @@ export const _fileLockDeps = {
   readdir,
   open,
   unlink,
+  stat,
   now: () => Date.now(),
   sleep: (ms: number, signal?: AbortSignal) => delay(ms, undefined, { signal }),
   isPidAlive: isProcessAlive,
@@ -128,8 +141,9 @@ function directoryOf(path: string): string {
 }
 
 /**
- * Remove staged pid files left by processes that are proven dead. Best effort: a liveness probe that is
- * inconclusive reads as alive, and any filesystem failure leaves the files for a later acquisition.
+ * Remove staged pid files left by processes that are proven dead and that have aged past
+ * `STAGED_PID_SWEEP_AGE_MS`. Best effort: a liveness probe that is inconclusive reads as alive, and
+ * any filesystem failure leaves the files for a later acquisition.
  */
 async function sweepOrphanedStagedFiles(path: string): Promise<void> {
   const directory = directoryOf(path);
@@ -137,11 +151,22 @@ async function sweepOrphanedStagedFiles(path: string): Promise<void> {
     for (const name of await _fileLockDeps.readdir(directory || ".")) {
       const pid = Number(STAGED_PID_FILE.exec(name)?.[1]);
       if (!Number.isInteger(pid) || pid === process.pid || _fileLockDeps.isPidAlive(pid)) continue;
-      await unlinkQuiet(`${directory}${name}`);
+      await sweepStagedPidFile(`${directory}${name}`);
     }
   } catch {
     // An unreadable directory is not this lock's failure; the orphans stay until a later sweep.
   }
+}
+
+/**
+ * Remove one staged pid file, but only once it is old enough that its creator cannot still be about
+ * to link it. A `stat` failure skips the file: an age it cannot read is an age it cannot rule out.
+ */
+async function sweepStagedPidFile(staged: string): Promise<void> {
+  const stats = await _fileLockDeps.stat(staged).catch(() => undefined);
+  if (stats === undefined) return;
+  // The same age basis `readLockMetadata` uses, so both bounds read one clock.
+  if (_fileLockDeps.now() - stats.mtimeMs >= STAGED_PID_SWEEP_AGE_MS) await unlinkQuiet(staged);
 }
 
 /** errno codes a filesystem without hard links (SMB, FAT, some bind mounts) answers `link` with. */
@@ -166,8 +191,27 @@ async function createInPlace(path: string): Promise<boolean> {
 /**
  * Publish a file holding this process's pid at `path`, or report that `path` already exists. The pid
  * is complete before the path exists: see the module doc.
+ *
+ * A staged file swept between `writeFile` and `link` — a dead-looking pid from another pid namespace —
+ * makes the link fail with ENOENT. That is not contention, so the create is staged again from a fresh
+ * name and linked once more; a second ENOENT is a real create failure and is thrown as any other
+ * unclassifiable code is.
  */
 async function tryCreateExclusive(path: string): Promise<boolean> {
+  try {
+    return await stageAndLink(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return await stageAndLink(path);
+  }
+}
+
+/**
+ * One create attempt: write a fresh staged pid file, link it at `path`, then remove the staged file
+ * whether or not the link won. Throws the link error for a code it cannot classify, including the
+ * ENOENT `tryCreateExclusive` may retry.
+ */
+async function stageAndLink(path: string): Promise<boolean> {
   const staged = `${directoryOf(path)}.lock-${process.pid}-${randomUUID()}.pid`;
   try {
     await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
@@ -184,7 +228,7 @@ async function tryCreateExclusive(path: string): Promise<boolean> {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EEXIST") return false;
     if (code !== undefined && LINK_UNSUPPORTED_CODES.has(code)) return await createInPlace(path);
-    // Any other create failure (EACCES, ENOSPC, …) is environmental, not
+    // Any other create failure (ENOENT, EACCES, ENOSPC, …) is environmental, not
     // contention — fail fast instead of burning the whole timeout as a
     // misleading "Timed out".
     throw error;
@@ -262,6 +306,35 @@ async function reclaimAbandonedLock(lockPath: string, claimPath: string, observe
   }
 }
 
+/**
+ * Name an orphaned claim when that is what blocks this acquisition, or `undefined` when the deadline
+ * has another cause. A claimant that crashed after creating `<target>.lock.claim` can never be
+ * replaced — no unlink or rename can be conditioned on the file still being the one inspected — so
+ * every later caller times out; naming the claim and the dead pid is what makes the manual recovery
+ * visible. The claim is never removed here (#2980: fail closed), and a read that fails must not turn
+ * the timeout into a different failure, so every failure in this check is swallowed.
+ */
+async function orphanedClaimError(
+  lockPath: string,
+  claimPath: string,
+  options: FileLockOptions,
+): Promise<NaxError | undefined> {
+  try {
+    if ((await abandonedPid(lockPath)) === undefined) return undefined;
+    const pid = (await readLockMetadata(claimPath))?.pid ?? null;
+    if (pid === null || _fileLockDeps.isPidAlive(pid)) return undefined;
+    return new NaxError(
+      `${options.errorPrefix} The ${options.lockName} lock is blocked by a reclamation claim that dead process ${pid} left: ${claimPath}. ` +
+        `Retrying cannot clear it. Stop every process that uses ${lockPath}, then remove ${claimPath}.`,
+      "FILE_LOCK_CLAIM_ORPHANED",
+      { stage: "file-lock", lockName: options.lockName, lockPath, claimPath, claimPid: pid },
+    );
+  } catch {
+    // The diagnosis is best effort: a read that fails leaves the timeout the caller has always got.
+    return undefined;
+  }
+}
+
 async function acquire(lockPath: string, options: FileLockOptions): Promise<() => Promise<void>> {
   const retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
   const deadline = _fileLockDeps.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -279,6 +352,10 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
     if (observedPid !== undefined) await reclaimAbandonedLock(lockPath, claimPath, observedPid);
     await _fileLockDeps.sleep(retryMs, signal);
   }
+  // The diagnosis runs only once the deadline is reached: a claim that is still being released by a
+  // live gravedigger must not be named as orphaned on an earlier iteration.
+  const diagnosis = await orphanedClaimError(lockPath, claimPath, options);
+  if (diagnosis !== undefined) throw diagnosis;
   throw new NaxError(
     `${options.errorPrefix} Timed out acquiring ${options.lockName} lock: ${lockPath}`,
     "FILE_LOCK_TIMEOUT",
