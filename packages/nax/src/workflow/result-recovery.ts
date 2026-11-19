@@ -408,9 +408,9 @@ async function restorePayloads(runDir: string, paths: readonly string[]): Promis
   if (matching.length === 0) return outcomes;
   const chosen = pickNewest(matching);
   if (!chosen) {
-    for (const m of matching) {
-      outcomes.push(failed(m.path, resultPath, "several copies match and their saved times cannot order them"));
-    }
+    const names = matching.map((c) => basename(c.path)).join(", ");
+    const why = `copies cannot be ordered by saved time; keep one, remove the rest (${names})`;
+    for (const m of matching) outcomes.push(failed(m.path, resultPath, why));
     return outcomes;
   }
   const applied = await applyRecovery(runDir, chosen.path, chosen.recovery);

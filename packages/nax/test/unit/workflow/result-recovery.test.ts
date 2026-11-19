@@ -6,7 +6,7 @@ import { _fileLockDeps, withFileLock } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { activateRunState, type RunStateHandle, repairRunState } from "@/runstate";
-import { runStateWrite } from "@/runstate/store";
+import { activeKeepers, runStateWrite } from "@/runstate/store";
 import { HANDOFF_MARK_FILE, readNewestHandoffMark } from "@/workflow/handoff-mark";
 import { runDirsNewestFirst } from "@/workflow/result";
 import {
@@ -548,6 +548,22 @@ describe("restorePendingResults — the paths it writes and reads (B3, B5, B6)",
     expect((await readNewestHandoffMark(workflowDir))?.path).toBe(newerMark);
   });
 
+  test("a keeper's kept orderedAt survives two deferral-and-replay cycles (B5)", async () => {
+    const featureDir = join(dir, ".nax", "features", "f");
+    const runDir = join(featureDir, "workflow", RUN);
+    mkdirSync(runDir, { recursive: true });
+    const resultPath = join(runDir, "result.json");
+    handle = await activateRunState({ runId: RUN, feature: "f", root: dir });
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await Bun.write(join(runDir, RESULT_RECOVERY_FILE), JSON.stringify({ ...missingRecovery(), orderedAt: 1_000 }));
+      await restorePendingResults(join(featureDir, "workflow"));
+      expect(activeKeepers()[0]?.get(resultPath)?.orderedAt).toBe(1_000);
+      expect((await stat(resultPath)).mtimeMs).toBe(1_000);
+      rmSync(resultPath);
+    }
+  });
+
   test("a FIFO in place of the recovery file is a per-run failure, never a wait (B6)", async () => {
     const paths = await seedRun({ resultText: RESULT_TEXT });
     if (!makeFifo(paths.recoveryPath)) return;
@@ -619,20 +635,21 @@ describe("restorePendingResults — the paths it writes and reads (B3, B5, B6)",
 
 describe("writeResultRecovery — a recovery lock that cannot be taken (B8)", () => {
   /** Hold the recovery lock, and make every wait for it reach its deadline at once. */
-  async function writeUnderStalledLock(resultPath: string, recovery: ResultRecovery): Promise<string> {
+  async function underStalledLock<T>(task: () => Promise<T>): Promise<T> {
     const lockPath = join(workflowDir, ".result-recovery.lock");
     const now = _fileLockDeps.now;
     const base = now();
     let calls = 0;
     _fileLockDeps.now = () => (calls++ === 0 ? base : base + 60_000 * calls);
     try {
-      return await withFileLock(lockPath, () => writeResultRecovery(resultPath, recovery), {
-        lockName: "handoff",
-        errorPrefix: "[test]",
-      });
+      return await withFileLock(lockPath, task, { lockName: "handoff", errorPrefix: "[test]" });
     } finally {
       _fileLockDeps.now = now;
     }
+  }
+
+  function writeUnderStalledLock(resultPath: string, recovery: ResultRecovery): Promise<string> {
+    return underStalledLock(() => writeResultRecovery(resultPath, recovery));
   }
 
   test("keeps the good copy under a name of its own, and the next replay applies it (B8)", async () => {
@@ -649,6 +666,27 @@ describe("writeResultRecovery — a recovery lock that cannot be taken (B8)", ()
     expect(await restorePendingResults(workflowDir)).toEqual([{ kind: "restored", resultPath: paths.resultPath }]);
     expect(await Bun.file(paths.resultPath).text()).toBe(RECOVERED_TEXT);
     expect(await Bun.file(written).exists()).toBe(false);
+  });
+
+  test("a published pending copy replays while the recovery lock is held elsewhere (B8)", async () => {
+    const paths = await seedRun({});
+    const pending = `${paths.recoveryPath}.pending-${PENDING_UUID}`;
+    await Bun.write(pending, JSON.stringify(missingRecovery()));
+
+    const outcomes = await underStalledLock(() => restorePendingResults(workflowDir));
+    expect(outcomes).toEqual([{ kind: "restored", resultPath: paths.resultPath }]);
+    expect(await Bun.file(paths.resultPath).text()).toBe(RECOVERED_TEXT);
+    expect(await Bun.file(pending).exists()).toBe(false);
+  });
+
+  test("a canonical file keeps every copy when the recovery lock is held elsewhere (B8)", async () => {
+    const paths = await seedRun({ recovery: missingRecovery() });
+    const pending = `${paths.recoveryPath}.pending-${PENDING_UUID}`;
+    await Bun.write(pending, JSON.stringify(missingRecovery()));
+
+    const outcomes = await underStalledLock(() => restorePendingResults(workflowDir));
+    expect(outcomes.map((o) => o.kind)).toEqual(["failed", "failed"]);
+    expect(readdirSync(paths.runDir).length).toBe(2);
   });
 
   test("a replay commits the newest checkpoint by orderedAt and discards the older copy after (B12)", async () => {
