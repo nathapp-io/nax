@@ -14,6 +14,7 @@ import {
   runBotFix,
   runBotFixCycle,
 } from "@/bot";
+import { readPushLedger, withPushLedger } from "@/bot/push-ledger";
 import type { RecordRulingsOutcome } from "@/bot/rulings";
 import { NAX_BOT_HEADER, NAX_WORKFLOW_PR_MARKER, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import type { CiWaitResult } from "@/workflow/ci-wait";
@@ -356,6 +357,37 @@ describe("the fix summary names the waiver", () => {
     expect(body).toContain(`Pushed ${HEAD.slice(0, 7)}:`);
     // M15: the visible header is not stacked, once per rewrite.
     expect(headerCount(body)).toBe(1);
+  });
+
+  test("US-004 AC-20 a ready-only rewrite keeps the push ledger the summary holds", async () => {
+    const ledger = [
+      {
+        base: HEAD,
+        sha: "a".repeat(40),
+        at: "2026-01-01T00:00:00.000Z",
+        items: [{ key: "f-1", generation: 0, issue: "the claim file is never released" }],
+      },
+    ];
+    const env = draftEnv(NAX_WORKFLOW_PR_MARKER);
+    const held = heldSummary(env);
+    const store = commentStore(env, [{ ...held, body: withPushLedger(held.body, ledger) }]);
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([item.thread]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue(settled);
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(starved);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+    const out = await readyStep({ ...env, waiveStarved: STARVATION }, { ...state, readyOnly: true });
+    expect(out.patch.markedReady).toBe(true);
+    const body = summaryOf(store);
+    expect(body).toContain("Marked ready with a CI waiver:");
+    expect(readPushLedger(body)).toEqual({ entries: ledger, unreadable: false });
+    // The block is state, not summary text: it stays at the tail, immediately before the identity marker.
+    const lines = body.split("\n");
+    expect(lines[lines.indexOf("<!-- nax-bot:v1 key=fix-summary -->") - 1]?.startsWith("<!-- nax-bot:pushes v1 ")).toBe(
+      true,
+    );
   });
 
   test("M15 a second rewrite does not stack another visible header", async () => {

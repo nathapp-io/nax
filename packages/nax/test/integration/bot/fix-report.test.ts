@@ -9,6 +9,7 @@ import {
   replyStep,
   reportStep,
 } from "@/bot";
+import { readPushLedger } from "@/bot/push-ledger";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { _ciWaitDeps } from "@/workflow/ci-wait";
@@ -469,12 +470,22 @@ describe("readyStep", () => {
 });
 
 describe("reportStep", () => {
+  // US-004: the summary now carries the push ledger, so only that line may differ from the render.
+  const withoutLedger = (body: string): string =>
+    body
+      .split("\n")
+      .filter((line) => !line.startsWith("<!-- nax-bot:pushes v1 "))
+      .join("\n");
+
   test("posts when no own fix-summary exists", async () => {
     const env = makeBotFixEnv();
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
     expect(await reportStep(env, state)).toEqual({ patch: {}, exit: "done" });
-    expect(post).toHaveBeenCalledWith(env.ref, renderFixSummary(state), env.forge, env.repoRoot);
+    const args = post.mock.calls[0];
+    expect(args?.slice(0, 1)).toEqual([env.ref]);
+    expect(args?.slice(2)).toEqual([env.forge, env.repoRoot]);
+    expect(withoutLedger(args?.[1] ?? "")).toBe(renderFixSummary(state));
     expect(edit).not.toHaveBeenCalled();
   });
   test("edits the own fix-summary identity rather than posting", async () => {
@@ -482,7 +493,30 @@ describe("reportStep", () => {
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
     await reportStep(env, state);
-    expect(edit).toHaveBeenCalledWith(env.ref, comment, renderFixSummary(state), env.forge, env.repoRoot);
+    const args = edit.mock.calls[0];
+    expect(args?.slice(0, 2)).toEqual([env.ref, comment]);
+    expect(args?.slice(3)).toEqual([env.forge, env.repoRoot]);
+    expect(withoutLedger(args?.[2] ?? "")).toBe(renderFixSummary(state));
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe("reportStep push ledger (US-004)", () => {
+  test("AC-22 a failed summary edit records no push in the persisted comment", async () => {
+    const env = makeBotFixEnv([{ kind: "finding", key: "f-a", issue: "no lock file", severity: "important" }]);
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: env.user.login,
+      body: withNaxBotMarker("earlier summary", "fix-summary"),
+      createdAt: "",
+    };
+    spyOn(_fixReportDeps, "editComment").mockRejectedValue(new Error("denied"));
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
+    await expect(reportStep({ ...env, own: [{ key: "fix-summary", comment: stored }] }, state)).rejects.toThrow(
+      "denied",
+    );
+    expect(readPushLedger(stored.body).entries).toEqual([]);
     expect(post).not.toHaveBeenCalled();
   });
 });

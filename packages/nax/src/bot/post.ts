@@ -21,6 +21,7 @@ import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
 import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
+import type { FindingLineage } from "./push-ledger";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 import type { BotReviewScope, ConfirmedItem, ItemStatus } from "./review-rulings";
@@ -43,6 +44,10 @@ export type AgreedItem =
         /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
         readonly trigger?: FindingTrigger;
         readonly triggerEvidence?: string;
+        /** US-004/US-005: the push whose lines the finding sits on; absent before any lineage read. */
+        readonly lineage?: FindingLineage;
+        /** US-005: the lineage of this finding could not be read, which is not the same as none. */
+        readonly lineageUnknown?: true;
       })
   | (AgreedBase &
       AgreedLocation & {

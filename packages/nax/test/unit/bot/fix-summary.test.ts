@@ -169,6 +169,20 @@ describe("renderFixSummary", () => {
   test("marks the summary identity", () => {
     expect(parseNaxBotMarker(renderFixSummary({ ...state, outcome: "nothing" }))).toEqual({ key: "fix-summary" });
   });
+  // US-004: `outcomeText` moved to `bot/fix-outcome-text.ts` unchanged — the line a reader sees is
+  // pinned here so the move cannot quietly reword the public comment.
+  test.each([
+    ["pushed", "Pushed abcdef1: 2 agreed items fixed in one round; gates passed."],
+    ["nothing", "Nothing to fix: the latest review agreed with no item."],
+    ["no-change", "The fix session changed nothing; nothing pushed."],
+    ["push-rejected", "The push was rejected (the PR changed or access was denied); nothing pushed."],
+  ] satisfies readonly (readonly [BotFixState["outcome"], string])[])(
+    "US-004 AC-10 keeps the %s outcome line as the summary's first line",
+    (outcome, expected) => {
+      const body = renderFixSummary({ ...state, outcome, pushedSha: "abcdef1", agreedCount: 2 });
+      expect(body.split("\n")[2]).toBe(expected);
+    },
+  );
   test("AC-17: says why the PR stayed a draft", () => {
     const body = renderFixSummary({ ...state, outcome: "nothing", readyHeld: "CI failed: x" });
     expect(body.split("\n")).toContain("Kept as draft: CI failed: x");

@@ -22,6 +22,7 @@ import { getLogger } from "@/logger";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { type CiWaiver, renderCiWaiver } from "../workflow/ci-waiver";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { readPushLedger, withPushLedger } from "./push-ledger";
 import { safeText } from "./render";
 
 /** The own-comment identity of the fix summary this module may have to keep truthful. */
@@ -151,8 +152,15 @@ export async function nameWaiverInSummary({ env, lines, list, edit }: CiWaiverSu
     const comments = await list(env.ref, env.forge, env.repoRoot);
     const own = ownComments(comments, env.user.login).find(({ key }) => key === FIX_SUMMARY_KEY);
     if (own === undefined) return;
-    const kept = withoutTrailingBlanks(bodyWithoutHeader(own.comment.body).filter((line) => !isReadinessLine(line)));
-    const body = withNaxBotMarker([...kept, ...lines].join("\n"), FIX_SUMMARY_KEY);
+    const original = own.comment.body;
+    const kept = withoutTrailingBlanks(bodyWithoutHeader(original).filter((line) => !isReadinessLine(line)));
+    const rendered = withNaxBotMarker([...kept, ...lines].join("\n"), FIX_SUMMARY_KEY);
+    // US-004: the push ledger is state, not summary text. It is written back so it keeps its place at
+    // the tail — immediately before the identity marker — rather than staying where the text happened
+    // to leave it, and so a retained entry survives every rewrite. A block this version cannot read is
+    // left exactly where it was: a rewrite must not delete a record it cannot decode.
+    const ledger = readPushLedger(original);
+    const body = ledger.unreadable ? rendered : withPushLedger(rendered, ledger.entries);
     await edit(env.ref, own.comment, body, env.forge, env.repoRoot);
   } catch (error) {
     getLogger()?.warn("bot-fix", "Could not name the CI waiver in the fix summary", {

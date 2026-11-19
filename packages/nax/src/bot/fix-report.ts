@@ -1,6 +1,5 @@
 /** Repo-scoped post-push forge nodes; a separate review must grade the fixes. */
 import { homedir } from "node:os";
-import { basename, isAbsolute, relative, sep } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -9,6 +8,7 @@ import {
   hasNaxWorkflowMarker,
   listPrComments,
   listReviewThreads,
+  type OwnComment,
   ownComments,
   type PrComment,
   type PrThread,
@@ -37,10 +37,12 @@ import {
   recordCiWaiver,
 } from "./ci-waiver-ready";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
+import { outcomeText } from "./fix-outcome-text";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
+import { type BotPushEntry, ledgerBody, ledgerIssue, readPushLedger } from "./push-ledger";
 import { safeText } from "./render";
 import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
@@ -456,25 +458,6 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
   return { patch: { markedReady: true, ...(waived === undefined ? {} : { ciWaived: waived }) }, exit: "report" };
 }
 
-/** Why every red gate is not the fix's: CI's verdict on the same head decides (nax#2631). */
-function baselineText(ci: BotFixState["ciOutcome"]): string {
-  const head = "They fail on the unmodified PR head in the bot checkout too";
-  if (ci === "green")
-    return `${head}, while CI is green on it, so the bot checkout differs from CI and these gates cannot judge the fix.`;
-  if (ci === "failed") return `${head}, and CI is red on it too: the failure predates the fix.`;
-  return `${head}; CI has no result for it (${ci ?? "unknown"}).`;
-}
-
-/**
- * The PR comment is public: a local absolute path exposes the username and directory layout
- * (nax#2681). Show the checkout relative to the repo root, or only its directory name.
- */
-function displayPath(path: string, repoRoot: string | undefined): string {
-  const rel = repoRoot ? relative(repoRoot, path) : "";
-  const inside = rel.length > 0 && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-  return inside ? rel : basename(path);
-}
-
 /** `prefix/x` -> `${bare}/x` and a bare `prefix` -> `bare`, only where `prefix` ends at a path boundary. */
 function replacePathPrefix(text: string, prefix: string, bare: string): string {
   if (prefix.length <= 1) return text;
@@ -487,62 +470,6 @@ function replacePathPrefix(text: string, prefix: string, bare: string): string {
 
 function stripLocalPaths(text: string, repoRoot: string | undefined): string {
   return replacePathPrefix(replacePathPrefix(text, repoRoot ?? "", "."), _fixReportDeps.homedir(), "~");
-}
-
-function dirtyText(state: BotFixState, repoRoot: string | undefined): string {
-  if (state.checkoutMissing === true)
-    return "The fix checkout disappeared during the session (removed by another process); nothing pushed.";
-  const shown = state.recoveryPath === undefined ? "unknown" : displayPath(state.recoveryPath, repoRoot);
-  return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(shown)}\`.`;
-}
-
-function outcomeText(state: BotFixState, repoRoot: string | undefined): string {
-  switch (state.outcome) {
-    case "cost-limit":
-      if (state.costSpentUsd === undefined || state.costLimitUsd === undefined)
-        throw new NaxError("[bot-fix] Cannot report cost limit without spend and limit", "BOT_FIX_OUTCOME_MISSING", {
-          stage: "bot-fix",
-        });
-      return `Cost limit reached: ${state.costSpentUsd.toFixed(2)} of ${state.costLimitUsd.toFixed(2)} USD; nothing pushed.`;
-    case "setup-failed":
-      return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
-    case "pushed":
-      return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
-    case "nothing":
-      return "Nothing to fix: the latest review agreed with no item.";
-    case "no-change":
-      return "The fix session changed nothing; nothing pushed.";
-    case "protected":
-      return [
-        "The fix changed protected files; nothing pushed.",
-        ...(state.protectedFiles ?? []).map((path) => `- \`${safeCode(path)}\``),
-      ].join("\n");
-    case "no-gates":
-      return "No gates are configured on the base branch; nothing pushed.";
-    case "gates-failed":
-      return [
-        `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`,
-        ...(state.baselineFailing?.length
-          ? [`Already red on the unmodified PR head: ${state.baselineFailing.join(", ")}.`]
-          : []),
-      ].join(" ");
-    case "prepare-touched-tracked":
-      return state.prepareTreeUnreadable
-        ? "The prepare tree could not be read; nothing pushed."
-        : "The prepare turn changed tracked files; nothing pushed.";
-    case "baseline-red":
-      return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
-    case "dirty":
-      return dirtyText(state, repoRoot);
-    case "push-unknown":
-      return "The push timed out; remote outcome is unknown. Check the remote before retrying.";
-    case "push-rejected":
-      return "The push was rejected (the PR changed or access was denied); nothing pushed.";
-    default:
-      throw new NaxError("[bot-fix] Cannot report without a fix outcome", "BOT_FIX_OUTCOME_MISSING", {
-        stage: "bot-fix",
-      });
-  }
 }
 
 /** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
@@ -579,6 +506,42 @@ function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined
   return `Also changed, not named by an agreed item: ${shown}${remaining > 0 ? ` and ${remaining} more` : ""}`;
 }
 
+/**
+ * US-004: the entry this execution records — only a real fix push, never the advisor-ledger-only
+ * push (`outcome: "nothing"`), which changes no reviewed line a finding could sit on.
+ */
+function pushEntry(env: BotFixEnv, state: BotFixState): BotPushEntry | undefined {
+  if (state.outcome !== "pushed" || state.pushedSha === undefined) return undefined;
+  return {
+    base: env.info.headSha,
+    sha: state.pushedSha,
+    at: new Date().toISOString(),
+    items: env.review.agreed.map((item) => ({
+      key: item.key,
+      generation: item.kind === "finding" ? (item.lineage?.generation ?? 0) : 0,
+      issue: ledgerIssue(item.issue),
+    })),
+  };
+}
+
+/** The summary body to write: this execution's text, carrying the ledger the own comment held. */
+function summaryBody(
+  env: BotFixEnv,
+  state: BotFixState,
+  lines: readonly string[],
+  own: OwnComment | undefined,
+): string {
+  const previous = own?.comment.body;
+  const entry = pushEntry(env, state);
+  // An unreadable block is replaced by this execution's entries alone, so the loss is not silent.
+  if (entry !== undefined && previous !== undefined && readPushLedger(previous).unreadable)
+    getLogger()?.warn("bot-fix", "Replaced an unreadable push ledger in the fix summary", {
+      pr: env.ref.number,
+      error: "the ledger block is not base64 JSON this version can read",
+    });
+  return ledgerBody(previous, entry, renderFixSummary(state, lines, env.repoRoot));
+}
+
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   const lines: string[] = [];
   if (state.outcome === "nothing" && state.pushedSha)
@@ -589,8 +552,8 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
-  const body = renderFixSummary(state, lines, env.repoRoot);
   const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
+  const body = summaryBody(env, state, lines, own);
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
   return { patch: {}, exit: "done" };
