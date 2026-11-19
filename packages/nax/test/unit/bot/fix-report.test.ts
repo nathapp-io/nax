@@ -138,7 +138,9 @@ describe("reportStep ledger push (US-009)", () => {
     });
     const body = post.mock.calls[0]?.[1] ?? "";
     expect(body).toContain("Pushed abcdef1: advisor ledger.");
-    expect(body).toContain("No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).");
+    expect(body).toContain(
+      "No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).",
+    );
   });
 });
 
