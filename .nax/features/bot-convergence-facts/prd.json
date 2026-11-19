@@ -3,7 +3,7 @@
   "feature": "bot-convergence-facts",
   "branchName": "feat/bot-convergence-facts",
   "createdAt": "2026-11-19T03:29:04.609Z",
-  "updatedAt": "2026-11-19T06:03:52.422Z",
+  "updatedAt": "2026-11-19T06:30:27.571Z",
   "userStories": [
     {
       "id": "US-001",
@@ -441,14 +441,17 @@
         "US-003",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Applies an existing predicate at a standard step exit and formats its declared output; does not change session security or authorization."
+        "reasoning": "Applies an existing predicate at a standard step exit and formats its declared output; does not change session security or authorization.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-steps.ts",
@@ -507,7 +510,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "97cab81f4300860d5ace48c4a374d69783ada3e0"
     },
     {
       "id": "US-008",
