@@ -114,7 +114,7 @@ export const InteractionConfigSchema = z.object({
   defaults: z.object({
     timeout: z.number().int().min(1000).max(3600000).default(600000),
     chatAskFallbackMs: z.number().int().min(1000).max(3600000).default(60000),
-    chatTaskNoticeTurns: z.number().int().min(0).max(100).default(3),
+    chatTaskNoticeTurns: z.number().int().min(0).max(100).default(0),
     // No `.default()` here (BUG-48 / D-9): the field must stay undefined when the operator hasn't
     // set it, so getTriggerConfig can tell "unset — use this trigger's own metadata default" apart
     // from "explicitly configured". A schema-level default would make every trigger's fallback

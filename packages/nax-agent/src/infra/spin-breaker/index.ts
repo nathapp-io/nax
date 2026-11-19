@@ -17,6 +17,7 @@
  * (check:adapter-no-config-import).
  */
 
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { getSafeLogger } from "#src/infra/index";
 import { byCodePoint } from "#src/internal/sort";
 import { stripControlChars } from "#src/internal/strip-control-chars";
@@ -110,8 +111,14 @@ export interface SpinBreaker {
    * so it falls back to the raw backstop inside `observe`. A DENIED call
    * does reach here (turn-loop feeds `answer.answer`): a stable denial is an
    * unchanged result and is intended to count toward the same-result run.
+   *
+   * `images` are the result's tool-result images, if any. Their bytes belong
+   * to the result's identity: a `Read` label names only the MIME type, the
+   * pixel size and the byte COUNT, so two different screenshots of the same
+   * format and length produce identical text and would otherwise read as
+   * "no progress" while the turn is in fact making progress.
    */
-  noteResult(toolName: string, input: unknown, resultText: string): void;
+  noteResult(toolName: string, input: unknown, resultText: string, images?: readonly ImageAttachment[]): void;
   summary(): SpinSummary;
 }
 
@@ -150,9 +157,20 @@ function stableStringify(value: unknown): string {
 const DURATION_OR_TIMESTAMP =
   /\b\d+\.\d+\s?(?:ms|s|m|min)\b|(?:\b(?:in|took|time|elapsed|duration)\s?|[=(,]\s?)\d+\s?[ms]\b|\b\d+(?:\.\d+)?\s?(?:ms|min)\b|\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b|\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g;
 
-function resultDigest(text: string): string {
+function resultDigest(text: string, images: readonly ImageAttachment[] | undefined): string {
   const normalised = stripControlChars(text).replace(DURATION_OR_TIMESTAMP, "").replace(/\s+/g, " ").trim();
-  return digest64(normalised);
+  return digest64(`${digest64(normalised)}${IMAGE_DIGEST_SEPARATOR}${imageFingerprint(images)}`);
+}
+
+/**
+ * Ordered identity of a result's images: their MIME types and a digest of each
+ * one's bytes. Only digests leave this function — the base64 payload is neither
+ * retained in the breaker's state nor logged, and each image is described by
+ * 16 hex characters, so a 3 MB screenshot costs the same as a small one.
+ */
+function imageFingerprint(images: readonly ImageAttachment[] | undefined): string {
+  if (images === undefined || images.length === 0) return "";
+  return images.map((image) => `${image.mimeType}:${digest64(image.data)}`).join(",");
 }
 
 /**
@@ -161,6 +179,13 @@ function resultDigest(text: string): string {
  * `body="c"` collide with `toolName="a"` + `body="b:c"` the way a colon would.
  */
 const KEY_SEPARATOR = " ";
+
+/**
+ * Separates the text half of a result digest from its image half. A `:` never
+ * ends a hex digest, so a text that happens to look like a fingerprint cannot
+ * collide with a different text carrying no images.
+ */
+const IMAGE_DIGEST_SEPARATOR = ":";
 
 function callKey(toolName: string, input: unknown): string {
   const body = stableStringify(input);
@@ -447,11 +472,11 @@ export function createSpinBreaker(
       return { action: "allow" };
     },
 
-    noteResult(toolName, input, resultText) {
+    noteResult(toolName, input, resultText, images) {
       if (!settings.enabled) return;
       const record = recent.get(callKey(toolName, input));
       if (record === undefined) return;
-      const digest = resultDigest(resultText);
+      const digest = resultDigest(resultText, images);
       record.sameResultRun = record.digest === digest ? record.sameResultRun + 1 : 1;
       record.digest = digest;
     },

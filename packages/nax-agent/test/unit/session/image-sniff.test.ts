@@ -1,5 +1,14 @@
+/**
+ * The magic-byte image sniffer, moved from packages/nax/src/chat/images
+ * (US-004) so both a chat attachment and the native Read tool recognise the
+ * same four formats with one implementation.
+ *
+ * AC-1 to AC-5 address the sniffer through the package's root entry
+ * (`@nathapp/nax-agent`), which is where the move puts them.
+ */
+
 import { describe, expect, test } from "bun:test";
-import { sniffImage } from "@/chat/images/image-sniff";
+import { type ImageFormat, type SniffedImage, sniffImage } from "#src/index";
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -109,7 +118,16 @@ function vp8xPayload(width: number, height: number): number[] {
 }
 
 describe("sniffImage", () => {
-  test("AC-1 reads PNG dimensions from the IHDR chunk", () => {
+  test("AC-1 returns { format: png, mimeType: image/png, width: 100, height: 50 } for a 100x50 PNG", () => {
+    expect(sniffImage(png(100, 50))).toEqual({
+      format: "png",
+      mimeType: "image/png",
+      width: 100,
+      height: 50,
+    });
+  });
+
+  test("reads PNG dimensions from the IHDR chunk", () => {
     expect(sniffImage(png(1280, 720))).toEqual({
       format: "png",
       mimeType: "image/png",
@@ -127,13 +145,13 @@ describe("sniffImage", () => {
     });
   });
 
-  test("AC-3 recognises GIF87a", () => {
+  test("recognises GIF87a", () => {
     const sniffed = sniffImage(gif("87a", 5, 7));
     expect(sniffed?.format).toBe("gif");
     expect(sniffed?.mimeType).toBe("image/gif");
   });
 
-  test("AC-4 walks past APP0 to the SOF0 segment for JPEG dimensions", () => {
+  test("AC-3 walks past APP0 to the SOF0 segment for JPEG dimensions", () => {
     const bytes = Uint8Array.from([0xff, 0xd8, 0xff, ...JPEG_APP0, ...jpegSof(0xc0, 600, 800), 0xff, 0xd9]);
     expect(sniffImage(bytes)).toEqual({
       format: "jpeg",
@@ -143,14 +161,14 @@ describe("sniffImage", () => {
     });
   });
 
-  test("AC-5 reads dimensions from a progressive SOF2 segment", () => {
+  test("reads dimensions from a progressive SOF2 segment", () => {
     const bytes = Uint8Array.from([0xff, 0xd8, 0xff, ...jpegSof(0xc2, 240, 320), 0xff, 0xd9]);
     const sniffed = sniffImage(bytes);
     expect(sniffed?.format).toBe("jpeg");
     expect([sniffed?.width, sniffed?.height]).toEqual([320, 240]);
   });
 
-  test("AC-6 reads lossy VP8 dimensions", () => {
+  test("reads lossy VP8 dimensions", () => {
     expect(sniffImage(webp("VP8 ", vp8Payload(640, 480)))).toEqual({
       format: "webp",
       mimeType: "image/webp",
@@ -159,34 +177,38 @@ describe("sniffImage", () => {
     });
   });
 
-  test("AC-7 reads lossless VP8L dimensions", () => {
+  test("reads lossless VP8L dimensions", () => {
     const sniffed = sniffImage(webp("VP8L", vp8lPayload(100, 50)));
     expect(sniffed?.format).toBe("webp");
     expect([sniffed?.width, sniffed?.height]).toEqual([100, 50]);
   });
 
-  test("AC-8 reads extended VP8X dimensions", () => {
+  test("AC-4 reads extended VP8X dimensions", () => {
     const sniffed = sniffImage(webp("VP8X", vp8xPayload(4000, 3000)));
     expect(sniffed?.format).toBe("webp");
     expect([sniffed?.width, sniffed?.height]).toEqual([4000, 3000]);
   });
 
-  test("AC-9 returns undefined for text bytes", () => {
+  test("AC-5 returns undefined for the text hello", () => {
+    expect(sniffImage(new TextEncoder().encode("hello"))).toBeUndefined();
+  });
+
+  test("returns undefined for text bytes", () => {
     expect(sniffImage(new TextEncoder().encode("hello world"))).toBeUndefined();
   });
 
-  test("AC-10 returns undefined for an empty array", () => {
+  test("returns undefined for an empty array", () => {
     expect(sniffImage(new Uint8Array(0))).toBeUndefined();
   });
 
-  test("AC-11 returns a PNG with no width or height when the header stops at the signature", () => {
+  test("returns a PNG with no width or height when the header stops at the signature", () => {
     const sniffed = sniffImage(Uint8Array.from(PNG_SIGNATURE));
     expect(sniffed).toEqual({ format: "png", mimeType: "image/png" });
     expect(Object.hasOwn(sniffed ?? {}, "width")).toBe(false);
     expect(Object.hasOwn(sniffed ?? {}, "height")).toBe(false);
   });
 
-  test("AC-12 skips FF fill bytes and a stand-alone RST marker before the SOF0 segment", () => {
+  test("skips FF fill bytes and a stand-alone RST marker before the SOF0 segment", () => {
     const bytes = Uint8Array.from([
       0xff,
       0xd8,
@@ -249,7 +271,7 @@ describe("sniffImage", () => {
     expect(sniffImage(bytes)).toEqual({ format: "webp", mimeType: "image/webp" });
   });
 
-  test("AC-13 returns a JPEG with no width or height when SOS comes before any SOF", () => {
+  test("returns a JPEG with no width or height when SOS comes before any SOF", () => {
     const bytes = Uint8Array.from([
       0xff,
       0xd8,
@@ -261,5 +283,12 @@ describe("sniffImage", () => {
     expect(sniffed).toEqual({ format: "jpeg", mimeType: "image/jpeg" });
     expect(Object.hasOwn(sniffed ?? {}, "width")).toBe(false);
     expect(Object.hasOwn(sniffed ?? {}, "height")).toBe(false);
+  });
+
+  test("the exported types name the four formats and the mime type", () => {
+    const formats: readonly ImageFormat[] = ["png", "jpeg", "gif", "webp"];
+    const sniffed: SniffedImage = { format: "png", mimeType: "image/png" };
+    expect(formats).toHaveLength(4);
+    expect(sniffed.mimeType).toBe("image/png");
   });
 });

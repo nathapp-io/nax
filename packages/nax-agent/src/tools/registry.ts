@@ -11,6 +11,7 @@
  */
 
 import type { CommandInterceptor } from "#src/command-interceptor/index";
+import type { ImageAttachment } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/index";
 import type { JSONSchema } from "#src/session/tool-descriptor";
 import type { SandboxRecord } from "../sandbox/index.ts";
@@ -21,6 +22,16 @@ import type { CodingToolName, ToolScope } from "./types.ts";
 export interface ToolResult {
   readonly content: string;
   readonly isError?: boolean;
+  /**
+   * Images this tool produced, in the order it produced them (US-002). `Read`
+   * is the only built-in that sets it today, and it sets it only on the image
+   * branch: the model sees them where it accepts image input, and the session
+   * turns a dropped one into a note line otherwise.
+   *
+   * Absent, or empty, means the result is text — the runtime keeps it that way
+   * rather than passing an `images: []` on.
+   */
+  readonly images?: readonly ImageAttachment[];
   /**
    * Set only by RunCommand's argv branch (`Exec`), which is the one call
    * shape whose executed argv can differ from what the model requested

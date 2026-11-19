@@ -102,4 +102,10 @@ describe("footerModel tasks and stripWidth", () => {
     expect(model.stripWidth).toBe(displayWidth("plan f1 · 1 shell"));
     expect(model.right[0]?.text).toBe("plan f1 · 1 shell");
   });
+
+  test("AC-9 draws the one running shell's strip span in the accent colour, underlined", () => {
+    const model = footerModel({ ...BASE, tasks: shells("bun run test") });
+    expect(model.right[0]).toEqual({ text: "1 shell", color: "accent", underline: true });
+    expect(model.right.slice(1).some((span) => span.underline === true)).toBe(false);
+  });
 });

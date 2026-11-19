@@ -7,7 +7,7 @@ import { _backgroundTaskDeps, createBackgroundTasks } from "@/chat/background";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { summarizeBackgroundNotice } from "@/prompts";
 import { _slashCommandDeps } from "@/tui/chat/slash-commands";
-import { steeredTaskNoticeLine, taskNoticeHeldLine } from "@/tui/chat/use-jobs";
+import { MAX_CONSECUTIVE_TASK_NOTICE_TURNS, steeredTaskNoticeLine, taskNoticeHeldLine } from "@/tui/chat/use-jobs";
 
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -101,7 +101,37 @@ function mount(withJobs = false, taskNoticeTurns?: number, steer?: ChatHost["ste
   };
 }
 
+describe("the task-notice turn limit itself", () => {
+  test("AC-4 the default limit is 0, which means no limit", () => {
+    expect(MAX_CONSECUTIVE_TASK_NOTICE_TURNS).toBe(0);
+  });
+
+  test("AC-9 taskNoticeHeldLine names only the paused form", () => {
+    expect(taskNoticeHeldLine(2)).toBe(
+      "background task ended · auto-wake paused after 2 task turns in a row · send a message to continue",
+    );
+  });
+});
+
 describe("background task notices", () => {
+  test.each([
+    { name: "AC-5 an explicit 0", limit: 0 as number | undefined },
+    { name: "AC-6 an omitted limit", limit: undefined },
+  ])("$name delivers six task notices in a row without holding one", async ({ limit }) => {
+    const ui = mount(false, limit);
+    await ui.submit("hello");
+    await ui.finishTurn(0);
+    const heldRows: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      await ui.endTask();
+      await ui.finishTurn(i + 1);
+      heldRows.push(...ui.rows().filter((row) => row.includes("auto-wake paused")));
+    }
+    expect(ui.send).toHaveBeenCalledTimes(7);
+    expect(heldRows).toEqual([]);
+    expect(ui.take).toHaveBeenCalledTimes(6);
+  });
+
   test("AC-10/11 idle tasks without jobs deliver before acknowledgement", async () => {
     const ui = mount();
     const id = await ui.endTask();
@@ -136,25 +166,27 @@ describe("background task notices", () => {
     expect(ui.send.mock.calls[2]?.[0]).toContain("bash-");
     await ui.finishTurn(2);
   });
-  test.each(["continue", "/feature demo"])("AC-14/15 user message %s resets the task guard", async (message) => {
+  test.each(["continue", "/feature demo"])("AC-14/15/8 user message %s resets the task guard", async (message) => {
     spyOn(_slashCommandDeps, "readText").mockResolvedValue("feature spec");
-    const ui = mount();
+    const ui = mount(false, 3);
     for (let i = 0; i < 3; i++) {
       await ui.endTask();
       await ui.finishTurn(i);
     }
     await ui.endTask();
     expect(ui.send).toHaveBeenCalledTimes(3);
-    expect(ui.tasks.peekNotice()).toBeDefined();
+    const held = ui.tasks.peekNotice();
+    assertDefined(held, "held task notice");
     await ui.submit(message);
     expect(ui.send.mock.calls[3]?.[0]).toContain(message === "continue" ? "continue" : "feature spec");
     expect(ui.send).toHaveBeenCalledTimes(4);
     await ui.finishTurn(3);
     expect(ui.send).toHaveBeenCalledTimes(5);
+    expect(ui.send.mock.calls[4]?.[0]).toBe(held);
     await ui.finishTurn(4);
   });
   test("job notice turns neither count toward nor reset the task guard", async () => {
-    const ui = mount(true);
+    const ui = mount(true, 3);
     await ui.endTask();
     await ui.finishTurn(0);
     await ui.settleAfter(ui.queueJob);
@@ -170,8 +202,8 @@ describe("background task notices", () => {
     expect(ui.send).toHaveBeenCalledTimes(5);
     expect(ui.tasks.peekNotice()).toBeDefined();
   });
-  test("a task notice held by the guard is announced once in the transcript (#2816)", async () => {
-    const ui = mount();
+  test("AC-7 a task notice held by the guard is announced once in the transcript (#2816)", async () => {
+    const ui = mount(false, 3);
     for (let i = 0; i < 3; i++) {
       await ui.endTask();
       await ui.finishTurn(i);
@@ -191,11 +223,15 @@ describe("background task notices", () => {
     expect(ui.send).toHaveBeenCalledTimes(4);
     expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(5)))).toBe(false);
   });
-  test("a taskNoticeTurns of 0 never wakes the agent but still announces the held notice", async () => {
-    const ui = mount(false, 0);
+  test("a positive limit of 1 holds the second notice and says so once", async () => {
+    const ui = mount(false, 1);
     await ui.endTask();
-    expect(ui.send).not.toHaveBeenCalled();
-    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(0)))).toBe(true);
+    await ui.finishTurn(0);
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    await ui.endTask();
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    expect(ui.tasks.peekNotice()).toBeDefined();
+    expect(ui.rows().filter((row) => row.includes(taskNoticeHeldLine(1)))).toHaveLength(1);
   });
   test("a rejected task notice stays queued without using a guard turn", async () => {
     const ui = mount();
@@ -463,11 +499,13 @@ describe("a task notice steer the turn did not take", () => {
   test("AC-14 a pending steer is not the guard's hold", async () => {
     const applied = Promise.withResolvers<boolean>();
     const steer = acceptedSteer(() => applied.promise);
-    const ui = mount(false, 0, steer);
-    await ui.submit("hello");
+    const ui = mount(false, 1, steer);
     await ui.endTask();
     await ui.finishTurn(0);
-    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(0)))).toBe(false);
+    await ui.submit("hello");
+    await ui.endTask();
+    await ui.finishTurn(1);
+    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(1)))).toBe(false);
     await ui.settleAfter(() => applied.resolve(false));
     await ui.settle();
   });
@@ -575,9 +613,11 @@ describe("a task notice steer the turn did not take", () => {
 
 describe("a task notice the guard is holding", () => {
   test("a marked output read retires a held notice", async () => {
-    const ui = mount(false, 0);
+    const ui = mount(false, 1);
+    await ui.endTask();
+    await ui.finishTurn(0);
     const id = await ui.endTask();
-    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(0)))).toBe(true);
+    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(1)))).toBe(true);
     await ui.tasks.output(id, undefined, { markSeen: true });
     expect(ui.tasks.peekNotice()).toBeUndefined();
   });

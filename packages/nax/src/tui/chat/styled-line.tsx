@@ -21,6 +21,7 @@ export interface Span {
   readonly bold?: boolean;
   readonly italic?: boolean;
   readonly inverse?: boolean;
+  readonly underline?: boolean;
 }
 
 export type StyledLine = readonly Span[];
@@ -75,6 +76,7 @@ function spanProps(span: Span, theme: ChatTheme): TextProps {
     bold: span.bold,
     italic: span.italic,
     inverse: span.inverse,
+    underline: span.underline,
   };
 }
 

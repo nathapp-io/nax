@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createNativeSessionState, runNativeTurn, saveTranscript } from "@nathapp/nax-agent/internal";
-import type { TranscriptMessage } from "#src/native/session/compaction";
+import { estimateTokens, type TranscriptMessage } from "#src/native/session/compaction";
 import * as imageContext from "#src/native/session/image-context";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
 import { createTurnAccumulator } from "#src/native/session/turn-accumulator";
 import { runProactiveCompaction } from "#src/native/session/turn-compaction-step";
+import { IMAGE_TOKEN_ESTIMATE } from "#src/session/image-input";
 import { seedNativeSession, withTempDir } from "#test/helpers/index";
 
 const image = { mimeType: "image/png", data: "AAAA", width: 640, height: 480 };
@@ -64,6 +65,14 @@ describe("imagesAsNotes", () => {
     expect(imageContext.imagesAsNotes([{ role: "user", content: "", images: [] }])).toEqual([
       { role: "user", content: "" },
     ]);
+  });
+
+  // US-002 AC-14: a tool result's images become notes exactly as a user
+  // message's do, so a summarizer never sees the bytes of either arm.
+  test("US-002 AC-14: a tool result's image becomes a note and its images key is removed", () => {
+    expect(
+      imageContext.imagesAsNotes([{ role: "tool-result", toolCallId: "c1", content: "x", images: [image] }]),
+    ).toEqual([{ role: "tool-result", toolCallId: "c1", content: "x\n[image: image/png 640x480]" }]);
   });
 });
 
@@ -130,5 +139,17 @@ describe("image compaction", () => {
     expect(messages).toEqual(before);
     // Prove the fallback was not the note-only view passed to the failing summarizer.
     expect(summarized).toContainEqual({ role: "user", content: "see\n[image: image/png 640x480]" });
+  });
+});
+
+// US-002 AC-15: a tool result's images cost tokens in the estimate the same way
+// a user message's do, through the one per-image helper both arms call.
+describe("estimateTokens — tool-result images (US-002)", () => {
+  const estimable = { role: "tool-result", toolCallId: "c1", content: "x".repeat(400) } as const;
+
+  test("AC-15: one dimension-less image adds the flat per-image estimate", () => {
+    const withImage = { ...estimable, images: [{ mimeType: "image/png", data: "AAAA" }] };
+    expect(estimateTokens(estimable)).toBe(100);
+    expect(estimateTokens(withImage)).toBe(estimateTokens(estimable) + IMAGE_TOKEN_ESTIMATE);
   });
 });

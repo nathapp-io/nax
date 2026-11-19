@@ -69,7 +69,8 @@ function sameStyle(left: SpanStyle, right: SpanStyle): boolean {
     left.background === right.background &&
     Boolean(left.bold) === Boolean(right.bold) &&
     Boolean(left.italic) === Boolean(right.italic) &&
-    Boolean(left.inverse) === Boolean(right.inverse)
+    Boolean(left.inverse) === Boolean(right.inverse) &&
+    Boolean(left.underline) === Boolean(right.underline)
   );
 }
 
@@ -106,6 +107,7 @@ function styleOf(span: Span): SpanStyle {
     bold: span.bold,
     italic: span.italic,
     inverse: span.inverse,
+    underline: span.underline,
   };
 }
 

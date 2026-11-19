@@ -151,6 +151,13 @@ export type ConversationMessage =
       readonly toolCallId: string;
       readonly content: string;
       readonly isError?: boolean;
+      /**
+       * Images the tool produced, in the order it produced them. A tool result
+       * may carry them the same way a user message does: the model sees them
+       * when it accepts image input, and a note per image replaces them when
+       * it does not.
+       */
+      readonly images?: readonly ImageAttachment[];
     };
 
 /**

@@ -303,7 +303,14 @@ function answerFor(outcome: CodingToolOutcome, name: string): AdapterInteraction
     return { answer: `Denied: ${outcome.reason}`, denied: { reason: outcome.reason, breach: outcome.breach } };
   }
   if (outcome.kind === "error") throw toolError(outcome.content, name, outcome.sandbox);
-  return { answer: outcome.content, ...(outcome.sandbox !== undefined ? { sandbox: outcome.sandbox } : {}) };
+  return {
+    answer: outcome.content,
+    ...(outcome.sandbox !== undefined ? { sandbox: outcome.sandbox } : {}),
+    // US-002: a successful tool's images ride the answer to the loop's
+    // `after_tool` chokepoint. An error outcome never has any, and an empty
+    // list stays absent the way `sandbox` does.
+    ...(outcome.images !== undefined && outcome.images.length > 0 ? { images: outcome.images } : {}),
+  };
 }
 
 async function runCodingTool(

@@ -1,9 +1,16 @@
-import type { ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
+import type { ClientRequest, CompleteResult, ResolvedModel } from "@nathapp/nax-ai";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
 import { withDerivedStream } from "./stream-from-complete";
 
-/** Record complete() requests while exercising the production streamComplete route. */
-export function installImageClient(input?: readonly ("text" | "image")[]) {
+/** One scripted round trip: what the model answers, and why it stopped. */
+export interface ScriptedTurn {
+  readonly text: string;
+  readonly toolCalls?: NonNullable<CompleteResult["toolCalls"]>;
+  readonly stopReason?: CompleteResult["stopReason"];
+}
+
+/** Records `complete()` requests and replays `turns` in order (the last one repeats). */
+function installRecordingClient(input: readonly ("text" | "image")[] | undefined, turns: readonly ScriptedTurn[]) {
   const originalBuild = _clientDeps.build;
   const requests: ClientRequest[] = [];
   const modelCalls: string[][] = [];
@@ -30,7 +37,14 @@ export function installImageClient(input?: readonly ("text" | "image")[]) {
       complete: async (model, request) => {
         if (model !== resolved) throw new Error("expected the resolved model");
         requests.push({ ...request, messages: structuredClone(request.messages) });
-        return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+        const turn = turns[Math.min(requests.length - 1, turns.length - 1)] ?? { text: "ok" };
+        const stopReason = turn.stopReason ?? (turn.toolCalls === undefined ? "stop" : "tool_use");
+        return {
+          text: turn.text,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason,
+          ...(turn.toolCalls !== undefined ? { toolCalls: turn.toolCalls } : {}),
+        };
       },
       validate: () => {},
     });
@@ -42,4 +56,18 @@ export function installImageClient(input?: readonly ("text" | "image")[]) {
       _resetNativeClient();
     },
   };
+}
+
+/** Record complete() requests while exercising the production streamComplete route. */
+export function installImageClient(input?: readonly ("text" | "image")[]) {
+  return installRecordingClient(input, [{ text: "ok" }]);
+}
+
+/**
+ * The same recording client, scripted with several round trips, for a turn
+ * that calls a tool and then answers (US-002). The request each round trip
+ * sent is what a test reads to see what reached the model.
+ */
+export function installTurnClient(turns: readonly ScriptedTurn[], input?: readonly ("text" | "image")[]) {
+  return installRecordingClient(input, turns);
 }

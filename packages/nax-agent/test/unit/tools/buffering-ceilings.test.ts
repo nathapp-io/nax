@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { drainBounded, readPrefix } from "#src/internal/bounded-io";
+import { _boundedIoDeps, drainBounded, readBytesPrefix, readPrefix } from "#src/internal/bounded-io";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
 import { assertNaxError, isConfinedTestRun } from "#test/helpers/index";
 
@@ -161,6 +161,142 @@ describe("readPrefix — reads no more than the ceiling", () => {
     writeFileSync(path, "hello");
 
     expect(await readPrefix(path, 100)).toBe("hello");
+  });
+});
+
+describe("readBytesPrefix — raw bytes plus the file's size", () => {
+  test("AC-21 returns at most maxBytes raw bytes and the whole-file size", async () => {
+    const path = join(root, "hundred.bin");
+    writeFileSync(path, Uint8Array.from(Array.from({ length: 100 }, (_, index) => index)));
+
+    const result = await readBytesPrefix(path, 10);
+
+    expect([...result.bytes]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(result.size).toBe(100);
+  });
+
+  test("AC-21 carries bytes readPrefix could not: a PNG signature is not valid UTF-8", async () => {
+    const path = join(root, "signature.bin");
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    writeFileSync(path, Uint8Array.from([...signature, 0x00, 0x00]));
+
+    const result = await readBytesPrefix(path, 8);
+
+    expect([...result.bytes]).toEqual(signature);
+    expect(result.size).toBe(10);
+  });
+
+  test("AC-21 rejects a directory with READ_NOT_REGULAR_FILE", async () => {
+    let caught: unknown;
+    try {
+      await readBytesPrefix(root, 10);
+    } catch (error) {
+      caught = error;
+    }
+
+    assertNaxError(caught);
+    expect(caught.code).toBe("READ_NOT_REGULAR_FILE");
+  });
+});
+
+/**
+ * `_boundedIoDeps` is the seam the binary read path goes through. A fake handle
+ * is the only deterministic way to produce the two failures a real filesystem
+ * will not: a short read, and a handle that shrinks under the caller.
+ */
+describe("bounded I/O — the dependency seam", () => {
+  const realOpen = _boundedIoDeps.open;
+
+  afterEach(() => {
+    _boundedIoDeps.open = realOpen;
+  });
+
+  function fakeHandle(source: Uint8Array, options: { size?: number; readable?: number; truncateAfter?: number } = {}) {
+    const handle = {
+      reads: 0,
+      stat: async () => ({ size: options.size ?? source.length, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        handle.reads += 1;
+        const readable = handle.reads > (options.truncateAfter ?? Number.POSITIVE_INFINITY) ? 0 : source.length;
+        const available = Math.max(0, Math.min(readable - position, length));
+        buffer.set(source.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    };
+    return handle;
+  }
+
+  test("a short read is retried until the requested prefix is full", async () => {
+    const source = Uint8Array.from(Array.from({ length: 100 }, (_, index) => index));
+    _boundedIoDeps.open = async () => {
+      const handle = fakeHandle(source);
+      const realRead = handle.read;
+      // One byte per call: a caller that trusted a single `read` would return 1.
+      handle.read = async (buffer: Buffer, offset: number, length: number, position: number) =>
+        realRead(buffer, offset, Math.min(1, length), position);
+      return handle;
+    };
+
+    const result = await readBytesPrefix("/fake/short.bin", 10);
+
+    expect([...result.bytes]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(result.size).toBe(100);
+  });
+
+  test("a handle that goes empty before its reported size ends the read early", async () => {
+    const source = Uint8Array.from([1, 2, 3, 4]);
+    _boundedIoDeps.open = async () => fakeHandle(source, { size: 10, truncateAfter: 1 });
+
+    const result = await readBytesPrefix("/fake/truncated.bin", 10);
+
+    expect([...result.bytes]).toEqual([1, 2, 3, 4]);
+    expect(result.size).toBe(10);
+  });
+
+  test("a regular file that reports size 0, like a Linux procfs entry, is still read", async () => {
+    const text = new TextEncoder().encode("MemTotal:       16384 kB\n");
+    _boundedIoDeps.open = async () => ({
+      stat: async () => ({ size: 0, isFile: () => true }),
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const available = Math.max(0, Math.min(text.length - position, length));
+        buffer.set(text.subarray(position, position + available), offset);
+        return { bytesRead: available };
+      },
+      close: async () => {},
+    });
+
+    // Clamping the read to the reported size would answer "" for every procfs file.
+    expect(await readPrefix("/fake/procfs/status", 100)).toBe("MemTotal:       16384 kB\n");
+  });
+
+  test("readPrefix reads to maxBytes + 1 even when the open's stat underreported a positive size", async () => {
+    const source = new TextEncoder().encode("a".repeat(50));
+    // The file grew after the open (or lied): stat said 10, the handle serves 50.
+    // Clamping to 10 would make a 50-byte file look like a complete 10-byte one.
+    _boundedIoDeps.open = async () => fakeHandle(source, { size: 10 });
+
+    const text = await readPrefix("/fake/grown.txt", 20);
+
+    expect(text).toBe("a".repeat(21));
+  });
+
+  test("a handle whose stat is not a file is READ_NOT_REGULAR_FILE", async () => {
+    _boundedIoDeps.open = async () => ({
+      stat: async () => ({ size: 0, isFile: () => false }),
+      read: async () => ({ bytesRead: 0 }),
+      close: async () => {},
+    });
+
+    let caught: unknown;
+    try {
+      await readBytesPrefix("/fake/pipe", 10);
+    } catch (error) {
+      caught = error;
+    }
+
+    assertNaxError(caught);
+    expect(caught.code).toBe("READ_NOT_REGULAR_FILE");
   });
 });
 

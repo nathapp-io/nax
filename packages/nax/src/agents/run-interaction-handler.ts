@@ -8,7 +8,7 @@
  * ACP into the native tree is backwards and trips `check:alias-internals`.
  */
 
-import type { InteractionHandler } from "@nathapp/nax-agent";
+import type { CodingToolOutcome, ImageAttachment, InteractionHandler } from "@nathapp/nax-agent";
 import type { AgentRunOptions } from "./types";
 
 /** Exactly what the handler reads. Narrower than AgentRunOptions on purpose. */
@@ -55,6 +55,10 @@ ${escapeResultBody(result.trim())}
 </nax_tool_result>
 
 Continue the task.`;
+}
+
+export function imagesField(outcome: CodingToolOutcome): Partial<{ images: readonly ImageAttachment[] }> {
+  return outcome.kind === "ok" && outcome.images && outcome.images.length > 0 ? { images: outcome.images } : {};
 }
 
 export function buildRunInteractionHandler(options: RunInteractionOptions): InteractionHandler {
@@ -104,6 +108,7 @@ export function buildRunInteractionHandler(options: RunInteractionOptions): Inte
         }
         return {
           answer: outcome.content,
+          ...imagesField(outcome),
           ...(outcome.finalizeAudit !== undefined ? { finalizeAudit: outcome.finalizeAudit } : {}),
         };
       }

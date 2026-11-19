@@ -41,3 +41,46 @@ test("a changed normalized result resets the same-result run", () => {
   }
   expect(b.observe("Read", { path: "x" })).toEqual({ action: "allow" });
 });
+
+/** A tool-result image as `Read` produces one: the label carries no pixel data. */
+function image(data: string) {
+  return { mimeType: "image/png", data, width: 100, height: 50 };
+}
+
+test("identical images count as repeats: the same call returning the same picture is a spin", () => {
+  const b = breaker();
+  const same = image("AAAA");
+  for (const _ of [0, 1, 2]) {
+    b.observe("Read", { path: "shot.png" });
+    b.noteResult("Read", { path: "shot.png" }, "[image: image/png 100x50, 3 bytes]", [same]);
+  }
+  expect(b.observe("Read", { path: "shot.png" })).toEqual({
+    action: "stop",
+    reason: "same-key-cumulative",
+    repeats: 3,
+  });
+});
+
+test("different image bytes under an identical label are progress, not a spin", () => {
+  const b = breaker();
+  for (const data of ["AAAA", "BBBB", "CCCC"]) {
+    b.observe("Read", { path: "shot.png" });
+    // Same path, same MIME type, same dimensions, same byte COUNT -- the whole
+    // label is identical, so only the bytes distinguish the two screenshots.
+    b.noteResult("Read", { path: "shot.png" }, "[image: image/png 100x50, 3 bytes]", [image(data)]);
+  }
+  expect(b.observe("Read", { path: "shot.png" })).toEqual({ action: "allow" });
+});
+
+test("the image fingerprint is ordered and format-aware, and keeps no payload", () => {
+  const b = breaker();
+  b.observe("Read", { path: "pair.png" });
+  b.noteResult("Read", { path: "pair.png" }, "x", [image("AAAA"), image("BBBB")]);
+  b.observe("Read", { path: "pair.png" });
+  b.noteResult("Read", { path: "pair.png" }, "x", [image("BBBB"), image("AAAA")]);
+  // Reordered images are a different result, so the run restarts at 1 and two
+  // occurrences are nowhere near the threshold.
+  expect(b.observe("Read", { path: "pair.png" })).toEqual({ action: "allow" });
+  // The summary carries counts only: no digest, no bytes.
+  expect(JSON.stringify(b.summary())).not.toContain("AAAA");
+});

@@ -2,11 +2,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ConversationMessage } from "@nathapp/nax-ai";
 import type { ImageAttachment } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/index";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
-import { _transcriptImagesDeps } from "#src/native/session/transcript-images";
+import {
+  _transcriptImagesDeps,
+  splitTranscriptImages,
+  transcriptImagesPath,
+} from "#src/native/session/transcript-images";
 import { createFileTranscriptStore, saveTranscript, transcriptPath } from "#src/native/session/transcript-store";
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
@@ -25,6 +30,18 @@ const doc = (images: readonly ImageAttachment[] = [image]): TranscriptDoc => ({
   messages: [{ role: "user", content: "look", images }],
 });
 const empty: TranscriptDoc = { savedAt: "then", messages: [{ role: "user", content: "text" }] };
+/** A `Read` tool call and the result that carries what it read. */
+const toolResult: ConversationMessage = { role: "tool-result", toolCallId: "c1", content: "shot", images: [image] };
+const toolResultDoc = (): TranscriptDoc => ({
+  savedAt: "now",
+  messages: [
+    { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "Read", input: { path: "a.png" } }] },
+    toolResult,
+  ],
+});
+/** The ref `splitTranscriptImages` stores for the shared PNG: content-addressed, no inline data. */
+const storedImage = { mimeType: "image/png", width: 10, height: 20, source: "clipboard", ref: hash };
+const toolCall = { id: "c1", name: "Read", input: { path: "a.png" } };
 let dir: string;
 const folder = () => join(dir, "s.transcript.images");
 const disk = async () => JSON.parse(await readFile(transcriptPath(dir, "s"), "utf8"));
@@ -226,5 +243,46 @@ describe("file transcript image writes", () => {
     const store = createMemoryTranscriptStore();
     await store.save("s", doc());
     expect(await store.load("s")).toEqual(doc());
+  });
+  test("US-003 AC-1: a tool-result image is published and stored as a ref with no data", async () => {
+    const stored = await splitTranscriptImages(transcriptPath(dir, "s"), toolResultDoc());
+    expect(await readdir(folder())).toEqual([`${hash}.png`]);
+    expect(await readdir(transcriptImagesPath(transcriptPath(dir, "s")))).toEqual([`${hash}.png`]);
+    // Exact equality: a ref, schemaVersion 2, and no `data` anywhere in the image.
+    expect(stored).toEqual({
+      savedAt: "now",
+      schemaVersion: 2,
+      messages: [
+        { role: "assistant", content: "", toolCalls: [toolCall] },
+        { role: "tool-result", toolCallId: "c1", content: "shot", images: [storedImage] },
+      ],
+    });
+  });
+  test("US-003 AC-3: one PNG shared by a user message and a tool result is published once", async () => {
+    const stored = await splitTranscriptImages(transcriptPath(dir, "s"), {
+      savedAt: "now",
+      messages: [...doc().messages, toolResult],
+    });
+    expect(await readdir(folder())).toEqual([`${hash}.png`]);
+    // Both arms hold the same ref, and the user arm's own copy of the bytes is gone.
+    expect(stored).toEqual({
+      savedAt: "now",
+      schemaVersion: 2,
+      messages: [
+        { role: "user", content: "look", images: [storedImage] },
+        { role: "tool-result", toolCallId: "c1", content: "shot", images: [storedImage] },
+      ],
+    });
+  });
+  test("US-003 AC-5: a document whose messages carry no images is returned unchanged", async () => {
+    const document: TranscriptDoc = {
+      savedAt: "then",
+      messages: [
+        { role: "user", content: "text" },
+        { role: "tool-result", toolCallId: "c1", content: "no pictures here" },
+      ],
+    };
+    expect(await splitTranscriptImages(transcriptPath(dir, "s"), document)).toBe(document);
+    expect(await readdir(dir)).toEqual([]);
   });
 });

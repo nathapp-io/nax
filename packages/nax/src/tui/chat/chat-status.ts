@@ -14,7 +14,7 @@ import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
 import { contextSpan, formatTokens } from "./context-span";
 import { formatDuration } from "./duration";
-import { type FooterJob, type FooterTask, formatJobStrip } from "./job-strip";
+import { type FooterJob, type FooterTask, formatJobStrip, stripSpan } from "./job-strip";
 import { resolveWidth, singleRow } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
@@ -25,7 +25,7 @@ import { elideSpansEnd, spansWidth } from "./wrap";
 export type TurnPhase = "thinking" | "writing" | "tool" | "approval" | "compacting" | "retrying";
 
 export { formatTokens, formatWindow } from "./context-span";
-export { type FooterJob, type FooterTask, formatJobStrip } from "./job-strip";
+export { type FooterJob, type FooterTask, formatJobStrip, stripSpan } from "./job-strip";
 
 export interface TurnStatus {
   readonly running: boolean;
@@ -309,7 +309,7 @@ export function footerModel(input: {
   return {
     left: leftLine({ ...input, glyphs: input.glyphs ?? GLYPHS }),
     right: [
-      ...(strip === "" ? [] : [{ text: strip }, { text: SEPARATOR, color: "muted" as const }]),
+      ...(strip === "" ? [] : [stripSpan(strip), { text: SEPARATOR, color: "muted" as const }]),
       ...rightLine(input.state, input.status),
     ],
     stripWidth: displayWidth(strip),

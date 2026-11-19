@@ -6,6 +6,7 @@
  * module's names, so the footer and its tests reach it through one import site as before.
  */
 import { singleRow } from "./layout-lines";
+import type { Span } from "./styled-line";
 
 const SEPARATOR = " · ";
 const COST_DECIMALS = 2;
@@ -51,6 +52,15 @@ function taskParts(tasks: readonly FooterTask[]): string[] {
   if (shells > 0) parts.push(countPart(shells, "shell"));
   if (agents > 0) parts.push(countPart(agents, "agent"));
   return parts;
+}
+
+/**
+ * The strip's span: the accent colour and an underline, because the strip is the one footer part
+ * a left click opens (the jobs list, or the lone shell's output). Its text is the caller's, so the
+ * measuring the click geometry uses is unchanged.
+ */
+export function stripSpan(text: string): Span {
+  return { text, color: "accent", underline: true };
 }
 
 /**

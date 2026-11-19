@@ -12,17 +12,25 @@ interface JobsOptions {
   readonly deliver: (notice: string) => Promise<boolean>;
 }
 
-/** The default for `interaction.defaults.chatTaskNoticeTurns`; the host passes the configured value. */
-export const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 3;
+/**
+ * The default for `interaction.defaults.chatTaskNoticeTurns`; the host passes the configured value.
+ * 0 means no limit: ended-task notices keep waking the agent until the user sends a message.
+ */
+export const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 0;
 
 /**
- * The transcript row drawn once when an ended task's notice is held by the guard (#2816), so a
+ * Whether another task notice may wake the agent. `0` is no limit, so the guard never holds; a
+ * positive limit holds the notice once that many task-woken turns have run in a row.
+ */
+function underTaskTurnLimit(turns: number, limit: number): boolean {
+  return limit === 0 || turns < limit;
+}
+
+/** The transcript row drawn once when an ended task's notice is held by the guard (#2816), so a
  * chat that stops waking the agent says why instead of going quiet until the user types.
  */
 export function taskNoticeHeldLine(limit: number): string {
-  return limit === 0
-    ? "background task ended · auto-wake is off · send a message to continue"
-    : `background task ended · auto-wake paused after ${limit} task turns in a row · send a message to continue`;
+  return `background task ended · auto-wake paused after ${limit} task turns in a row · send a message to continue`;
 }
 
 /** The transcript row for a task notice the running turn took as a steer. */
@@ -214,7 +222,7 @@ export function useJobs(
         ? runAsks
         : jobNotice !== undefined
           ? jobs
-          : taskTurns.current < taskTurnLimit
+          : underTaskTurnLimit(taskTurns.current, taskTurnLimit)
             ? taskSource
             : undefined;
     const notice = askNotice ?? jobNotice ?? source?.peekNotice();

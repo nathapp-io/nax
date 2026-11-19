@@ -172,7 +172,7 @@ async function runMovableForeground<T extends LaunchResult>(
 export function withBackgroundSentence(description: string, port?: BackgroundCommandPort): string {
   if (port === undefined) return description;
   const separator = description.endsWith(" ") ? "" : " ";
-  return `${description}${separator}Set "runInBackground": true to return at once with a task id; a notice arrives when the command ends.`;
+  return `${description}${separator}Set "runInBackground": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.`;
 }
 
 /** Adopt before launching so even the first output chunk has a sink. */

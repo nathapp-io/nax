@@ -50,7 +50,7 @@ export {
   makeMemoryProvider,
   type ProviderStep,
 } from "./memory-provider";
-export { installImageClient } from "./native-images";
+export { installImageClient, installTurnClient, type ScriptedTurn } from "./native-images";
 export { type NativeSessionSeed, seedNativeSession } from "./native-session-state";
 export { TEST_GIT_EXCLUDE_PATHSPECS, TEST_GITIGNORE_PATTERNS, testProtectedPaths } from "./protected-paths";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";

@@ -60,6 +60,7 @@ import { vendorSessionHeaders } from "./session-id.ts";
 import { createToolArgAccumulator, parseToolArgs } from "./tool-args.ts";
 import type {
   ConversationMessage,
+  ImageAttachment,
   Protocol,
   ProtocolEvent,
   ProtocolRequest,
@@ -140,6 +141,47 @@ function toPiThinking(block: ThinkingBlock): {
   };
 }
 
+/** One part of a pi tool result's content. */
+type PiToolResultPart =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image"; readonly data: string; readonly mimeType: string };
+
+/**
+ * What a tool-result image becomes when the model cannot see it: one line per
+ * image, naming the type and, when the attachment carries them, the
+ * dimensions. The bytes are left out entirely — a model that cannot decode an
+ * image gains nothing from several thousand base64 characters, and the note is
+ * the only thing it can act on.
+ */
+function imageNotShownNote(image: ImageAttachment): string {
+  const size = image.width !== undefined && image.height !== undefined ? ` ${image.width}x${image.height}` : "";
+  return `[image not shown: this model does not accept image input (${image.mimeType}${size})]`;
+}
+
+/**
+ * The wire content of one tool result.
+ *
+ * This is the one place nax decides vision support for a tool-result image, so
+ * a conversation that switches to a text-only model mid-session degrades the
+ * same way it would have from the start: the images are replaced by notes
+ * rather than sent and rejected. Only `type`, `data` and `mimeType` are
+ * carried — `width`, `height` and `source` are display-side facts.
+ */
+function toPiToolResultContent(
+  content: string,
+  images: readonly ImageAttachment[] | undefined,
+  model: Model<Api>,
+): PiToolResultPart[] {
+  if (images === undefined || images.length === 0) return [{ type: "text", text: content }];
+  if (model.input.includes("image")) {
+    return [
+      { type: "text", text: content },
+      ...images.map((image) => ({ type: "image" as const, data: image.data, mimeType: image.mimeType })),
+    ];
+  }
+  return [{ type: "text", text: [content, ...images.map(imageNotShownNote)].join("\n") }];
+}
+
 function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api>): PiMessage[] {
   const toolNames = new Map<string, string>();
   const out: PiMessage[] = [];
@@ -211,7 +253,7 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
       role: "toolResult",
       toolCallId: message.toolCallId,
       toolName,
-      content: [{ type: "text", text: message.content }],
+      content: toPiToolResultContent(message.content, message.images, model),
       isError: message.isError ?? false,
       timestamp: NO_TIMESTAMP,
     });

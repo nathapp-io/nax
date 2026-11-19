@@ -144,14 +144,16 @@ describe("InteractionConfigSchema — per-trigger fallback/timeout (SEC-3, BUG-4
     expect(FIELD_DESCRIPTIONS["interaction.defaults.chatAskFallbackMs"]?.trim().length).toBeGreaterThan(0);
   });
 
-  test("chat task-notice turns default to 3, accept 0 and carry a description (#2816)", () => {
-    expect(NaxConfigSchema.parse({}).interaction.defaults.chatTaskNoticeTurns).toBe(3);
-    expect(InteractionConfigSchema.parse({ defaults: {} }).defaults.chatTaskNoticeTurns).toBe(3);
+  test("AC-1/2/3: chat task-notice turns default to 0 (no limit), accept 0 and describe the unlimited form", () => {
+    expect(NaxConfigSchema.parse({}).interaction.defaults.chatTaskNoticeTurns).toBe(0);
+    expect(InteractionConfigSchema.parse({ defaults: {} }).defaults.chatTaskNoticeTurns).toBe(0);
     expect(
       NaxConfigSchema.parse({ interaction: { defaults: { chatTaskNoticeTurns: 0 } } }).interaction.defaults
         .chatTaskNoticeTurns,
     ).toBe(0);
-    expect(FIELD_DESCRIPTIONS["interaction.defaults.chatTaskNoticeTurns"]?.trim().length).toBeGreaterThan(0);
+    expect(FIELD_DESCRIPTIONS["interaction.defaults.chatTaskNoticeTurns"]).toBe(
+      "Ended background-task notices that may wake the chat agent in a row before the user sends a message (0 = no limit)",
+    );
   });
 
   test.each([-1, 101, 1.5])("rejects invalid chat task-notice turns %s", (chatTaskNoticeTurns) => {

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatHostState } from "@/chat";
-import { IDLE_STATUS } from "@/tui/chat/chat-status";
+import { type FooterJob, type FooterTask, IDLE_STATUS } from "@/tui/chat/chat-status";
 import { fittedFooterModel, fittedWorkingLine } from "@/tui/chat/status-layout";
-import { plainText } from "@/tui/chat/styled-line";
+import { displayWidth, plainText, type StyledLine } from "@/tui/chat/styled-line";
 import { resolveChatTheme } from "@/tui/chat/theme";
 import { footerStripHit } from "@/tui/chat/use-jobs-opener";
 import { spansWidth } from "@/tui/chat/wrap";
@@ -78,6 +78,92 @@ describe("fittedFooterModel", () => {
     expect(hit(first + footer.stripWidth - 1)).toBe(true);
     expect(hit(first - 1)).toBe(false);
     expect(hit(first + footer.stripWidth)).toBe(false);
+  });
+});
+
+/** The one span of the line whose text is `text`, or undefined when the line draws none. */
+function spanWith(line: StyledLine, text: string): StyledLine[number] | undefined {
+  return line.find((span) => span.text === text);
+}
+
+/** Two 20-character run targets: a strip too wide to draw beside the model at 60 columns. */
+const LONG_RUN_A: FooterJob = { kind: "run", target: "feat-0123456789abcde" };
+const LONG_RUN_B: FooterJob = { kind: "run", target: "feat-0123456789abcdf" };
+/** The fixture `footer-fit-pipeline.test.ts` summarises at 60 columns. */
+const TWO_JOBS_AND_A_TASK: { readonly jobs: readonly FooterJob[]; readonly tasks: readonly FooterTask[] } = {
+  jobs: [LONG_RUN_A, LONG_RUN_B],
+  tasks: [{ command: "bun test" }],
+};
+const ONE_SHELL: readonly FooterTask[] = [{ command: "bun test" }];
+
+describe("fittedFooterModel draws the strip as clickable", () => {
+  test("AC-2 draws the one running shell's strip span in the accent colour, underlined", () => {
+    const footer = fittedFooterModel({ width: 100, state, status: IDLE_STATUS, hint: "busy", tasks: ONE_SHELL });
+    expect(spanWith(footer.right, "1 shell")).toEqual({ text: "1 shell", color: "accent", underline: true });
+  });
+
+  test("AC-3 draws the one running agent's strip span in the accent colour, underlined", () => {
+    const footer = fittedFooterModel({
+      width: 100,
+      state,
+      status: IDLE_STATUS,
+      hint: "busy",
+      tasks: [{ command: "review the diff", kind: "agent" }],
+    });
+    expect(spanWith(footer.right, "1 agent")).toEqual({ text: "1 agent", color: "accent", underline: true });
+  });
+
+  test("AC-4 underlines the whole run-and-shell strip a run without progress or cost shows", () => {
+    const footer = fittedFooterModel({
+      width: 100,
+      state,
+      status: IDLE_STATUS,
+      hint: "busy",
+      jobs: [{ kind: "run", target: "demo" }],
+      tasks: ONE_SHELL,
+    });
+    expect(spanWith(footer.right, "run demo · 1 shell")).toEqual({
+      text: "run demo · 1 shell",
+      color: "accent",
+      underline: true,
+    });
+  });
+
+  test("AC-5 leaves the separator, the model and the cost of that footer un-underlined", () => {
+    const footer = fittedFooterModel({
+      width: 100,
+      state,
+      status: IDLE_STATUS,
+      hint: "busy",
+      jobs: [{ kind: "run", target: "demo" }],
+      tasks: ONE_SHELL,
+    });
+    const strip = footer.right.findIndex((span) => span.text === "run demo · 1 shell");
+    expect(strip).toBeGreaterThanOrEqual(0);
+    expect(footer.right[strip + 1]).toEqual({ text: " · ", color: "muted" });
+    expect(spanWith(footer.right, "deepseek-v4.1-flash")?.underline).toBeUndefined();
+    expect(spanWith(footer.right, " · $0.42")?.underline).toBeUndefined();
+    // The strip is the only underlined span the whole row carries.
+    expect([...footer.left, ...footer.right].filter((span) => span.underline === true)).toHaveLength(1);
+  });
+
+  test("AC-6 underlines the count a summarised strip is replaced by", () => {
+    const footer = fittedFooterModel({ width: 60, state, status: IDLE_STATUS, hint: "busy", ...TWO_JOBS_AND_A_TASK });
+    expect(spanWith(footer.right, "3 active (ctrl+g)")).toEqual({
+      text: "3 active (ctrl+g)",
+      color: "accent",
+      underline: true,
+    });
+  });
+
+  test("AC-7 draws nothing underlined when no job and no task runs", () => {
+    const footer = fittedFooterModel({ width: 100, state, status: IDLE_STATUS, hint: "busy" });
+    expect([...footer.left, ...footer.right].some((span) => span.underline === true)).toBe(false);
+  });
+
+  test("AC-8 measures the drawn shell count, so the click geometry is unchanged", () => {
+    const footer = fittedFooterModel({ width: 100, state, status: IDLE_STATUS, hint: "busy", tasks: ONE_SHELL });
+    expect(footer.stripWidth).toBe(displayWidth("1 shell"));
   });
 });
 

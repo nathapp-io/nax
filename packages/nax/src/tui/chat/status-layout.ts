@@ -1,4 +1,4 @@
-import { type footerModel, GLYPHS, type TurnStatus, workingLine } from "./chat-status";
+import { type footerModel, GLYPHS, stripSpan, type TurnStatus, workingLine } from "./chat-status";
 import { type FooterRole, type FooterSegment, footerSegments } from "./footer-segments";
 import type { Span, StyledLine } from "./styled-line";
 import type { ChatGlyphs } from "./theme";
@@ -46,9 +46,9 @@ function without(segments: readonly FooterSegment[], role: FooterRole): readonly
   return segments.filter((segment) => segment.role !== role);
 }
 
-/** The job strip replaced whole by the count of what is running, as step 3 does. */
+/** The job strip replaced whole by the count of what is running, as step 3 does — still clickable. */
 function summarised(segments: readonly FooterSegment[], summary: string): readonly FooterSegment[] {
-  const replacement: FooterSegment = { role: "strip", span: { text: summary } };
+  const replacement: FooterSegment = { role: "strip", span: stripSpan(summary) };
   return segments.map((segment) => (segment.role === "strip" ? replacement : segment));
 }
 

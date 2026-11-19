@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import chalk from "chalk";
 import type { TextProps } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
@@ -17,8 +18,17 @@ const NO_COLOR_THEME: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 0 });
 /** 16-colour: colour on, but `userBand` (a background-only token) is undefined. */
 const ANSI_THEME: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 1 });
 
+/** Full colour, so ink writes the SGR pairs a styled frame carries. */
+const FULL_COLOR = 3;
+/** The SGR pair ink writes around an underlined cell. */
+const UNDERLINE_ON = "\u001b[4m";
+const UNDERLINE_OFF = "\u001b[24m";
+
+const originalChalkLevel = chalk.level;
+
 afterEach(() => {
   cleanup();
+  chalk.level = originalChalkLevel;
 });
 
 /** Render one line and return the frame the terminal would show for it. */
@@ -94,6 +104,19 @@ describe("StyledLineView", () => {
     expect(firstSpanProps(element).bold).toBe(true);
     expect(firstSpanProps(element).inverse).toBeUndefined();
     expect(firstSpanProps(element).children).toBe("plain");
+  });
+
+  test("AC-1 underlines the span that asks for it and leaves the same line without it plain", () => {
+    const element = StyledLineView({ line: [{ text: "1 shell", underline: true }], theme: NO_COLOR_THEME });
+    expect(firstSpanProps(element).underline).toBe(true);
+
+    chalk.level = FULL_COLOR;
+    const underlined = frameText([{ text: "1 shell", underline: true }], NO_COLOR_THEME);
+    const plain = frameText([{ text: "1 shell" }], NO_COLOR_THEME);
+
+    expect(underlined).toContain(`${UNDERLINE_ON}1 shell${UNDERLINE_OFF}`);
+    expect(plain).toBe("1 shell");
+    expect(plain).not.toContain(UNDERLINE_ON);
   });
   test("renders a colourless theme's spans as plain frame text", () => {
     expect(frameText([{ text: "hi", color: "accent" }], NO_COLOR_THEME)).toBe("hi");
