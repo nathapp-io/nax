@@ -117,13 +117,28 @@ function defersToNextHolder(error: unknown, ctx: RepairContext): boolean {
   return error instanceof NaxError && DEFERRABLE_LOCK_CODES.has(error.code) && DEFERRING_TRIGGERS.has(ctx.trigger);
 }
 
-/** The result's bytes as they are now, or undefined when there is no readable file there. */
-async function currentBytes(path: string): Promise<Uint8Array | undefined> {
+/** errno codes that mean "there is no such path": the only read failure that is an observation of absence. */
+const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
+
+/** The errno code of a thrown filesystem error, when it carries one. */
+function errnoCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code: unknown = Reflect.get(error, "code");
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * The result's bytes as they are now, or undefined when there is no such file. A read that fails for any
+ * other reason propagates: it is not an observation of absence, and recording it as one would keep a
+ * "missing" copy that replay discards as superseded the next time the result is readable.
+ */
+async function bytesOrAbsent(path: string): Promise<Uint8Array | undefined> {
   try {
     return await Bun.file(path).bytes();
-  } catch {
-    // No readable file: the observation is "nothing there", which is the damage worth recording.
-    return undefined;
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
+    throw error;
   }
 }
 
@@ -144,8 +159,8 @@ function isKeptText(bytes: Uint8Array | undefined, content: string): boolean {
  * holder outside this call tree can hold that lock through a whole CI wait.
  *
  * Nothing is written when the damage healed while the lock was being tried: the bytes are the kept text
- * again, so there is nothing to restore and no record to report. A failed write is the failure path the
- * repair has always had.
+ * again, so there is nothing to restore and no record to report. A read that failed for a reason other
+ * than absence, and a failed write, are the failure path the repair has always had.
  *
  * @param f - The file the keeper holds: what the recovery restores, and where it is written beside
  * @param damage - What the damage read found, reported in the record
@@ -153,10 +168,10 @@ function isKeptText(bytes: Uint8Array | undefined, content: string): boolean {
  * @returns The not-restored record, or undefined when the damage healed before the lock attempt
  */
 async function deferRestore(f: KeptFile, damage: Damage[], ctx: RepairContext): Promise<RepairRecord | undefined> {
-  const bytes = await currentBytes(f.path);
-  if (isKeptText(bytes, f.content)) return undefined;
   const recoveryPath = join(dirname(f.path), RESULT_RECOVERY_FILE);
   try {
+    const bytes = await bytesOrAbsent(f.path);
+    if (isKeptText(bytes, f.content)) return undefined;
     await writeResultRecovery(f.path, {
       schemaVersion: 1,
       rel: f.rel,

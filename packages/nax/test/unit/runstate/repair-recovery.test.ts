@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _fileLockDeps, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
@@ -269,6 +269,36 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
 
     expect(await Bun.file(resultPath).text()).toBe(KEPT);
     expect(await Bun.file(recoveryPath).exists()).toBe(false);
+  });
+
+  test("a result this process cannot read is a failed restore, not a missing-damage copy (F1)", async () => {
+    await whileHeld(async () => {
+      await Bun.write(resultPath, DAMAGED);
+      const link = _fileLockDeps.link;
+      let revoked = false;
+      _fileLockDeps.link = async (from, to) => {
+        if (!revoked && String(to) === lockPath) {
+          revoked = true;
+          // The result is still there with its damaged bytes, but this process may no longer read it.
+          // Recording that as absence would hand replay a "missing" copy the next read would discard.
+          chmodSync(resultPath, 0o000);
+        }
+        return link(from, to);
+      };
+      try {
+        expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([
+          { path: resultPath, rel: REL, damage: ["modified"], restored: false },
+        ]);
+      } finally {
+        _fileLockDeps.link = link;
+        chmodSync(resultPath, 0o644);
+      }
+    });
+
+    expect(await Bun.file(recoveryPath).exists()).toBe(false);
+    const failed = warningsAboutResult().filter((warning) => warning.message.includes("[FAIL]"));
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.message).toContain(REL);
   });
 
   const KEPT_FAILURE: [string, () => Promise<void>][] = [
