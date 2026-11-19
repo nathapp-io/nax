@@ -640,6 +640,19 @@ describe("createJobsProvider US-004 handoff mark refusal", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  test("an unreadable handoff mark refuses publish before any card", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => {
+      throw new Error("I/O error");
+    });
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: "[chat] cannot check handoff mark for f1: I/O error",
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
   test("AC-11 an unmarked feature reaches the published-at-head check and the normal card", async () => {
     await allPassedPrd();
     _jobsLaunchDeps.readNewestHandoffMark = mock(async () => null);

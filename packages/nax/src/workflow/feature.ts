@@ -232,7 +232,13 @@ function isFinishedAtHead(
  * behind on an older run and the feature is publishable here again — the design's own escape hatch.
  */
 async function refuseHandedOffFeature(fc: FeatureContext): Promise<void> {
-  const found = await readNewestHandoffMark(fc.featureDir);
+  const found = await readNewestHandoffMark(fc.featureDir).catch((cause) => {
+    throw new NaxError(
+      `[workflow] --publish-only: cannot check handoff mark for ${fc.feature}: ${errorMessage(cause)}`,
+      "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      { stage: "workflow", feature: fc.feature, cause },
+    );
+  });
   if (found === null) return;
   throw new NaxError(
     `[workflow] --publish-only: ${handoffMarkRefusal(fc.feature, found)}`,

@@ -10,6 +10,8 @@
  */
 import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { NaxError } from "@/errors";
 import { runDirsNewestFirst } from "./result";
 
 export const HANDOFF_MARK_FILE = "handoff.json";
@@ -93,17 +95,26 @@ export async function writeHandoffMark(runDir: string, mark: HandoffMark): Promi
   }
 }
 
-/** The mark's parsed text, or null when the file is absent, unreadable or not a mark. */
+/** Missing or invalid marks are absent; an unreadable mark must stop publishing and resending. */
 async function readMark(path: string): Promise<HandoffMark | null> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) return null;
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(await file.text());
-    return isHandoffMark(parsed) ? parsed : null;
+    text = await Bun.file(path).text();
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return null;
+    throw new NaxError(`could not read ${path}: ${errorMessage(error)}`, "HANDOFF_MARK_READ_FAILED", {
+      stage: "handoff-mark",
+      cause: error,
+    });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
   } catch {
     // A file that does not parse is not a mark, so it refuses nothing (the spec's Failure Handling row).
     return null;
   }
+  return isHandoffMark(parsed) ? parsed : null;
 }
 
 /**

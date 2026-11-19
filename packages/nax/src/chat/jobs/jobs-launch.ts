@@ -316,6 +316,15 @@ async function publishedRefusal(feature: string, repoRoot: string): Promise<stri
   return `[chat] ${feature} is already published at HEAD ${head.slice(0, HEAD_SHORT)} as a ${published.outcome} ${pr}; nothing to publish: use nax-jobs__bot_review for its open items`;
 }
 
+async function publishHandoffRefusal(feature: string, repoRoot: string): Promise<string | undefined> {
+  try {
+    const found = await _jobsLaunchDeps.readNewestHandoffMark(workflowFeatureDir(repoRoot, feature));
+    return found === null ? undefined : `[chat] ${handoffMarkRefusal(feature, found)}`;
+  } catch (cause) {
+    return `[chat] cannot check handoff mark for ${feature}: ${errorMessage(cause)}`;
+  }
+}
+
 /**
  * #2819: a publish job reruns only the workflow's publish step, so every story must have passed. The
  * workflow itself refuses a run with no finished record or a moved HEAD; the card says what it does.
@@ -341,9 +350,8 @@ async function preparePublish(
   // US-004: koda is this feature's publisher once a handoff marked it. `publishedAtHead: true` routes the
   // refusal through `stopRefusedPublishStep`, so a chain whose next step is this publish stops instead of
   // waiting for a step that can never start.
-  const handedOff = await _jobsLaunchDeps.readNewestHandoffMark(workflowFeatureDir(options.repoRoot, input.feature));
-  if (handedOff !== null)
-    return { error: `[chat] ${handoffMarkRefusal(input.feature, handedOff)}`, publishedAtHead: true };
+  const handoffRefusal = await publishHandoffRefusal(input.feature, options.repoRoot);
+  if (handoffRefusal !== undefined) return { error: handoffRefusal, publishedAtHead: true };
   // After the pending-story guard: a feature that is not finished has a more actionable report.
   const refusal = await publishedRefusal(input.feature, options.repoRoot);
   if (refusal !== undefined) return { error: refusal, publishedAtHead: true };

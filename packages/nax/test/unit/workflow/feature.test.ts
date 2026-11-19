@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   cleanupTempDir,
@@ -449,6 +450,18 @@ describe("runWorkflowFeature", () => {
     await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
       code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
       message: `[workflow] --publish-only: ${input.feature} was handed off to koda (flow fl1 https://koda/flows/fl1) at T; koda publishes it. Delete ${join(runDir, "handoff.json")} to publish it here instead`,
+    });
+    expect(envs).toHaveLength(0);
+  });
+
+  test("publishOnly refuses when the newest handoff mark cannot be read", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+    await mkdir(join(featureDir, "r-old", "handoff.json"));
+
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      message: expect.stringContaining(`[workflow] --publish-only: cannot check handoff mark for ${input.feature}`),
     });
     expect(envs).toHaveLength(0);
   });

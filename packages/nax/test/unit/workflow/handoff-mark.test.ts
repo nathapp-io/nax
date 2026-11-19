@@ -131,6 +131,16 @@ describe("readNewestHandoffMark (US-004)", () => {
     });
   });
 
+  test("surfaces an I/O error reading the newest run's handoff.json", async () => {
+    await withTempDir(async (dir) => {
+      const newest = await makeRun(dir, "r-new", { resultMtimeMs: 2_000 });
+      // Reading a directory as a file fails independently of the test user's privileges.
+      const path = join(newest, HANDOFF_MARK_FILE);
+      await mkdir(path);
+      await expect(readNewestHandoffMark(dir)).rejects.toThrow(path);
+    });
+  });
+
   test.each([
     ["an object with no schema version", '{"flowId":"fl1"}'],
     ["a mark whose flowId is not a name", '{"schemaVersion":1,"at":"T","flowId":5}'],
