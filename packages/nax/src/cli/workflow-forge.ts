@@ -15,6 +15,11 @@ import { basename } from "node:path";
 import { loadConfig } from "@/config";
 import { defaultForgeDeps, type ForgeDeps } from "@/forge";
 import { projectOutputDir } from "@/runtime";
+import {
+  configuredBlockingTriggers,
+  DEFAULT_BLOCKING_TRIGGERS,
+  type FindingTrigger,
+} from "../workflow/blocking-findings";
 import { waitForChecks } from "../workflow/ci-wait";
 
 export interface WorkflowForgeDeps {
@@ -34,6 +39,11 @@ export interface WorkflowForgeDeps {
    * decision counts only when its artifact there records it. Resolved as `nax advisor` resolves it.
    */
   readonly resolveOutputDir: (dir: string) => Promise<string>;
+  /**
+   * US-008: `bot.blockingTriggers` as the project configures it, which `nax workflow status` applies to
+   * the review's own finding threads. Bot commands are repo-scoped, so the root config answers.
+   */
+  readonly readBlockingTriggers: (dir: string) => Promise<readonly FindingTrigger[]>;
 }
 
 /** The real forge, clock and CI wait: the running process's CLIs, the wall clock and a live poll. */
@@ -44,5 +54,11 @@ export const _workflowForgeDeps: WorkflowForgeDeps = {
   resolveOutputDir: async (dir) => {
     const config = await loadConfig(dir).catch(() => null);
     return projectOutputDir(config?.name?.trim() || basename(dir), config?.outputDir);
+  },
+  // A config the loader rejects must not stop a status report: the default set is what every other
+  // reader falls back to, and `nax config` is the command that names the error.
+  readBlockingTriggers: async (dir) => {
+    const config = await loadConfig(dir).catch(() => null);
+    return config === null ? DEFAULT_BLOCKING_TRIGGERS : configuredBlockingTriggers(config);
   },
 };

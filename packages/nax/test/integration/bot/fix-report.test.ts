@@ -9,7 +9,15 @@ import {
   replyStep,
   reportStep,
 } from "@/bot";
-import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import { type BotPushEntry, readPushLedger, withPushLedger } from "@/bot/push-ledger";
+import {
+  MAX_FORGE_COMMENT_CHARS,
+  NAX_WORKFLOW_PR_MARKER,
+  type PrComment,
+  type PrThread,
+  parseNaxBotMarker,
+  withNaxBotMarker,
+} from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { _ciWaitDeps } from "@/workflow/ci-wait";
 import { safeCode } from "@/workflow/pr-body-safe";
@@ -57,6 +65,23 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
+/**
+ * The fix-summary bodies the report posted: one entry per write. A push also posts its own append-only
+ * record (B1), which is a separate comment with its own identity key.
+ */
+function summaries(post: { mock: { calls: readonly (readonly unknown[])[] } }): string[] {
+  return post.mock.calls
+    .map((call) => String(call[1] ?? ""))
+    .filter((body) => parseNaxBotMarker(body)?.key === "fix-summary");
+}
+
+/** The append-only per-push records the report posted, keyed by the push they name. */
+function records(post: { mock: { calls: readonly (readonly unknown[])[] } }): string[] {
+  return post.mock.calls
+    .map((call) => String(call[1] ?? ""))
+    .filter((body) => parseNaxBotMarker(body)?.key.startsWith("push-") === true);
+}
+
 describe("reportStep out-of-item files", () => {
   const prefix = "Also changed, not named by an agreed item: ";
   const named = [{ kind: "finding" as const, key: "f1", issue: "fix", severity: "minor" as const, file: "src/a.ts" }];
@@ -93,8 +118,8 @@ describe("reportStep out-of-item files", () => {
     const env = makeBotFixEnv(agreed);
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
     expect(await reportStep(env, { ...state, outcome, changed })).toEqual({ patch: {}, exit: "done" });
-    expect(post).toHaveBeenCalledTimes(1);
-    const body = post.mock.calls[0]?.[1] ?? "";
+    expect(summaries(post)).toHaveLength(1);
+    const body = summaries(post)[0] ?? "";
     expect(body.split("\n").find((line) => line.startsWith(prefix))).toBe(expected);
   });
 });
@@ -469,12 +494,25 @@ describe("readyStep", () => {
 });
 
 describe("reportStep", () => {
+  // US-004/US-008: the summary now carries the push ledger and the convergence facts, so only those
+  // lines may differ from the render.
+  const withoutLedger = (body: string): string =>
+    body
+      .split("\n")
+      .filter(
+        (line) => !line.startsWith("<!-- nax-bot:pushes v1 ") && !line.startsWith("nax bot fix pushes on this PR: "),
+      )
+      .join("\n");
+
   test("posts when no own fix-summary exists", async () => {
     const env = makeBotFixEnv();
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
     expect(await reportStep(env, state)).toEqual({ patch: {}, exit: "done" });
-    expect(post).toHaveBeenCalledWith(env.ref, renderFixSummary(state), env.forge, env.repoRoot);
+    const args = post.mock.calls[0];
+    expect(args?.slice(0, 1)).toEqual([env.ref]);
+    expect(args?.slice(2)).toEqual([env.forge, env.repoRoot]);
+    expect(withoutLedger(args?.[1] ?? "")).toBe(renderFixSummary(state));
     expect(edit).not.toHaveBeenCalled();
   });
   test("edits the own fix-summary identity rather than posting", async () => {
@@ -482,8 +520,186 @@ describe("reportStep", () => {
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
     await reportStep(env, state);
-    expect(edit).toHaveBeenCalledWith(env.ref, comment, renderFixSummary(state), env.forge, env.repoRoot);
+    const args = edit.mock.calls[0];
+    expect(args?.slice(0, 2)).toEqual([env.ref, comment]);
+    expect(args?.slice(3)).toEqual([env.forge, env.repoRoot]);
+    expect(withoutLedger(args?.[2] ?? "")).toBe(renderFixSummary(state));
+    // The summary itself is edited in place; only the push's own append-only record is posted (B1).
+    expect(summaries(post)).toEqual([]);
+    expect(records(post)).toHaveLength(1);
+  });
+});
+
+describe("reportStep push ledger (US-004)", () => {
+  test("AC-22 a failed summary edit records no push in the persisted comment", async () => {
+    const env = makeBotFixEnv([{ kind: "finding", key: "f-a", issue: "no lock file", severity: "important" }]);
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: env.user.login,
+      body: withNaxBotMarker("earlier summary", "fix-summary"),
+      createdAt: "",
+    };
+    spyOn(_fixReportDeps, "editComment").mockRejectedValue(new Error("denied"));
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
+    await expect(reportStep({ ...env, own: [{ key: "fix-summary", comment: stored }] }, state)).rejects.toThrow(
+      "denied",
+    );
+    expect(readPushLedger(stored.body).entries).toEqual([]);
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * US-008: the fix summary states the convergence it can see — how many pushes this PR has had, and the
+ * blocking findings that sit on an earlier fix's lines. Both are facts about the PR, so the body a
+ * reader of the public comment sees is what these tests pin.
+ */
+describe("reportStep convergence facts (US-008)", () => {
+  const S = "abcdef1234567890abcdef1234567890abcdef12";
+  /** A 40-hex head and push for the budget case, which reads the ledger back. */
+  const BASE_SHA = "b".repeat(40);
+  const PUSH = "a".repeat(40);
+  const base = makeBotFixEnv();
+  /** The same env with an artifact carrying the facts a later push records. */
+  const withReview = (review: Partial<typeof base.review>): typeof base => ({
+    ...base,
+    review: { ...base.review, ...review },
+  });
+  const posted = (post: { mock: { calls: readonly (readonly unknown[])[] } }): string =>
+    String(post.mock.calls[0]?.[1] ?? "");
+
+  test("AC-22 states the push count and the pushes this history no longer reaches", async () => {
+    const env = withReview({
+      agreed: [{ kind: "finding", key: "f-a", issue: "no lock file", severity: "important" }],
+      unreachablePushes: 1,
+    });
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
+    // A real 40-hex push, so the ledger the summary carries reads back as this execution's one entry.
+    expect(await reportStep(env, { ...state, pushedSha: S })).toEqual({ patch: {}, exit: "done" });
+    expect(posted(post)).toContain("nax bot fix pushes on this PR: 1 (1 no longer in history)");
+    expect(readPushLedger(posted(post)).entries).toHaveLength(1);
+  });
+
+  test("names a blocking finding that sits on an earlier fix push", async () => {
+    const env = withReview({
+      agreed: [
+        {
+          kind: "finding",
+          key: "f-x",
+          issue: "lock leaks again",
+          severity: "important",
+          lineage: { generation: 2, parents: ["f-a"], pushSha: S },
+        },
+      ],
+    });
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: env.user.login,
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [
+        { base: "b".repeat(40), sha: S, at: "", items: [{ key: "f-a", generation: 1, issue: "lock leaks" }] },
+      ]),
+      createdAt: "",
+    };
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep({ ...env, own: [{ key: "fix-summary", comment: stored }] }, state);
+    const body = String(edit.mock.calls[0]?.[2] ?? "");
+    expect(body).toContain("### Findings are chasing their own fixes");
+    expect(body).toContain(
+      "- f-x (Important, normal), generation 2: on lines added by nax bot fix abcdef1 for f-a (lock leaks)",
+    );
+    // The count is this PR's whole recorded history: the earlier entry plus this execution's push.
+    expect(body).toContain("nax bot fix pushes on this PR: 2");
+  });
+
+  // B2: the forge refuses a comment past its size limit, and a refused summary records no push at all.
+  test("B2: a long ledger plus a long chain still posts a body under the forge limit", async () => {
+    const parents = ["f-p0", "f-p1", "f-p2", "f-p3", "f-p4"];
+    const fat: BotPushEntry = {
+      base: BASE_SHA,
+      sha: "7".repeat(40),
+      at: "",
+      items: parents.map((key) => ({ key, generation: 1, issue: "z".repeat(120) })),
+    };
+    // Enough chained findings that the chain section alone would overrun the forge's comment limit.
+    const agreed = Array.from({ length: 400 }, (_unused, index) => ({
+      kind: "finding" as const,
+      key: `f-x${index}`,
+      issue: `lock leaks again ${index}`,
+      severity: "important" as const,
+      lineage: { generation: 2, parents, pushSha: fat.sha },
+    }));
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: "bot",
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [fat]),
+      createdAt: "",
+    };
+    const env = withReview({ agreed });
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep({ ...env, own: [{ key: "fix-summary", comment: stored }] }, { ...state, pushedSha: PUSH });
+    const body = String(edit.mock.calls[0]?.[2] ?? "");
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    // The push this execution made is still recorded: the record is what must not be truncated.
+    expect(readPushLedger(body).entries.at(-1)?.sha).toBe(PUSH);
+    expect(body).toContain("nax bot fix pushes on this PR:");
+    expect(body).toMatch(/more finding\(s\) not listed/);
+  });
+
+  // B2: the outcome line names the protected files the fix touched, and that list is as long as the
+  // diff. A scoped report with a long one and a retained ledger was 65,184 characters before the chain,
+  // and the forge refuses the write — so the push was never recorded. The list is capped, the chain is
+  // budgeted, and what is left is what the ledger may not push past.
+  test("B2: a long protected-file list beside a retained ledger still posts under the forge limit", async () => {
+    const retained: BotPushEntry = {
+      base: BASE_SHA,
+      sha: "7".repeat(40),
+      at: "",
+      items: [{ key: "f-a", generation: 1, issue: "lock leaks" }],
+    };
+    // Far more protected paths than the comment can name: 400 × a path at the inline cap.
+    const protectedFiles = Array.from(
+      { length: 400 },
+      (_unused, index) => `.nax/protected/${index}/${"p".repeat(3_400)}.md`,
+    );
+    const env = withReview({ agreed: [{ kind: "finding", key: "f-a", issue: "lock leaks", severity: "important" }] });
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: "bot",
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [retained]),
+      createdAt: "",
+    };
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep(
+      { ...env, own: [{ key: "fix-summary", comment: stored }] },
+      { step: "report", timings: {}, outcome: "protected", protectedFiles },
+    );
+    const body = String(edit.mock.calls[0]?.[2] ?? "");
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    // The retained record survives, and the comment says what it did not name.
+    expect(readPushLedger(body).entries).toEqual([retained]);
+    expect(body).toContain("The fix changed protected files; nothing pushed.");
+    expect(body).toContain("- and 380 more");
+  });
+
+  test("a fix that changed nothing states no new push but keeps the history's count", async () => {
+    const env = withReview({ agreed: [{ kind: "finding", key: "f-a", issue: "x", severity: "minor" }] });
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
+    await reportStep(env, { step: "report", timings: {}, outcome: "no-change" });
+    expect(posted(post)).not.toContain("nax bot fix pushes");
+  });
+
+  test.each([
+    ["a pushed fix", state],
+    ["a fix that pushed nothing", { step: "report", timings: {}, outcome: "nothing" } satisfies BotFixState],
+  ] as const)("the outcome line stays the summary's first content line: %s", async (_label, fixState) => {
+    const env = withReview({ unreachablePushes: 1 });
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "new" });
+    await reportStep(env, fixState);
+    expect(posted(post).split("\n")[2]).toBe(renderFixSummary(fixState).split("\n")[2]);
   });
 });
 

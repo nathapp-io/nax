@@ -16,7 +16,9 @@ afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
 });
 function fixture(withFindings = false) {
-  const env = makeBotFixEnv(withFindings ? [{ kind: "finding", key: "f1", issue: "fix me", severity: "minor" }] : []);
+  const env = makeBotFixEnv(
+    withFindings ? [{ kind: "finding", key: "f1", issue: "fix me", severity: "important" }] : [],
+  );
   const runtime = makeTestRuntime({ config: env.config });
   runtimes.push(runtime);
   const deps = makeBotFixDeps(env, runtime);

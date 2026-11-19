@@ -12,13 +12,16 @@ import {
   withNaxBotMarker,
 } from "@/forge";
 import { getLogger } from "@/logger";
-import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
+import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
+import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
+import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
 import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
-import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
+import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
+import type { BotPushEntry, FindingLineage } from "./push-ledger";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
 import type { BotReviewScope, ConfirmedItem, ItemStatus } from "./review-rulings";
@@ -38,6 +41,13 @@ export type AgreedItem =
         readonly severity: WorkflowSeverity;
         readonly suggestion?: string;
         readonly decision?: string;
+        /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
+        readonly trigger?: FindingTrigger;
+        readonly triggerEvidence?: string;
+        /** US-004/US-005: the push whose lines the finding sits on; absent before any lineage read. */
+        readonly lineage?: FindingLineage;
+        /** US-005: the lineage of this finding could not be read, which is not the same as none. */
+        readonly lineageUnknown?: true;
       })
   | (AgreedBase &
       AgreedLocation & {
@@ -78,6 +88,13 @@ export interface BotReviewArtifact {
   /** `not-reviewed` when the review read no code (US-001); the verdict's own quality otherwise. */
   readonly quality: PrReviewVerdict["quality"] | "not-reviewed";
   readonly agreed: readonly AgreedItem[];
+  /**
+   * The set that decided this review's posting (US-003). Absent on artifacts written before it existed, so a
+   * reader falls back to `bot.blockingTriggers`.
+   */
+  readonly blockingTriggers?: readonly FindingTrigger[];
+  /** US-005: recorded bot pushes the reviewed head can no longer reach, so their lineage is lost. */
+  readonly unreachablePushes?: number;
 }
 export interface PostReviewInput {
   readonly itemStatus?: ItemStatus;
@@ -111,6 +128,28 @@ export interface PostReviewInput {
   readonly own: readonly OwnComment[];
   readonly staticMode: boolean;
   readonly sensitive: readonly string[];
+  /**
+   * The effective blocking set (US-003): a critical or important finding outside it gets no inline thread.
+   * Absent keeps the configured default, so a legacy caller posts as it did.
+   */
+  readonly blockingTriggers?: readonly FindingTrigger[];
+  /** Where that set came from: a writer's scope ruling, or the config. */
+  readonly blockingSource?: EffectiveBlockingTriggers["source"];
+  /** The first line of every writer scope comment that stated no usable class (US-003). */
+  readonly ignoredScopeRulings?: readonly string[];
+  /**
+   * US-005: the bot's whole recorded push history for this PR. The review graph's `post` node asks it which
+   * push owns each finding's line; nothing here posts or renders from it.
+   */
+  readonly botPushes?: readonly BotPushEntry[];
+  /** US-005: the checkout `git blame` runs in — the reviewed head, not the caller's own tree. */
+  readonly worktree?: string;
+  /** US-005: what that history says about each finding's key; absent when no push was ever recorded. */
+  readonly lineage?: {
+    readonly lineage: ReadonlyMap<string, FindingLineage>;
+    readonly unknown: ReadonlySet<string>;
+    readonly unreachable: number;
+  };
   readonly stateDir: string;
   readonly deps: ForgeDeps;
   readonly cwd: string;
@@ -147,19 +186,38 @@ function notQueued(input: PostReviewInput, decision: PrTriageDecision, comment: 
   return decision === "agree" && comment !== undefined && !input.writers?.has(comment.author);
 }
 
+/**
+ * US-005: the lineage the review read for this key — or the fact that the read itself failed, which is
+ * not the same as "no push wrote these lines" and must not be reported as one.
+ */
+function lineageFacts(
+  input: PostReviewInput,
+  key: string,
+): { readonly lineage?: FindingLineage; readonly lineageUnknown?: true } {
+  const lineage = input.lineage?.lineage.get(key);
+  if (lineage !== undefined) return { lineage };
+  return input.lineage?.unknown.has(key) === true ? { lineageUnknown: true } : {};
+}
+
 function agreedItems(input: PostReviewInput): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings
     .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
-    .map(({ severity, issue, file, line, suggestion, decision }) => ({
-      key: findingKey({ file, issue }),
-      kind: "finding",
-      severity,
-      issue,
-      file,
-      line,
-      suggestion,
-      ...(decision === undefined ? {} : { decision }),
-    }));
+    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence }) => {
+      const key = findingKey({ file, issue });
+      return {
+        key,
+        kind: "finding",
+        severity,
+        issue,
+        file,
+        line,
+        suggestion,
+        ...(decision === undefined ? {} : { decision }),
+        ...(trigger === undefined ? {} : { trigger }),
+        ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
+        ...lineageFacts(input, key),
+      };
+    });
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
     const thread = input.threads.find(({ id }) => id === verdict.id);
@@ -185,29 +243,67 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
   return mergeEarlier(input, items);
 }
 
+const TRIGGER_LINE = "Trigger:";
+/** US-005: the same shape the fix prompt and the inline body use, so one reader strips either. */
+const LINEAGE_LINE = "Lineage:";
+
+/**
+ * US-002: the trigger class an earlier finding's first comment states, or undefined when it states
+ * none. The class itself is read by the shared `readFindingThreadFacts`; an old thread written before
+ * the vocabulary existed keeps an absent trigger so it still blocks as it did.
+ */
+function earlierTrigger(body: string): FindingTrigger | undefined {
+  const states = body.split("\n").some((text) => text.startsWith(TRIGGER_LINE));
+  return states ? readFindingThreadFacts(body).trigger : undefined;
+}
+
+/**
+ * US-001/US-005: the fact lines a rendered body carries are metadata, not part of the issue text an item
+ * keeps — `Trigger:` and `Lineage:` say where a finding came from, not what it says.
+ */
+function withoutFactLines(issue: string): string {
+  const lines = issue.split("\n");
+  const kept = lines.filter((line) => !line.startsWith(TRIGGER_LINE) && !line.startsWith(LINEAGE_LINE));
+  if (kept.length === lines.length) return issue;
+  return kept
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[] {
   const seen = new Set(items.map(({ key }) => key));
-  for (const { thread, key, verdict, confirmed, reason } of effectiveEarlier(input)) {
-    if (verdict?.status !== undefined && verdict.status !== "open") continue;
+  // B3: the same first-wins selection the lineage targets use, so the anchor blamed is the anchor kept.
+  for (const { thread, key, confirmed, reason } of firstCarriedEarlier(input)) {
     if (seen.has(key)) continue;
     seen.add(key);
-    const issue = earlierIssue(thread);
+    // `earlierIssue` is the finding text: the visible header and the identity markers are not content.
+    const body = earlierIssue(thread);
+    const trigger = earlierTrigger(body);
+    // A finding carried over from an earlier round keeps the lineage its own key was read for (US-005).
+    const facts = {
+      issue: withoutFactLines(body),
+      ...(trigger === undefined ? {} : { trigger }),
+      ...lineageFacts(input, key),
+    };
     if (confirmed) {
       items.push({
         kind: "finding",
         key,
-        issue,
+        ...facts,
         severity: "important",
         ...(reason !== undefined && reason !== "confirmed" ? { suggestion: reason } : {}),
       });
       continue;
     }
-    const severity = issue.startsWith("**Critical**")
-      ? "critical"
-      : issue.startsWith("**Minor**")
-        ? "minor"
-        : "important";
-    items.push({ kind: "finding", key, issue, severity, file: thread.path, line: thread.line });
+    items.push({
+      kind: "finding",
+      key,
+      ...facts,
+      severity: readFindingThreadFacts(body).severity,
+      file: thread.path,
+      line: thread.line,
+    });
   }
   return items;
 }
@@ -227,6 +323,10 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     intent: input.verdict.intent,
     quality: reviewQuality(input.scope, input.verdict.quality),
     agreed: agreedItems(input),
+    ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
+    ...(input.lineage === undefined || input.lineage.unreachable === 0
+      ? {}
+      : { unreachablePushes: input.lineage.unreachable }),
   };
   try {
     await _postDeps.writeArtifact(join(input.stateDir, BOT_REVIEW_FILENAME), artifact);
@@ -239,9 +339,12 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
   }
 }
 
-async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraft): Promise<boolean> {
-  const own = input.own.find(({ key }) => key === findingKey(finding));
-  const body = renderFindingComment(finding);
+async function writeFinding(input: PostReviewInput, finding: PrFinding): Promise<boolean> {
+  const key = findingKey(finding);
+  const own = input.own.find(({ key: ownKey }) => ownKey === key);
+  const lineage = input.lineage?.lineage.get(key);
+  // US-005: the inline body carries the same lineage fact the artifact records.
+  const body = renderFindingComment({ ...finding, ...(lineage === undefined ? {} : { lineage }) });
   if (own) {
     await editComment(input.ref, own.comment, body, input.deps, input.cwd);
     if (own.threadId !== undefined && input.resolvedThreadIds?.has(own.threadId)) {
@@ -267,12 +370,39 @@ async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraf
   return true;
 }
 
-async function postFindings(
-  input: PostReviewInput,
-): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[]; minor: WorkflowFindingDraft[] }> {
+interface SummaryOnlyLists {
+  readonly blocking: readonly FindingTrigger[];
+  readonly minor: WorkflowFindingDraft[];
+  readonly residual: PrFinding[];
+}
+
+/**
+ * US-003: a finding outside the blocking set gets no new inline thread — it is summary-only, as a minor always
+ * was. An own thread for its key is still edited, so a re-raised finding leaves no stale thread behind.
+ * Returns whether it took the finding.
+ */
+function collectSummaryOnly(input: PostReviewInput, finding: PrFinding, into: SummaryOnlyLists): boolean {
+  if (isBlockingFinding(finding, into.blocking)) return false;
+  if (input.own.some((own) => own.key === findingKey(finding))) return false;
+  (finding.severity === "minor" ? into.minor : into.residual).push(finding);
+  return true;
+}
+
+async function postFindings(input: PostReviewInput): Promise<{
+  inlineFindings: number;
+  offLine: WorkflowFindingDraft[];
+  minor: WorkflowFindingDraft[];
+  residual: PrFinding[];
+}> {
   const seen = new Set<string>();
   const offLine: WorkflowFindingDraft[] = [];
   const minor: WorkflowFindingDraft[] = [];
+  const residual: PrFinding[] = [];
+  const summaryOnly: SummaryOnlyLists = {
+    blocking: input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS,
+    minor,
+    residual,
+  };
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
     if (input.settledKeys?.has(findingKey(finding))) continue;
@@ -283,10 +413,7 @@ async function postFindings(
     const key = findingKey(finding);
     if (seen.has(key)) continue;
     seen.add(key);
-    if (finding.severity === "minor" && !input.own.some((own) => own.key === key)) {
-      minor.push(finding);
-      continue;
-    }
+    if (collectSummaryOnly(input, finding, summaryOnly)) continue;
     try {
       if (await writeFinding(input, finding)) inlineFindings++;
       else offLine.push(finding);
@@ -297,7 +424,17 @@ async function postFindings(
       offLine.push(finding);
     }
   }
-  return { inlineFindings, offLine, minor };
+  return { inlineFindings, offLine, minor, residual };
+}
+
+/**
+ * US-008: the agreed findings that hold readiness under the set this review posted with. `agreedItems`
+ * is the same list the artifact records, so the count the summary states and the items a later fix or
+ * readiness pass acts on cannot disagree.
+ */
+function blockingFindingCount(input: PostReviewInput): number {
+  const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
+  return agreedItems(input).filter((item) => item.kind === "finding" && isBlockingFinding(item, blocking)).length;
 }
 
 async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
@@ -334,6 +471,9 @@ async function postSummary(
   const body = renderReviewSummary({
     headSha: input.info.headSha,
     ...(input.itemStatus === undefined ? {} : { itemStatus: input.itemStatus }),
+    // US-008: the index counts items only, and a finding is a thread (#2981), so the summary counts
+    // the agreed findings that hold readiness beside it.
+    blockingCount: blockingFindingCount(input),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,
@@ -345,6 +485,9 @@ async function postSummary(
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
     ...threads,
+    ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
+    ...(input.blockingSource === undefined ? {} : { blockingSource: input.blockingSource }),
+    ...(input.ignoredScopeRulings === undefined ? {} : { ignoredScopeRulings: input.ignoredScopeRulings }),
     commentVerdicts: input.verdict.comments.map((verdict) => {
       const comment = input.comments.find(({ id }) => id === verdict.id);
       return { verdict, author: comment?.author ?? "unknown", notQueued: notQueued(input, verdict.decision, comment) };

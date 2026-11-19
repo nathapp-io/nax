@@ -12,6 +12,7 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import { parseItemOpener, renderRulingEcho } from "../workflow/item-threads";
+import type { LineageTarget } from "./lineage";
 import type { BotReviewEvent, PostReviewInput } from "./post";
 import { earlierKey, findingKey } from "./render";
 import { renderEarlierReply } from "./render-comments";
@@ -67,6 +68,43 @@ export function earlierIssue(thread: PrThread): string {
   return parseNaxBotMarker(thread.comments[0]?.body ?? "")?.key.startsWith("w-")
     ? (content.split(/\r?\n/)[0] ?? "")
     : content;
+}
+
+/**
+ * The carried-over threads the artifact keeps, first thread per key (B3). Two open threads can carry
+ * one marker key — a re-raised finding whose earlier thread was never closed — and `mergeEarlier` keeps
+ * the first one. The lineage targets must select with the same rule, or the second thread's anchor is
+ * blamed and its lineage overwrites the lineage of the finding the artifact actually holds.
+ */
+export function firstCarriedEarlier(input: PostReviewInput): EarlierEntry[] {
+  const seen = new Set<string>();
+  return effectiveEarlier(input).filter(({ key, verdict }) => {
+    if (verdict?.status !== undefined && verdict.status !== "open") return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * US-005: one lineage target per key, with the same precedence the artifact records: the current
+ * verdict wins and only carried-over items use an earlier anchor. A re-raised finding keeps its key
+ * (`findingKey` names the file and the issue, not the line) while a new verdict moves its anchor, so two
+ * targets for one key would let the earlier thread's blame overwrite the anchor the finding now sits on.
+ */
+export function lineageTargets(input: PostReviewInput): LineageTarget[] {
+  const current = input.verdict.findings.map((finding) => ({
+    key: findingKey(finding),
+    file: finding.file,
+    line: finding.line,
+  }));
+  const raised = new Set(current.map(({ key }) => key));
+  const carried = firstCarriedEarlier(input).flatMap<LineageTarget>(({ key, thread }) => {
+    if (!key.startsWith("f-") || raised.has(key)) return [];
+    if (thread.path === undefined || thread.line === undefined) return [];
+    return [{ key, file: thread.path, line: thread.line }];
+  });
+  return [...current, ...carried];
 }
 
 function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {

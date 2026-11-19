@@ -17,7 +17,7 @@ afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
 });
 const input = { dir: "/repo", pr: 42, profiles: [], interactive: false };
-const items = [{ kind: "finding" as const, key: "f1", severity: "minor" as const, issue: "Leak", file: "a.ts" }];
+const items = [{ kind: "finding" as const, key: "f1", severity: "important" as const, issue: "Leak", file: "a.ts" }];
 
 function fixture() {
   const base = makeBotFixEnv(items);

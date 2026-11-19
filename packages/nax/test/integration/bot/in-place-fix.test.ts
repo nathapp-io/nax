@@ -71,7 +71,7 @@ beforeEach(async () => {
     review: {
       ...base.review,
       headSha,
-      agreed: [{ kind: "finding", key: "f1", issue: "fix source", severity: "minor" }],
+      agreed: [{ kind: "finding", key: "f1", issue: "fix source", severity: "important" }],
     },
     checkout: { ...base.checkout, worktree: repo, inPlace: true, startHead: headSha },
   };

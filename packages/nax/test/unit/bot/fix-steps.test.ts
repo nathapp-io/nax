@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
-import { _fixStepsDeps, checkStep, pushStep } from "@/bot/fix-steps";
+import type { AgreedItem, BotFixEnv } from "@/bot";
+import { toFixFindings } from "@/bot/fix-input";
+import { _fixStepsDeps, checkStep, fixStep, pushStep } from "@/bot/fix-steps";
 import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { FindingTrigger } from "@/workflow/blocking-findings";
 
 const original = { ..._fixStepsDeps };
 const state = { step: "check" as const, timings: {} };
@@ -94,5 +97,100 @@ describe("pushStep", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+const MINOR: AgreedItem = { kind: "finding", key: "f-1", severity: "minor", issue: "Leak", trigger: "normal" };
+const THREAD: AgreedItem = {
+  kind: "thread",
+  key: "t-1",
+  issue: "Rename this",
+  reason: "Clearer name",
+  threadId: "T1",
+  replyTo: "1",
+};
+const COMMENT: AgreedItem = { kind: "comment", key: "c-1", issue: "Change the flag", reason: "Asked for it" };
+
+/** A review of the given items, stating `blockingTriggers` when the case needs a narrower set. */
+function envWith(agreed: readonly AgreedItem[], blockingTriggers?: readonly FindingTrigger[]): BotFixEnv {
+  const base = makeBotFixEnv(agreed);
+  return blockingTriggers === undefined
+    ? base
+    : { ...base, review: { ...base.review, blockingTriggers: [...blockingTriggers] } };
+}
+
+function recordingFix() {
+  const run = mock<typeof _fixStepsDeps.runBranchFix>(async () => ({ autoCommitted: false, dirty: false }));
+  _fixStepsDeps.runBranchFix = run;
+  return run;
+}
+
+describe("fixStep push-worthiness (US-007)", () => {
+  test("AC-1: a minor finding alone is a follow-up, not a fix", async () => {
+    expect(await fixStep(envWith([MINOR]), state)).toEqual({
+      exit: "nothing",
+      patch: { agreedCount: 1, outcome: "nothing", followUps: [{ key: "f-1", severity: "minor", trigger: "normal" }] },
+    });
+  });
+  test("AC-2: a minor finding alone starts no fix session", async () => {
+    const run = recordingFix();
+    await fixStep(envWith([MINOR]), state);
+    expect(run).not.toHaveBeenCalled();
+  });
+  test("AC-3: an important finding outside the blocking set is nothing", async () => {
+    const agreed: AgreedItem[] = [
+      { kind: "finding", key: "f-2", severity: "important", issue: "Race", trigger: "adversarial" },
+    ];
+    const result = await fixStep(envWith(agreed, ["normal", "own-concurrency"]), state);
+    expect(result.patch).toMatchObject({ agreedCount: 1, outcome: "nothing" });
+    expect(result.exit).toBe("nothing");
+  });
+  test("AC-4: an important finding outside the blocking set starts no fix session", async () => {
+    const agreed: AgreedItem[] = [
+      { kind: "finding", key: "f-2", severity: "important", issue: "Race", trigger: "adversarial" },
+    ];
+    const run = recordingFix();
+    await fixStep(envWith(agreed, ["normal", "own-concurrency"]), state);
+    expect(run).not.toHaveBeenCalled();
+  });
+  test("AC-5: a finding with no trigger is a normal follow-up", async () => {
+    const agreed: AgreedItem[] = [{ kind: "finding", key: "f-3", severity: "minor", issue: "Nit" }];
+    expect((await fixStep(envWith(agreed), state)).patch?.followUps).toEqual([
+      { key: "f-3", severity: "minor", trigger: "normal" },
+    ]);
+  });
+  test("AC-6: one blocking finding runs the session with every agreed finding", async () => {
+    const run = recordingFix();
+    const agreed: AgreedItem[] = [
+      MINOR,
+      { kind: "finding", key: "f-2", severity: "important", issue: "Race", trigger: "normal" },
+    ];
+    expect((await fixStep(envWith(agreed), state)).exit).toBe("ran");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[1].findings).toEqual(toFixFindings(agreed));
+    expect(run.mock.calls[0]?.[1].findings.map((finding) => finding.id)).toEqual(["f-1", "f-2"]);
+  });
+  test("AC-7: an agreed thread runs the session whatever the findings' severity", async () => {
+    const run = recordingFix();
+    expect((await fixStep(envWith([MINOR, THREAD]), state)).exit).toBe("ran");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  test("AC-8: an agreed comment runs the session whatever the findings' severity", async () => {
+    const run = recordingFix();
+    expect((await fixStep(envWith([MINOR, COMMENT]), state)).exit).toBe("ran");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  test("AC-9: a review stating no blocking set falls back to the configured default", async () => {
+    const agreed: AgreedItem[] = [
+      { kind: "finding", key: "f-4", severity: "important", issue: "Manual edit", trigger: "manual" },
+    ];
+    const result = await fixStep(envWith(agreed), state);
+    expect(result.exit).toBe("nothing");
+    expect(result.patch?.followUps).toEqual([{ key: "f-4", severity: "important", trigger: "manual" }]);
+  });
+  test("AC-10: no agreed items returns nothing with no followUps key", async () => {
+    const result = await fixStep(makeBotFixEnv(), state);
+    expect(result).toEqual({ patch: { agreedCount: 0, outcome: "nothing" }, exit: "nothing" });
+    expect(result.patch).not.toHaveProperty("followUps");
   });
 });

@@ -40,11 +40,16 @@ const taskContract = `Answer every listed thread id and comment id exactly once.
 "agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
 Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
 Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
+Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
+normal: reachable in ordinary use of the product.
+own-concurrency: needs two of the tool's own processes or sessions interleaving.
+adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).
+manual: needs a human acting on the checkout or state mid-operation.
 Reply with only one JSON object:
 {
   "intent": "pass | fail | n/a",
   "quality": "approved | changes",
-  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>" }],
+  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..." }],
   "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
   "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
   "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],
@@ -516,5 +521,58 @@ describe("buildBotPrReviewPrompt CI on this head (nax#2631)", () => {
   });
   test("no CI read adds no section", () => {
     expect(prompts.buildBotPrReviewPrompt(base)).not.toContain("## CI on this head");
+  });
+});
+
+describe("buildBotPrReviewPrompt finding trigger contract (US-001)", () => {
+  const contract = prompts
+    .buildBotPrReviewPrompt(base)
+    .slice(prompts.buildBotPrReviewPrompt(base).lastIndexOf("## Your task"));
+  test("AC-8 asks for a trigger class and its evidence in the finding shape", () => {
+    expect(contract).toContain('"trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..."');
+  });
+  test.each([
+    ["normal", "normal: reachable in ordinary use of the product."],
+    ["own-concurrency", "own-concurrency: needs two of the tool's own processes or sessions interleaving."],
+    [
+      "adversarial",
+      "adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).",
+    ],
+    ["manual", "manual: needs a human acting on the checkout or state mid-operation."],
+  ])("AC-9 defines the %s class on its own line", (trigger, definition) => {
+    const lines = contract.split("\n").filter((line) => line.startsWith(`${trigger}:`));
+    expect(lines).toEqual([definition]);
+  });
+});
+
+describe("buildBotPrReviewPrompt earlier bot pushes (US-005)", () => {
+  const BASE_SHA = "b".repeat(40);
+  const PUSH_SHA = "c".repeat(40);
+  const push = {
+    base: BASE_SHA,
+    sha: PUSH_SHA,
+    at: "2026-01-01T00:00:00.000Z",
+    items: [{ key: "f-a", generation: 1, issue: "lock leaks" }],
+  };
+  const heading = "## Earlier nax bot fix pushes in this range";
+
+  test("AC-12 lists a push of the incremental range with the items it fixed", () => {
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, incrementalSince: "a".repeat(40), botPushes: [push] });
+    expect(prompt).toContain(heading);
+    expect(prompt).toContain(`- ${"b".repeat(7)}..${"c".repeat(7)}: nax bot fix for f-a (lock leaks), generation 1`);
+  });
+  test.each([
+    ["empty", []],
+    ["absent", undefined],
+  ])("AC-13 adds no heading when botPushes is %s", (_name, botPushes) => {
+    const prompt = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: "a".repeat(40),
+      ...(botPushes === undefined ? {} : { botPushes }),
+    });
+    expect(prompt).not.toContain(heading);
+  });
+  test("AC-14 adds no heading for a full review even when pushes are given", () => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, botPushes: [push] })).not.toContain(heading);
   });
 });

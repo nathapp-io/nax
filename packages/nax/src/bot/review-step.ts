@@ -14,6 +14,7 @@ import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 
 import { creditedFiles } from "./coverage-credit";
 import type { BotDecision } from "./decisions";
+import type { BotPushEntry } from "./push-ledger";
 import { reviewScopeOf } from "./review-rulings";
 
 export const _reviewStepDeps = { writeBranchReviewPackage };
@@ -37,6 +38,8 @@ export interface PrReviewInput {
   readonly model?: ConfiguredModel;
   /** CI's verdict on the exact head (nax#2631). */
   readonly ci?: CiWaitResult;
+  /** US-005: the bot's own pushes inside an incremental range, which the prompt lists. */
+  readonly botPushes?: readonly BotPushEntry[];
 }
 
 /** What the package step settles before either the prompt or the op can be built (US-012). */
@@ -118,6 +121,7 @@ function reviewPrompt(input: PrReviewInput, step: ReviewStep): string {
     ...(input.checkoutState !== undefined && { checkoutState: input.checkoutState }),
     staticMode: input.staticMode,
     ...(input.ci !== undefined && { ci: input.ci }),
+    ...(input.botPushes !== undefined && { botPushes: input.botPushes }),
   });
 }
 

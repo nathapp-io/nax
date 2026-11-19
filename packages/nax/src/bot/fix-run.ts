@@ -123,7 +123,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     fix: {
       kind: "agent",
       commits: true,
-      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty", "fixSha"],
+      produces: ["agreedCount", "outcome", "followUps", "fixFailure", "fixDirty", "fixSha"],
       exits: ["nothing", "ran"],
       transitions: [
         { on: "nothing", to: "ledger" },

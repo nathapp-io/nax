@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
-import { _savedFixDeps, clearSavedFix, persistSavedFix, readSavedFix, saveFix } from "@/bot/saved-fix";
+import type { BotFixState } from "@/bot";
+import { _savedFixDeps, clearSavedFix, persistSavedFix, readSavedFix, reuseSavedFix, saveFix } from "@/bot/saved-fix";
 
 import { getLogger } from "@/logger";
 
@@ -145,5 +146,37 @@ describe("clearSavedFix", () => {
     _savedFixDeps.remove = remove;
     await clearSavedFix(location);
     expect(remove).toHaveBeenCalledWith("/output/bot/pr-42/saved-fix.json");
+  });
+});
+
+const fresh: BotFixState = { step: "fix", timings: {} };
+
+describe("reuseSavedFix push-worthiness (US-007)", () => {
+  test("US-007: a review with only non-blocking findings resumes nothing and reads no saved work", async () => {
+    const env = makeBotFixEnv([{ kind: "finding", key: "a", severity: "minor", issue: "Leak", trigger: "normal" }]);
+    const read = mock(async () => ({ ...entry, headSha: env.info.headSha }));
+    const git = mock(original.runGit);
+    _savedFixDeps.runGit = git;
+    expect(await reuseSavedFix({ env, outputDir: "/output", savedFix: { read, clear: async () => {} } })).toEqual(
+      fresh,
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(git).not.toHaveBeenCalled();
+  });
+  test("US-007: a review with a blocking finding still reuses the saved commit", async () => {
+    const env = makeBotFixEnv([{ kind: "finding", key: "a", severity: "important", issue: "Leak", trigger: "normal" }]);
+    const read = mock(async () => ({ ...entry, headSha: env.info.headSha }));
+    _savedFixDeps.runGit = async (argv: string[]) => ({
+      exitCode: 0,
+      stdout: argv[0] === "rev-parse" ? sha : "",
+      stderr: "",
+    });
+    expect(await reuseSavedFix({ env, outputDir: "/output", savedFix: { read, clear: async () => {} } })).toEqual({
+      step: "check",
+      timings: {},
+      reusedFix: sha,
+      fixSha: sha,
+      agreedCount: 1,
+    });
   });
 });

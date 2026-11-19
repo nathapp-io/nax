@@ -18,7 +18,7 @@ afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(dirs.splice(0).map(cleanupTempDir));
 });
-const items = [{ kind: "finding" as const, key: "f1", severity: "minor" as const, issue: "Leak", file: "a.ts" }];
+const items = [{ kind: "finding" as const, key: "f1", severity: "important" as const, issue: "Leak", file: "a.ts" }];
 const state = () => ({ step: "fix" as const, timings: {} });
 
 describe("fixStep PR session", () => {

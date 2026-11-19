@@ -392,7 +392,11 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
   }
 }
 
-export type SettlementReadInput = Omit<RecordRulingsInput, "readModel" | "callerRulings">;
+/**
+ * What the two read-only settlement readers need. Neither consults `info`: readiness holds the review
+ * artifact's own head, and `nax workflow status` has nothing but the PR URL (US-008).
+ */
+export type SettlementReadInput = Omit<RecordRulingsInput, "readModel" | "callerRulings" | "info">;
 
 /**
  * A finding thread the bot opened that is not an indexed item. `recordFindingRulings` owns these: the

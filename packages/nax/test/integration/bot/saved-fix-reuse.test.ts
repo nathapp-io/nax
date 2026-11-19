@@ -40,8 +40,8 @@ async function fixture() {
   const worktree = join(root, "checkout");
   await git(root, "worktree", "add", "--detach", worktree, headSha);
   const base = makeBotFixEnv([
-    { kind: "finding", key: "z", issue: "fix", severity: "minor" },
-    { kind: "finding", key: "a", issue: "fix", severity: "minor" },
+    { kind: "finding", key: "z", issue: "fix", severity: "important" },
+    { kind: "finding", key: "a", issue: "fix", severity: "important" },
   ]);
   const env = { ...base, repoRoot: root, info: { ...base.info, headSha }, checkout: { ...base.checkout, worktree } };
   const runtime = makeTestRuntime({ config: env.config });

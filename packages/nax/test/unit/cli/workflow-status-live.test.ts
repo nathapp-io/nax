@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import { type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
+import { Command } from "commander";
+import { registerWorkflowCommand, type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
 import { _workflowForgeDeps } from "@/cli/workflow-forge";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
+import { DEFAULT_BLOCKING_TRIGGERS } from "@/workflow/blocking-findings";
 import { type CiWaiver, renderCiWaiver } from "@/workflow/ci-waiver";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
@@ -13,6 +15,24 @@ const URL = "https://github.com/o/r/pull/7";
 const CV: OpenItem = { id: "_run:cv1", kind: "cannot-verify", issue: "manual check" };
 const ADVISOR: OpenItem = { id: "D-1", kind: "advisor", issue: "needs change" };
 const NOW = "2026-10-13T09:12:00Z";
+/** The finding thread the US-008 fixtures post: a key, a place and an issue the index never lists. */
+const FINDING_KEY = "f-abc";
+const FINDING_PATH = "packages/nax/src/action-file.ts";
+const FINDING_LINE = 42;
+const FINDING_LINE_TEXT = `- [finding] ${FINDING_KEY} — bot review: lock leaks (Important, ${FINDING_PATH}:${FINDING_LINE})`;
+/** The one open item the US-008 fixtures produce: the review finding, with its severity and place. */
+const FINDING_ITEM: OpenItem = {
+  id: FINDING_KEY,
+  kind: "finding",
+  severity: "important",
+  file: FINDING_PATH,
+  line: FINDING_LINE,
+  issue: "bot review: lock leaks",
+};
+
+/** The ledger's own supplementary item, which every live report of this fixture carries. */
+const SUPPLEMENTARY_HEADING = "Also to verify (not blocking):";
+const SUPPLEMENTARY_LINE = "- [cannot-verify] US-001:cv1 — Redis TTL";
 const WAIVER: CiWaiver = {
   headSha: "7c98673abc0123456789abcdef0123456789abcd",
   checks: ["nax-agent: glob (Node 22.19.0, macos-latest)"],
@@ -33,6 +53,19 @@ type Options = {
   waiver?: CiWaiver;
   /** The login that posted it; the current user unless overridden. */
   waiverLogin?: string;
+  /** A bot review finding thread on the PR; the item index never lists one (#2981, US-008). */
+  blockingFinding?: {
+    readonly key?: string;
+    readonly severity?: "Critical" | "Important" | "Minor";
+    readonly trigger?: string;
+    readonly resolved?: boolean;
+    readonly author?: string;
+  };
+  /**
+   * Make the blocking-finding read fail after the live read succeeded: the live read runs first, so
+   * only the second call to that endpoint throws (US-008).
+   */
+  blockingFailure?: "threads" | "comments";
 };
 
 function record(overrides: Partial<WorkflowFeatureRecord> = {}): WorkflowFeatureRecord {
@@ -81,6 +114,30 @@ function thread(item: OpenItem, disposition?: "fixed" | "verified" | "confirmed"
   };
 }
 
+/** A bot review finding thread: an inline thread the item index has no entry for (US-008). */
+function findingThread(options: NonNullable<Options["blockingFinding"]>) {
+  const severity = options.severity ?? "Important";
+  const trigger = options.trigger === undefined ? "" : `\n\nTrigger: ${options.trigger}`;
+  return {
+    id: "finding-thread",
+    isResolved: options.resolved ?? false,
+    isOutdated: false,
+    path: FINDING_PATH,
+    line: FINDING_LINE,
+    originalLine: FINDING_LINE,
+    comments: {
+      nodes: [
+        {
+          databaseId: 5,
+          author: { login: options.author ?? "nax" },
+          body: withNaxBotMarker(`**${severity}** (quality): lock leaks${trigger}`, options.key ?? FINDING_KEY),
+          createdAt: NOW,
+        },
+      ],
+    },
+  };
+}
+
 function reviewThreadsResponse(options: Options) {
   return {
     data: {
@@ -90,6 +147,7 @@ function reviewThreadsResponse(options: Options) {
             nodes: [
               thread(CV, options.cvRuled === false ? undefined : (options.cvRuling ?? "fixed"), options.cvReopened),
               thread(ADVISOR, options.advisorRuling ?? "fixed"),
+              ...(options.blockingFinding === undefined ? [] : [findingThread(options.blockingFinding)]),
             ],
             pageInfo: { hasNextPage: false, endCursor: null },
           },
@@ -114,7 +172,7 @@ function indexComments(options: Options) {
   ];
 }
 
-function forgeResponse(argv: readonly string[], options: Options) {
+function forgeResponse(argv: readonly string[], options: Options, seen: { graphql: number; comments: number }) {
   const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
   if (argv[0] === "git")
     return {
@@ -125,22 +183,32 @@ function forgeResponse(argv: readonly string[], options: Options) {
   if (options.failure === "offline") throw new Error("forge offline");
   if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "unavailable" };
   if (argv.includes("view")) return ok({ isDraft: options.isDraft ?? false, body: "" });
-  if (argv.includes("graphql")) return ok(reviewThreadsResponse(options));
+  if (argv.includes("graphql")) {
+    seen.graphql += 1;
+    // The live read is the first of these; the blocking-finding read is every later one (US-008).
+    if (options.blockingFailure === "threads" && seen.graphql > 1) throw new Error("blocking thread read failed");
+    return ok(reviewThreadsResponse(options));
+  }
   const endpoint = argv.at(-1) ?? "";
   if (endpoint.endsWith("/permission")) return ok({ permission: "write" });
   if (endpoint === "user") return ok({ login: "nax", id: 1 });
-  if (endpoint.includes("/issues/7/comments?")) return ok(indexComments(options));
+  if (endpoint.includes("/issues/7/comments?")) {
+    seen.comments += 1;
+    if (options.blockingFailure === "comments" && seen.comments > 1) throw new Error("blocking comment read failed");
+    return ok(indexComments(options));
+  }
   if (endpoint.includes("/reviews?")) return ok([]);
   throw new Error(`Unexpected forge command: ${argv.join(" ")}`);
 }
 
 function forge(options: Options) {
   const calls: string[][] = [];
+  const seen = { graphql: 0, comments: 0 };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (argv) => {
       calls.push(argv);
-      return forgeResponse(argv, options);
+      return forgeResponse(argv, options, seen);
     },
   };
   return { deps, calls };
@@ -162,14 +230,36 @@ async function fixture(dir: string, options: Options = {}) {
   // A nonempty supplementary list proves the overlay preserves it, not just an empty default.
   await Bun.write(join(runDir, "ledger.md"), "US-001: cannot-verify: Redis TTL\n");
   const fx = forge(options);
-  const forgeDeps = { ..._workflowForgeDeps, forge: fx.deps, resolveOutputDir: async () => join(dir, "out") };
-  async function invoke(json = true) {
+  const forgeDeps = {
+    ..._workflowForgeDeps,
+    forge: fx.deps,
+    resolveOutputDir: async () => join(dir, "out"),
+    // The blocking set is config: one fixture keeps it the default, so the finding's own class decides.
+    readBlockingTriggers: async () => DEFAULT_BLOCKING_TRIGGERS,
+  };
+  /** `quiet` is off only where a test asserts the warning a failed read writes to stderr (B6). */
+  async function invoke(json = true, quiet = true) {
     const out: string[] = [];
     const err: string[] = [];
     const deps: WorkflowCliDeps = { log: (s) => out.push(s), logErr: (s) => err.push(s), exit: () => {} };
     const code = await workflowStatusCommand({ dir, feature: "auth", json }, deps, forgeDeps);
-    expect(err).toEqual([]);
-    return { code, out };
+    if (quiet) expect(err).toEqual([]);
+    return { code, out, err };
+  }
+  /**
+   * The same read through the registered command, with no logger initialized: `status` runs standalone,
+   * so the CLI boundary — not a structured log record — is what must carry the warning (B6).
+   */
+  async function invokeRegistered(json = true) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const exits: number[] = [];
+    const deps: WorkflowCliDeps = { log: (s) => out.push(s), logErr: (s) => err.push(s), exit: (c) => exits.push(c) };
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
+    registerWorkflowCommand(program, deps, forgeDeps);
+    const argv = ["workflow", "status", "-f", "auth", "-d", dir, ...(json ? ["--json"] : [])];
+    await program.parseAsync(argv, { from: "user" });
+    return { out, err, exits };
   }
   async function report() {
     const result = await invoke();
@@ -177,7 +267,7 @@ async function fixture(dir: string, options: Options = {}) {
     const value: Record<string, unknown> = JSON.parse(result.out[0] ?? "null");
     return { ...result, value };
   }
-  return { ...fx, invoke, report, file };
+  return { ...fx, invoke, invokeRegistered, report, file };
 }
 
 function expectLive(value: Record<string, unknown>) {
@@ -305,8 +395,9 @@ describe("workflowStatusCommand live overlay", () => {
       });
     },
   );
+  // B5: a published ready record is never ineligible on its recorded item list alone — a bot review can
+  // add a blocking finding thread afterwards, and the index it would have to appear in never holds one.
   test.each([
-    { outcome: "ready", url: URL, cannotVerify: [], approval: undefined },
     { outcome: "draft", url: undefined },
     { outcome: "draft", url: "https://gh/pr/7" },
   ] as const)("AC-10/11/12/17/18: ineligible $outcome $url never invokes forge", async (record) => {
@@ -431,6 +522,170 @@ describe("workflowStatusCommand live overlay", () => {
       ).report();
       expect(value.source).toBe("run-record");
       expect(value).not.toHaveProperty("ciWaiver");
+    });
+  });
+});
+
+/**
+ * US-008 (#2981): the item index has no entry for a bot review finding — nothing indexes one — so a PR
+ * held by three Important finding threads printed `No open items.`. The live path appends the ones that
+ * block, prints their severity and location, and exits 2; a read that fails leaves the report alone.
+ */
+describe("workflowStatusCommand blocking review findings", () => {
+  test("AC-9/10: a live draft held by one own blocking finding lists it and exits two", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, blockingFinding: {} });
+      const { code, value } = await fx.report();
+      expectLive(value);
+      expect(value.openItems).toEqual([FINDING_ITEM]);
+      expect(code).toBe(2);
+      const plain = await fx.invoke(false);
+      expect(plain.out).toContain(FINDING_LINE_TEXT);
+      expect(plain.out).not.toContain("No open items.");
+      expect(plain.code).toBe(2);
+    });
+  });
+
+  test("AC-9: an indexed open item and the finding are both listed, in index order first", async () => {
+    await withTempDir(async (dir) => {
+      const plain = await (await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {} })).invoke(false);
+      expect(plain.out).toEqual([
+        `auth: draft ${URL}`,
+        "- [cannot-verify] _run:cv1 — manual check",
+        FINDING_LINE_TEXT,
+        SUPPLEMENTARY_HEADING,
+        SUPPLEMENTARY_LINE,
+      ]);
+    });
+  });
+
+  // AC-10 on the one fixture where the exit code is the finding's own work: every indexed item is ruled,
+  // so this PR reads ready and exits 0 — until the blocking finding holds it.
+  test("AC-10: the blocking finding is what makes an otherwise-ready live PR exit two", async () => {
+    await withTempDir(async (dir) => {
+      const clear = await (await fixture(dir, { record: { outcome: "ready" } })).report();
+      expectLive(clear.value);
+      expect(clear.value.openItems).toEqual([]);
+      expect(clear.code).toBe(0);
+      const held = await (await fixture(dir, { record: { outcome: "ready" }, blockingFinding: {} })).report();
+      expectLive(held.value);
+      expect(held.value.openItems).toEqual([FINDING_ITEM]);
+      expect(held.code).toBe(2);
+    });
+  });
+
+  test.each([
+    { label: "a resolved thread", blockingFinding: { resolved: true } },
+    { label: "a minor finding", blockingFinding: { severity: "Minor" as const } },
+    { label: "an adversarial finding", blockingFinding: { trigger: "adversarial" } },
+    { label: "another author's finding", blockingFinding: { author: "mallory" } },
+  ])("$label adds nothing to the report", async ({ blockingFinding }) => {
+    await withTempDir(async (dir) => {
+      const { code, value } = await (await fixture(dir, { isDraft: true, blockingFinding })).report();
+      expectLive(value);
+      expect(value.openItems).toEqual([]);
+      expect(code).toBe(2);
+      const plain = await (await fixture(dir, { isDraft: true, blockingFinding })).invoke(false);
+      expect(plain.out).toEqual([`auth: draft ${URL}`, "No open items.", SUPPLEMENTARY_HEADING, SUPPLEMENTARY_LINE]);
+    });
+  });
+
+  // B6: `status` runs standalone and initializes no logger, whose no-op would swallow the only sign
+  // that the report is missing the review's own findings. The CLI boundary answers for it, on stderr.
+  test.each(["threads", "comments"] as const)(
+    "AC-11/12: a failed blocking read (%s) leaves the live report and warns on stderr",
+    async (blockingFailure) => {
+      await withTempDir(async (dir) => {
+        const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure });
+        const { code, out, err } = await fx.invoke(true, false);
+        const value: Record<string, unknown> = JSON.parse(out[0] ?? "null");
+        expectLive(value);
+        expect(value.openItems).toEqual([CV]);
+        expect(code).toBe(2);
+        // The whole document stays parseable: the warning never reaches stdout.
+        expect(out).toHaveLength(1);
+        expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+      });
+    },
+  );
+
+  // B6: the same warning on the plain surface, where stdout carries the report a reader reads.
+  test("B6: the plain report keeps stdout for the report and warns on stderr", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure: "threads" });
+      const { out, err, code } = await fx.invoke(false, false);
+      expect(out).toEqual([
+        `auth: draft ${URL}`,
+        "- [cannot-verify] _run:cv1 — manual check",
+        SUPPLEMENTARY_HEADING,
+        SUPPLEMENTARY_LINE,
+      ]);
+      expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+      expect(code).toBe(2);
+    });
+  });
+
+  // B6: the production registration is the only path a standalone `nax workflow status` takes, and it
+  // initializes no logger. A failed blocking read must still reach stderr, with stdout left parseable.
+  test.each(["threads", "comments"] as const)(
+    "B6: the registered command warns on stderr for a failed %s read and prints one JSON document",
+    async (blockingFailure) => {
+      await withTempDir(async (dir) => {
+        const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure });
+        const { out, err, exits } = await fx.invokeRegistered(true);
+        expect(out).toHaveLength(1);
+        const value: Record<string, unknown> = JSON.parse(out[0] ?? "null");
+        expectLive(value);
+        expect(value.openItems).toEqual([CV]);
+        expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+        expect(exits).toEqual([2]);
+      });
+    },
+  );
+
+  test("B6: the registered plain command keeps the report on stdout and the warning on stderr", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure: "threads" });
+      const { out, err, exits } = await fx.invokeRegistered(false);
+      expect(out).toEqual([
+        `auth: draft ${URL}`,
+        "- [cannot-verify] _run:cv1 — manual check",
+        SUPPLEMENTARY_HEADING,
+        SUPPLEMENTARY_LINE,
+      ]);
+      expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+      expect(exits).toEqual([2]);
+    });
+  });
+
+  test("B5: a ready record with no recorded open item still reads the PR, so a later finding is reported", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, {
+        record: { outcome: "ready", cannotVerify: [], approval: undefined },
+        blockingFinding: {},
+      });
+      const { code, value } = await fx.report();
+      expectLive(value);
+      expect(value.openItems).toEqual([FINDING_ITEM]);
+      expect(code).toBe(2);
+      expect(fx.calls.length).toBeGreaterThan(0);
+      const plain = await fx.invoke(false);
+      expect(plain.out).toContain(FINDING_LINE_TEXT);
+      expect(plain.out).not.toContain("No open items.");
+    });
+  });
+
+  test("B5: a ready record whose live read fails keeps the recorded report", async () => {
+    await withTempDir(async (dir) => {
+      const { code, value } = await (
+        await fixture(dir, {
+          record: { outcome: "ready", cannotVerify: [], approval: undefined },
+          failure: "missing-index",
+        })
+      ).report();
+      expect(value.source).toBe("run-record");
+      expect(value.liveError).toEqual(expect.stringContaining("no nax item index on this PR"));
+      expect(code).toBe(0);
     });
   });
 });

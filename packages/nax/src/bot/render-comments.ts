@@ -1,14 +1,18 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
 import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
+import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
 import { checkCommands } from "./checks";
+import type { FindingLineage } from "./push-ledger";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
 import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
 const TEXT_LIMIT = 2_000;
+/** US-001: matches the parser's cap on `triggerEvidence`. */
+const EVIDENCE_LIMIT = 300;
 const AUTHOR_LIMIT = 100;
 const ITEM_RULING_LIMIT = 20;
 const ITEM_ID_LIMIT = 100;
@@ -22,8 +26,21 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 
 export interface ReviewSummaryInput {
   readonly itemStatus?: ItemStatus;
+  /**
+   * US-008: the agreed findings that block under the effective set. They are review threads, not
+   * indexed items, so the open-items line names them beside the index's own count. Absent or 0 leaves
+   * that line as it always was.
+   */
+  readonly blockingCount?: number;
   readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
+  /** US-003: critical or important findings outside the blocking set, which get no inline thread. */
+  readonly residual?: readonly FindingWithTrigger[];
+  /** US-003: the effective blocking set, and where it came from. */
+  readonly blockingTriggers?: readonly FindingTrigger[];
+  readonly blockingSource?: EffectiveBlockingTriggers["source"];
+  /** US-003: the first line of every writer scope comment that stated no usable class. */
+  readonly ignoredScopeRulings?: readonly string[];
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
   readonly preRunFailed?: string;
@@ -55,9 +72,37 @@ function severityLabel(finding: WorkflowFindingDraft): string {
   return finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
 }
 
+/** A finding with the trigger facts the review carries (US-001): what it needs in order to occur. */
+export interface FindingWithTrigger extends WorkflowFindingDraft {
+  readonly trigger?: FindingTrigger;
+  readonly triggerEvidence?: string;
+  /** US-005: the bot fix whose lines this finding sits on; absent when nothing owns them. */
+  readonly lineage?: FindingLineage;
+}
+
+/** US-005: the same fact the fixer receives — the generation, the push, and the items it fixed. */
+function lineageLine(lineage: FindingLineage): string {
+  const parents = safeText(lineage.parents.join(", "), TEXT_LIMIT);
+  return `Lineage: generation ${lineage.generation}, on lines added by nax bot fix ${lineage.pushSha.slice(0, SHORT_SHA_LENGTH)}${parents === "" ? "" : ` for ${parents}`}`;
+}
+
+/** Fact lines sit together under the issue, and carry no prose of their own (US-001, US-005). */
+function factLines(finding: FindingWithTrigger): string[] {
+  const lines: string[] = [];
+  if (finding.trigger !== undefined) {
+    const evidence =
+      finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
+    lines.push(`Trigger: ${finding.trigger}${evidence}`);
+  }
+  if (finding.lineage !== undefined) lines.push(lineageLine(finding.lineage));
+  return lines;
+}
+
 /** A stable marked inline finding, with all author prose neutralised. */
-export function renderFindingComment(finding: WorkflowFindingDraft): string {
+export function renderFindingComment(finding: FindingWithTrigger): string {
+  const facts = factLines(finding);
   let body = `**${severityLabel(finding)}** (${finding.kind}): ${safeText(finding.issue, TEXT_LIMIT)}`;
+  if (facts.length > 0) body += `\n\n${facts.join("\n")}`;
   if (finding.suggestion) body += `\n\nSuggestion: ${safeText(finding.suggestion, TEXT_LIMIT)}`;
   return withNaxBotMarker(body, findingKey(finding));
 }
@@ -88,10 +133,50 @@ interface ListSection {
   readonly items: string[];
 }
 
+/**
+ * US-003: a finding that does not block gets no inline thread, so the summary is the only place it appears —
+ * with the class of condition it needs, which is why it did not block.
+ */
+function residualItem(finding: FindingWithTrigger): string {
+  const code = finding.file === undefined ? "" : `\`${safeCode(finding.file)}\``;
+  const at = finding.line === undefined ? code : `${code}:${finding.line}`;
+  const location = at === "" ? "" : `${at}: `;
+  const evidence =
+    finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
+  const issue = safeText(finding.issue, TEXT_LIMIT);
+  return `- **${severityLabel(finding)}** ${location}${issue} (trigger ${finding.trigger ?? "normal"}${evidence})`;
+}
+
+/**
+ * US-003: a forge login is letters, digits, dot, underscore or hyphen. Nothing else is part of one, so the
+ * rendered name can carry no markdown — and, unlike `safeText`, it still reads as the literal `@name`.
+ */
+function loginText(login: string): string {
+  return login.replace(/[^A-Za-z0-9._-]/g, "").slice(0, AUTHOR_LIMIT);
+}
+
+function blockingSourceLabel(source: ReviewSummaryInput["blockingSource"]): string {
+  if (source === undefined || source === "config") return "config";
+  return `PR comment by @${loginText(source.author)}`;
+}
+
+/** The policy that decided this review's posting, and every writer ruling it could not use (US-003). */
+function policyLines(input: ReviewSummaryInput): string[] {
+  const lines: string[] = [];
+  if (input.blockingTriggers !== undefined)
+    lines.push(
+      `Blocking triggers: ${input.blockingTriggers.join(", ")} (${blockingSourceLabel(input.blockingSource)})`,
+    );
+  for (const ruling of input.ignoredScopeRulings ?? [])
+    lines.push(`Ignored scope ruling: ${safeText(ruling, TEXT_LIMIT)}`);
+  return lines;
+}
+
 function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
     { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
+    { heading: "### Residual findings (not blocking)", items: (input.residual ?? []).map(residualItem) },
     { heading: "### Minor findings", items: (input.minor ?? []).map(offLineItem) },
     {
       heading: "### Top-level comments",
@@ -143,7 +228,7 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
   return withNaxBotMarker([...prefix, ...lists, ...notice, ...suffix].join("\n"), "summary");
 }
 
-function itemStatusLines(status: ItemStatus | undefined): string[] {
+function itemStatusLines(status: ItemStatus | undefined, blockingCount: number | undefined): string[] {
   if (status === undefined) return [];
   const lines: string[] = [];
   if (status.recorded.length > 0) {
@@ -157,7 +242,11 @@ function itemStatusLines(status: ItemStatus | undefined): string[] {
     if (hidden > 0) shown.push(`and ${hidden} more`);
     lines.push(`Item rulings recorded: ${status.recorded.length} (${shown.join(", ")}).`);
   }
-  lines.push(`Open items: ${status.open} of ${status.total}.`);
+  // US-008: the index counts its own items; a review's blocking findings are threads, so they are
+  // counted beside it (#2981). With none there is nothing to add and the line reads as it always did.
+  const blocking =
+    blockingCount === undefined || blockingCount === 0 ? "." : ` indexed; ${blockingCount} blocking review findings.`;
+  lines.push(`Open items: ${status.open} of ${status.total}${blocking}`);
   return lines;
 }
 
@@ -212,8 +301,9 @@ export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
     `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
-    ...itemStatusLines(input.itemStatus),
+    ...itemStatusLines(input.itemStatus, input.blockingCount),
     ...readinessLines(input),
+    ...policyLines(input),
   ];
   if (input.staticMode) prefix.push("Untrusted PR: reviewed without running any code.");
   const suffix = input.failed > 0 ? [`Could not post ${input.failed} comments; re-run nax bot review.`] : [];

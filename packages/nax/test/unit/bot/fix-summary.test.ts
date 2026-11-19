@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { relative } from "node:path";
 import { type BotFixState, renderFixSummary } from "@/bot";
 import { BOT_FIX_GRAPH } from "@/bot/fix-run";
+import { fitDetails } from "@/bot/fix-summary";
 import { parseNaxBotMarker } from "@/forge";
 import { validateStepGraph } from "@/step-graph";
 import { safeCode } from "@/workflow/pr-body-safe";
@@ -60,6 +61,15 @@ describe("renderFixSummary", () => {
     expect(renderFixSummary({ ...state, outcome: "protected", protectedFiles: ["a`b\n.ts"] })).not.toContain(
       "a`b\n.ts",
     );
+  });
+  // B2: the protected list is as long as the fix's diff, and one uncapped list made the whole comment
+  // exceed the forge's limit — which refuses the write outright, so no push was ever recorded.
+  test("B2: names at most twenty protected paths and counts the rest", () => {
+    const files = Array.from({ length: 25 }, (_unused, index) => `.nax/protected/${index}.md`);
+    const body = renderFixSummary({ ...state, outcome: "protected", protectedFiles: files });
+    expect(body).toContain("- `.nax/protected/19.md`");
+    expect(body).not.toContain("- `.nax/protected/20.md`");
+    expect(body).toContain("- and 5 more");
   });
   test.each([
     ".github/[click](http://evil.example/x).yml",
@@ -169,6 +179,46 @@ describe("renderFixSummary", () => {
   test("marks the summary identity", () => {
     expect(parseNaxBotMarker(renderFixSummary({ ...state, outcome: "nothing" }))).toEqual({ key: "fix-summary" });
   });
+  // US-004: `outcomeText` moved to `bot/fix-outcome-text.ts` unchanged — the line a reader sees is
+  // pinned here so the move cannot quietly reword the public comment.
+  test.each([
+    ["pushed", "Pushed abcdef1: 2 agreed items fixed in one round; gates passed."],
+    ["nothing", "Nothing to fix: the latest review agreed with no item."],
+    ["no-change", "The fix session changed nothing; nothing pushed."],
+    ["push-rejected", "The push was rejected (the PR changed or access was denied); nothing pushed."],
+  ] satisfies readonly (readonly [BotFixState["outcome"], string])[])(
+    "US-004 AC-10 keeps the %s outcome line as the summary's first line",
+    (outcome, expected) => {
+      const body = renderFixSummary({ ...state, outcome, pushedSha: "abcdef1", agreedCount: 2 });
+      expect(body.split("\n")[2]).toBe(expected);
+    },
+  );
+  test("US-007 AC-13: lists ten follow-ups and counts the rest", () => {
+    const followUps = Array.from({ length: 12 }, (_unused, index) => ({
+      key: `f-${index}`,
+      severity: "minor" as const,
+      trigger: "normal" as const,
+    }));
+    const body = renderFixSummary({ ...state, outcome: "nothing", followUps });
+    expect(body).toContain("Left for follow-up: f-0 (Minor, normal), f-1 (Minor, normal)");
+    expect(body).toContain("and 2 more");
+    expect(body).not.toContain("f-10");
+  });
+  test("US-007 AC-14: a review that agreed with no item still reads as nothing to fix", () => {
+    expect(renderFixSummary({ ...state, outcome: "nothing" })).toContain(
+      "Nothing to fix: the latest review agreed with no item.",
+    );
+  });
+  test("US-007 AC-12: names what the non-blocking agreed list left for follow-up", () => {
+    const body = renderFixSummary({
+      ...state,
+      outcome: "nothing",
+      followUps: [{ key: "f-1", severity: "minor", trigger: "normal" }],
+    });
+    expect(body).toContain(
+      "No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).",
+    );
+  });
   test("AC-17: says why the PR stayed a draft", () => {
     const body = renderFixSummary({ ...state, outcome: "nothing", readyHeld: "CI failed: x" });
     expect(body.split("\n")).toContain("Kept as draft: CI failed: x");
@@ -228,5 +278,27 @@ describe("repair declarations and summary", () => {
     expect(
       renderFixSummary({ step: "report", timings: {}, outcome: "gates-failed", repairSkippedForCost: true }),
     ).toContain("Repair turn skipped: cost limit reached.");
+  });
+});
+
+/**
+ * B2: the comment is one public comment under the forge's limit, so the lines a report varies are
+ * capped against the room the fixed text leaves. These pin the cap on its own.
+ */
+describe("fitDetails", () => {
+  test("keeps every line that fits, each costing its own newline", () => {
+    expect(fitDetails(["ab", "cd"], 6)).toEqual(["ab", "cd"]);
+    expect(fitDetails(["ab", "cd"], 5)).toEqual(["ab"]);
+  });
+  test("truncates the line it cannot fit whole, so a reader sees there was more", () => {
+    const [kept] = fitDetails(["abcdefghij"], 6);
+    // Five characters plus the ellipsis and its newline is exactly the room available.
+    expect(kept).toBe("abcd…");
+    expect(kept?.endsWith("…")).toBe(true);
+  });
+  test("drops the details entirely when the fixed text already used the room", () => {
+    expect(fitDetails(["abc"], 0)).toEqual([]);
+    expect(fitDetails(["abc"], -40)).toEqual([]);
+    expect(fitDetails([], 100)).toEqual([]);
   });
 });

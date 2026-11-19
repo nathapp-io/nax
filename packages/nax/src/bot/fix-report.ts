@@ -1,6 +1,4 @@
 /** Repo-scoped post-push forge nodes; a separate review must grade the fixes. */
-import { homedir } from "node:os";
-import { basename, isAbsolute, relative, sep } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -9,6 +7,7 @@ import {
   hasNaxWorkflowMarker,
   listPrComments,
   listReviewThreads,
+  type OwnComment,
   ownComments,
   type PrComment,
   type PrThread,
@@ -22,11 +21,11 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
+import { type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
-import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import {
   type CiWaiverReady,
@@ -37,21 +36,22 @@ import {
 } from "./ci-waiver-ready";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { type CurrentSummary, pushEntry, summaryBody } from "./fix-summary-body";
 import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
+import { pushRecordEntries } from "./push-ledger";
+import { recordPush } from "./push-record";
 import { safeText } from "./render";
+import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
 import { type RecordRulingsOutcome, readConfirmedKeys, readSettledKeys, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
 const READY_HOLD_FINDINGS_SHOWN = 5;
-const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
-const OUT_OF_ITEM_FILES_SHOWN = 20;
 export const _fixReportDeps = {
-  homedir,
   replyToThread,
   resolveThread,
   editComment,
@@ -339,10 +339,10 @@ function readinessReview(env: BotFixEnv): BotReviewArtifact {
   return env.codeReview ?? env.review;
 }
 
-/** The readiness review's open critical/important finding keys, in `agreed` order. */
-function blockingKeys(review: BotReviewArtifact): string[] {
+/** The readiness review's open finding keys that block under `blocking`, in `agreed` order. */
+function blockingKeys(review: BotReviewArtifact, blocking: readonly FindingTrigger[]): string[] {
   return review.agreed
-    .filter((item) => item.kind === "finding" && (item.severity === "critical" || item.severity === "important"))
+    .filter((item) => item.kind === "finding" && isBlockingFinding(item, blocking))
     .map((item) => item.key);
 }
 
@@ -365,8 +365,8 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
   if (keys.length === 0) return keys;
   const withdrawn = withdrawnKeys(env);
   try {
-    const { info, user, threads, comments } = await readPrState(env);
-    const input = { ref: env.ref, info, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
+    const { user, threads, comments } = await readPrState(env);
+    const input = { ref: env.ref, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
     const [settled, confirmed] = await Promise.all([
       _fixReportDeps.readSettledKeys(input),
       withdrawn.size === 0 ? new Set<string>() : _fixReportDeps.readConfirmedKeys(input),
@@ -381,14 +381,13 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
 }
 
 /**
- * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
- * excludes the findings that were settled when that review was written; a settlement or withdrawal
- * recorded since is reconciled against the PR, so a ruling does not need another full code review.
- * Minor findings, threads and comments never hold.
+ * US-001/US-003: an open finding that blocks under the effective trigger set holds readiness. `agreed` already
+ * excludes the findings settled when that review was written; a settlement or withdrawal recorded since is
+ * reconciled against the PR. Minor findings, threads and comments never hold.
  */
 async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   const review = readinessReview(env);
-  const keys = await openKeys(env, blockingKeys(review));
+  const keys = await openKeys(env, blockingKeys(review, reviewBlockingTriggers(env)));
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");
@@ -455,142 +454,47 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
   return { patch: { markedReady: true, ...(waived === undefined ? {} : { ciWaived: waived }) }, exit: "report" };
 }
 
-/** Why every red gate is not the fix's: CI's verdict on the same head decides (nax#2631). */
-function baselineText(ci: BotFixState["ciOutcome"]): string {
-  const head = "They fail on the unmodified PR head in the bot checkout too";
-  if (ci === "green")
-    return `${head}, while CI is green on it, so the bot checkout differs from CI and these gates cannot judge the fix.`;
-  if (ci === "failed") return `${head}, and CI is red on it too: the failure predates the fix.`;
-  return `${head}; CI has no result for it (${ci ?? "unknown"}).`;
-}
+/** The summary text lives in its own module; re-exported here so `fix-report` keeps one public surface. */
+export { type FixSummaryOptions, renderFixSummary } from "./fix-summary";
 
 /**
- * The PR comment is public: a local absolute path exposes the username and directory layout
- * (nax#2681). Show the checkout relative to the repo root, or only its directory name.
+ * The `fix-summary` comment as the forge holds it now, and the append-only per-push records found in
+ * the same read. Every write replaces the whole body, so the body this run started with is not good
+ * enough at write time: another `nax bot fix`, on another host, may have appended its own entry while
+ * this one ran. A failed read falls back to the run's own snapshot, whose entries the merge carries
+ * over anyway.
  */
-function displayPath(path: string, repoRoot: string | undefined): string {
-  const rel = repoRoot ? relative(repoRoot, path) : "";
-  const inside = rel.length > 0 && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-  return inside ? rel : basename(path);
-}
-
-/** `prefix/x` -> `${bare}/x` and a bare `prefix` -> `bare`, only where `prefix` ends at a path boundary. */
-function replacePathPrefix(text: string, prefix: string, bare: string): string {
-  if (prefix.length <= 1) return text;
-  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Not followed by a name character: `/a/repo-old` and `/a/repo.bak` are other paths, `/a/repo.` is this one.
-  return text.replace(new RegExp(`${escaped}(?![\\w-]|\\.[\\w-])(/?)`, "g"), (_m, slash: string) =>
-    slash ? (bare === "." ? "" : `${bare}/`) : bare,
-  );
-}
-
-function stripLocalPaths(text: string, repoRoot: string | undefined): string {
-  return replacePathPrefix(replacePathPrefix(text, repoRoot ?? "", "."), _fixReportDeps.homedir(), "~");
-}
-
-function dirtyText(state: BotFixState, repoRoot: string | undefined): string {
-  if (state.checkoutMissing === true)
-    return "The fix checkout disappeared during the session (removed by another process); nothing pushed.";
-  const shown = state.recoveryPath === undefined ? "unknown" : displayPath(state.recoveryPath, repoRoot);
-  return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(shown)}\`.`;
-}
-
-function outcomeText(state: BotFixState, repoRoot: string | undefined): string {
-  switch (state.outcome) {
-    case "cost-limit":
-      if (state.costSpentUsd === undefined || state.costLimitUsd === undefined)
-        throw new NaxError("[bot-fix] Cannot report cost limit without spend and limit", "BOT_FIX_OUTCOME_MISSING", {
-          stage: "bot-fix",
-        });
-      return `Cost limit reached: ${state.costSpentUsd.toFixed(2)} of ${state.costLimitUsd.toFixed(2)} USD; nothing pushed.`;
-    case "setup-failed":
-      return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
-    case "pushed":
-      return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
-    case "nothing":
-      return "Nothing to fix: the latest review agreed with no item.";
-    case "no-change":
-      return "The fix session changed nothing; nothing pushed.";
-    case "protected":
-      return [
-        "The fix changed protected files; nothing pushed.",
-        ...(state.protectedFiles ?? []).map((path) => `- \`${safeCode(path)}\``),
-      ].join("\n");
-    case "no-gates":
-      return "No gates are configured on the base branch; nothing pushed.";
-    case "gates-failed":
-      return [
-        `Gates failed: ${(state.failingGates ?? []).join(", ")}; nothing pushed.`,
-        ...(state.baselineFailing?.length
-          ? [`Already red on the unmodified PR head: ${state.baselineFailing.join(", ")}.`]
-          : []),
-      ].join(" ");
-    case "prepare-touched-tracked":
-      return state.prepareTreeUnreadable
-        ? "The prepare tree could not be read; nothing pushed."
-        : "The prepare turn changed tracked files; nothing pushed.";
-    case "baseline-red":
-      return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
-    case "dirty":
-      return dirtyText(state, repoRoot);
-    case "push-unknown":
-      return "The push timed out; remote outcome is unknown. Check the remote before retrying.";
-    case "push-rejected":
-      return "The push was rejected (the PR changed or access was denied); nothing pushed.";
-    default:
-      throw new NaxError("[bot-fix] Cannot report without a fix outcome", "BOT_FIX_OUTCOME_MISSING", {
-        stage: "bot-fix",
-      });
+async function currentSummary(env: BotFixEnv, snapshot: OwnComment | undefined): Promise<CurrentSummary> {
+  try {
+    const comments = await _fixReportDeps.listPrComments(env.ref, env.forge, env.repoRoot);
+    const own = ownComments(comments, env.user.login);
+    return {
+      own: own.find(({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined),
+      records: pushRecordEntries(own),
+    };
+  } catch (error) {
+    getLogger()?.debug("bot-fix", "Could not re-read the fix summary; merging against this run's snapshot", {
+      pr: env.ref.number,
+      error: errorMessage(error),
+    });
+    return { own: snapshot, records: pushRecordEntries(env.own) };
   }
 }
 
-/** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
-export function renderFixSummary(state: BotFixState, details: readonly string[] = [], repoRoot?: string): string {
-  const lines = [outcomeText(state, repoRoot), ...details];
-  if (state.reusedFix)
-    lines.push(
-      `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
-    );
-  if (state.repairMode !== undefined)
-    lines.push(`Repair turn: ${state.repairMode}, round ${state.gateRepairRounds ?? 0}.`);
-  if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
-  if (state.fixFailure !== undefined)
-    lines.push(`Fix session: ${safeText(stripLocalPaths(state.fixFailure, repoRoot), MAX_FAILURE_LENGTH)}`);
-  // Why the PR is still a draft, or what released it. Untrusted text is neutralised in
-  // `readinessLines`, which also rewrites exactly these lines when a waiver readies the PR (US-007).
-  lines.push(...readinessLines(state));
-  return withNaxBotMarker(lines.join("\n"), FIX_SUMMARY_KEY);
-}
-
-function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
-  if (state.outcome !== "pushed" || !state.changed) return;
-  const named = new Set(
-    env.review.agreed.flatMap((item) => (item.kind !== "comment" && item.file !== undefined ? [item.file] : [])),
-  );
-  if (named.size === 0) return;
-  const unnamed = state.changed.filter((file) => !named.has(file));
-  if (unnamed.length === 0) return;
-  const shown = unnamed
-    .slice(0, OUT_OF_ITEM_FILES_SHOWN)
-    .map((file) => `\`${safeCode(file)}\``)
-    .join(", ");
-  const remaining = unnamed.length - OUT_OF_ITEM_FILES_SHOWN;
-  return `Also changed, not named by an agreed item: ${shown}${remaining > 0 ? ` and ${remaining} more` : ""}`;
-}
-
+/** The write, and the append-only copy of the push it records. */
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
-  const lines: string[] = [];
-  if (state.outcome === "nothing" && state.pushedSha)
-    lines.push(
-      `Pushed ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`,
-    );
-  if (state.ledgerCarried)
-    lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
-  const outOfItem = outOfItemDetail(env, state);
-  if (outOfItem !== undefined) lines.push(outOfItem);
-  const body = renderFixSummary(state, lines, env.repoRoot);
-  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
-  if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
+  const summary = await currentSummary(
+    env,
+    env.own.find(({ key }) => key === FIX_SUMMARY_KEY),
+  );
+  // One entry for both writes: the block the summary carries and the copy posted beside it.
+  const entry = pushEntry(env, state);
+  const body = summaryBody(env, state, summary, entry);
+  if (summary.own) await _fixReportDeps.editComment(env.ref, summary.own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
+  // B1: and the copy no summary rewrite can erase, posted only once the summary write succeeded (a
+  // failed summary write records nothing, as before).
+  if (entry !== undefined)
+    await recordPush({ env, entry, recorded: summary.records, post: _fixReportDeps.postPrComment });
   return { patch: {}, exit: "done" };
 }

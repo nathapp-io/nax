@@ -17,11 +17,20 @@
  * the waiver has released.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { NAX_BOT_HEADER, ownComments, type PrComment, stripNaxBotMarkers, withNaxBotMarker } from "@/forge";
+import {
+  MAX_FORGE_COMMENT_CHARS,
+  NAX_BOT_HEADER,
+  ownComments,
+  type PrComment,
+  stripNaxBotMarkers,
+  withNaxBotMarker,
+} from "@/forge";
 import { getLogger } from "@/logger";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { type CiWaiver, renderCiWaiver } from "../workflow/ci-waiver";
+import { CHAIN_HEADING } from "./convergence-summary";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { nextLedgerEntries, pushRecordEntries, readPushLedger, withPushLedger } from "./push-ledger";
 import { safeText } from "./render";
 
 /** The own-comment identity of the fix summary this module may have to keep truthful. */
@@ -140,6 +149,54 @@ function bodyWithoutHeader(body: string): string[] {
   return start === -1 ? [] : rest.slice(start);
 }
 
+/** The chain section's own bullets: what follows its heading up to the first line that is not one. */
+function chainEnd(lines: readonly string[], heading: number): number {
+  let end = heading + 1;
+  while (lines[end]?.startsWith("- ")) end++;
+  return end;
+}
+
+/** The lines without the chain section's last line (its heading too once no bullet is left), or none to give up. */
+function withoutChainTail(lines: readonly string[]): string[] | undefined {
+  const heading = lines.indexOf(CHAIN_HEADING);
+  if (heading === -1) return undefined;
+  const end = chainEnd(lines, heading);
+  const drop = end === heading + 1 ? heading : end - 1;
+  return [...lines.slice(0, drop), ...lines.slice(drop + 1)];
+}
+
+/**
+ * The whole rewrite, held under the forge's comment limit (B14). The merge can restore ledger entries
+ * the old block had lost and the readiness lines add text, so the size is only known now. The chain
+ * section is optional text and goes first, a line at a time; then the oldest entries of a ledger this
+ * version can read (their append-only records keep them); the readiness lines are never trimmed, and a
+ * block this version cannot read is left exactly as it was.
+ */
+function budgetedWaiverBody(
+  kept: readonly string[],
+  lines: readonly string[],
+  original: string,
+  records: ReturnType<typeof pushRecordEntries>,
+): string {
+  const unreadable = readPushLedger(original).unreadable;
+  const render = (text: readonly string[]): string => withNaxBotMarker([...text, ...lines].join("\n"), FIX_SUMMARY_KEY);
+  const entries = unreadable ? [] : nextLedgerEntries({ current: original, records });
+  const build = (text: readonly string[], ledger: typeof entries): string =>
+    unreadable ? render(text) : withPushLedger(render(text), ledger);
+  let text: readonly string[] | undefined = kept;
+  while (text !== undefined) {
+    const body = build(text, entries);
+    if (body.length <= MAX_FORGE_COMMENT_CHARS) return body;
+    const next = withoutChainTail(text);
+    if (next === undefined) break;
+    text = next;
+  }
+  let ledger = entries;
+  const bare = text ?? kept;
+  while (ledger.length > 1 && build(bare, ledger).length > MAX_FORGE_COMMENT_CHARS) ledger = ledger.slice(1);
+  return build(bare, ledger);
+}
+
 /**
  * US-007: a ready-only pass runs no `report` node — that node needs a fix outcome — so the summary
  * the earlier fix published is the only comment that can name the waiver. Its readiness lines are
@@ -149,11 +206,19 @@ function bodyWithoutHeader(body: string): string[] {
 export async function nameWaiverInSummary({ env, lines, list, edit }: CiWaiverSummaryInput): Promise<void> {
   try {
     const comments = await list(env.ref, env.forge, env.repoRoot);
-    const own = ownComments(comments, env.user.login).find(({ key }) => key === FIX_SUMMARY_KEY);
-    if (own === undefined) return;
-    const kept = withoutTrailingBlanks(bodyWithoutHeader(own.comment.body).filter((line) => !isReadinessLine(line)));
-    const body = withNaxBotMarker([...kept, ...lines].join("\n"), FIX_SUMMARY_KEY);
-    await edit(env.ref, own.comment, body, env.forge, env.repoRoot);
+    const own = ownComments(comments, env.user.login);
+    const summary = own.find(({ key }) => key === FIX_SUMMARY_KEY);
+    if (summary === undefined) return;
+    const original = summary.comment.body;
+    const kept = withoutTrailingBlanks(bodyWithoutHeader(original).filter((line) => !isReadinessLine(line)));
+    // US-004: the push ledger is state, not summary text. It is written back so it keeps its place at
+    // the tail — immediately before the identity marker — rather than staying where the text happened
+    // to leave it, and so a retained entry survives every rewrite. The entries come from the same merge
+    // `reportStep` writes through, read from the body this rewrite replaced plus the append-only per-push
+    // records this rewrite also read (B1). A block this version cannot read is left exactly where it was:
+    // a rewrite must not delete a record it cannot decode.
+    const body = budgetedWaiverBody(kept, lines, original, pushRecordEntries(own));
+    await edit(env.ref, summary.comment, body, env.forge, env.repoRoot);
   } catch (error) {
     getLogger()?.warn("bot-fix", "Could not name the CI waiver in the fix summary", {
       pr: env.ref.number,

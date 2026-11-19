@@ -8,6 +8,14 @@ export const TOP_LEVEL_MARKER_KEYS = [
   "w-ci-waiver",
 ] as const;
 
+/** The canonical key of one bot push record: the prefix and the push's full 40-hex sha, nothing else. */
+const PUSH_RECORD_KEY = /^push-[0-9a-f]{40}$/;
+
+/** A key whose comment is a top-level one: a fixed key, or one push's own record (US-004). */
+export function isTopLevelMarkerKey(key: string): boolean {
+  return TOP_LEVEL_MARKER_KEYS.some((known) => known === key) || PUSH_RECORD_KEY.test(key);
+}
+
 const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
 export const markerPattern = (): RegExp => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
 const MARKER_KEY = new RegExp(`^${MARKER_KEY_PATTERN}$`);

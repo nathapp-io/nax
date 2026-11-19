@@ -175,3 +175,69 @@ describe("the protected-path rule in the bot fix prompt (US-003)", () => {
     expect(text).not.toContain("can never change files under .nax/, .github/ or .gitlab/");
   });
 });
+
+/**
+ * US-006: the fixer is told which condition class a finding needs, which earlier bot fix wrote its
+ * lines, and how much earlier bot pushes added outside the feature's declared files. Facts only —
+ * no line here tells the agent what to do with one.
+ */
+describe("the facts section in the bot fix prompt (US-006)", () => {
+  const facts = (text: string): string => section(text, "Facts about these findings", "The bar");
+
+  test("AC-15: a finding's lines are listed under its own id", () => {
+    const text = prompts.buildBotPrFixPrompt({
+      ...base,
+      findingFacts: [{ id: "f-1", lines: ["Trigger: normal"] }],
+    });
+    expect(text).toContain("## Facts about these findings");
+    expect(facts(text)).toBe("- f-1:\n  Trigger: normal");
+  });
+
+  test("AC-16: outside growth names the largest file first", () => {
+    const text = prompts.buildBotPrFixPrompt({
+      ...base,
+      outsideGrowth: [
+        { path: "src/c.ts", added: 20 },
+        { path: "src/d.ts", added: 50 },
+      ],
+    });
+    expect(facts(text)).toBe(
+      "Lines added by earlier nax bot fix pushes on this PR in files outside the feature's declared files: `src/d.ts` +50, `src/c.ts` +20",
+    );
+  });
+
+  test("AC-16: finding facts precede the growth line", () => {
+    const text = prompts.buildBotPrFixPrompt({
+      ...base,
+      findingFacts: [{ id: "f-1", lines: ["Trigger: normal"] }],
+      outsideGrowth: [{ path: "src/c.ts", added: 20 }],
+    });
+    expect(facts(text)).toBe(
+      "- f-1:\n  Trigger: normal\nLines added by earlier nax bot fix pushes on this PR in files outside the feature's declared files: `src/c.ts` +20",
+    );
+  });
+
+  test("AC-17: twelve files list ten paths then the remainder", () => {
+    const growth = Array.from({ length: 12 }, (_, index) => ({ path: `src/f${index}.ts`, added: 100 - index }));
+    const listed = facts(prompts.buildBotPrFixPrompt({ ...base, outsideGrowth: growth }));
+    expect(listed.match(/`src\/f\d+\.ts` \+\d+/g)?.length).toBe(10);
+    expect(listed).toContain("`src/f9.ts` +91");
+    expect(listed).not.toContain("src/f10.ts");
+    expect(listed.endsWith("and 2 more")).toBe(true);
+  });
+
+  test("AC-18: neither input renders no heading at all", () => {
+    const text = prompts.buildBotPrFixPrompt(base);
+    expect(text).not.toContain("## Facts about these findings");
+    expect(text).toContain("## Items\n");
+  });
+
+  test("AC-18: facts with no lines render no heading", () => {
+    const text = prompts.buildBotPrFixPrompt({
+      ...base,
+      findingFacts: [{ id: "t-1", lines: [] }],
+      outsideGrowth: [],
+    });
+    expect(text).not.toContain("## Facts about these findings");
+  });
+});
