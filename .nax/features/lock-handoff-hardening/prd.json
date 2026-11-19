@@ -3,7 +3,7 @@
   "feature": "lock-handoff-hardening",
   "branchName": "feat/lock-handoff-hardening",
   "createdAt": "2026-11-19T10:50:37.414Z",
-  "updatedAt": "2026-11-19T11:18:30.396Z",
+  "updatedAt": "2026-11-19T11:34:25.257Z",
   "userStories": [
     {
       "id": "US-001",
@@ -107,14 +107,17 @@
         "handoff"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One handoff module adds a branch eligibility check at two existing hooks using a read-only forge adapter; other changes are test fixtures."
+        "reasoning": "One handoff module adds a branch eligibility check at two existing hooks using a read-only forge adapter; other changes are test fixtures.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/flow/flow-handoff.ts",
@@ -144,7 +147,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "96d5f2d05f83885b7b532860f182d45e9f089515"
     },
     {
       "id": "US-003",
