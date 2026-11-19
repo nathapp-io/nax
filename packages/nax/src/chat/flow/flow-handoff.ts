@@ -52,7 +52,7 @@ import {
 } from "./flow-handoff-input";
 import { isRecord } from "./flow-input";
 import type { FlowHandoffCreateBody } from "./flow-koda";
-import { checkFlowBranch, type FlowRepoReady, githubRepoSlug } from "./flow-repo";
+import { checkFlowBranch, type FlowRepoReady, githubRepoRef } from "./flow-repo";
 import {
   afterAllow,
   BILLING_NOTE,
@@ -99,8 +99,8 @@ export const _flowHandoffDeps: {
   writeHandoffMark,
   withFileLock,
   // A chat handoff accepts only a GitHub `origin` (`readFlowRepoState`), so the forge is always GitHub —
-  // and the repository is the one the card and the push name, never whichever repository the CLI would
-  // resolve from its own environment.
+  // and the repository is the one the card and the push name, host included, never whichever repository or
+  // host the CLI would resolve from its own environment.
   hasOpenPr: (branch: string, repo: string, repoRoot: string) =>
     hasOpenPr("github", branch, defaultForgeDeps, repoRoot, repo),
   restorePendingResults,
@@ -198,10 +198,11 @@ function createBody(
  * the failure is reported with the same weight as the PR itself.
  *
  * The check names the repository the card names, which is the repository the push destination is
- * verified against. A bare branch name is not enough: the CLI resolves its own repository from
- * `GH_REPO` or the working directory, so a checkout whose default differs from the push destination
- * could report an empty list from another repository and authorize a push the destination's open PR
- * should have refused.
+ * verified against, and it names its host with it (`github.com/owner/repo`). A bare branch name is not
+ * enough: the CLI resolves its own repository from `GH_REPO` or the working directory, and — even with
+ * `--repo owner/repo` — its own host from `GH_HOST`, so a checkout whose defaults differ from the push
+ * destination could report an empty list from another repository or another host, and authorize a push the
+ * destination's open PR should have refused.
  *
  * @param feature - The feature being handed off, named in the refusal
  * @param state - The repository state the card was built from: the branch to push and its GitHub remote
@@ -209,7 +210,7 @@ function createBody(
  * @returns The `[chat]` result to stop with, or `undefined` when the branch has no open PR
  */
 async function openPrRefusal(feature: string, state: FlowRepoReady, repoRoot: string): Promise<ToolResult | undefined> {
-  const repo = githubRepoSlug(state.remoteUrl);
+  const repo = githubRepoRef(state.remoteUrl);
   if (repo === null) {
     return failure(
       `[chat] cannot hand off ${feature}: could not check branch ${state.branch} for an open PR (${state.remoteUrl} is not a GitHub repository the check can name); nothing was pushed`,

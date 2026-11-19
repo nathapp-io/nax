@@ -1,5 +1,6 @@
 /** Detect and repair agent damage to nax run state (#2497). Never throws. */
-import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { appendFile, type FileHandle, mkdir, open, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { errorMessage, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
@@ -36,7 +37,14 @@ export const _repairDeps = {
   hiddenNaxPaths,
   clearNaxIndexFlags,
   logger: (): IndexFlagLogger | null => getSafeLogger() ?? null,
+  readResultBytes,
 };
+
+/** The result as one read saw it: what the repair judged, and what a deferral records. */
+interface ResultObservation {
+  /** The raw bytes that read returned, or undefined when there was no file to read. */
+  readonly bytes: Uint8Array | undefined;
+}
 
 /** Lock failures a repair may hand to the next lock-taker instead of failing: nothing was read or written. */
 const DEFERRABLE_LOCK_CODES: ReadonlySet<string> = new Set(["FILE_LOCK_TIMEOUT", "FILE_LOCK_CLAIM_ORPHANED"]);
@@ -119,6 +127,12 @@ function defersToNextHolder(error: unknown, ctx: RepairContext): boolean {
 
 /** errno codes that mean "there is no such path": the only read failure that is an observation of absence. */
 const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
+/**
+ * The result is read read-only and never blocking, so a FIFO where the result belongs answers the open
+ * instead of waiting for a writer that may never come. A link is followed on purpose: the repair judges
+ * the bytes at the path and then restores over it, replacing the link rather than writing through it.
+ */
+const RESULT_READ_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK;
 
 /** The errno code of a thrown filesystem error, when it carries one. */
 function errnoCode(error: unknown): string | undefined {
@@ -128,17 +142,30 @@ function errnoCode(error: unknown): string | undefined {
 }
 
 /**
- * The result's bytes as they are now, or undefined when there is no such file. A read that fails for any
- * other reason propagates: it is not an observation of absence, and recording it as one would keep a
- * "missing" copy that replay discards as superseded the next time the result is readable.
+ * The result's raw bytes, or undefined when there is no such file.
+ *
+ * One read decides everything about the result: the damage the repair judges, the fingerprint the recovery
+ * records, and whether the damage healed before the lock attempt. Two reads cannot be paired safely — a
+ * holder that publishes a newer checkpoint between them would be fingerprinted as the damage the repair
+ * never judged, and replay would then keep the stale copy over it.
+ *
+ * A read that fails for any reason other than absence propagates: it is not an observation of absence, and
+ * recording it as one would keep a "missing" copy that replay discards as superseded the next time the
+ * result is readable.
  */
-async function bytesOrAbsent(path: string): Promise<Uint8Array | undefined> {
+async function readResultBytes(path: string): Promise<Uint8Array | undefined> {
+  let handle: FileHandle;
   try {
-    return await Bun.file(path).bytes();
+    handle = await open(path, RESULT_READ_FLAGS);
   } catch (error) {
     const code = errnoCode(error);
     if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
     throw error;
+  }
+  try {
+    return await handle.readFile();
+  } finally {
+    await handle.close();
   }
 }
 
@@ -154,30 +181,13 @@ function isKeptText(bytes: Uint8Array | undefined, content: string): boolean {
   return bytes.length === Buffer.byteLength(content, "utf8") && Buffer.from(bytes).equals(Buffer.from(content, "utf8"));
 }
 
-/**
- * The result as the damage read judged it: the raw bytes and the file's own mtime, taken in the same
- * observation.
- *
- * A deferral must record this, never what is on disk after the failed acquisition. A holder that writes a
- * newer checkpoint in that window would otherwise be paired with the old kept text: replay would compare
- * against the newer bytes, find them intact, and overwrite them with the stale copy — erasing whatever the
- * holder had recorded. The mtime is the run's place in the newest-first ordering, and a repair must not
- * move it either.
- */
-interface ResultObservation {
-  /** The raw bytes the damage read judged, or undefined when there was no file to read. */
-  readonly bytes: Uint8Array | undefined;
-  /** The file's own mtime, when there was a file to read. */
-  readonly mtimeMs: number | undefined;
-}
-
-/** Observe the result for the deferral: its raw bytes and mtime. A read that fails for a reason other than
- *  absence propagates, as the damage read's own read failure does. */
-async function observeResult(path: string): Promise<ResultObservation> {
-  const bytes = await bytesOrAbsent(path);
-  if (bytes === undefined) return { bytes: undefined, mtimeMs: undefined };
-  const stats = await stat(path).catch(() => undefined);
-  return { bytes, mtimeMs: stats?.mtimeMs };
+/** What the one read proves about the keeper's snapshot: no file, different bytes, or a nax index flag. */
+function damageFromRead(f: KeptFile, bytes: Uint8Array | undefined, hidden: ReadonlySet<string>): Damage[] {
+  return [
+    ...(bytes === undefined ? (["missing"] as const) : []),
+    ...(bytes !== undefined && !isKeptText(bytes, f.content) ? (["modified"] as const) : []),
+    ...(hidden.has(f.rel) ? (["hidden"] as const) : []),
+  ];
 }
 
 /**
@@ -191,10 +201,15 @@ async function observeResult(path: string): Promise<ResultObservation> {
  * restore and no record to report. A read that failed for a reason other than absence, and a failed
  * write, are the failure path the repair has always had.
  *
+ * The recovery also carries the run's place in the newest-first ordering — the instant the keeper saved
+ * this checkpoint, `f.orderedAt` — and never the moment this repair noticed the damage. A result that is
+ * missing has no mtime to read, and the deferral time can be later than a newer run's checkpoint, which
+ * would make replay promote this run above it and hide that run's handoff mark.
+ *
  * @param f - The file the keeper holds: what the recovery restores, and where it is written beside
  * @param damage - What the damage read found, reported in the record
  * @param ctx - The repair's trigger, which the log line names
- * @param observed - The result as the damage read saw it, which the recovery records
+ * @param observed - The result as the one read saw it, which the recovery records
  * @returns The not-restored record, or undefined when the damage healed before the lock attempt
  */
 async function deferRestore(
@@ -203,16 +218,15 @@ async function deferRestore(
   ctx: RepairContext,
   observed: ResultObservation,
 ): Promise<RepairRecord | undefined> {
-  const recoveryPath = join(dirname(f.path), RESULT_RECOVERY_FILE);
+  let recoveryPath = join(dirname(f.path), RESULT_RECOVERY_FILE);
   try {
-    const bytes = await bytesOrAbsent(f.path);
-    if (isKeptText(bytes, f.content)) return undefined;
-    await writeResultRecovery(f.path, {
+    if (isKeptText(await _repairDeps.readResultBytes(f.path), f.content)) return undefined;
+    recoveryPath = await writeResultRecovery(f.path, {
       schemaVersion: 1,
       rel: f.rel,
       damaged: observedDamage(observed.bytes),
       content: f.content,
-      orderedAt: observed.mtimeMs ?? Date.now(),
+      orderedAt: f.orderedAt,
     });
   } catch (error) {
     return failedRestore(f, damage, ctx, error);
@@ -289,11 +303,13 @@ async function repairResult(
   const pending = await withPathLock(path, async (): Promise<PendingResult | undefined> => {
     const file = keeper.get(path);
     if (!file || keeper.isInFlight(path)) return undefined;
-    const damage = await damageOf(file, state.hidden);
-    // Only a restorable damage can be deferred, so only that case needs the observation the recovery
-    // records — taken here, with the damage read, and never re-taken after the failed acquisition.
+    // One read of the result: the damage it proves, and the very bytes a deferral fingerprints. Reading
+    // again for the fingerprint would let a checkpoint another process publishes in between be recorded
+    // as the damage this repair judged, and replay would then keep the stale copy over it.
+    const observed: ResultObservation = { bytes: await _repairDeps.readResultBytes(path) };
+    const damage = damageFromRead(file, observed.bytes, state.hidden);
     if (!needsRestore(damage)) return { kind: "hidden-only", file, damage };
-    return { kind: "restorable", file, damage, observed: await observeResult(path) };
+    return { kind: "restorable", file, damage, observed };
   });
   if (!pending || pending.damage.length === 0) return undefined;
   if (pending.kind === "hidden-only") return await repairFile(pending.file, pending.damage, ctx, state.cleared);

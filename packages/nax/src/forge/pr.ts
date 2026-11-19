@@ -50,7 +50,9 @@ function listArgv(forge: ForgeKind, branch: string, repo: string | undefined): s
  * @param repo - The repository to ask about, as `[HOST/]OWNER/REPO`, when the caller has verified which
  *   repository it is about to push to. GitHub is then asked about that repository and no other, so a
  *   `GH_REPO` set in the environment, or a checkout whose default remote differs, cannot answer for a
- *   different repository. `glab` resolves its own repository and ignores this.
+ *   different repository. Naming the host (`github.com/owner/repo`) is what keeps `GH_HOST` from
+ *   answering for a repository of the same name on another host. `glab` resolves its own repository and
+ *   ignores this.
  */
 export async function hasOpenPr(
   forge: ForgeKind,

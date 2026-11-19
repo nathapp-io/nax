@@ -45,8 +45,11 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 const BRANCH = "feat/x";
 /** The push destination, as a repository with an SSH `origin` resolves it. */
 const PUSH_URL = "git@github.com:o/r.git";
-/** The `owner/repo` slug of the carded repository, which is the repository the forge is asked about. */
-const REPO = "o/r";
+/**
+ * The reference of the carded repository, as the check names it: host included, so neither `GH_REPO` nor
+ * `GH_HOST` can make the CLI answer for a repository this handoff never touches.
+ */
+const REPO = "github.com/o/r";
 /** The clock the mark's timestamp comes from. */
 const AT = new Date("2026-11-18T09:30:00.000Z");
 const FEATURE = "f1";
@@ -420,6 +423,27 @@ describe("nax-flow__send — the default open-PR seam", () => {
       run.mockRestore();
       if (before === undefined) delete process.env.GH_REPO;
       else process.env.GH_REPO = before;
+    }
+  });
+
+  test("names the push destination's host even when GH_HOST points the CLI at another one (B4)", async () => {
+    // `gh` takes its host from `--repo` only when the reference carries one; a bare `owner/repo` is looked
+    // up on `GH_HOST` when that variable is set. A conflicting host would then answer for a repository of
+    // the same name that is not the push destination, so the reference must spell github.com out.
+    const before = process.env.GH_HOST;
+    process.env.GH_HOST = "ghe.internal.example";
+    _flowHandoffDeps.hasOpenPr = defaultHasOpenPr;
+    const run = spyOn(defaultForgeDeps, "run").mockResolvedValue({ exitCode: 0, stdout: "[]", stderr: "" });
+    try {
+      await send();
+
+      const argv = run.mock.calls[0]?.[0] ?? [];
+      expect(argv).toEqual(PR_LIST_ARGV);
+      expect(argv[argv.indexOf("--repo") + 1]).toBe("github.com/o/r");
+    } finally {
+      run.mockRestore();
+      if (before === undefined) delete process.env.GH_HOST;
+      else process.env.GH_HOST = before;
     }
   });
 });

@@ -4,6 +4,15 @@ import type { RunStatePath } from "./paths";
 export interface KeptFile extends RunStatePath {
   readonly path: string;
   readonly content: string;
+  /**
+   * The epoch-millisecond instant this checkpoint was saved — the run's place in the newest-first
+   * ordering, captured when nax wrote the file and never re-read from disk.
+   *
+   * A repair that defers a damaged result records this instead of the moment it noticed the damage. A
+   * missing result has no mtime left to read, and "now" can be later than a newer run's checkpoint, which
+   * would promote the repaired run above it and hide that run's handoff mark.
+   */
+  readonly orderedAt: number;
 }
 
 export class RunStateKeeper {
@@ -20,7 +29,7 @@ export class RunStateKeeper {
   }
 
   record(path: string, p: RunStatePath, content: string): void {
-    this.kept.set(path, { ...p, path, content });
+    this.kept.set(path, { ...p, path, content, orderedAt: Date.now() });
   }
 
   get(path: string): KeptFile | undefined {

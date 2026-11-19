@@ -165,7 +165,7 @@ async function writeResult(runDir: string, next: WorkflowResultFile): Promise<vo
   await _resultDeps.mkdir(runDir, { recursive: true });
   const path = join(runDir, RESULT_FILE);
   const text = `${JSON.stringify(next, null, 2)}\n`;
-  await runStateWrite(path, { content: text }, () => writeStagedFile(path, text, _resultDeps));
+  await runStateWrite(path, { content: text }, () => writeStagedFile({ path, content: text }, _resultDeps));
 }
 
 /**

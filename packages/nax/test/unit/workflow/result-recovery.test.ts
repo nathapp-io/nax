@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { stat, utimes } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { _fileLockDeps } from "@nathapp/nax-agent/internal";
+import { _fileLockDeps, withFileLock } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { activateRunState, type RunStateHandle, repairRunState } from "@/runstate";
@@ -564,6 +564,115 @@ describe("restorePendingResults — the paths it writes and reads (B3, B5, B6)",
 
     expect(outcomes).toEqual([{ kind: "failed", recoveryPath: paths.recoveryPath }]);
     expect(await Bun.file(paths.recoveryPath).exists()).toBe(true);
+  });
+
+  test("a run directory that cannot be listed is reported failed, not skipped as empty (B10)", async () => {
+    const unlistable = await seedRun({ run: "r1", recovery: missingRecovery('{"runId":"first"}\n') });
+    const second = await seedRun({ run: "r2", recovery: missingRecovery('{"runId":"second"}\n') });
+    const readdir = _resultRecoveryDeps.readdir;
+    _resultRecoveryDeps.readdir = async (path) => {
+      if (String(path) === unlistable.runDir) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return readdir(path);
+    };
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    // A lookup error is not an empty run: pretending it were would leave the only good copy in a
+    // directory nobody is told about, while the scan reported success.
+    expect(outcomes).toContainEqual({ kind: "failed", recoveryPath: unlistable.recoveryPath });
+    expect(outcomes).toContainEqual({ kind: "restored", resultPath: second.resultPath });
+    expect(await Bun.file(unlistable.recoveryPath).exists()).toBe(true);
+    expect(await Bun.file(unlistable.resultPath).exists()).toBe(false);
+    const warned = logs.find((entry) => entry.message.includes(unlistable.runDir));
+    expect(warned?.level).toBe("warn");
+    expect(Object.keys(warned?.data ?? {})[0]).toBe("storyId");
+  });
+
+  test("a restore stamps its ordering time on the sibling it publishes, never through the result's pathname (B9)", async () => {
+    const outside = join(dir, "outside.json");
+    await Bun.write(outside, "untouched\n");
+    const outsideAt = new Date(1_000_000);
+    await utimes(outside, outsideAt, outsideAt);
+    const paths = await seedRun({
+      resultText: RESULT_TEXT,
+      recovery: { ...modifiedRecovery(sha256Of(RESULT_TEXT)), orderedAt: 2_000_000 },
+    });
+    const rename = _resultRecoveryDeps.rename;
+    _resultRecoveryDeps.rename = async (from, to) => {
+      await rename(from, to);
+      // A concurrent replacement turns the published path into a link to a file outside the run. A
+      // timestamp set by pathname after the publish would land on that file instead.
+      if (String(to) === paths.resultPath) {
+        rmSync(paths.resultPath);
+        symlinkSync(outside, paths.resultPath);
+      }
+    };
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    expect(outcomes).toEqual([{ kind: "restored", resultPath: paths.resultPath }]);
+    expect((await stat(outside)).mtimeMs).toBe(1_000_000);
+  });
+});
+
+describe("writeResultRecovery — a recovery lock that cannot be taken (B8)", () => {
+  /** Hold the recovery lock, and make every wait for it reach its deadline at once. */
+  async function writeUnderStalledLock(resultPath: string, recovery: ResultRecovery): Promise<string> {
+    const lockPath = join(workflowDir, ".result-recovery.lock");
+    const now = _fileLockDeps.now;
+    const base = now();
+    let calls = 0;
+    _fileLockDeps.now = () => (calls++ === 0 ? base : base + 60_000 * calls);
+    try {
+      return await withFileLock(lockPath, () => writeResultRecovery(resultPath, recovery), {
+        lockName: "handoff",
+        errorPrefix: "[test]",
+      });
+    } finally {
+      _fileLockDeps.now = now;
+    }
+  }
+
+  test("keeps the good copy under a name of its own, and the next replay applies it (B8)", async () => {
+    const paths = await seedRun({});
+
+    const written = await writeUnderStalledLock(paths.resultPath, missingRecovery());
+
+    // The lock could not be taken, so the payload went to a name no other call can choose — and did not
+    // land at the canonical one, which a replay of an earlier payload may still be consuming.
+    expect(written.startsWith(`${paths.recoveryPath}.pending-`)).toBe(true);
+    expect(JSON.parse(await Bun.file(written).text())).toEqual(missingRecovery());
+    expect(await Bun.file(paths.recoveryPath).exists()).toBe(false);
+
+    expect(await restorePendingResults(workflowDir)).toEqual([{ kind: "restored", resultPath: paths.resultPath }]);
+    expect(await Bun.file(paths.resultPath).text()).toBe(RECOVERED_TEXT);
+    expect(await Bun.file(written).exists()).toBe(false);
+  });
+
+  test("a replay consumes a deferred payload beside the canonical one and removes only what it read (B8)", async () => {
+    const paths = await seedRun({ recoveryText: JSON.stringify(missingRecovery('{"runId":"first"}\n')) });
+    await Bun.write(`${paths.recoveryPath}.pending-a`, JSON.stringify(missingRecovery()));
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    // The canonical payload restores the result; the deferred one then finds the damage gone and is
+    // discarded. Neither payload file survives its own replay, and no payload is removed unread.
+    expect(outcomes).toEqual([
+      { kind: "restored", resultPath: paths.resultPath },
+      { kind: "superseded", resultPath: paths.resultPath },
+    ]);
+    expect(readdirSync(paths.runDir)).toEqual(["result.json"]);
+  });
+
+  test("a payload that cannot be published is still the caller's failure (B8)", async () => {
+    const paths = await seedRun({});
+    _resultRecoveryDeps.rename = async () => {
+      throw Object.assign(new Error("cannot rename"), { code: "EIO" });
+    };
+
+    await expect(writeUnderStalledLock(paths.resultPath, missingRecovery())).rejects.toThrow("cannot rename");
+
+    expect(readdirSync(paths.runDir)).toEqual([]);
   });
 });
 

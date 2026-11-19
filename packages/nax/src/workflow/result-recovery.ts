@@ -23,24 +23,37 @@
  * at all. The recovery lock is held only for one local read-and-apply, so a deferral never waits for the
  * long-lived handoff lock.
  *
- * A restore also puts the run back where the checkpoint ordering had it (`orderedAt`: the result's own
- * mtime when it was judged damaged, or the instant it was found missing). Newest-run selection reads that
- * mtime, so a repair must not read as newer workflow progress than a run that actually wrote after it.
+ * That lock must never cost a repair the only good copy it has. A deferral that cannot take it — a
+ * stalled holder, an orphaned reclamation claim — writes the payload under a unique name of its own
+ * beside the canonical one (`result.recovery.json.pending-<uuid>`), which the next replay discovers,
+ * applies and removes exactly like the canonical file. No write ever replaces a payload another call
+ * published, and a replay removes only the file it read.
+ *
+ * A restore also puts the run back where the checkpoint ordering had it (`orderedAt`: when the saved
+ * checkpoint was saved). Newest-run selection reads that mtime, so a repair must not read as newer
+ * workflow progress than a run that actually wrote after it.
  *
  * `runStateWrite` comes from `@/runstate/store`, never the `@/runstate` barrel: `repair.ts` imports
  * this module, so the barrel would close a runtime import cycle (`check:import-cycles`). Every log
  * line is `storyId: "_run"`-first at the `runstate` stage.
  */
 import { constants } from "node:fs";
-import { appendFile, type FileHandle, lstat, mkdir, open, readdir, rename, unlink, utimes } from "node:fs/promises";
+import { appendFile, type FileHandle, lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
+import { errorMessage, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import { runStateWrite } from "@/runstate/store";
 import { writeStagedFile } from "./atomic-write";
 
 /** `<runDir>/result.recovery.json`: the good bytes of a damaged result.json a repair could not restore. */
 export const RESULT_RECOVERY_FILE = "result.recovery.json";
+/**
+ * The infix of a payload a deferral could not publish under the canonical name: the recovery lock was
+ * held or orphaned, so it keeps the good copy at `result.recovery.json.pending-<uuid>` instead. Unique
+ * per write, so two deferrals never share one, and matched by the replay's listing so the payload is
+ * applied as soon as the lock is free.
+ */
+const DEFERRED_RECOVERY_INFIX = ".pending-";
 
 export interface ResultRecovery {
   readonly schemaVersion: 1;
@@ -51,10 +64,9 @@ export interface ResultRecovery {
   /** The kept (good) result.json text. */
   readonly content: string;
   /**
-   * The epoch-millisecond time of the run's place in the newest-first ordering: the damaged result's own
-   * mtime, or the instant the repair found it missing. The restore writes it back, so replaying an older
-   * run does not make it the newest run — which would hide a newer run's handoff mark from the publish and
-   * handoff guards.
+   * The epoch-millisecond time of the run's place in the newest-first ordering: the instant nax saved the
+   * kept checkpoint. The restore writes it back, so replaying an older run does not make it the newest
+   * run — which would hide a newer run's handoff mark from the publish and handoff guards.
    */
   readonly orderedAt?: number;
 }
@@ -65,8 +77,18 @@ export type RecoveryOutcome =
   | { readonly kind: "unreadable"; readonly recoveryPath: string }
   | { readonly kind: "failed"; readonly recoveryPath: string };
 
-/** Test seam for the module's filesystem calls, as `_resultDeps` is for result.ts. */
-export const _resultRecoveryDeps = { lstat, mkdir, open, readdir, rename, unlink, utimes };
+/**
+ * Test seam for the module's filesystem calls, as `_resultDeps` is for result.ts. `readdir` names are
+ * strings, so the seam says so once instead of every caller narrowing the overloaded default.
+ */
+export const _resultRecoveryDeps: {
+  lstat: typeof lstat;
+  mkdir: typeof mkdir;
+  open: typeof open;
+  readdir: (path: string) => Promise<string[]>;
+  rename: typeof rename;
+  unlink: typeof unlink;
+} = { lstat, mkdir, open, readdir: (path) => readdir(path, { encoding: "utf8" }), rename, unlink };
 
 type RecoveryDamage = ResultRecovery["damaged"];
 
@@ -107,7 +129,7 @@ function isSha256Hex(value: unknown): value is string {
   return typeof value === "string" && SHA256_HEX.test(value);
 }
 
-/** A time this module can hand to `utimes`: a finite number of epoch milliseconds. */
+/** A time the staged write can stamp: a finite number of epoch milliseconds. */
 function isEpochMs(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -206,30 +228,17 @@ async function holdsDamage(resultPath: string, damaged: RecoveryDamage): Promise
 }
 
 /**
- * Put the run back at the ordering time the recovery recorded. A failure is reported, not thrown: the
- * result is already restored, and the caller's own work matters more than the mtime.
- */
-async function restoreOrdering(resultPath: string, orderedAt: number | undefined): Promise<string | undefined> {
-  if (orderedAt === undefined) return undefined;
-  const seconds = orderedAt / 1000;
-  try {
-    await _resultRecoveryDeps.utimes(resultPath, seconds, seconds);
-    return undefined;
-  } catch (error) {
-    return `could not keep the run's ordering time: ${errorMessage(error)}`;
-  }
-}
-
-/**
- * Commit the kept text as the result through a private staging sibling, then restore the run's place in
- * the checkpoint ordering.
+ * Commit the kept text as the result through a private staging sibling, stamping the run's place in the
+ * checkpoint ordering on that sibling before the rename publishes it.
  *
- * @returns Why the ordering could not be restored, when it could not
+ * The ordering time is set through the staging handle, never by path after the rename: `utimes` on the
+ * result's pathname follows whatever is there when it runs, so a result replaced by a symlink in between
+ * would stamp an unrelated file.
  */
-async function commitResult(resultPath: string, recovery: ResultRecovery): Promise<string | undefined> {
-  const { content } = recovery;
-  await runStateWrite(resultPath, { content }, () => writeStagedFile(resultPath, content, _resultRecoveryDeps));
-  return await restoreOrdering(resultPath, recovery.orderedAt);
+async function commitResult(resultPath: string, recovery: ResultRecovery): Promise<void> {
+  const { content, orderedAt } = recovery;
+  const write = { path: resultPath, content, ...(orderedAt === undefined ? {} : { atMs: orderedAt }) };
+  await runStateWrite(resultPath, { content }, () => writeStagedFile(write, _resultRecoveryDeps));
 }
 
 /** Best effort removal of a recovery file: why it is still there, when it is. */
@@ -301,9 +310,13 @@ async function supersede(resultPath: string, recoveryPath: string): Promise<Reco
   return { kind: "superseded", resultPath };
 }
 
-/** One run directory: apply its recovery file, discard it, or report why neither happened. */
-async function restoreRun(runDir: string): Promise<RecoveryOutcome | undefined> {
-  const recoveryPath = join(runDir, RESULT_RECOVERY_FILE);
+/**
+ * One recovery payload: apply its good copy, discard it, or report why neither happened.
+ *
+ * @param runDir - The run directory the payload belongs to
+ * @param recoveryPath - The payload file: the canonical recovery file, or one a blocked deferral named
+ */
+async function restoreRun(runDir: string, recoveryPath: string): Promise<RecoveryOutcome | undefined> {
   const resultPath = join(runDir, RESULT_FILE);
   let read: PlainRead<string>;
   try {
@@ -312,8 +325,8 @@ async function restoreRun(runDir: string): Promise<RecoveryOutcome | undefined> 
     return failed(recoveryPath, resultPath, error);
   }
   if (!read.ok) {
-    // No recovery file: nothing pending. A FIFO, link or directory in its place is a run whose good
-    // copy cannot be read, which keeps it on disk and moves on to the next run.
+    // Gone since the listing: nothing pending. A FIFO, link or directory in its place is a run whose
+    // good copy cannot be read, which keeps it on disk and moves on to the next payload.
     return read.kind === "absent"
       ? undefined
       : failed(recoveryPath, resultPath, `${recoveryPath} is not a regular file`);
@@ -326,14 +339,13 @@ async function restoreRun(runDir: string): Promise<RecoveryOutcome | undefined> 
     });
     return { kind: "unreadable", recoveryPath };
   }
-  let ordering: string | undefined;
   try {
     const holds = await holdsDamage(resultPath, recovery.damaged);
     if (holds === "unreadable") {
       return failed(recoveryPath, resultPath, `${resultPath} is not a regular file this module can read`);
     }
     if (!holds) return await supersede(resultPath, recoveryPath);
-    ordering = await commitResult(resultPath, recovery);
+    await commitResult(resultPath, recovery);
   } catch (error) {
     return failed(recoveryPath, resultPath, error);
   }
@@ -341,7 +353,6 @@ async function restoreRun(runDir: string): Promise<RecoveryOutcome | undefined> 
   await noteInLedger(runDir, recovery);
   warn(
     withNotes(`[WARN] restored ${recovery.rel} from ${recoveryPath}`, [
-      ordering,
       unlinkError === undefined ? undefined : `could not remove the recovery file: ${unlinkError}`,
     ]),
     {
@@ -363,42 +374,91 @@ async function isRealDirectory(path: string): Promise<boolean> {
   }
 }
 
-/** Whether anything is at the path at all: `lstat`, so a link or a FIFO counts as present. */
-async function pathExists(path: string): Promise<boolean> {
+/** Whether the name is a payload this module wrote: the canonical recovery file, or one a blocked deferral named. */
+function isRecoveryPayloadName(name: string): boolean {
+  return name === RESULT_RECOVERY_FILE || name.startsWith(`${RESULT_RECOVERY_FILE}${DEFERRED_RECOVERY_INFIX}`);
+}
+
+/** The recovery payloads a run directory holds — the canonical file first — or why they could not be listed. */
+type PayloadListing =
+  | { readonly ok: true; readonly paths: readonly string[] }
+  | { readonly ok: false; readonly error: unknown };
+
+/**
+ * The payloads pending in one run directory. A directory that is gone holds none; every other listing
+ * failure — a permission denied, a link loop — is *not* absence, because the run may hold the only good
+ * copy of its result, so it is reported instead of being skipped as if nothing were pending.
+ */
+async function listRecoveryPayloads(runDir: string): Promise<PayloadListing> {
+  let names: string[];
   try {
-    await _resultRecoveryDeps.lstat(path);
-    return true;
-  } catch {
-    // A path this process cannot stat is not one it can read either; the locked read reports the failure.
-    return false;
+    names = await _resultRecoveryDeps.readdir(runDir);
+  } catch (error) {
+    if (isMissingPath(error)) return { ok: true, paths: [] };
+    return { ok: false, error };
   }
+  // `result.recovery.json` sorts before its own `.pending-` siblings, so the canonical payload leads.
+  return {
+    ok: true,
+    paths: names
+      .filter(isRecoveryPayloadName)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => join(runDir, name)),
+  };
+}
+
+/** A run directory whose payloads could not be listed: a per-run failure the next scan retries. */
+function unlistable(runDir: string, error: unknown): RecoveryOutcome {
+  const recoveryPath = join(runDir, RESULT_RECOVERY_FILE);
+  const reason = errorMessage(error);
+  warn(`[WARN] could not look for recovery files in ${runDir} (${reason}), so none were restored from it`, {
+    path: runDir,
+    recoveryPath,
+    error: reason,
+  });
+  return { kind: "failed", recoveryPath };
+}
+
+/** Every payload of one run directory, one at a time: a payload that fails leaves the rest to be applied. */
+async function restorePayloads(runDir: string, paths: readonly string[]): Promise<RecoveryOutcome[]> {
+  const outcomes: RecoveryOutcome[] = [];
+  for (const path of paths) {
+    const outcome = await restoreRun(runDir, path);
+    if (outcome !== undefined) outcomes.push(outcome);
+  }
+  return outcomes;
 }
 
 /**
  * One run directory under the recovery lock: a deferral's publication cannot land between the read of a
  * payload and the removal of the payload read, so neither outcome discards a copy it never consumed.
  *
- * A run with no recovery file — every run, on every result write — is decided by one `lstat` instead: a
- * deferral that publishes an instant after it is simply applied by the next lock-take.
+ * The listing replaces the existence check this module used to make: a run with no payload — every run, on
+ * every result write — is still decided without the lock, and a run directory that cannot be listed is
+ * reported rather than skipped. A deferral that publishes an instant after the listing is simply applied
+ * by the next lock-take.
  */
-async function restoreLocked(workflowDir: string, runDir: string): Promise<RecoveryOutcome | undefined> {
-  const recoveryPath = join(runDir, RESULT_RECOVERY_FILE);
-  if (!(await pathExists(recoveryPath))) return undefined;
+async function restoreLocked(workflowDir: string, runDir: string): Promise<readonly RecoveryOutcome[]> {
+  const listing = await listRecoveryPayloads(runDir);
+  if (!listing.ok) return [unlistable(runDir, listing.error)];
+  if (listing.paths.length === 0) return [];
   try {
-    return await withFileLock(join(workflowDir, RECOVERY_LOCK_FILE), () => restoreRun(runDir), {
+    const lockPath = join(workflowDir, RECOVERY_LOCK_FILE);
+    const task = () => restorePayloads(runDir, listing.paths);
+    return await withFileLock(lockPath, task, {
       lockName: "result-recovery",
       errorPrefix: "[runstate]",
       timeoutMs: RECOVERY_LOCK_WAIT_MS,
     });
   } catch (error) {
-    return failed(recoveryPath, join(runDir, RESULT_FILE), error);
+    return listing.paths.map((path) => failed(path, join(runDir, RESULT_FILE), error));
   }
 }
 
 /** One entry of the workflow directory, when it is a run directory this module may read. */
-async function restoreEntry(workflowDir: string, name: string): Promise<RecoveryOutcome | undefined> {
+async function restoreEntry(workflowDir: string, name: string): Promise<readonly RecoveryOutcome[]> {
   const runDir = join(workflowDir, name);
-  if (!(await isRealDirectory(runDir))) return undefined;
+  if (!(await isRealDirectory(runDir))) return [];
   return await restoreLocked(workflowDir, runDir);
 }
 
@@ -425,32 +485,63 @@ export async function restorePendingResults(workflowDir: string): Promise<readon
   const names = await listEntries(workflowDir);
   if (names === undefined) return [];
   const outcomes: RecoveryOutcome[] = [];
-  for (const name of names) {
-    const outcome = await restoreEntry(workflowDir, name);
-    if (outcome !== undefined) outcomes.push(outcome);
-  }
+  for (const name of names) outcomes.push(...(await restoreEntry(workflowDir, name)));
   return outcomes;
 }
 
+/** A payload name a blocked deferral can use: unique per call, so no write ever replaces another's payload. */
+function deferredRecoveryPath(recoveryPath: string): string {
+  return `${recoveryPath}${DEFERRED_RECOVERY_INFIX}${crypto.randomUUID()}`;
+}
+
+/** The lock failures that mean another writer holds the recovery lock, not that the payload cannot be kept. */
+const RECOVERY_LOCK_CODES: ReadonlySet<string> = new Set([
+  "FILE_LOCK_TIMEOUT",
+  "FILE_LOCK_CLAIM_ORPHANED",
+  "FILE_LOCK_INVALID",
+]);
+
 /**
- * Create `dirname(resultPath)` (recursive), then write the recovery file beside `resultPath` through a
- * private staging sibling of its own. Replaces an existing one.
+ * Create `dirname(resultPath)` (recursive), then keep `recovery` beside `resultPath` through a private
+ * staging sibling of its own. Replaces an existing payload.
  *
  * The write takes the recovery lock a replay holds: a payload that landed between a replay's read and its
- * cleanup would otherwise be removed as if it were the payload the replay consumed.
+ * cleanup would otherwise be removed as if it were the payload the replay consumed. That lock must never
+ * cost the run the only good copy it has, so a write that cannot take it — a stalled holder, an orphaned
+ * reclamation claim, a recovery lock file that is not a lock — publishes the same payload under a unique
+ * name of its own instead, which no other call can name and which the next replay discovers, applies and
+ * removes beside the canonical file.
+ *
+ * @param resultPath - The result the payload restores
+ * @param recovery - The good copy and the damage it belongs to
+ * @returns The payload path the good copy is at, so the caller can name it to the operator
  */
-export async function writeResultRecovery(resultPath: string, recovery: ResultRecovery): Promise<void> {
+export async function writeResultRecovery(resultPath: string, recovery: ResultRecovery): Promise<string> {
   const runDir = dirname(resultPath);
   await _resultRecoveryDeps.mkdir(runDir, { recursive: true });
   const recoveryPath = join(runDir, RESULT_RECOVERY_FILE);
   const payload = `${JSON.stringify(recovery, null, 2)}\n`;
-  await withFileLock(
-    join(dirname(runDir), RECOVERY_LOCK_FILE),
-    () => writeStagedFile(recoveryPath, payload, _resultRecoveryDeps),
-    {
+  const write = (path: string) => writeStagedFile({ path, content: payload }, _resultRecoveryDeps);
+  try {
+    await withFileLock(join(dirname(runDir), RECOVERY_LOCK_FILE), () => write(recoveryPath), {
       lockName: "result-recovery",
       errorPrefix: "[runstate]",
       timeoutMs: RECOVERY_LOCK_WAIT_MS,
-    },
-  );
+    });
+    return recoveryPath;
+  } catch (error) {
+    // A failed write is the caller's failure to report; only the lock can be worked around.
+    if (!(error instanceof NaxError) || !RECOVERY_LOCK_CODES.has(error.code)) throw error;
+    const deferred = deferredRecoveryPath(recoveryPath);
+    await write(deferred);
+    warn(
+      `[WARN] could not take the result recovery lock, so the good copy went to ${deferred} (${errorMessage(error)})`,
+      {
+        path: recoveryPath,
+        recoveryPath: deferred,
+        error: errorMessage(error),
+      },
+    );
+    return deferred;
+  }
 }

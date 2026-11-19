@@ -37,6 +37,8 @@ const GITHUB_SCP_RE = /^git@github\.com:([^/?#]+)\/([^/?#]+)$/i;
 const GITHUB_SSH_RE = /^ssh:\/\/git@github\.com\/([^/?#]+)\/([^/?#]+)$/i;
 const GIT_SUFFIX = ".git";
 const GITHUB_WEB_ROOT = "https://github.com";
+/** The host `gh --repo HOST/OWNER/REPO` must name, so `GH_HOST` cannot redirect a verified read. */
+const GITHUB_HOST = "github.com";
 /** A remote may be pasted with a trailing slash; the path segments never end in one. */
 const TRAILING_SLASHES = /\/+$/;
 
@@ -148,21 +150,23 @@ export function normalizeGitHubRemote(url: string): string | null {
 }
 
 /**
- * The `owner/repo` slug a normalised remote names, or null when it names no GitHub repository.
+ * The `HOST/OWNER/REPO` reference a normalised remote names, or null when it names no GitHub repository.
  *
- * A forge read that names its repository explicitly — `gh pr list --repo <owner>/<repo>` — asks about
- * the repository the caller verified, not about whichever one the CLI resolves from its own environment
- * (`GH_REPO`, else the working directory's remote). Two repositories can hold a branch of the same name,
- * and only one of them is the push destination.
+ * A forge read that names its repository explicitly — `gh pr list --repo HOST/OWNER/REPO` — asks about
+ * the repository the caller verified, not about whichever one the CLI resolves from its own environment.
+ * The host is part of the reference on purpose: `gh` reads `GH_HOST` before it discovers a repository from
+ * the working directory, so a bare `OWNER/REPO` would still be looked up on whichever host that variable
+ * names, while the push the caller verified goes to github.com. Two hosts can hold a repository and a
+ * branch of the same name, and only one of them is the push destination.
  *
  * @param remoteUrl - A remote as `normalizeGitHubRemote` returns it
  */
-export function githubRepoSlug(remoteUrl: string): string | null {
+export function githubRepoRef(remoteUrl: string): string | null {
   const prefix = `${GITHUB_WEB_ROOT}/`;
   if (!remoteUrl.startsWith(prefix)) return null;
   const parts = remoteUrl.slice(prefix.length).split("/");
   if (parts.length !== 2 || parts.some((part) => part.length === 0)) return null;
-  return parts.join("/");
+  return [GITHUB_HOST, ...parts].join("/");
 }
 
 /**

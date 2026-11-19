@@ -13,10 +13,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { utimes } from "node:fs/promises";
+import { stat, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { _fileLockDeps, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import {
   _repairDeps,
@@ -30,8 +30,15 @@ import {
 } from "@/runstate";
 import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
+import { HANDOFF_MARK_FILE, readNewestHandoffMark } from "@/workflow/handoff-mark";
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
-import { newStoryRecord, readResult, upsertStoryRecord, withLockedFeatureResult } from "@/workflow/result";
+import {
+  newStoryRecord,
+  readResult,
+  runDirsNewestFirst,
+  upsertStoryRecord,
+  withLockedFeatureResult,
+} from "@/workflow/result";
 import { _resultRecoveryDeps, RESULT_RECOVERY_FILE, restorePendingResults } from "@/workflow/result-recovery";
 
 withDepsRestore(_fileLockDeps);
@@ -309,9 +316,47 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
     expect(await Bun.file(recoveryPath).exists()).toBe(false);
   });
 
-  test("the deferral records the damaged result's own mtime as the run's ordering time (B5)", async () => {
-    // Newest-run selection reads result.json's mtime, so a replay that wrote the result with "now"
-    // would make the repaired run the newest one and hide a later run's handoff mark.
+  test("a checkpoint published during the damage read is never taken as the damage (B1)", async () => {
+    // The damage the repair judges and the fingerprint the recovery records come from one read. Two reads
+    // would let a holder's newer checkpoint in between be the bytes replay compares against: they would
+    // look intact, and replay would overwrite them with the stale copy the repair kept.
+    await whileHeld(async () => {
+      await Bun.write(resultPath, DAMAGED);
+      const readResultBytes = _repairDeps.readResultBytes;
+      let replaced = false;
+      _repairDeps.readResultBytes = async (path) => {
+        const bytes = await readResultBytes(path);
+        // The newer checkpoint lands right after this read, before the repair can judge its bytes.
+        if (!replaced && String(path) === resultPath) {
+          replaced = true;
+          await Bun.write(resultPath, NEWER);
+        }
+        return bytes;
+      };
+      try {
+        expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([
+          { path: resultPath, rel: REL, damage: ["modified"], restored: false },
+        ]);
+      } finally {
+        _repairDeps.readResultBytes = readResultBytes;
+      }
+    });
+
+    expect(await recoveryFile()).toMatchObject({
+      damaged: { kind: "modified", sha256: sha256Hex(new TextEncoder().encode(DAMAGED)) },
+      content: KEPT,
+    });
+    expect(await restorePendingResults(workflowFeatureDir(dir, FEATURE))).toEqual([{ kind: "superseded", resultPath }]);
+    expect(await Bun.file(resultPath).text()).toBe(NEWER);
+  });
+
+  test("the deferral records the ordering time the checkpoint was saved with, not the damage's or its own (B5)", async () => {
+    // Newest-run selection reads result.json's mtime, so a replay that wrote "now" — or the mtime the
+    // damage left — would make the repaired run the newest one and hide a later run's handoff mark.
+    const keeper = activeKeepers()[0];
+    assertDefined(keeper, "the run's keeper");
+    const kept = keeper.get(resultPath);
+    assertDefined(kept, "the keeper's saved checkpoint");
     const damagedAt = new Date(5_000);
     await whileHeld(async () => {
       await Bun.write(resultPath, DAMAGED);
@@ -319,7 +364,35 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
       expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([{ rel: REL, restored: false }]);
     });
 
-    expect((await recoveryFile()).orderedAt).toBe(5_000);
+    expect((await recoveryFile()).orderedAt).toBe(kept.orderedAt);
+    expect((await recoveryFile()).orderedAt).not.toBe(5_000);
+  });
+
+  test("a missing older result replays below a newer run, so that run's handoff mark stays (B5)", async () => {
+    // The run whose result goes missing is older than a second run of the same feature, and its replay
+    // happens after that run's checkpoint. Recording the deferral time would promote the repaired run, and
+    // the handoff mark on the newer one — which the publish and handoff guards read — would disappear.
+    const newerRunDir = workflowRunDir(dir, FEATURE, "r2");
+    mkdirSync(newerRunDir, { recursive: true });
+    const newerResult = join(newerRunDir, "result.json");
+    await Bun.write(newerResult, '{"schemaVersion":1,"runId":"r2","stories":{}}\n');
+    const keeper = activeKeepers()[0];
+    assertDefined(keeper, "the run's keeper");
+    const kept = keeper.get(resultPath);
+    assertDefined(kept, "the keeper's saved checkpoint");
+    const newerAt = new Date((await stat(resultPath)).mtimeMs + 20);
+    await utimes(newerResult, newerAt, newerAt);
+    const markPath = join(newerRunDir, HANDOFF_MARK_FILE);
+    await Bun.write(markPath, JSON.stringify({ schemaVersion: 1, at: "T", flowId: "fl1" }));
+    // Both the deferral and the replay happen after the newer run wrote: that is the gap it used to lose.
+    await Bun.sleep(120);
+
+    await damageThenRepair("run-end");
+
+    expect((await recoveryFile()).orderedAt).toBe(kept.orderedAt);
+    expect(await restorePendingResults(workflowFeatureDir(dir, FEATURE))).toEqual([{ kind: "restored", resultPath }]);
+    expect(await runDirsNewestFirst(workflowFeatureDir(dir, FEATURE))).toEqual([newerRunDir, runDir]);
+    expect((await readNewestHandoffMark(workflowFeatureDir(dir, FEATURE)))?.path).toBe(markPath);
   });
 
   test("a real malformed handoff lock takes the failed-restore path, not a deferral (B7)", async () => {
