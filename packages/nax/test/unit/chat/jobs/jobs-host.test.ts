@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
   assertDefined,
@@ -8,9 +8,11 @@ import {
   makePRD,
   makeStory,
   makeTempDir,
+  withDepsRestore,
 } from "@test/helpers";
 import { createChatAskController } from "@/chat/ask-controller";
 import type { ChatMode } from "@/chat/chat-mode";
+import { _flowProviderDeps } from "@/chat/flow";
 import { createHostJobs } from "@/chat/jobs";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
 import { _jobsHostDeps } from "@/chat/jobs/jobs-host";
@@ -164,6 +166,11 @@ async function proposeChain(
 }
 
 describe("createHostJobs full mode and a handoff chain (B1)", () => {
+  withDepsRestore(_flowProviderDeps);
+  beforeEach(() => {
+    _flowProviderDeps.readFlowOrigin = async () => "https://github.com/o/r";
+  });
+
   test("asks the real question before activating a chain that carries a handoff", async () => {
     const f = await compose(() => "full", KODA);
 

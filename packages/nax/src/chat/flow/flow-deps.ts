@@ -12,17 +12,26 @@
  */
 import { commitAndPush, headSha } from "@/finish";
 import { createKodaFlow } from "./flow-koda";
-import { isFlowTreeDirty, readFlowPushUrl, readFlowRepoState } from "./flow-repo";
+import { isFlowTreeDirty, readFlowOrigin, readFlowPushUrl, readFlowRepoState } from "./flow-repo";
 
 /**
  * The seam every collaborator of a flow send goes through: the repository read, the
  * push destination, the post-allow re-check, the push and the koda create.
  */
 export const _flowProviderDeps: {
+  readFlowOrigin: typeof readFlowOrigin;
   readFlowRepoState: typeof readFlowRepoState;
   readFlowPushUrl: typeof readFlowPushUrl;
   headSha: (repoRoot: string) => Promise<string | null>;
   isDirty: (repoRoot: string) => Promise<boolean>;
   commitAndPush: typeof commitAndPush;
   createKodaFlow: typeof createKodaFlow;
-} = { readFlowRepoState, readFlowPushUrl, headSha, isDirty: isFlowTreeDirty, commitAndPush, createKodaFlow };
+} = {
+  readFlowOrigin,
+  readFlowRepoState,
+  readFlowPushUrl,
+  headSha,
+  isDirty: isFlowTreeDirty,
+  commitAndPush,
+  createKodaFlow,
+};

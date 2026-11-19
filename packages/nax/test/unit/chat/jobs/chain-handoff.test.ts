@@ -9,8 +9,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { handoffStepArgv } from "@/chat/flow/flow-handoff-input";
+import { _flowRepoDeps } from "@/chat/flow/flow-repo";
 import { type ChatChains, createChainController } from "@/chat/jobs/chain-controller";
 import { resolveChainProposal } from "@/chat/jobs/chain-tools";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
@@ -30,8 +31,10 @@ let chains: ChatChains;
 let options: JobsProviderOptions;
 let approve: ReturnType<typeof mock<JobsProviderOptions["approve"]>>;
 const originalGit = _jobsLaunchDeps.git;
+withDepsRestore(_flowRepoDeps);
 
 beforeEach(async () => {
+  _flowRepoDeps.git = async () => ({ exitCode: 0, stdout: "git@github.com:Owner/Repo.git\n", stderr: "" });
   root = makeTempDir("chain-handoff-");
   await Bun.write(join(root, ".nax/features/f1/prd.json"), "{}");
   const jobs: ChatJobs = {
@@ -99,6 +102,7 @@ describe("resolveChainProposal handoff steps", () => {
       kind: "handoff",
       target: "f1",
       argv: handoffStepArgv({ feature: "f1", roles, costCapUsd: 5 }),
+      handoffOrigin: "https://github.com/owner/repo",
     });
   });
 
@@ -211,8 +215,22 @@ describe("createChainTools handoff card", () => {
     );
   });
 
-  test("AC-12 says koda asks for its own approval before billing", async () => {
-    expect((await card()).split("\n")).toContain(approval);
+  test("AC-12 names the normalized origin and says koda asks for its own approval before billing", async () => {
+    const lines = (await card()).split("\n");
+    expect(lines).toContain("handoff origin https://github.com/owner/repo");
+    expect(lines).toContain(approval);
+  });
+
+  test("refuses a handoff whose origin cannot be resolved before showing a card", async () => {
+    _flowRepoDeps.git = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+    const tool = (await createJobsProvider(options).tools(root)).find((entry) => entry.localName === "chain");
+    assertDefined(tool, "chain tool registered");
+    const result = await tool.run(
+      { steps: [runNone, handoff()] },
+      { root, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
+    );
+    expect(result.content).toBe("[chat] step 2: the repository has no origin remote");
+    expect(approve).not.toHaveBeenCalled();
   });
 
   test("a chain with no handoff step does not mention koda's approval", async () => {

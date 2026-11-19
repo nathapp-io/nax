@@ -181,7 +181,7 @@ async function treeFailure(repoRoot: string): Promise<string | undefined> {
 }
 
 /** The normalised origin remote, or the failure that keeps koda from reading the repo. */
-async function remoteOrFailure(repoRoot: string): Promise<string | FlowRepoFailure> {
+export async function readFlowOrigin(repoRoot: string): Promise<string | FlowRepoFailure> {
   const origin = await gitAnswer(["remote", "get-url", "origin"], repoRoot);
   if (origin === null) return { ok: false, message: NO_ORIGIN_MESSAGE };
   const raw = origin.stdout.trim();
@@ -233,7 +233,7 @@ export async function readFlowRepoState(repoRoot: string, specPaths: readonly st
   const sha = await _flowRepoDeps.headSha(repoRoot);
   if (sha === null) return { ok: false, message: NO_COMMITS_MESSAGE };
 
-  const remoteUrl = await remoteOrFailure(repoRoot);
+  const remoteUrl = await readFlowOrigin(repoRoot);
   if (typeof remoteUrl !== "string") return remoteUrl;
 
   const specs = await specFailure(repoRoot, sha, specPaths);

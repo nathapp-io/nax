@@ -465,7 +465,11 @@ export async function sendFlowHandoff(
   const ready = await preflightOrRefusal(parsed, options.repoRoot);
   if (!ready.ok) return refusedHandoff(ready.result, parsed.feature, options.chains);
 
-  const admission = options.chains?.admit({ kind: "handoff", argv: handoffStepArgv(parsed) });
+  const admission = options.chains?.admit({
+    kind: "handoff",
+    argv: handoffStepArgv(parsed),
+    handoffOrigin: ready.state.remoteUrl,
+  });
   if (admission?.kind === "auto")
     return sendApprovedHandoff({ input: parsed, ready, signal, auto: admission }, options);
   const decision = await options.approve(approvalCard(ready, parsed, { signal, note: admission?.note }));

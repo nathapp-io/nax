@@ -2,12 +2,14 @@
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { WorkflowPublishMode } from "@/config";
+import { _flowProviderDeps } from "../flow/flow-deps";
 import {
   type FlowHandoffInput,
   formatHandoffCostCap,
   handoffStepArgv,
   parseFlowHandoffInput,
 } from "../flow/flow-handoff-input";
+import { cardText } from "../flow/flow-send-steps";
 import { resolveTargetRepo } from "../target-repo";
 import {
   buildChainStepArgv,
@@ -220,8 +222,10 @@ function jobStep(step: number, resolved: StepTarget, options: Options): { chainS
 }
 
 /** A handoff step's chain entry: the flow tool's own call, in the chat's checkout. */
-function handoffStep(input: FlowHandoffInput): ChainStep {
-  return { kind: "handoff", argv: handoffStepArgv(input), target: input.feature };
+async function handoffStep(input: FlowHandoffInput, repoRoot: string): Promise<ChainStep | InputError> {
+  const origin = await _flowProviderDeps.readFlowOrigin(repoRoot);
+  if (typeof origin !== "string") return { error: origin.message };
+  return { kind: "handoff", argv: handoffStepArgv(input), target: input.feature, handoffOrigin: origin };
 }
 
 async function resolveSteps(
@@ -234,12 +238,13 @@ async function resolveSteps(
   const existingPlanPrds: { step: number; feature: string }[] = [];
   for (const [index, entry] of parsed.entries()) {
     const step = index + 1;
-    // A handoff runs no launch and reads no repo: it is the flow tool's own call, in the chat's checkout.
     if (entry.kind === "handoff") {
       const refusal = handoffRefusal(entry.input, step, earlier, options.repoRoot);
       if (refusal !== undefined) return refusal;
+      const resolved = await handoffStep(entry.input, options.repoRoot);
+      if ("error" in resolved) return stepError(step, resolved.error);
       handoff = entry.input;
-      steps.push(handoffStep(handoff));
+      steps.push(resolved);
       continue;
     }
     const resolved = await resolveStepTarget(entry, step, options);
@@ -341,7 +346,9 @@ async function chainReason(proposal: ResolvedChainProposal, options: Options): P
       ? ["run steps' asks you do not answer in chat fall to their timeout defaults"]
       : []),
     // US-007: the flow's own approval is the one gate this chain does not hold.
-    ...(proposal.steps.some((step) => step.kind === "handoff") ? [HANDOFF_BILLING_NOTE] : []),
+    ...proposal.steps.flatMap((step) =>
+      step.handoffOrigin === undefined ? [] : [`handoff origin ${cardText(step.handoffOrigin)}`, HANDOFF_BILLING_NOTE],
+    ),
     "Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",
   ].join("\n");
 }

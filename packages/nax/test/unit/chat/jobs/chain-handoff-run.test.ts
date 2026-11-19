@@ -33,7 +33,12 @@ const RUN = {
   target: "f1",
   argv: ["bun", "/n.ts", "run", "--feature", "f1", "--publish", "none"],
 } as const;
-const HANDOFF = { kind: "handoff", argv: handoffStepArgv({ feature: "f1", ...ROLE_CAP }) } satisfies ChainLaunch;
+const ORIGIN = "https://github.com/o/r";
+const HANDOFF = {
+  kind: "handoff",
+  argv: handoffStepArgv({ feature: "f1", ...ROLE_CAP }),
+  handoffOrigin: ORIGIN,
+} satisfies ChainLaunch;
 
 let repoRoot: string;
 let outputDir: string;
@@ -202,6 +207,7 @@ describe("createHostJobs handoff", () => {
     _jobsLaunchDeps.lockHolder = async () => null;
     const create = mock<typeof _flowProviderDeps.createKodaFlow>(async () => FLOW);
     _flowProviderDeps.createKodaFlow = create;
+    _flowProviderDeps.readFlowOrigin = async () => ORIGIN;
     _flowProviderDeps.readFlowRepoState = async () => ({
       ok: true,
       branch: BRANCH,
@@ -244,6 +250,8 @@ describe("createHostJobs handoff", () => {
     };
     await finishApprovedRun(host, exited);
     expect(approve.mock.calls.map(([card]) => card.tool)).toEqual(["nax-jobs__chain"]);
+    expect(approve.mock.calls[0]?.[0].reason).toContain(`handoff origin ${ORIGIN}`);
+    expect(host.chains.active()?.steps[1]?.handoffOrigin).toBe(ORIGIN);
     approve.mockClear();
 
     const provider = host.providers.find(({ id }) => id === "nax-flow");
@@ -307,6 +315,21 @@ describe("createHostJobs handoff", () => {
     expect(approve).not.toHaveBeenCalled();
     expect(host.jobs.list()).toHaveLength(1);
     expect(host.chains.summary()?.state).toBe("completed");
+  });
+
+  test("requires a fresh card when origin changes after chain approval", async () => {
+    const { host, approve, create, send } = await approvedChain();
+    const remoteUrl = "https://github.com/o/other";
+    _flowProviderDeps.readFlowRepoState = async () => ({ ok: true, branch: BRANCH, sha: SHA, remoteUrl });
+    _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: "git@github.com:o/other.git" });
+    approve.mockResolvedValue("deny");
+
+    expect((await send()).content).toContain("the user declined");
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(approve.mock.calls[0]?.[0].reason).toContain(remoteUrl);
+    expect(_flowProviderDeps.commitAndPush).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(host.chains.summary()).toMatchObject({ state: "stopped", stopReason: "handoff origin changed" });
   });
 
   test("does not push when the admitted chain stops during the last mark read", async () => {

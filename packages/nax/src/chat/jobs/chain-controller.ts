@@ -27,6 +27,8 @@ export interface ChainLaunch {
   readonly kind: ChainStepKind;
   readonly argv: readonly string[];
   readonly pr?: number;
+  /** The normalized GitHub repository from handoff preflight. */
+  readonly handoffOrigin?: string;
 }
 export type ChainAdmission =
   | { readonly kind: "card"; readonly note?: string }
@@ -211,6 +213,9 @@ class ChainController implements ChatChains {
     if (!step || step.kind !== launch.kind) return "off-card step";
     const argv = resolveStepArgv(step.argv, step.prIndex, launch.pr);
     if (argv.length !== launch.argv.length || argv.some((token, i) => token !== launch.argv[i])) return "off-card step";
+    if (step.kind === "handoff" && (step.handoffOrigin === undefined || step.handoffOrigin !== launch.handoffOrigin)) {
+      return "handoff origin changed";
+    }
     if (step.prIndex !== undefined && chain.pr !== undefined && launch.pr !== chain.pr) {
       return `PR ${launch.pr} differs from PR ${chain.pr} the chain already uses`;
     }

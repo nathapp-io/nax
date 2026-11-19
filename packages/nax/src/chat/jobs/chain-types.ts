@@ -36,6 +36,8 @@ export interface ChainStep {
   /** An in-session check that must pass before this step starts. */
   readonly checkBefore?: string;
   readonly check?: ChainCheck;
+  /** The normalized GitHub repository approved for a handoff. */
+  readonly handoffOrigin?: string;
   /** Set once the step's job started. */
   readonly jobId?: string;
   /** Terminal outcome of a handoff, which has no job. */
