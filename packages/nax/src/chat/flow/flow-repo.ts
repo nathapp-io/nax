@@ -18,6 +18,8 @@ import { NaxError } from "@/errors";
 import { headSha } from "@/finish";
 import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
 import { redactUrlUserinfo } from "@/utils/redact-url";
+// biome-ignore lint/style/noRestrictedImports: the checkout lock leaf avoids loading the execution runtime.
+import { CHECKOUT_LOCK_FILE } from "../../execution/lock";
 import type { FlowSendFeature } from "./flow-input";
 
 /** The message a detached HEAD fails with. */
@@ -98,7 +100,9 @@ export async function isFlowTreeDirty(repoRoot: string): Promise<boolean> {
       { stage: "chat-flow", repoRoot },
     );
   }
-  return status.stdout.trim().length > 0;
+  // A chat handoff holds this lock during verification, even in repos that do not gitignore it.
+  // Ignore only the untracked, root-level lock; tracked edits and other untracked files still count.
+  return status.stdout.split(/\r?\n/).some((line) => line.trim() !== "" && line !== `?? ${CHECKOUT_LOCK_FILE}`);
 }
 
 /** The repository state a flow send may push from. */

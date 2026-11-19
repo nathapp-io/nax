@@ -14,14 +14,16 @@
  *
  * Approval opens a window the local checks have already closed: the record and the mark are re-read
  * after it, the mark is read once more on the run this send will mark at the push boundary, and the
- * whole mark-to-mark sequence of one feature is serialized. So a handoff that finished while this one
- * was checking is seen before anything is pushed, and a cancelled turn answers with the cancel.
+ * checkout lock shared with `nax run` covers the whole mark-to-mark sequence. Another publisher is
+ * refused while it is held, and a cancelled turn answers with the cancel.
  *
  * Every collaborator of the record and the mark is behind `_flowHandoffDeps`; the push,
  * the repository reads and the koda create stay on `_flowProviderDeps`.
  */
 import type { ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+// biome-ignore lint/style/noRestrictedImports: use the leaf to avoid loading the execution runtime.
+import { acquireLock, releaseLock } from "../../execution/lock";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffMarkRefusal, readNewestHandoffMark, readRunMark, writeHandoffMark } from "../../workflow/handoff-mark";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
@@ -72,8 +74,18 @@ export const _flowHandoffDeps: {
   readNewestHandoffMark: typeof readNewestHandoffMark;
   readRunMark: typeof readRunMark;
   writeHandoffMark: typeof writeHandoffMark;
+  acquireLock: typeof acquireLock;
+  releaseLock: typeof releaseLock;
   now: () => Date;
-} = { collectHandoffRecord, readNewestHandoffMark, readRunMark, writeHandoffMark, now: () => new Date() };
+} = {
+  collectHandoffRecord,
+  readNewestHandoffMark,
+  readRunMark,
+  writeHandoffMark,
+  acquireLock,
+  releaseLock,
+  now: () => new Date(),
+};
 
 /** The record the preflights accepted, and the repository state they read it at. */
 interface HandoffReady {
@@ -362,34 +374,10 @@ async function handoffMarkGuard(
   return found === null ? undefined : failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
 }
 
-/** The handoffs this process is running, keyed by feature: one feature is pushed and marked once. */
-const featureLocks = new Map<string, Promise<void>>();
-
-/**
- * Run `work` with no other handoff of the same feature inside it.
- *
- * The mark read, the push, the koda create and the mark write are one step: serialized, a second send
- * of the same feature sees the mark the first one wrote and refuses, instead of pushing a branch the
- * first has already handed over. The queue is per feature and per process — another nax process's send
- * is not ordered by it, and the mark is what a later publish consults either way.
- *
- * @param feature - The feature the handoff is for, which is the queue's key
- * @param work - The mark-to-mark body of one handoff
- * @returns Whatever `work` returns, once every earlier handoff of the feature has finished
- */
-async function withFeatureLock<T>(feature: string, work: () => Promise<T>): Promise<T> {
-  const previous = featureLocks.get(feature) ?? Promise.resolve();
-  const turn = Promise.withResolvers<void>();
-  // The next waiter is released by this call's `finally`, not by its start.
-  const tail = previous.then(() => turn.promise);
-  featureLocks.set(feature, tail);
-  await previous;
-  try {
-    return await work();
-  } finally {
-    turn.resolve();
-    if (featureLocks.get(feature) === tail) featureLocks.delete(feature);
-  }
+function stoppedChainRefusal(call: SendCall, options: FlowProviderOptions): ToolResult | undefined {
+  const { auto } = call;
+  if (auto === undefined || options.chains?.isActive(auto.chainId)) return undefined;
+  return failure(`[chat] chain ${auto.chainId} stopped before step ${auto.step} started; nothing was pushed`);
 }
 
 /**
@@ -406,7 +394,14 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
     const beforePush = () => handoffMarkGuard(input, collected, options);
-    const allow = { state, specPaths: [], body: createBody(state, input, collected.record), signal, beforePush };
+    const allow = {
+      state,
+      specPaths: [],
+      body: createBody(state, input, collected.record),
+      signal,
+      beforePush,
+      atPush: () => stoppedChainRefusal(call, options),
+    };
     const post = await afterAllow(allow, options);
     const mark = markOf(post, _flowHandoffDeps.now().toISOString(), options.connection.url);
     const runDir = workflowRunDir(options.repoRoot, input.feature, collected.newestRunId);
@@ -418,15 +413,31 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
 }
 
 async function sendApprovedHandoff(call: SendCall, options: FlowProviderOptions): Promise<ToolResult> {
-  const { input, auto } = call;
+  const { auto } = call;
   let result: ToolResult | undefined;
   let succeeded = false;
   try {
-    // The approved handoff runs under this feature's lock, so a second send of the same feature waits
-    // for this one's mark rather than pushing over it.
-    const outcome = await withFeatureLock(input.feature, () => handOver(call, options));
-    result = outcome.result;
-    succeeded = outcome.created;
+    result = cancellationRefusal(call.signal);
+    if (result !== undefined) return result;
+    // Run setup holds the same lock through local --publish-only. Neither process can pass its
+    // final mark check while the other holds it. Do not hold the lock while waiting for approval.
+    const lock = await _flowHandoffDeps.acquireLock(options.repoRoot);
+    if (!lock.acquired) {
+      result =
+        cancellationRefusal(call.signal) ??
+        failure("[chat] another nax operation holds the checkout lock; nothing was pushed");
+      return result;
+    }
+    try {
+      const outcome = await handOver(call, options);
+      result = outcome.result;
+      succeeded = outcome.created;
+      return result;
+    } finally {
+      await _flowHandoffDeps.releaseLock(options.repoRoot);
+    }
+  } catch (error) {
+    result = sendFailure(error);
     return result;
   } finally {
     if (auto !== undefined) {

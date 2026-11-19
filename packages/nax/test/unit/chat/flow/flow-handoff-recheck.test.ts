@@ -13,7 +13,8 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, withDepsRestore } from "@test/helpers";
+import { fileURLToPath } from "node:url";
+import { assertDefined, withDepsRestore, withTempDir } from "@test/helpers";
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import {
   _flowHandoffDeps,
@@ -25,6 +26,7 @@ import {
   type FlowRepoReady,
   type KodaFlowConnection,
 } from "@/chat/flow";
+import { acquireLock, releaseLock } from "@/execution/lock";
 import type { FoundHandoffMark, HandoffMark } from "@/workflow/handoff-mark";
 import type { HandoffRecordFile } from "@/workflow/handoff-record";
 import { workflowRunDir } from "@/workflow/paths";
@@ -149,6 +151,8 @@ beforeEach(() => {
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
+  _flowHandoffDeps.acquireLock = async () => ({ acquired: true });
+  _flowHandoffDeps.releaseLock = async () => {};
   _flowHandoffDeps.now = () => AT;
   options = {
     repoRoot: REPO_ROOT,
@@ -251,38 +255,73 @@ describe("nax-flow__send — the mark is read again at the push boundary", () =>
     expect(markCalls).toHaveLength(0);
   });
 
-  test("serializes two handoffs of one feature, so only the first pushes and marks", async () => {
-    // One run directory, one mark: what the first send writes is what every later check reads.
-    let marked: FoundHandoffMark | null = null;
-    _flowHandoffDeps.readNewestHandoffMark = async () => marked;
-    _flowHandoffDeps.readRunMark = async () => marked;
-    _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
-      markCalls.push({ runDir, mark });
-      marked = { mark, path: `${runDir}/handoff.json` };
-    };
-    // Hold the first send inside the push, so the second one has every chance to overtake it.
-    const atPush = Promise.withResolvers<void>();
-    const held = Promise.withResolvers<void>();
-    _flowProviderDeps.commitAndPush = async (_repoRoot, branch, _message, opts) => {
-      pushCalls.push({ branch, opts });
-      atPush.resolve();
-      await held.promise;
-      return { committed: false, pushed: true };
-    };
+  // Exercise the exact checkout lock run setup takes before a publish-only run, in another Bun process.
+  async function canReserveCheckout(repoRoot: string): Promise<boolean> {
+    const modulePath = fileURLToPath(new URL("../../../../src/execution/lock.ts", import.meta.url));
+    const probe = `
+      import { acquireLock, releaseLock } from ${JSON.stringify(modulePath)};
+      const root = process.argv[1];
+      if ((await acquireLock(root)).acquired) await releaseLock(root);
+      else process.exitCode = 3;
+    `;
+    const child = Bun.spawn([process.execPath, "-e", probe, repoRoot], { stdout: "ignore", stderr: "inherit" });
+    const code = await child.exited;
+    expect([0, 3]).toContain(code);
+    return code === 0;
+  }
 
-    const first = send(handoffInput);
-    const second = send(handoffInput);
-    await atPush.promise;
-    await Bun.sleep(20);
-    held.resolve();
-    const [firstResult, secondResult] = await Promise.all([first, second]);
+  test("reserves the checkout until the create and handoff mark finish", async () => {
+    await withTempDir(async (repoRoot) => {
+      options = { ...options, repoRoot };
+      _flowHandoffDeps.acquireLock = acquireLock;
+      _flowHandoffDeps.releaseLock = releaseLock;
+      let marked: FoundHandoffMark | null = null;
+      _flowHandoffDeps.readNewestHandoffMark = async () => marked;
+      const atCreate = Promise.withResolvers<void>();
+      const finishCreate = Promise.withResolvers<void>();
+      const atMark = Promise.withResolvers<void>();
+      const finishMark = Promise.withResolvers<void>();
+      const create = _flowProviderDeps.createKodaFlow;
+      _flowProviderDeps.createKodaFlow = async (...args) => {
+        atCreate.resolve();
+        await finishCreate.promise;
+        return create(...args);
+      };
+      _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
+        atMark.resolve();
+        await finishMark.promise;
+        markCalls.push({ runDir, mark });
+        marked = { mark, path: `${runDir}/handoff.json` };
+      };
 
-    expect(pushCalls).toHaveLength(1);
-    expect(kodaCalls).toHaveLength(1);
-    expect(markCalls).toHaveLength(1);
-    expect(firstResult.isError).not.toBe(true);
-    expect(secondResult.isError).toBe(true);
-    expect(secondResult.content.startsWith("[chat] f1 was handed off to koda")).toBe(true);
+      const first = send(handoffInput);
+      let canPublishDuringCreate: boolean;
+      let canPublishDuringMark: boolean;
+      try {
+        await atCreate.promise;
+        canPublishDuringCreate = await canReserveCheckout(repoRoot);
+        // This send reached the reservation boundary while the first still held the lock.
+        expect(await send(handoffInput)).toEqual({
+          isError: true,
+          content: "[chat] another nax operation holds the checkout lock; nothing was pushed",
+        });
+        finishCreate.resolve();
+        await atMark.promise;
+        canPublishDuringMark = await canReserveCheckout(repoRoot);
+      } finally {
+        finishCreate.resolve();
+        finishMark.resolve();
+        await first;
+      }
+      expect(canPublishDuringCreate).toBe(false);
+      expect(canPublishDuringMark).toBe(false);
+      expect((await first).isError).not.toBe(true);
+      expect(await canReserveCheckout(repoRoot)).toBe(true);
+      expect((await send(handoffInput)).content).toStartWith("[chat] f1 was handed off to koda");
+      expect(pushCalls).toHaveLength(1);
+      expect(kodaCalls).toHaveLength(1);
+      expect(markCalls).toHaveLength(1);
+    });
   });
 });
 
@@ -330,6 +369,43 @@ describe("nax-flow__send — a cancelled turn answers with the cancel", () => {
     expect(result).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
     expect(collectCalls).toHaveLength(2);
     expect(pushCalls).toHaveLength(0);
+    expect(markCalls).toHaveLength(0);
+  });
+
+  test("skips the final mark guard when Git verification cancels the turn", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.readFlowPushUrl = async () => {
+      controller.abort();
+      return { ok: true, url: PUSH_URL };
+    };
+    const guardCalls: string[] = [];
+    _flowHandoffDeps.readRunMark = async (path) => {
+      guardCalls.push(path);
+      return null;
+    };
+
+    expect(await send(handoffInput, controller.signal)).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
+    expect(guardCalls).toHaveLength(0);
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("reports cancellation when the interrupted final mark guard rejects", async () => {
+    const controller = new AbortController();
+    const atGuard = Promise.withResolvers<void>();
+    const guard = Promise.withResolvers<null>();
+    _flowHandoffDeps.readRunMark = () => {
+      atGuard.resolve();
+      return guard.promise;
+    };
+    const pending = send(handoffInput, controller.signal);
+    await atGuard.promise;
+    controller.abort();
+    guard.reject(new Error("mark read interrupted"));
+
+    expect(await pending).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
     expect(markCalls).toHaveLength(0);
   });
 

@@ -99,6 +99,8 @@ export interface FlowAllowRequest {
    * before anything leaves the machine. Absent for the spec form, whose checks end above.
    */
   readonly beforePush?: () => Promise<ToolResult | undefined>;
+  /** In-memory admission check: no await between this check and the invocation of the push. */
+  readonly atPush?: () => ToolResult | undefined;
 }
 
 /** A koda failure its contract classifies: the message, and whether the flow may exist anyway. */
@@ -341,6 +343,23 @@ async function createFlow(request: FlowAllowRequest, target: FlowSendTarget): Pr
   }
 }
 
+/** Verify Git and run the asynchronous guard; a cancellation takes precedence over a read error. */
+async function verifyPush(request: FlowAllowRequest, repoRoot: string): Promise<PushDestination> {
+  const { state, signal } = request;
+  try {
+    if (await branchMoved(state, repoRoot)) return { ok: false, result: failure(BRANCH_CHANGED_MESSAGE) };
+    const moved = await pushTargetFailure(state, request.specPaths, repoRoot);
+    if (moved !== undefined) return { ok: false, result: moved };
+    const destination = await pushDestination(state, repoRoot);
+    if (!destination.ok || turnCancelled(signal)) return destination;
+    const guarded = await request.beforePush?.();
+    return guarded === undefined ? destination : { ok: false, result: guarded };
+  } catch (error) {
+    if (!turnCancelled(signal)) throw error;
+    return { ok: false, result: failure(CANCELLED_MESSAGE) };
+  }
+}
+
 /**
  * Everything the allow buys: the re-check, the push, and the flow.
  *
@@ -363,19 +382,11 @@ async function createFlow(request: FlowAllowRequest, target: FlowSendTarget): Pr
 export async function afterAllow(request: FlowAllowRequest, target: FlowSendTarget): Promise<PostAllowResult> {
   const { state, signal } = request;
   if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
-  if (await branchMoved(state, target.repoRoot)) return { result: failure(BRANCH_CHANGED_MESSAGE) };
-  const moved = await pushTargetFailure(state, request.specPaths, target.repoRoot);
-  if (moved !== undefined) return { result: moved };
-  const destination = await pushDestination(state, target.repoRoot);
-  if (!destination.ok) return { result: destination.result };
-  // The request's own last check, on the state every check above has by now approved. It runs before
-  // the final cancellation read so a cancelled turn keeps answering with the cancel, whatever it found.
-  const guarded = await request.beforePush?.();
-  // The checks above are asynchronous, so the turn can be cancelled while they run —
-  // and they are the last thing between the card and the push. Asking once more here
-  // is what keeps an already-cancelled turn from pushing and creating a flow.
+  const destination = await verifyPush(request, target.repoRoot);
   if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
-  if (guarded !== undefined) return { result: guarded };
+  if (!destination.ok) return { result: destination.result };
+  const invalidAdmission = request.atPush?.();
+  if (invalidAdmission !== undefined) return { result: invalidAdmission };
   try {
     await _flowProviderDeps.commitAndPush(target.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
       skipCommit: true,

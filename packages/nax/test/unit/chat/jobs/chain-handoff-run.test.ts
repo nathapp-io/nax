@@ -309,6 +309,30 @@ describe("createHostJobs handoff", () => {
     expect(host.chains.summary()?.state).toBe("completed");
   });
 
+  test("does not push when the admitted chain stops during the last mark read", async () => {
+    const { host, approve, create, send } = await approvedChain();
+    const reachedGuard = Promise.withResolvers<void>();
+    const guard = Promise.withResolvers<null>();
+    _flowHandoffDeps.readRunMark = () => {
+      reachedGuard.resolve();
+      return guard.promise;
+    };
+    const pending = send();
+    await reachedGuard.promise;
+    const chain = host.chains.stop("chat session changed");
+    assertDefined(chain, "admitted chain stopped");
+    guard.resolve(null);
+
+    expect(await pending).toEqual({
+      isError: true,
+      content: `[chat] chain ${chain.id} stopped before step 2 started; nothing was pushed`,
+    });
+    expect(_flowProviderDeps.commitAndPush).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
+    expect(host.chains.summary()).toMatchObject({ state: "stopped", stopReason: "chat session changed" });
+  });
+
   test("AC-8 stops the approved handoff on koda's HTTP 409", async () => {
     const { host, approve, create, send } = await approvedChain();
     create.mockRejectedValue(

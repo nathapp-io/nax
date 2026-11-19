@@ -12,6 +12,8 @@ import path from "node:path";
 import { isProcessAlive, realOrRaw } from "@nathapp/nax-agent/internal";
 import { getLogger } from "../logger";
 
+export const CHECKOUT_LOCK_FILE = "nax.lock";
+
 /** Serialize mutations of each lock within this process across asynchronous I/O. */
 const pendingLockOperations = new Map<string, Promise<void>>();
 
@@ -310,7 +312,7 @@ export async function acquireLock(workdir: string): Promise<LockAcquisitionResul
 }
 
 async function acquireLockExclusive(workdir: string): Promise<LockAcquisitionResult> {
-  const lockPath = path.join(workdir, "nax.lock");
+  const lockPath = path.join(workdir, CHECKOUT_LOCK_FILE);
   const lockFile = Bun.file(lockPath);
 
   try {
@@ -407,7 +409,7 @@ export async function releaseLock(workdir: string): Promise<void> {
 }
 
 async function releaseLockExclusive(workdir: string): Promise<void> {
-  const lockPath = path.join(workdir, "nax.lock");
+  const lockPath = path.join(workdir, CHECKOUT_LOCK_FILE);
   try {
     await unlink(lockPath);
   } catch (error) {

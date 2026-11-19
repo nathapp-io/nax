@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { assertCaughtInstanceOf, withDepsRestore, withTempDir } from "@test/helpers";
 import {
@@ -303,6 +304,19 @@ describe("isFlowTreeDirty — the production clean-tree check", () => {
       // The argv a bare `git status --porcelain` issues sees nothing here: this is
       // exactly the configuration the check must not inherit.
       expect(gitStdout(dir, ["status", "--porcelain"])).toBe("");
+      expect(await isFlowTreeDirty(dir)).toBe(true);
+    });
+  });
+
+  test("ignores only the untracked checkout lock and still counts other changes", async () => {
+    await withTempDir(async (dir) => {
+      expect(runGit(dir, ["init", "-q", "."])).toBe(0);
+      await Bun.write(join(dir, "nax.lock"), "runtime lock");
+      expect(await isFlowTreeDirty(dir)).toBe(false);
+      await Bun.write(join(dir, "nax.lock.example"), "project file");
+      expect(await isFlowTreeDirty(dir)).toBe(true);
+      await unlink(join(dir, "nax.lock.example"));
+      expect(runGit(dir, ["add", "-f", "--", "nax.lock"])).toBe(0);
       expect(await isFlowTreeDirty(dir)).toBe(true);
     });
   });

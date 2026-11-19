@@ -178,6 +178,8 @@ beforeEach(() => {
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
+  _flowHandoffDeps.acquireLock = async () => ({ acquired: true });
+  _flowHandoffDeps.releaseLock = async () => {};
   _flowHandoffDeps.now = () => AT;
   options = {
     repoRoot: REPO_ROOT,
@@ -205,7 +207,7 @@ function observeChain(admission: ChainAdmission, chain?: ChatChain) {
     },
     started: () => {},
     startFailed: () => {},
-    isActive: () => chain !== undefined,
+    isActive: (id) => chain?.id === id || (admission.kind === "auto" && admission.chainId === id),
     recordCheck: () => ({ ok: true }),
     dispose: () => {},
   } satisfies ChatChains;
