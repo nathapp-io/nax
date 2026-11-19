@@ -193,6 +193,24 @@ describe("createChainTools handoff card", () => {
     );
   });
 
+  test("shows the authorized roles and cap even when role values resemble flags", async () => {
+    const input = { roles: { reviewer: "--supervisor", supervisor: "--cost-cap" }, costCapUsd: 5.004 };
+    const tool = (await createJobsProvider(options).tools(root)).find((entry) => entry.localName === "chain");
+    assertDefined(tool, "chain tool registered");
+    await tool.run(
+      { steps: [runNone, handoff(input)] },
+      { root, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
+    );
+    const request = approve.mock.calls[0]?.[0];
+    assertDefined(request, "approval card");
+    expect(request.command?.split("\n").at(-1)).toBe(
+      `nax-flow__send --handoff f1 --reviewer ${input.roles.reviewer} --supervisor ${input.roles.supervisor} --cost-cap ${input.costCapUsd}`,
+    );
+    expect(String(request.reason).split("\n")).toContain(
+      `2. hand f1 to koda (reviewer ${input.roles.reviewer}, supervisor ${input.roles.supervisor}, cost cap $${input.costCapUsd}) — starts after: step 1 succeeded`,
+    );
+  });
+
   test("AC-12 says koda asks for its own approval before billing", async () => {
     expect((await card()).split("\n")).toContain(approval);
   });

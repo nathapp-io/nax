@@ -30,8 +30,6 @@ const HANDOFF_LAST_STEP = "a handoff must be the chain's last step";
 const HANDOFF_CHECK_REFUSAL = "a handoff step takes no checkBefore";
 /** US-007: what the card says about who approves the flow koda bills. */
 const HANDOFF_BILLING_NOTE = "koda asks for its own approval before anything billed starts";
-/** The argv flags that carry the roles and the cap, as `handoffStepArgv` spells them. */
-const HANDOFF_ARGV_FLAGS = ["--reviewer", "--supervisor", "--cost-cap"] as const;
 
 type Options = JobsProviderOptions & { readonly chains: ChatChains };
 type InputError = { readonly error: string };
@@ -43,6 +41,7 @@ type StepContext = { readonly step: number; readonly total: number; readonly opt
 export interface ResolvedChainProposal {
   readonly steps: readonly ChainStep[];
   readonly costCap?: number;
+  readonly handoff?: FlowHandoffInput;
   readonly existingPlanPrds: readonly { readonly step: number; readonly feature: string }[];
 }
 
@@ -231,6 +230,7 @@ async function resolveSteps(
 ): Promise<ResolvedChainProposal | InputError> {
   const steps: ChainStep[] = [];
   const earlier: EarlierStep[] = [];
+  let handoff: FlowHandoffInput | undefined;
   const existingPlanPrds: { step: number; feature: string }[] = [];
   for (const [index, entry] of parsed.entries()) {
     const step = index + 1;
@@ -238,7 +238,8 @@ async function resolveSteps(
     if (entry.kind === "handoff") {
       const refusal = handoffRefusal(entry.input, step, earlier, options.repoRoot);
       if (refusal !== undefined) return refusal;
-      steps.push(handoffStep(entry.input));
+      handoff = entry.input;
+      steps.push(handoffStep(handoff));
       continue;
     }
     const resolved = await resolveStepTarget(entry, step, options);
@@ -249,7 +250,7 @@ async function resolveSteps(
     steps.push(chainStep);
     earlier.push(facts);
   }
-  return { steps, existingPlanPrds };
+  return { steps, existingPlanPrds, ...(handoff === undefined ? {} : { handoff }) };
 }
 
 /** Keeps resolved argv and replacement metadata together for the chain card/activation boundary. */
@@ -293,26 +294,13 @@ function stepLabel(step: ChainStep): string {
   return `nax bot ${action} ${step.prIndex === undefined ? `#${step.target}` : "(PR chosen by the agent)"}`;
 }
 
-/** The token that follows `flag` in a step's argv, or the empty string when it carries none. */
-function argvValue(argv: readonly string[], flag: string): string {
-  const index = argv.indexOf(flag);
-  return index === -1 ? "" : (argv[index + 1] ?? "");
-}
-
-/**
- * US-007: the handoff's roles and cap, read back from the argv the step will run — so the card can
- * never show a value the tool call does not carry.
- */
-function handoffDetail(argv: readonly string[]): string {
-  const [reviewer, supervisor, cap] = HANDOFF_ARGV_FLAGS.map((flag) => argvValue(argv, flag));
-  return `reviewer ${reviewer}, supervisor ${supervisor}, cost cap $${formatHandoffCostCap(Number(cap))}`;
-}
-
-function stepReason(step: ChainStep, index: number): string {
+function stepReason(step: ChainStep, index: number, handoff: FlowHandoffInput | undefined): string {
   const condition = index === 0 ? "you approve this card" : `step ${index} succeeded`;
-  // A handoff takes no check and no PR: its line is the label, the roles it sends, and when it starts.
-  if (step.kind === "handoff") {
-    return `${index + 1}. ${stepLabel(step)} (${handoffDetail(step.argv)}) — starts after: ${condition}`;
+  // The same validated input builds the authorized argv and the card details. Values may look like flags.
+  if (step.kind === "handoff" && handoff !== undefined) {
+    const { roles, costCapUsd } = handoff;
+    const detail = `reviewer ${roles.reviewer}, supervisor ${roles.supervisor}, cost cap $${formatHandoffCostCap(costCapUsd)}`;
+    return `${index + 1}. ${stepLabel(step)} (${detail}) — starts after: ${condition}`;
   }
   const check = step.checkBefore === undefined ? "" : ` and check "${step.checkBefore}" passed`;
   const pr = step.prIndex === undefined ? "" : " — the agent picks the PR when the step starts";
@@ -341,7 +329,7 @@ async function chainReason(proposal: ResolvedChainProposal, options: Options): P
   return [
     `workdir ${options.repoRoot}${branch.exitCode === 0 ? ` on branch ${branch.stdout.trim()}` : ""}`,
     `nax ${options.naxEntry.join(" ")}`,
-    ...proposal.steps.map(stepReason),
+    ...proposal.steps.map((step, index) => stepReason(step, index, proposal.handoff)),
     proposal.costCap === undefined
       ? "no cost cap"
       : `cost cap $${proposal.costCap.toFixed(2)}, checked between steps; plan and bot job costs are not counted`,

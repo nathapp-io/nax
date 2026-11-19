@@ -128,7 +128,7 @@ const WHOLE_CENT_DECIMALS = 2;
  * decimals (`$5.00`, `$5.10`); any other cap the parser accepts keeps every significant
  * digit (`$5.004`). Both handoff cards print the cap through here, so they cannot drift.
  *
- * @param costCapUsd - A cap `collectCostCap` accepted, or the argv token it was read back from
+ * @param costCapUsd - A cap `collectCostCap` accepted
  */
 export function formatHandoffCostCap(costCapUsd: number): string {
   const written = String(costCapUsd);
