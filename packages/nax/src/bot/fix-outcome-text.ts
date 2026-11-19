@@ -10,9 +10,13 @@
 import { basename, isAbsolute, relative, sep } from "node:path";
 import { NaxError } from "@/errors";
 import { safeCode } from "../workflow/pr-body-safe";
-import type { BotFixState } from "./fix-steps";
+import type { BotFixFollowUp, BotFixState } from "./fix-steps";
+import { safeText } from "./render";
 
 const SHORT_SHA_LENGTH = 7;
+/** US-007: the follow-ups the summary names before it counts the rest. */
+const FOLLOW_UPS_SHOWN = 10;
+const MAX_FOLLOW_UP_KEY_LENGTH = 64;
 
 function baselineText(ci: BotFixState["ciOutcome"]): string {
   const head = "They fail on the unmodified PR head in the bot checkout too";
@@ -39,6 +43,25 @@ function dirtyText(state: BotFixState, repoRoot: string | undefined): string {
   return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(shown)}\`.`;
 }
 
+/**
+ * US-007: what a `nothing` outcome says when agreed work exists but none of it can hold readiness. The
+ * follow-up list is the reader's only pointer to what the review raised and the fix did not touch.
+ */
+function followUpText(followUps: readonly BotFixFollowUp[]): string {
+  const shown = followUps
+    .slice(0, FOLLOW_UPS_SHOWN)
+    .map(
+      (item) => `${safeText(item.key, MAX_FOLLOW_UP_KEY_LENGTH)} (${severityLabel(item.severity)}, ${item.trigger})`,
+    );
+  const hidden = followUps.length - FOLLOW_UPS_SHOWN;
+  const more = hidden > 0 ? ` and ${hidden} more` : "";
+  return `No fix session: no agreed item can hold readiness. Left for follow-up: ${shown.join(", ")}${more}.`;
+}
+
+function severityLabel(severity: BotFixFollowUp["severity"]): string {
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
+}
+
 /** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
 export function outcomeText(state: BotFixState, repoRoot: string | undefined): string {
   switch (state.outcome) {
@@ -53,7 +76,9 @@ export function outcomeText(state: BotFixState, repoRoot: string | undefined): s
     case "pushed":
       return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
     case "nothing":
-      return "Nothing to fix: the latest review agreed with no item.";
+      return state.followUps?.length
+        ? followUpText(state.followUps)
+        : "Nothing to fix: the latest review agreed with no item.";
     case "no-change":
       return "The fix session changed nothing; nothing pushed.";
     case "protected":

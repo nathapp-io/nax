@@ -272,7 +272,7 @@ describe("changedPaths", () => {
     };
     const { makeBotFixEnv } = await import("@test/helpers");
     const prepared = await prepare();
-    const env = makeBotFixEnv([{ kind: "finding", key: "f-1", issue: "fix", severity: "minor" }]);
+    const env = makeBotFixEnv([{ kind: "finding", key: "f-1", issue: "fix", severity: "important" }]);
     const realEnv = { ...env, checkout: prepared, info: { ...env.info, headSha: await git(["rev-parse", "HEAD"]) } };
     const original = _fixStepsDeps.runBranchFix;
     _fixStepsDeps.runBranchFix = async () => {

@@ -17,7 +17,7 @@ const resolve = mock<typeof _botFixDeps.resolveBotChecks>(async () => env.checks
 const setup = mock<typeof _botFixDeps.runPreRunSteps>(async () => {});
 
 beforeEach(() => {
-  env = makeBotFixEnv([{ kind: "finding", key: "f1", issue: "Fix defect", severity: "minor" }]);
+  env = makeBotFixEnv([{ kind: "finding", key: "f1", issue: "Fix defect", severity: "important" }]);
   env = { ...env, checks: { source: "detected", gates: [{ name: "test", command: "npm test" }], preRun: [] } };
   runtime = makeTestRuntime({ config: env.config });
   session.mockClear();

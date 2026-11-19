@@ -29,7 +29,9 @@ afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(dirs.splice(0).map(cleanupTempDir));
 });
-const items = [{ kind: "finding" as const, key: "f1", severity: "minor" as const, issue: "Leak", file: "src/a.ts" }];
+const items = [
+  { kind: "finding" as const, key: "f1", severity: "important" as const, issue: "Leak", file: "src/a.ts" },
+];
 const note =
   "Agent configuration (CLAUDE.md, AGENTS.md and the other instruction files, .claude/, .mcp.json and each agent's config directory) holds the base branch's versions for this session; nax restores the PR's versions afterwards. Do not edit, stage or commit those files.";
 const state = { step: "fix" as const, timings: {} };

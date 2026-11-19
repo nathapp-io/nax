@@ -5,8 +5,10 @@ import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { createForgeReadProvider } from "@/forge-tools";
 import { getLogger } from "@/logger";
+import type { WorkflowSeverity } from "@/operations/workflow-types";
 import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
+import type { FindingTrigger } from "@/workflow/blocking-findings";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
@@ -23,9 +25,9 @@ import { botGit } from "./git";
 import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
-import type { BotReviewArtifact } from "./post";
+import type { AgreedItem, BotReviewArtifact } from "./post";
 import { type BotPushEntry, readPushLedger } from "./push-ledger";
-import { reviewBlockingTriggers } from "./review-blocking";
+import { hasPushWorthyItem, reviewBlockingTriggers } from "./review-blocking";
 
 export type BotFixStep =
   | "fix"
@@ -38,6 +40,13 @@ export type BotFixStep =
   | "ready"
   | "report"
   | "done";
+
+/** A finding the fix session left alone because it cannot hold readiness (US-007). */
+export interface BotFixFollowUp {
+  readonly key: string;
+  readonly severity: WorkflowSeverity;
+  readonly trigger: FindingTrigger;
+}
 
 export interface BotFixState extends GraphState<BotFixStep> {
   readonly readyOnly?: boolean;
@@ -84,6 +93,8 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly fixSha?: string;
   readonly fixFailure?: string;
   readonly agreedCount?: number;
+  /** US-007: the agreed findings this execution left alone, in `agreed` order; only on a `nothing` outcome. */
+  readonly followUps?: readonly BotFixFollowUp[];
   readonly fixDirty?: boolean;
   /** Absolute; local only. The PR comment renders it relative to the repo root (nax#2681). */
   readonly recoveryPath?: string;
@@ -136,9 +147,27 @@ export const _fixStepsDeps = {
   },
 };
 
+/**
+ * US-007: each agreed finding's key, severity and trigger class for the summary's follow-up line. Only
+ * findings reach here — a thread or comment item always makes the review push-worthy — but the guard
+ * keeps the mapping total over `AgreedItem`.
+ */
+function followUpsOf(agreed: readonly AgreedItem[]): readonly BotFixFollowUp[] {
+  return agreed.flatMap((item) =>
+    item.kind === "finding"
+      ? [{ key: item.key, severity: item.severity, trigger: item.trigger ?? "normal" } satisfies BotFixFollowUp]
+      : [],
+  );
+}
+
 export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const agreedCount = env.review.agreed.length;
   if (agreedCount === 0) return { patch: { agreedCount, outcome: "nothing" }, exit: "nothing" };
+  // US-007: a session and its push are only worth it for an item that can hold readiness. Anything else
+  // is a follow-up the summary names — acting on it reversed a human's decision and reset readiness (#2979).
+  if (!hasPushWorthyItem(env)) {
+    return { patch: { agreedCount, outcome: "nothing", followUps: followUpsOf(env.review.agreed) }, exit: "nothing" };
+  }
   const findings = toFixFindings(env.review.agreed);
   const intent = featureIntentPaths(env.checkout);
   const prompt = buildBotPrFixPrompt({

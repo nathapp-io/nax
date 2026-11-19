@@ -157,7 +157,7 @@ describe("runBotFix", () => {
     let gateRuns = 0;
     env = {
       ...env,
-      review: { ...env.review, agreed: [{ kind: "finding", key: "f1", issue: "fix me", severity: "minor" }] },
+      review: { ...env.review, agreed: [{ kind: "finding", key: "f1", issue: "fix me", severity: "important" }] },
       config: makeNaxConfig({ bot: { gateRepairRounds: 1 } }),
     };
     expect(env.ctx.runGit).toBeUndefined();
@@ -193,6 +193,27 @@ describe("runBotFix", () => {
       expect(env.ctx.runGit).toBeUndefined();
     } finally {
       Object.assign(_fixStepsDeps, steps);
+    }
+  });
+  test("US-007 AC-11: a non-blocking agreed list finishes nothing without an undeclared-output refusal", async () => {
+    env = {
+      ...env,
+      review: { ...env.review, agreed: [{ kind: "finding", key: "f1", issue: "Leak", severity: "minor" }] },
+    };
+    latest.mockImplementation(async () => env.review);
+    _botFixDeps.fixStep = fixStep;
+    const session = spyOn(_fixStepsDeps, "runBranchFix");
+    try {
+      const result = await runBotFix(input);
+      // The engine applies a patch key only when the node declares it, so `followUps` here proves the
+      // `fix` node's declaration as well as the outcome.
+      expect(result).toMatchObject({
+        outcome: "nothing",
+        followUps: [{ key: "f1", severity: "minor", trigger: "normal" }],
+      });
+      expect(session).not.toHaveBeenCalled();
+    } finally {
+      session.mockRestore();
     }
   });
   test.each([false, true])("AC-17/18 records marked PR before fix; failure=%s", async (fails) => {

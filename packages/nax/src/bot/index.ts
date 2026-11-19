@@ -60,6 +60,7 @@ export {
 export {
   _fixStepsDeps,
   type BotFixEnv,
+  type BotFixFollowUp,
   type BotFixState,
   type BotFixStep,
   checkStep,

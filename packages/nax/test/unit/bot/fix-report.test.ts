@@ -125,6 +125,21 @@ describe("reportStep ledger push (US-009)", () => {
     expect(body).toContain("Run nax bot review 42 before the next nax bot fix.");
     expect(body).toContain("git pull --rebase");
   });
+  /* US-007: the advisor-ledger push a `nothing` run can still make keeps its own line beside the follow-ups. */
+  test("US-007: a ledger push next to a non-blocking agreed list reports both", async () => {
+    const env = makeBotFixEnv();
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "report" });
+    await reportStep(env, {
+      step: "report",
+      timings: {},
+      outcome: "nothing",
+      pushedSha: "abcdef1234",
+      followUps: [{ key: "f-1", severity: "minor", trigger: "normal" }],
+    });
+    const body = post.mock.calls[0]?.[1] ?? "";
+    expect(body).toContain("Pushed abcdef1: advisor ledger.");
+    expect(body).toContain("No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).");
+  });
 });
 
 /* US-004: the fix summary carries the bot's bounded record of its own pushes. */

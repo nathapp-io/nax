@@ -183,6 +183,32 @@ describe("renderFixSummary", () => {
       expect(body.split("\n")[2]).toBe(expected);
     },
   );
+  test("US-007 AC-13: lists ten follow-ups and counts the rest", () => {
+    const followUps = Array.from({ length: 12 }, (_unused, index) => ({
+      key: `f-${index}`,
+      severity: "minor" as const,
+      trigger: "normal" as const,
+    }));
+    const body = renderFixSummary({ ...state, outcome: "nothing", followUps });
+    expect(body).toContain("Left for follow-up: f-0 (Minor, normal), f-1 (Minor, normal)");
+    expect(body).toContain("and 2 more");
+    expect(body).not.toContain("f-10");
+  });
+  test("US-007 AC-14: a review that agreed with no item still reads as nothing to fix", () => {
+    expect(renderFixSummary({ ...state, outcome: "nothing" })).toContain(
+      "Nothing to fix: the latest review agreed with no item.",
+    );
+  });
+  test("US-007 AC-12: names what the non-blocking agreed list left for follow-up", () => {
+    const body = renderFixSummary({
+      ...state,
+      outcome: "nothing",
+      followUps: [{ key: "f-1", severity: "minor", trigger: "normal" }],
+    });
+    expect(body).toContain(
+      "No fix session: no agreed item can hold readiness. Left for follow-up: f-1 (Minor, normal).",
+    );
+  });
   test("AC-17: says why the PR stayed a draft", () => {
     const body = renderFixSummary({ ...state, outcome: "nothing", readyHeld: "CI failed: x" });
     expect(body.split("\n")).toContain("Kept as draft: CI failed: x");

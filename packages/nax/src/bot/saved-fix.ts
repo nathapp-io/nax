@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getLogger } from "@/logger";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { botGit } from "./git";
+import { hasPushWorthyItem } from "./review-blocking";
 
 const SAVABLE_OUTCOMES = [
   "gates-failed",
@@ -125,6 +126,8 @@ export async function reuseSavedFix(input: {
   const initial: BotFixState = { step: "fix", timings: {} };
   const location = { repoRoot: env.repoRoot, outputDir, prNumber: env.ref.number };
   try {
+    // US-007: nothing that can hold readiness has no work to resume; the fix step reports the follow-ups.
+    if (!hasPushWorthyItem(env)) return initial;
     const entry = fresh ? null : await savedFix.read(outputDir, env.ref.number);
     // A null read includes malformed files. Clearing is idempotent for missing files too.
     if (!entry || entry.headSha !== env.info.headSha || !(await verifiedSavedFix(location, entry))) {
