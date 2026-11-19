@@ -1,6 +1,6 @@
 /** US-001: readiness is held for an unreviewed pushed head and for open critical/important findings. */
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { makeBotFixDraftEnv, makeBotFixEnv } from "@test/helpers";
+import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import {
   _fixReportDeps,
   type AgreedItem,
@@ -11,6 +11,7 @@ import {
 } from "@/bot";
 import { _rulingsDeps } from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
+import type { FindingTrigger } from "@/workflow/blocking-findings";
 import { markReadyArgv } from "@/workflow/promote";
 
 const HEAD = "abc1234def";
@@ -360,6 +361,75 @@ describe("readyStep open-finding hold reconciled with the PR now", () => {
       },
       exit: "report",
     });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+// US-003: the artifact's blocking set, not severity alone, decides which agreed findings hold readiness.
+describe("readyStep blocking triggers (US-003)", () => {
+  /** A draft PR at `HEAD` whose readiness review agreed on `agreed`, with the artifact's own set. */
+  function blockingEnv(
+    agreed: readonly AgreedItem[],
+    blocking?: readonly FindingTrigger[],
+    config?: ReturnType<typeof makeNaxConfig>,
+  ): BotFixEnv {
+    const base = draftEnv(agreed);
+    return {
+      ...base,
+      ...(config === undefined ? {} : { config }),
+      review: { ...base.review, ...(blocking === undefined ? {} : { blockingTriggers: blocking }) },
+    };
+  }
+
+  function triggered(key: string, severity: "critical" | "important", trigger: FindingTrigger): AgreedItem {
+    return { kind: "finding", key, issue: `issue ${key}`, severity, trigger };
+  }
+
+  const hold = (key: string) => ({
+    patch: {
+      markedReady: false,
+      readyHeld: `1 open critical/important finding(s) in the bot review of abc1234: ${key}`,
+    },
+    exit: "report" as const,
+  });
+
+  test("AC-16 a finding outside the artifact's set does not hold readiness", async () => {
+    const env = blockingEnv([triggered("f-a", "important", "adversarial")], ["normal", "own-concurrency"]);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const result = await readyStep(env, readyPass);
+    expect(result.patch.readyHeld).toBeUndefined();
+    expect(result.patch.markedReady).toBe(true);
+  });
+
+  test("AC-17 an artifact with no set uses the configured default and does not hold a manual finding", async () => {
+    const env = blockingEnv([triggered("f-a", "important", "manual")]);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    const result = await readyStep(env, readyPass);
+    expect(result.patch.readyHeld).toBeUndefined();
+    expect(result.patch.markedReady).toBe(true);
+  });
+
+  test("AC-17 the fallback reads the config, so a manual-blocking config holds that finding", async () => {
+    const env = blockingEnv(
+      [triggered("f-a", "important", "manual")],
+      undefined,
+      makeNaxConfig({ bot: { blockingTriggers: ["manual"] } }),
+    );
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, readyPass)).toEqual(hold("f-a"));
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-18 holds a finding the artifact's set blocks on", async () => {
+    const env = blockingEnv([triggered("f-a", "important", "manual")], ["normal", "manual"]);
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, readyPass)).toEqual(hold("f-a"));
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-19 an artifact with no set still holds a finding that states no trigger", async () => {
+    const env = blockingEnv([finding("f-a", "important")]);
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, readyPass)).toEqual(hold("f-a"));
     expect(run).not.toHaveBeenCalled();
   });
 });

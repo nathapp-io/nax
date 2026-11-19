@@ -25,6 +25,7 @@ import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
+import { reviewConvergence } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
@@ -362,6 +363,7 @@ async function reviewEnvironment(
       settledKeys: new Set(findings.settled.map(({ ruling }) => ruling.id)),
       resolvedThreadIds: new Set(ownFindingThreads.filter(({ resolved }) => resolved).map(({ id }) => id)),
       ...(rulings !== undefined && { rulings }),
+      ...reviewConvergence({ comments: rawComments, writers: triaged.writers, config: ctx.config }),
       scope,
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
       staticMode,

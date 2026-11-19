@@ -14,8 +14,8 @@ import {
 import { getLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
-import type { FindingTrigger } from "@/workflow/blocking-findings";
-import { readFindingThreadFacts } from "@/workflow/blocking-findings";
+import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
+import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
@@ -83,6 +83,11 @@ export interface BotReviewArtifact {
   /** `not-reviewed` when the review read no code (US-001); the verdict's own quality otherwise. */
   readonly quality: PrReviewVerdict["quality"] | "not-reviewed";
   readonly agreed: readonly AgreedItem[];
+  /**
+   * The set that decided this review's posting (US-003). Absent on artifacts written before it existed, so a
+   * reader falls back to `bot.blockingTriggers`.
+   */
+  readonly blockingTriggers?: readonly FindingTrigger[];
 }
 export interface PostReviewInput {
   readonly itemStatus?: ItemStatus;
@@ -116,6 +121,15 @@ export interface PostReviewInput {
   readonly own: readonly OwnComment[];
   readonly staticMode: boolean;
   readonly sensitive: readonly string[];
+  /**
+   * The effective blocking set (US-003): a critical or important finding outside it gets no inline thread.
+   * Absent keeps the configured default, so a legacy caller posts as it did.
+   */
+  readonly blockingTriggers?: readonly FindingTrigger[];
+  /** Where that set came from: a writer's scope ruling, or the config. */
+  readonly blockingSource?: EffectiveBlockingTriggers["source"];
+  /** The first line of every writer scope comment that stated no usable class (US-003). */
+  readonly ignoredScopeRulings?: readonly string[];
   readonly stateDir: string;
   readonly deps: ForgeDeps;
   readonly cwd: string;
@@ -262,6 +276,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     intent: input.verdict.intent,
     quality: reviewQuality(input.scope, input.verdict.quality),
     agreed: agreedItems(input),
+    ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
   };
   try {
     await _postDeps.writeArtifact(join(input.stateDir, BOT_REVIEW_FILENAME), artifact);
@@ -302,12 +317,39 @@ async function writeFinding(input: PostReviewInput, finding: PrFinding): Promise
   return true;
 }
 
-async function postFindings(
-  input: PostReviewInput,
-): Promise<{ inlineFindings: number; offLine: WorkflowFindingDraft[]; minor: WorkflowFindingDraft[] }> {
+interface SummaryOnlyLists {
+  readonly blocking: readonly FindingTrigger[];
+  readonly minor: WorkflowFindingDraft[];
+  readonly residual: PrFinding[];
+}
+
+/**
+ * US-003: a finding outside the blocking set gets no new inline thread — it is summary-only, as a minor always
+ * was. An own thread for its key is still edited, so a re-raised finding leaves no stale thread behind.
+ * Returns whether it took the finding.
+ */
+function collectSummaryOnly(input: PostReviewInput, finding: PrFinding, into: SummaryOnlyLists): boolean {
+  if (isBlockingFinding(finding, into.blocking)) return false;
+  if (input.own.some((own) => own.key === findingKey(finding))) return false;
+  (finding.severity === "minor" ? into.minor : into.residual).push(finding);
+  return true;
+}
+
+async function postFindings(input: PostReviewInput): Promise<{
+  inlineFindings: number;
+  offLine: WorkflowFindingDraft[];
+  minor: WorkflowFindingDraft[];
+  residual: PrFinding[];
+}> {
   const seen = new Set<string>();
   const offLine: WorkflowFindingDraft[] = [];
   const minor: WorkflowFindingDraft[] = [];
+  const residual: PrFinding[] = [];
+  const summaryOnly: SummaryOnlyLists = {
+    blocking: input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS,
+    minor,
+    residual,
+  };
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
     if (input.settledKeys?.has(findingKey(finding))) continue;
@@ -318,10 +360,7 @@ async function postFindings(
     const key = findingKey(finding);
     if (seen.has(key)) continue;
     seen.add(key);
-    if (finding.severity === "minor" && !input.own.some((own) => own.key === key)) {
-      minor.push(finding);
-      continue;
-    }
+    if (collectSummaryOnly(input, finding, summaryOnly)) continue;
     try {
       if (await writeFinding(input, finding)) inlineFindings++;
       else offLine.push(finding);
@@ -332,7 +371,7 @@ async function postFindings(
       offLine.push(finding);
     }
   }
-  return { inlineFindings, offLine, minor };
+  return { inlineFindings, offLine, minor, residual };
 }
 
 async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
@@ -380,6 +419,9 @@ async function postSummary(
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
     ...threads,
+    ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
+    ...(input.blockingSource === undefined ? {} : { blockingSource: input.blockingSource }),
+    ...(input.ignoredScopeRulings === undefined ? {} : { ignoredScopeRulings: input.ignoredScopeRulings }),
     commentVerdicts: input.verdict.comments.map((verdict) => {
       const comment = input.comments.find(({ id }) => id === verdict.id);
       return { verdict, author: comment?.author ?? "unknown", notQueued: notQueued(input, verdict.decision, comment) };

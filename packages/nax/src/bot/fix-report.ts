@@ -22,6 +22,7 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
+import { type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
@@ -41,6 +42,7 @@ import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
+import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
 import { type RecordRulingsOutcome, readConfirmedKeys, readSettledKeys, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
@@ -339,10 +341,10 @@ function readinessReview(env: BotFixEnv): BotReviewArtifact {
   return env.codeReview ?? env.review;
 }
 
-/** The readiness review's open critical/important finding keys, in `agreed` order. */
-function blockingKeys(review: BotReviewArtifact): string[] {
+/** The readiness review's open finding keys that block under `blocking`, in `agreed` order. */
+function blockingKeys(review: BotReviewArtifact, blocking: readonly FindingTrigger[]): string[] {
   return review.agreed
-    .filter((item) => item.kind === "finding" && (item.severity === "critical" || item.severity === "important"))
+    .filter((item) => item.kind === "finding" && isBlockingFinding(item, blocking))
     .map((item) => item.key);
 }
 
@@ -381,14 +383,13 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
 }
 
 /**
- * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
- * excludes the findings that were settled when that review was written; a settlement or withdrawal
- * recorded since is reconciled against the PR, so a ruling does not need another full code review.
- * Minor findings, threads and comments never hold.
+ * US-001/US-003: an open finding that blocks under the effective trigger set holds readiness. `agreed` already
+ * excludes the findings settled when that review was written; a settlement or withdrawal recorded since is
+ * reconciled against the PR. Minor findings, threads and comments never hold.
  */
 async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   const review = readinessReview(env);
-  const keys = await openKeys(env, blockingKeys(review));
+  const keys = await openKeys(env, blockingKeys(review, reviewBlockingTriggers(env)));
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");

@@ -199,8 +199,8 @@ describe("effectiveBlockingTriggers", () => {
 });
 
 describe("configuredBlockingTriggers", () => {
-  test("US-002: reads the default when bot is absent", () => {
-    expect(configuredBlockingTriggers({})).toEqual(["normal", "own-concurrency"]);
+  test("US-003 AC-21 returns DEFAULT_BLOCKING_TRIGGERS for a config with no bot section at all", () => {
+    expect(configuredBlockingTriggers({})).toEqual(DEFAULT_BLOCKING_TRIGGERS);
   });
   test("US-002: reads the default when the key is absent", () => {
     expect(configuredBlockingTriggers({ bot: {} })).toEqual(["normal", "own-concurrency"]);
@@ -214,8 +214,8 @@ describe("configuredBlockingTriggers", () => {
 });
 
 describe("configuredChainNoticeGeneration", () => {
-  test("US-002: reads the default when bot is absent", () => {
-    expect(configuredChainNoticeGeneration({})).toBe(2);
+  test("US-003 AC-21 reads the defaults for a config with no bot section at all", () => {
+    expect(configuredChainNoticeGeneration({})).toBe(DEFAULT_CHAIN_NOTICE_GENERATION);
   });
   test("US-002: reads the default when the key is absent", () => {
     expect(configuredChainNoticeGeneration({ bot: {} })).toBe(2);

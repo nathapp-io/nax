@@ -1,7 +1,7 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
 import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
-import type { FindingTrigger } from "@/workflow/blocking-findings";
+import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
@@ -27,6 +27,13 @@ export interface ReviewSummaryInput {
   readonly itemStatus?: ItemStatus;
   readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
+  /** US-003: critical or important findings outside the blocking set, which get no inline thread. */
+  readonly residual?: readonly FindingWithTrigger[];
+  /** US-003: the effective blocking set, and where it came from. */
+  readonly blockingTriggers?: readonly FindingTrigger[];
+  readonly blockingSource?: EffectiveBlockingTriggers["source"];
+  /** US-003: the first line of every writer scope comment that stated no usable class. */
+  readonly ignoredScopeRulings?: readonly string[];
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
   readonly preRunFailed?: string;
@@ -58,10 +65,14 @@ function severityLabel(finding: WorkflowFindingDraft): string {
   return finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
 }
 
+/** A finding with the trigger facts the review carries (US-001): what it needs in order to occur. */
+export interface FindingWithTrigger extends WorkflowFindingDraft {
+  readonly trigger?: FindingTrigger;
+  readonly triggerEvidence?: string;
+}
+
 /** A stable marked inline finding, with all author prose neutralised. */
-export function renderFindingComment(
-  finding: WorkflowFindingDraft & { readonly trigger?: FindingTrigger; readonly triggerEvidence?: string },
-): string {
+export function renderFindingComment(finding: FindingWithTrigger): string {
   let body = `**${severityLabel(finding)}** (${finding.kind}): ${safeText(finding.issue, TEXT_LIMIT)}`;
   if (finding.trigger !== undefined) {
     const evidence =
@@ -98,10 +109,50 @@ interface ListSection {
   readonly items: string[];
 }
 
+/**
+ * US-003: a finding that does not block gets no inline thread, so the summary is the only place it appears —
+ * with the class of condition it needs, which is why it did not block.
+ */
+function residualItem(finding: FindingWithTrigger): string {
+  const code = finding.file === undefined ? "" : `\`${safeCode(finding.file)}\``;
+  const at = finding.line === undefined ? code : `${code}:${finding.line}`;
+  const location = at === "" ? "" : `${at}: `;
+  const evidence =
+    finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
+  const issue = safeText(finding.issue, TEXT_LIMIT);
+  return `- **${severityLabel(finding)}** ${location}${issue} (trigger ${finding.trigger ?? "normal"}${evidence})`;
+}
+
+/**
+ * US-003: a forge login is letters, digits, dot, underscore or hyphen. Nothing else is part of one, so the
+ * rendered name can carry no markdown — and, unlike `safeText`, it still reads as the literal `@name`.
+ */
+function loginText(login: string): string {
+  return login.replace(/[^A-Za-z0-9._-]/g, "").slice(0, AUTHOR_LIMIT);
+}
+
+function blockingSourceLabel(source: ReviewSummaryInput["blockingSource"]): string {
+  if (source === undefined || source === "config") return "config";
+  return `PR comment by @${loginText(source.author)}`;
+}
+
+/** The policy that decided this review's posting, and every writer ruling it could not use (US-003). */
+function policyLines(input: ReviewSummaryInput): string[] {
+  const lines: string[] = [];
+  if (input.blockingTriggers !== undefined)
+    lines.push(
+      `Blocking triggers: ${input.blockingTriggers.join(", ")} (${blockingSourceLabel(input.blockingSource)})`,
+    );
+  for (const ruling of input.ignoredScopeRulings ?? [])
+    lines.push(`Ignored scope ruling: ${safeText(ruling, TEXT_LIMIT)}`);
+  return lines;
+}
+
 function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
     { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
+    { heading: "### Residual findings (not blocking)", items: (input.residual ?? []).map(residualItem) },
     { heading: "### Minor findings", items: (input.minor ?? []).map(offLineItem) },
     {
       heading: "### Top-level comments",
@@ -224,6 +275,7 @@ export function renderReviewSummary(input: ReviewSummaryInput): string {
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
     ...itemStatusLines(input.itemStatus),
     ...readinessLines(input),
+    ...policyLines(input),
   ];
   if (input.staticMode) prefix.push("Untrusted PR: reviewed without running any code.");
   const suffix = input.failed > 0 ? [`Could not post ${input.failed} comments; re-run nax bot review.`] : [];
