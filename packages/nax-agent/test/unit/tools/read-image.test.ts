@@ -443,6 +443,48 @@ describe("readTool — the body must be the file the header described", () => {
     expect(result !== undefined && Object.hasOwn(result, "images")).toBe(false);
   });
 
+  test("a rejected close after a good read resolves to an error result with no image", async () => {
+    const png = Uint8Array.from(pngHeader(100, 50));
+    _boundedIoDeps.open = async () => ({
+      ...fakeHandle(png),
+      close: async () => Promise.reject(new Error("close failed")),
+    });
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result?.isError).toBe(true);
+    expect(result?.content).toContain("close failed");
+    expect(result !== undefined && Object.hasOwn(result, "images")).toBe(false);
+  });
+
+  test("a rejected close does not replace the primary read error", async () => {
+    const png = Uint8Array.from(pngHeader(100, 50));
+    _boundedIoDeps.open = async () => ({
+      ...fakeHandle(png, { size: 4096, readable: png.length }),
+      close: async () => Promise.reject(new Error("close failed")),
+    });
+
+    const result = await readImageResult("/fake/shot.png", { path: "shot.png" }, false, false);
+
+    expect(result).toEqual({
+      content: '"shot.png" changed while it was being read; run Read again',
+      isError: true,
+    });
+  });
+
+  test("a rejected close on a non-image resolves to an error result rather than rejecting", async () => {
+    const text = new TextEncoder().encode("hello");
+    _boundedIoDeps.open = async () => ({
+      ...fakeHandle(text),
+      close: async () => Promise.reject(new Error("close failed")),
+    });
+
+    const result = await readImageResult("/fake/notes.png", { path: "notes.png" }, false, false);
+
+    expect(result?.isError).toBe(true);
+    expect(result?.content).toContain("close failed");
+  });
+
   test("a short body read is retried until the file's size is reached", async () => {
     const png = Uint8Array.from([...pngHeader(100, 50), 0x00, 0x01, 0x02]);
     // A handle that answers one byte at a time: POSIX allows this, and a single

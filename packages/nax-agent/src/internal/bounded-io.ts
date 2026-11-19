@@ -69,6 +69,12 @@ export interface BoundedFile {
   /** The first `maxBytes` bytes, or fewer at end of file. */
   prefix(maxBytes: number): Promise<Uint8Array>;
   /**
+   * Up to `maxBytes` bytes from the start, stopping only at end of file or the
+   * ceiling -- NOT clamped to the size the open reported, which a growing or
+   * underreporting file makes untrustworthy for a text read.
+   */
+  prefixToEof(maxBytes: number): Promise<Uint8Array>;
+  /**
    * The file's size now, taken from the SAME open handle as `size` — a caller
    * that read exactly `size` bytes needs this to tell a whole file from a
    * truncation of one that grew after the open.
@@ -104,6 +110,10 @@ function wrapHandle(handle: BoundedHandle, size: number): BoundedFile {
     // end at EOF like any other file.
     prefix: (maxBytes: number) => readFromStart(handle, Math.max(0, size > 0 ? Math.min(maxBytes, size) : maxBytes)),
     currentSize: async () => (await handle.stat()).size,
+    // A text read must stop at the real EOF or at its own ceiling, never at the
+    // size the open reported: a file that grew after the open, or one that
+    // underreports, would otherwise be cut short and read as complete.
+    prefixToEof: (maxBytes: number) => readFromStart(handle, Math.max(0, maxBytes)),
     close: () => handle.close(),
   };
 }
@@ -142,7 +152,7 @@ export async function openBoundedFile(path: string): Promise<BoundedFile> {
 export async function readPrefix(path: string, maxBytes: number): Promise<string> {
   const file = await openBoundedFile(path);
   try {
-    return Buffer.from(await file.prefix(maxBytes + 1)).toString("utf8");
+    return Buffer.from(await file.prefixToEof(maxBytes + 1)).toString("utf8");
   } finally {
     await file.close();
   }

@@ -146,16 +146,33 @@ export async function readImageResult(
   } catch (error) {
     return errorResult(error);
   }
+  let result: ToolResult | undefined;
   try {
-    const head = await file.prefix(IMAGE_HEADER_BYTES);
-    const sniffed = sniffImage(head);
-    if (sniffed === undefined) return undefined;
-    if (file.size > MAX_IMAGE_FILE_BYTES) return tooLargeResult(file.size);
-    if (hasOffset || hasLimit) return rangeResult(input, sniffed);
-    return await wholeImageResult(file, sniffed, String(input.path));
+    result = await imageResultFromFile(file, input, hasOffset, hasLimit);
   } catch (error) {
-    return errorResult(error);
-  } finally {
-    await file.close();
+    result = errorResult(error);
   }
+  // Cleanup sits inside the never-throws boundary but behind the read: a close
+  // failure is reported only when nothing else already was, so it can neither
+  // reject this function nor replace the read's own error.
+  try {
+    await file.close();
+  } catch (error) {
+    return result?.isError === true ? result : errorResult(error);
+  }
+  return result;
+}
+
+async function imageResultFromFile(
+  file: BoundedFile,
+  input: Record<string, unknown>,
+  hasOffset: boolean,
+  hasLimit: boolean,
+): Promise<ToolResult | undefined> {
+  const head = await file.prefix(IMAGE_HEADER_BYTES);
+  const sniffed = sniffImage(head);
+  if (sniffed === undefined) return undefined;
+  if (file.size > MAX_IMAGE_FILE_BYTES) return tooLargeResult(file.size);
+  if (hasOffset || hasLimit) return rangeResult(input, sniffed);
+  return await wholeImageResult(file, sniffed, String(input.path));
 }

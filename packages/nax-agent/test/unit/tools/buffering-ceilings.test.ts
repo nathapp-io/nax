@@ -270,6 +270,17 @@ describe("bounded I/O — the dependency seam", () => {
     expect(await readPrefix("/fake/procfs/status", 100)).toBe("MemTotal:       16384 kB\n");
   });
 
+  test("readPrefix reads to maxBytes + 1 even when the open's stat underreported a positive size", async () => {
+    const source = new TextEncoder().encode("a".repeat(50));
+    // The file grew after the open (or lied): stat said 10, the handle serves 50.
+    // Clamping to 10 would make a 50-byte file look like a complete 10-byte one.
+    _boundedIoDeps.open = async () => fakeHandle(source, { size: 10 });
+
+    const text = await readPrefix("/fake/grown.txt", 20);
+
+    expect(text).toBe("a".repeat(21));
+  });
+
   test("a handle whose stat is not a file is READ_NOT_REGULAR_FILE", async () => {
     _boundedIoDeps.open = async () => ({
       stat: async () => ({ size: 0, isFile: () => false }),
