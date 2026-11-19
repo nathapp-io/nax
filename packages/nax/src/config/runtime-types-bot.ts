@@ -1,3 +1,4 @@
+import type { FindingTrigger } from "@/workflow/blocking-findings";
 import type { ConfiguredModel } from "./schema-types";
 
 export interface BotModelsConfig {
@@ -14,5 +15,17 @@ export interface BotModelsConfig {
 export interface BotConfig {
   gateRepairRounds?: number;
   costLimit?: number;
+  /**
+   * US-002: the finding trigger classes that can hold readiness. Absent (or empty) reads
+   * `DEFAULT_BLOCKING_TRIGGERS`; read it only through `configuredBlockingTriggers(config)`,
+   * because `NaxConfig.bot` itself is optional.
+   */
+  blockingTriggers?: readonly FindingTrigger[];
+  /**
+   * US-002: the finding generation at which the fix summary reports a fix-induced chain.
+   * Absent reads `DEFAULT_CHAIN_NOTICE_GENERATION`; read it only through
+   * `configuredChainNoticeGeneration(config)`.
+   */
+  chainNoticeGeneration?: number;
   models: BotModelsConfig;
 }

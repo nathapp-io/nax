@@ -15,7 +15,7 @@ import { getLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { FindingTrigger } from "@/workflow/blocking-findings";
-import { parseFindingTrigger } from "@/workflow/blocking-findings";
+import { readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
@@ -195,14 +195,13 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
 const TRIGGER_LINE = "Trigger:";
 
 /**
- * US-001: the trigger class an earlier finding's first comment states, or undefined when it states
- * none. US-002 replaces this read with the shared `readFindingThreadFacts`.
+ * US-002: the trigger class an earlier finding's first comment states, or undefined when it states
+ * none. The class itself is read by the shared `readFindingThreadFacts`; an old thread written before
+ * the vocabulary existed keeps an absent trigger so it still blocks as it did.
  */
 function earlierTrigger(body: string): FindingTrigger | undefined {
-  const line = body.split("\n").find((text) => text.startsWith(TRIGGER_LINE));
-  if (line === undefined) return undefined;
-  const stated = line.slice(TRIGGER_LINE.length).split(" - ")[0]?.trim() ?? "";
-  return parseFindingTrigger(stated);
+  const states = body.split("\n").some((text) => text.startsWith(TRIGGER_LINE));
+  return states ? readFindingThreadFacts(body).trigger : undefined;
 }
 
 /** US-001: the trigger line is metadata, not part of the issue text an item carries. */
@@ -222,9 +221,10 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
     if (verdict?.status !== undefined && verdict.status !== "open") continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    const body = thread.comments[0]?.body ?? "";
+    // `earlierIssue` is the finding text: the visible header and the identity markers are not content.
+    const body = earlierIssue(thread);
     const trigger = earlierTrigger(body);
-    const facts = { issue: withoutTriggerLines(earlierIssue(thread)), ...(trigger === undefined ? {} : { trigger }) };
+    const facts = { issue: withoutTriggerLines(body), ...(trigger === undefined ? {} : { trigger }) };
     if (confirmed) {
       items.push({
         kind: "finding",
@@ -235,12 +235,14 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
       });
       continue;
     }
-    const severity = facts.issue.startsWith("**Critical**")
-      ? "critical"
-      : facts.issue.startsWith("**Minor**")
-        ? "minor"
-        : "important";
-    items.push({ kind: "finding", key, ...facts, severity, file: thread.path, line: thread.line });
+    items.push({
+      kind: "finding",
+      key,
+      ...facts,
+      severity: readFindingThreadFacts(body).severity,
+      file: thread.path,
+      line: thread.line,
+    });
   }
   return items;
 }
