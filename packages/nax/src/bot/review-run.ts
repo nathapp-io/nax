@@ -21,13 +21,17 @@ import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } 
 import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
 import { featureIntentPaths } from "./intent";
+import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
-import { reviewConvergence } from "./review-convergence";
+import { earlierLineageTargets } from "./post-earlier";
+import type { BotPushEntry } from "./push-ledger";
+import { findingKey } from "./render";
+import { type ReviewHistoryInput, reviewConvergence, reviewHistory } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
-import { readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
+import { type BotReviewScope, readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
 import { hasNonWriterAuthor } from "./writers";
@@ -90,6 +94,51 @@ interface ReviewEnv extends ReviewPreparation {
   readonly post: Omit<PostReviewInput, "verdict">;
 }
 
+/** US-005: the push facts each half of the review environment needs, or nothing to add. */
+interface ReviewPushFacts {
+  readonly prompt: { readonly botPushes?: readonly BotPushEntry[] };
+  readonly post: { readonly botPushes?: readonly BotPushEntry[]; readonly worktree?: string };
+}
+
+/** Only an incremental review has an earlier range whose pushes its prompt must describe. */
+function incrementalBase(scope: BotReviewScope, range: { readonly rangeBase: string }): string | undefined {
+  return scope === "incremental" ? range.rangeBase : undefined;
+}
+
+async function reviewPushFacts(input: Omit<ReviewHistoryInput, "isAncestor">): Promise<ReviewPushFacts> {
+  const history = await reviewHistory({ ...input, isAncestor: _botReviewDeps.isAncestor });
+  const inRange = history.inRange ?? [];
+  return {
+    prompt: inRange.length > 0 ? { botPushes: inRange } : {},
+    post: history.botPushes.length > 0 ? { botPushes: history.botPushes, worktree: input.worktree } : {},
+  };
+}
+
+/**
+ * US-005: what the bot's own recorded pushes say about each finding's lines, read before posting. A
+ * review whose PR has no recorded push asks git nothing, and a finding with no line is not asked at all.
+ */
+async function reviewLineage(
+  post: Omit<PostReviewInput, "verdict">,
+  verdict: PrReviewVerdict,
+): Promise<PostReviewInput["lineage"]> {
+  const { botPushes, worktree } = post;
+  if (botPushes === undefined || botPushes.length === 0 || worktree === undefined) return undefined;
+  return computeLineage(
+    {
+      // The verdict's findings and the open earlier threads share the keys `mergeEarlier` uses (US-005).
+      targets: [
+        ...verdict.findings.map((f) => ({ key: findingKey(f), file: f.file, line: f.line })),
+        ...earlierLineageTargets({ ...post, verdict }),
+      ],
+      entries: botPushes,
+      worktree,
+      head: post.info.headSha,
+    },
+    { runGit: _botReviewDeps.runGit },
+  );
+}
+
 export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = defineStepGraph({
   start: "review",
   end: ["done"],
@@ -126,12 +175,14 @@ export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = d
       async run(env, state) {
         if (!state.verdict)
           throw new NaxError("[bot] Missing review verdict", "BOT_REVIEW_VERDICT_MISSING", { stage: "bot" });
+        const lineage = await reviewLineage(env.post, state.verdict);
         return {
           patch: {
             posted: await _botReviewDeps.postPrReview({
               ...env.post,
               verdict: state.verdict,
               ...(state.unreadFiles?.length && { unreadFiles: state.unreadFiles }),
+              ...(lineage === undefined ? {} : { lineage }),
             }),
           },
         };
@@ -320,6 +371,13 @@ async function reviewEnvironment(
       ? { rangeBase: checkout.mergeBase }
       : await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor);
   const scope = reviewScopeOf({ ...range, mergeBase: checkout.mergeBase });
+  // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
+  const push = await reviewPushFacts({
+    own: items.own,
+    worktree: checkout.worktree,
+    head: info.headSha,
+    rangeBase: incrementalBase(scope, range),
+  });
   return {
     ...preparation,
     cost: context.cost,
@@ -340,6 +398,7 @@ async function reviewEnvironment(
       model: botModel(ctx.config, "review", input.model),
       ...(!staticMode && intent),
       ...(checkoutState !== undefined && { checkoutState }),
+      ...push.prompt,
     },
     post: {
       ...preparation,
@@ -371,6 +430,8 @@ async function reviewEnvironment(
       stateDir,
       deps: _botReviewDeps.forge,
       cwd: repoRoot,
+      // The post node reads these to attribute every finding's line before it posts (US-005).
+      ...push.post,
     },
   };
 }

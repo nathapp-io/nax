@@ -12,6 +12,7 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import { parseItemOpener, renderRulingEcho } from "../workflow/item-threads";
+import type { LineageTarget } from "./lineage";
 import type { BotReviewEvent, PostReviewInput } from "./post";
 import { earlierKey, findingKey } from "./render";
 import { renderEarlierReply } from "./render-comments";
@@ -67,6 +68,18 @@ export function earlierIssue(thread: PrThread): string {
   return parseNaxBotMarker(thread.comments[0]?.body ?? "")?.key.startsWith("w-")
     ? (content.split(/\r?\n/)[0] ?? "")
     : content;
+}
+
+/**
+ * US-005: the earlier findings a lineage is read for — every open `f-` thread, keyed exactly as
+ * `mergeEarlier` keys its item, so a finding carried over from an earlier round keeps its lineage.
+ */
+export function earlierLineageTargets(input: PostReviewInput): LineageTarget[] {
+  return effectiveEarlier(input).flatMap(({ key, verdict, thread }) => {
+    if (!key.startsWith("f-") || (verdict !== undefined && verdict.status !== "open")) return [];
+    if (thread.path === undefined || thread.line === undefined) return [];
+    return [{ key, file: thread.path, line: thread.line }];
+  });
 }
 
 function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[]): void {

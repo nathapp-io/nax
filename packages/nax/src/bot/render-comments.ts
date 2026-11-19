@@ -6,6 +6,7 @@ import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/block
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
 import { checkCommands } from "./checks";
+import type { FindingLineage } from "./push-ledger";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
 import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
@@ -69,16 +70,33 @@ function severityLabel(finding: WorkflowFindingDraft): string {
 export interface FindingWithTrigger extends WorkflowFindingDraft {
   readonly trigger?: FindingTrigger;
   readonly triggerEvidence?: string;
+  /** US-005: the bot fix whose lines this finding sits on; absent when nothing owns them. */
+  readonly lineage?: FindingLineage;
+}
+
+/** US-005: the same fact the fixer receives — the generation, the push, and the items it fixed. */
+function lineageLine(lineage: FindingLineage): string {
+  const parents = safeText(lineage.parents.join(", "), TEXT_LIMIT);
+  return `Lineage: generation ${lineage.generation}, on lines added by nax bot fix ${lineage.pushSha.slice(0, SHORT_SHA_LENGTH)}${parents === "" ? "" : ` for ${parents}`}`;
+}
+
+/** Fact lines sit together under the issue, and carry no prose of their own (US-001, US-005). */
+function factLines(finding: FindingWithTrigger): string[] {
+  const lines: string[] = [];
+  if (finding.trigger !== undefined) {
+    const evidence =
+      finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
+    lines.push(`Trigger: ${finding.trigger}${evidence}`);
+  }
+  if (finding.lineage !== undefined) lines.push(lineageLine(finding.lineage));
+  return lines;
 }
 
 /** A stable marked inline finding, with all author prose neutralised. */
 export function renderFindingComment(finding: FindingWithTrigger): string {
+  const facts = factLines(finding);
   let body = `**${severityLabel(finding)}** (${finding.kind}): ${safeText(finding.issue, TEXT_LIMIT)}`;
-  if (finding.trigger !== undefined) {
-    const evidence =
-      finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
-    body += `\n\nTrigger: ${finding.trigger}${evidence}`;
-  }
+  if (facts.length > 0) body += `\n\n${facts.join("\n")}`;
   if (finding.suggestion) body += `\n\nSuggestion: ${safeText(finding.suggestion, TEXT_LIMIT)}`;
   return withNaxBotMarker(body, findingKey(finding));
 }

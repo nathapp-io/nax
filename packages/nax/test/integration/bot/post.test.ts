@@ -571,3 +571,41 @@ describe("postPrReview review scope (nax#2667)", () => {
     expect(summaryBody()).toContain("(incremental since ");
   });
 });
+
+describe("postPrReview finding lineage (US-005)", () => {
+  const pushSha = "abcdef1".padEnd(40, "0");
+  /** The first comment of an open earlier finding thread, carrying facts a rendered body would have. */
+  function earlierOpener(body: string): PrComment {
+    return { ...comment, author: "bot", body: withNaxBotMarker(body, "f-original") };
+  }
+  /** The merged earlier finding the artifact records for an open earlier thread. */
+  async function mergedFinding(body: string) {
+    await bot.postPrReview({
+      ...input,
+      earlier: [{ ...thread, comments: [earlierOpener(body)] }],
+      verdict: { ...input.verdict, findings: [] },
+    });
+    return (await artifact()).agreed.find(({ kind }) => kind === "finding");
+  }
+  test("AC-20 keeps the lineage line an earlier finding's body carries out of the merged issue", async () => {
+    const merged = await mergedFinding(
+      "**Important** (quality): lock leaks\n\nTrigger: normal\nLineage: generation 2, on lines added by nax bot fix abcdef1 for f-a",
+    );
+    expect(merged?.issue).toBe("**Important** (quality): lock leaks");
+    expect(merged?.issue).not.toContain("Lineage:");
+  });
+  test("AC-21 records the lineage computeLineage read for that thread's key", async () => {
+    await bot.postPrReview({
+      ...input,
+      earlier: [{ ...thread, comments: [earlierOpener("**Important** (quality): lock leaks\n\nTrigger: normal")] }],
+      verdict: { ...input.verdict, findings: [] },
+      lineage: {
+        lineage: new Map([["f-original", { generation: 2, parents: ["f-a"], pushSha }]]),
+        unknown: new Set(),
+        unreachable: 0,
+      },
+    });
+    const merged = (await artifact()).agreed.find(({ kind }) => kind === "finding");
+    expect(merged).toMatchObject({ lineage: { generation: 2, parents: ["f-a"], pushSha } });
+  });
+});

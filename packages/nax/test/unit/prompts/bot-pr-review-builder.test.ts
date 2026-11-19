@@ -544,3 +544,35 @@ describe("buildBotPrReviewPrompt finding trigger contract (US-001)", () => {
     expect(lines).toEqual([definition]);
   });
 });
+
+describe("buildBotPrReviewPrompt earlier bot pushes (US-005)", () => {
+  const BASE_SHA = "b".repeat(40);
+  const PUSH_SHA = "c".repeat(40);
+  const push = {
+    base: BASE_SHA,
+    sha: PUSH_SHA,
+    at: "2026-01-01T00:00:00.000Z",
+    items: [{ key: "f-a", generation: 1, issue: "lock leaks" }],
+  };
+  const heading = "## Earlier nax bot fix pushes in this range";
+
+  test("AC-12 lists a push of the incremental range with the items it fixed", () => {
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, incrementalSince: "a".repeat(40), botPushes: [push] });
+    expect(prompt).toContain(heading);
+    expect(prompt).toContain(`- ${"b".repeat(7)}..${"c".repeat(7)}: nax bot fix for f-a (lock leaks), generation 1`);
+  });
+  test.each([
+    ["empty", []],
+    ["absent", undefined],
+  ])("AC-13 adds no heading when botPushes is %s", (_name, botPushes) => {
+    const prompt = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: "a".repeat(40),
+      ...(botPushes === undefined ? {} : { botPushes }),
+    });
+    expect(prompt).not.toContain(heading);
+  });
+  test("AC-14 adds no heading for a full review even when pushes are given", () => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, botPushes: [push] })).not.toContain(heading);
+  });
+});

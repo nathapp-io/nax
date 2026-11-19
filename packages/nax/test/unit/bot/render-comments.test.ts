@@ -123,6 +123,21 @@ describe("renderFindingComment", () => {
   test("AC-4 breaks issue links", () => {
     expect(bot.renderFindingComment({ ...finding, issue: "[x](http://e.com)" })).not.toContain("](");
   });
+  test("US-005 AC-10 names the generation, the push and its parents after the trigger line", () => {
+    const body = bot.renderFindingComment({
+      ...finding,
+      trigger: "normal",
+      lineage: { generation: 2, parents: ["f-a", "f-b"], pushSha: `${"abcdef1"}${"0".repeat(33)}` },
+    });
+    const lines = body.split("\n");
+    expect(lines).toContain("Lineage: generation 2, on lines added by nax bot fix abcdef1 for f-a, f-b");
+    expect(lines.indexOf("Lineage: generation 2, on lines added by nax bot fix abcdef1 for f-a, f-b")).toBe(
+      lines.findIndex((line) => line.startsWith("Trigger:")) + 1,
+    );
+  });
+  test("US-005 AC-11 renders no lineage line without a lineage", () => {
+    expect(bot.renderFindingComment(finding)).not.toContain("Lineage:");
+  });
   test("sanitizes and caps both issue and suggestion", () => {
     const text = `@alice #12 [x](http://e.com) ${"z".repeat(3_000)}`;
     const body = `**Important** (quality): ${bot.safeText(text, 2_000)}\n\nSuggestion: ${bot.safeText(text, 2_000)}`;
