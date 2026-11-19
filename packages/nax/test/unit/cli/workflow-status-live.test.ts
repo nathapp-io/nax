@@ -4,6 +4,8 @@ import { withTempDir } from "@test/helpers";
 import { type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
 import { _workflowForgeDeps } from "@/cli/workflow-forge";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
+import { addSink, initLogger, resetLogger } from "@/logger";
+import { DEFAULT_BLOCKING_TRIGGERS } from "@/workflow/blocking-findings";
 import { type CiWaiver, renderCiWaiver } from "@/workflow/ci-waiver";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
@@ -13,6 +15,14 @@ const URL = "https://github.com/o/r/pull/7";
 const CV: OpenItem = { id: "_run:cv1", kind: "cannot-verify", issue: "manual check" };
 const ADVISOR: OpenItem = { id: "D-1", kind: "advisor", issue: "needs change" };
 const NOW = "2026-10-13T09:12:00Z";
+/** The finding thread the US-008 fixtures post: a key, a place and an issue the index never lists. */
+const FINDING_KEY = "f-abc";
+const FINDING_PATH = "packages/nax/src/action-file.ts";
+const FINDING_LINE = 42;
+const FINDING_LINE_TEXT = `- [finding] ${FINDING_KEY} — bot review: lock leaks (Important, ${FINDING_PATH}:${FINDING_LINE})`;
+/** The ledger's own supplementary item, which every live report of this fixture carries. */
+const SUPPLEMENTARY_HEADING = "Also to verify (not blocking):";
+const SUPPLEMENTARY_LINE = "- [cannot-verify] US-001:cv1 — Redis TTL";
 const WAIVER: CiWaiver = {
   headSha: "7c98673abc0123456789abcdef0123456789abcd",
   checks: ["nax-agent: glob (Node 22.19.0, macos-latest)"],
@@ -33,6 +43,19 @@ type Options = {
   waiver?: CiWaiver;
   /** The login that posted it; the current user unless overridden. */
   waiverLogin?: string;
+  /** A bot review finding thread on the PR; the item index never lists one (#2981, US-008). */
+  blockingFinding?: {
+    readonly key?: string;
+    readonly severity?: "Critical" | "Important" | "Minor";
+    readonly trigger?: string;
+    readonly resolved?: boolean;
+    readonly author?: string;
+  };
+  /**
+   * Make the blocking-finding read fail after the live read succeeded: the live read runs first, so
+   * only the second call to that endpoint throws (US-008).
+   */
+  blockingFailure?: "threads" | "comments";
 };
 
 function record(overrides: Partial<WorkflowFeatureRecord> = {}): WorkflowFeatureRecord {
@@ -81,6 +104,30 @@ function thread(item: OpenItem, disposition?: "fixed" | "verified" | "confirmed"
   };
 }
 
+/** A bot review finding thread: an inline thread the item index has no entry for (US-008). */
+function findingThread(options: NonNullable<Options["blockingFinding"]>) {
+  const severity = options.severity ?? "Important";
+  const trigger = options.trigger === undefined ? "" : `\n\nTrigger: ${options.trigger}`;
+  return {
+    id: "finding-thread",
+    isResolved: options.resolved ?? false,
+    isOutdated: false,
+    path: FINDING_PATH,
+    line: FINDING_LINE,
+    originalLine: FINDING_LINE,
+    comments: {
+      nodes: [
+        {
+          databaseId: 5,
+          author: { login: options.author ?? "nax" },
+          body: withNaxBotMarker(`**${severity}** (quality): lock leaks${trigger}`, options.key ?? FINDING_KEY),
+          createdAt: NOW,
+        },
+      ],
+    },
+  };
+}
+
 function reviewThreadsResponse(options: Options) {
   return {
     data: {
@@ -90,6 +137,7 @@ function reviewThreadsResponse(options: Options) {
             nodes: [
               thread(CV, options.cvRuled === false ? undefined : (options.cvRuling ?? "fixed"), options.cvReopened),
               thread(ADVISOR, options.advisorRuling ?? "fixed"),
+              ...(options.blockingFinding === undefined ? [] : [findingThread(options.blockingFinding)]),
             ],
             pageInfo: { hasNextPage: false, endCursor: null },
           },
@@ -114,7 +162,7 @@ function indexComments(options: Options) {
   ];
 }
 
-function forgeResponse(argv: readonly string[], options: Options) {
+function forgeResponse(argv: readonly string[], options: Options, seen: { graphql: number; comments: number }) {
   const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
   if (argv[0] === "git")
     return {
@@ -125,22 +173,32 @@ function forgeResponse(argv: readonly string[], options: Options) {
   if (options.failure === "offline") throw new Error("forge offline");
   if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "unavailable" };
   if (argv.includes("view")) return ok({ isDraft: options.isDraft ?? false, body: "" });
-  if (argv.includes("graphql")) return ok(reviewThreadsResponse(options));
+  if (argv.includes("graphql")) {
+    seen.graphql += 1;
+    // The live read is the first of these; the blocking-finding read is every later one (US-008).
+    if (options.blockingFailure === "threads" && seen.graphql > 1) throw new Error("blocking thread read failed");
+    return ok(reviewThreadsResponse(options));
+  }
   const endpoint = argv.at(-1) ?? "";
   if (endpoint.endsWith("/permission")) return ok({ permission: "write" });
   if (endpoint === "user") return ok({ login: "nax", id: 1 });
-  if (endpoint.includes("/issues/7/comments?")) return ok(indexComments(options));
+  if (endpoint.includes("/issues/7/comments?")) {
+    seen.comments += 1;
+    if (options.blockingFailure === "comments" && seen.comments > 1) throw new Error("blocking comment read failed");
+    return ok(indexComments(options));
+  }
   if (endpoint.includes("/reviews?")) return ok([]);
   throw new Error(`Unexpected forge command: ${argv.join(" ")}`);
 }
 
 function forge(options: Options) {
   const calls: string[][] = [];
+  const seen = { graphql: 0, comments: 0 };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (argv) => {
       calls.push(argv);
-      return forgeResponse(argv, options);
+      return forgeResponse(argv, options, seen);
     },
   };
   return { deps, calls };
@@ -162,7 +220,13 @@ async function fixture(dir: string, options: Options = {}) {
   // A nonempty supplementary list proves the overlay preserves it, not just an empty default.
   await Bun.write(join(runDir, "ledger.md"), "US-001: cannot-verify: Redis TTL\n");
   const fx = forge(options);
-  const forgeDeps = { ..._workflowForgeDeps, forge: fx.deps, resolveOutputDir: async () => join(dir, "out") };
+  const forgeDeps = {
+    ..._workflowForgeDeps,
+    forge: fx.deps,
+    resolveOutputDir: async () => join(dir, "out"),
+    // The blocking set is config: one fixture keeps it the default, so the finding's own class decides.
+    readBlockingTriggers: async () => DEFAULT_BLOCKING_TRIGGERS,
+  };
   async function invoke(json = true) {
     const out: string[] = [];
     const err: string[] = [];
@@ -433,4 +497,104 @@ describe("workflowStatusCommand live overlay", () => {
       expect(value).not.toHaveProperty("ciWaiver");
     });
   });
+});
+
+/**
+ * US-008 (#2981): the item index has no entry for a bot review finding — nothing indexes one — so a PR
+ * held by three Important finding threads printed `No open items.`. The live path appends the ones that
+ * block, prints their severity and location, and exits 2; a read that fails leaves the report alone.
+ */
+describe("workflowStatusCommand blocking review findings", () => {
+  test("AC-9/10: a live draft held by one own blocking finding lists it and exits two", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, blockingFinding: {} });
+      const { code, value } = await fx.report();
+      expectLive(value);
+      expect(value.openItems).toEqual([
+        {
+          id: FINDING_KEY,
+          kind: "finding",
+          severity: "important",
+          file: FINDING_PATH,
+          line: FINDING_LINE,
+          issue: "bot review: lock leaks",
+        },
+      ]);
+      expect(code).toBe(2);
+      const plain = await fx.invoke(false);
+      expect(plain.out).toContain(FINDING_LINE_TEXT);
+      expect(plain.out).not.toContain("No open items.");
+      expect(plain.code).toBe(2);
+    });
+  });
+
+  test("AC-9: an indexed open item and the finding are both listed, in index order first", async () => {
+    await withTempDir(async (dir) => {
+      const plain = await (await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {} })).invoke(false);
+      expect(plain.out).toEqual([
+        `auth: draft ${URL}`,
+        "- [cannot-verify] _run:cv1 — manual check",
+        FINDING_LINE_TEXT,
+        SUPPLEMENTARY_HEADING,
+        SUPPLEMENTARY_LINE,
+      ]);
+    });
+  });
+
+  // AC-10 on the one fixture where the exit code is the finding's own work: every indexed item is ruled,
+  // so this PR reads ready and exits 0 — until the blocking finding holds it.
+  test("AC-10: the blocking finding is what makes an otherwise-ready live PR exit two", async () => {
+    await withTempDir(async (dir) => {
+      const clear = await (await fixture(dir, { record: { outcome: "ready" } })).report();
+      expectLive(clear.value);
+      expect(clear.value.openItems).toEqual([]);
+      expect(clear.code).toBe(0);
+      const held = await (await fixture(dir, { record: { outcome: "ready" }, blockingFinding: {} })).report();
+      expectLive(held.value);
+      expect(held.value.openItems.map((item) => item.id)).toEqual([FINDING_KEY]);
+      expect(held.code).toBe(2);
+    });
+  });
+
+  test.each([
+    { label: "a resolved thread", blockingFinding: { resolved: true } },
+    { label: "a minor finding", blockingFinding: { severity: "Minor" as const } },
+    { label: "an adversarial finding", blockingFinding: { trigger: "adversarial" } },
+    { label: "another author's finding", blockingFinding: { author: "mallory" } },
+  ])("$label adds nothing to the report", async ({ blockingFinding }) => {
+    await withTempDir(async (dir) => {
+      const { code, value } = await (await fixture(dir, { isDraft: true, blockingFinding })).report();
+      expectLive(value);
+      expect(value.openItems).toEqual([]);
+      expect(code).toBe(2);
+      const plain = await (await fixture(dir, { isDraft: true, blockingFinding })).invoke(false);
+      expect(plain.out).toEqual([`auth: draft ${URL}`, "No open items.", SUPPLEMENTARY_HEADING, SUPPLEMENTARY_LINE]);
+    });
+  });
+
+  test.each(["threads", "comments"] as const)(
+    "AC-11/12: a failed blocking read (%s) leaves the live report and logs a warn",
+    async (blockingFailure) => {
+      await withTempDir(async (dir) => {
+        const messages: string[] = [];
+        resetLogger();
+        initLogger({ level: "warn" });
+        const removeSink = addSink((entry) => {
+          if (entry.level === "warn") messages.push(entry.message);
+        });
+        try {
+          const { code, value } = await (
+            await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure })
+          ).report();
+          expectLive(value);
+          expect(value.openItems).toEqual([CV]);
+          expect(code).toBe(2);
+          expect(messages).toContain("[workflow-status] Could not read blocking review findings");
+        } finally {
+          removeSink();
+          resetLogger();
+        }
+      });
+    },
+  );
 });

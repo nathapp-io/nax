@@ -22,7 +22,7 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
-import { type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
+import { configuredChainNoticeGeneration, type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
@@ -36,13 +36,14 @@ import {
   readinessLines,
   recordCiWaiver,
 } from "./ci-waiver-ready";
+import { convergenceLines } from "./convergence-summary";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import { outcomeText } from "./fix-outcome-text";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
-import { type BotPushEntry, ledgerBody, ledgerIssue, readPushLedger } from "./push-ledger";
+import { type BotPushEntry, ledgerBody, ledgerIssue, nextLedgerEntries, readPushLedger } from "./push-ledger";
 import { safeText } from "./render";
 import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
@@ -369,8 +370,8 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
   if (keys.length === 0) return keys;
   const withdrawn = withdrawnKeys(env);
   try {
-    const { info, user, threads, comments } = await readPrState(env);
-    const input = { ref: env.ref, info, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
+    const { user, threads, comments } = await readPrState(env);
+    const input = { ref: env.ref, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
     const [settled, confirmed] = await Promise.all([
       _fixReportDeps.readSettledKeys(input),
       withdrawn.size === 0 ? new Set<string>() : _fixReportDeps.readConfirmedKeys(input),
@@ -543,7 +544,16 @@ function summaryBody(
 }
 
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
-  const lines: string[] = [];
+  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
+  // US-008: the facts are read from the ledger the summary is about to carry — this execution's push
+  // included — so the count stated and the block written can never disagree.
+  const lines = convergenceLines({
+    entries: nextLedgerEntries(own?.comment.body, pushEntry(env, state)),
+    unreachable: env.review.unreachablePushes ?? 0,
+    agreed: env.review.agreed,
+    blocking: reviewBlockingTriggers(env),
+    noticeGeneration: configuredChainNoticeGeneration(env.config),
+  });
   if (state.outcome === "nothing" && state.pushedSha)
     lines.push(
       `Pushed ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`,
@@ -552,7 +562,6 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
-  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
   const body = summaryBody(env, state, lines, own);
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);

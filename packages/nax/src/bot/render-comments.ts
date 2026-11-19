@@ -26,6 +26,12 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 
 export interface ReviewSummaryInput {
   readonly itemStatus?: ItemStatus;
+  /**
+   * US-008: the agreed findings that block under the effective set. They are review threads, not
+   * indexed items, so the open-items line names them beside the index's own count. Absent or 0 leaves
+   * that line as it always was.
+   */
+  readonly blockingCount?: number;
   readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
   /** US-003: critical or important findings outside the blocking set, which get no inline thread. */
@@ -222,7 +228,7 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
   return withNaxBotMarker([...prefix, ...lists, ...notice, ...suffix].join("\n"), "summary");
 }
 
-function itemStatusLines(status: ItemStatus | undefined): string[] {
+function itemStatusLines(status: ItemStatus | undefined, blockingCount: number | undefined): string[] {
   if (status === undefined) return [];
   const lines: string[] = [];
   if (status.recorded.length > 0) {
@@ -236,7 +242,11 @@ function itemStatusLines(status: ItemStatus | undefined): string[] {
     if (hidden > 0) shown.push(`and ${hidden} more`);
     lines.push(`Item rulings recorded: ${status.recorded.length} (${shown.join(", ")}).`);
   }
-  lines.push(`Open items: ${status.open} of ${status.total}.`);
+  // US-008: the index counts its own items; a review's blocking findings are threads, so they are
+  // counted beside it (#2981). With none there is nothing to add and the line reads as it always did.
+  const blocking =
+    blockingCount === undefined || blockingCount === 0 ? "." : ` indexed; ${blockingCount} blocking review findings.`;
+  lines.push(`Open items: ${status.open} of ${status.total}${blocking}`);
   return lines;
 }
 
@@ -291,7 +301,7 @@ export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
     `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
-    ...itemStatusLines(input.itemStatus),
+    ...itemStatusLines(input.itemStatus, input.blockingCount),
     ...readinessLines(input),
     ...policyLines(input),
   ];

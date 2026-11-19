@@ -1,5 +1,10 @@
 export { _baseConfigDeps, loadBotConfig, snapshotBaseNax } from "./base-config";
 export {
+  _blockingThreadsDeps,
+  type BlockingFindingThreadsInput,
+  readBlockingFindingThreads,
+} from "./blocking-threads";
+export {
   _callerRulingsDeps,
   type CallerRulingsFile,
   type CallerRulingsReport,
@@ -27,6 +32,7 @@ export {
   resolveBotChecks,
   reviewBuildSteps,
 } from "./checks";
+export { type ConvergenceSummaryInput, convergenceLines } from "./convergence-summary";
 export { creditedFiles } from "./coverage-credit";
 export {
   COVERAGE_RECORD_KEY,
@@ -86,6 +92,7 @@ export {
   postPrReview,
 } from "./post";
 export { _prHeadWaitDeps, PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
+export { type BotPushEntry, nextLedgerEntries } from "./push-ledger";
 export { breakLinks, commentKey, earlierKey, findingKey, safeText, threadKey } from "./render";
 export {
   type ReviewSummaryInput,

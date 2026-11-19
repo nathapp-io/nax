@@ -77,6 +77,26 @@ describe("renderReviewSummary item status", () => {
     expect(body).not.toContain("Item rulings recorded");
     expect(body).not.toContain("Open items:");
   });
+  // US-008: the index's own count is not the whole story on a PR whose review raised blocking findings
+  // that are threads, not items (#2981). The count is stated beside it, never instead of it.
+  test("US-008 AC-13 counts blocking review findings beside the indexed open items", () => {
+    const body = bot.renderReviewSummary(
+      summary({ itemStatus: { recorded: [], open: 0, total: 9 }, blockingCount: 2 }),
+    );
+    expect(body.split("\n")).toContain("Open items: 0 of 9 indexed; 2 blocking review findings.");
+  });
+  test("US-008 AC-14 leaves the open-items line alone with no blocking finding", () => {
+    for (const blockingCount of [0, undefined]) {
+      const body = bot.renderReviewSummary(
+        summary({
+          itemStatus: { recorded: [], open: 0, total: 9 },
+          ...(blockingCount === undefined ? {} : { blockingCount }),
+        }),
+      );
+      expect(body.split("\n")).toContain("Open items: 0 of 9.");
+      expect(body).not.toContain("blocking review findings");
+    }
+  });
 });
 
 describe("renderFindingComment", () => {

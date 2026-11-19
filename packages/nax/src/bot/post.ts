@@ -427,6 +427,16 @@ async function postFindings(input: PostReviewInput): Promise<{
   return { inlineFindings, offLine, minor, residual };
 }
 
+/**
+ * US-008: the agreed findings that hold readiness under the set this review posted with. `agreedItems`
+ * is the same list the artifact records, so the count the summary states and the items a later fix or
+ * readiness pass acts on cannot disagree.
+ */
+function blockingFindingCount(input: PostReviewInput): number {
+  const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
+  return agreedItems(input).filter((item) => item.kind === "finding" && isBlockingFinding(item, blocking)).length;
+}
+
 async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: number; failed: number }> {
   let threadsAnswered = 0;
   let failed = 0;
@@ -461,6 +471,9 @@ async function postSummary(
   const body = renderReviewSummary({
     headSha: input.info.headSha,
     ...(input.itemStatus === undefined ? {} : { itemStatus: input.itemStatus }),
+    // US-008: the index counts items only, and a finding is a thread (#2981), so the summary counts
+    // the agreed findings that hold readiness beside it.
+    blockingCount: blockingFindingCount(input),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,

@@ -177,11 +177,23 @@ export function appendPushEntry(entries: readonly BotPushEntry[], entry: BotPush
 }
 
 /**
+ * The entries a report writes: the block the comment it replaces carried, plus this execution's push
+ * when it made one. US-008 reads the same list to count the pushes the summary is about to state, so
+ * the count and the block can never disagree.
+ */
+export function nextLedgerEntries(
+  previous: string | undefined,
+  entry: BotPushEntry | undefined,
+): readonly BotPushEntry[] {
+  const kept = previous === undefined ? [] : readPushLedger(previous).entries;
+  return entry === undefined ? kept : appendPushEntry(kept, entry);
+}
+
+/**
  * The body a report writes: the `fix-summary` this execution rendered, carrying the ledger of the
  * comment it replaces plus — only when this execution pushed — its own entry. An unreadable or
  * absent previous block contributes nothing but the new entry (US-004).
  */
 export function ledgerBody(previous: string | undefined, entry: BotPushEntry | undefined, body: string): string {
-  const kept = previous === undefined ? [] : readPushLedger(previous).entries;
-  return withPushLedger(body, entry === undefined ? kept : appendPushEntry(kept, entry));
+  return withPushLedger(body, nextLedgerEntries(previous, entry));
 }

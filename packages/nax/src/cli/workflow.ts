@@ -15,7 +15,9 @@
 import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
-import { prNumberFromUrl } from "@/forge";
+import { readBlockingFindingThreads } from "@/bot";
+import { listPrComments, listReviewThreads, prNumberFromUrl, readCurrentUser, resolvePrRef } from "@/forge";
+import { getLogger } from "@/logger";
 import type {
   ConfigChangeRecord,
   FeatureCiState,
@@ -215,23 +217,82 @@ async function withSidecar(
   }
 }
 
-/** The verdict of the newest readable run, or the error that says why there is none. */
-async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForgeDeps): Promise<WorkflowStatusReport> {
+/**
+ * What one status report is built from. `blocking` is not a second list of open items: it names the
+ * entries of `report.openItems` that came from the review's own threads, which print with their
+ * severity and location (US-008) while the index's own items keep their line.
+ */
+interface BuiltReport {
+  readonly report: WorkflowStatusReport;
+  readonly blocking: readonly OpenItem[];
+}
+
+/**
+ * US-008 (#2981): the review's own unsettled blocking finding threads. Nothing indexes a finding, so
+ * the item index cannot see them — a PR held by three Important threads still read `No open items.`
+ *
+ * Best-effort by design: the live item-index report is the authority on everything it already reports,
+ * so a failed read here logs a warning and adds nothing. It runs only on the live path, and never for a
+ * run that fell back to its record.
+ */
+async function readBlockingFindings(
+  dir: string,
+  url: string,
+  forgeDeps: WorkflowForgeDeps,
+): Promise<readonly OpenItem[]> {
+  const number = prNumberFromUrl(url);
+  if (number === null) return [];
+  try {
+    const ref = await resolvePrRef(number, forgeDeps.forge, dir);
+    const [user, threads, comments, configured] = await Promise.all([
+      readCurrentUser(ref, forgeDeps.forge, dir),
+      listReviewThreads(ref, forgeDeps.forge, dir),
+      listPrComments(ref, forgeDeps.forge, dir),
+      forgeDeps.readBlockingTriggers(dir),
+    ]);
+    return await readBlockingFindingThreads({
+      ref,
+      threads,
+      comments,
+      login: user.login,
+      configured,
+      deps: forgeDeps.forge,
+      cwd: dir,
+    });
+  } catch (error) {
+    getLogger().warn("workflow-status", "[workflow-status] Could not read blocking review findings", {
+      pr: number,
+      error: errorMessage(error),
+    });
+    return [];
+  }
+}
+
+/** The verdict of the newest readable run: the report, and the blocking findings the live path appended. */
+async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForgeDeps): Promise<BuiltReport> {
   const loaded = await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir);
   const report = reportFor(dir, feature, loaded);
   const { outcome, url } = loaded.record;
   const needsLiveStatus = outcome === "draft" || (outcome === "ready" && report.openItems.length > 0);
-  if (!needsLiveStatus || !url || prNumberFromUrl(url) === null) return report;
+  if (!needsLiveStatus || !url || prNumberFromUrl(url) === null) return { report, blocking: [] };
   const live = await readLiveStatus({ url, cwd: dir, deps: forgeDeps.forge, items: report.openItems });
-  if (live.source === "run-record") return withSidecar({ ...report, liveError: live.error }, loaded, dir);
+  if (live.source === "run-record")
+    return { report: await withSidecar({ ...report, liveError: live.error }, loaded, dir), blocking: [] };
   const settled = new Set(live.settled.map((item) => item.id));
+  const blocking = await readBlockingFindings(dir, url, forgeDeps);
   return {
-    ...report,
-    source: "live",
-    outcome: live.isDraft ? "draft" : "ready",
-    settledItems: live.settled,
-    ...(live.ciWaiver && !live.isDraft ? { ciWaiver: live.ciWaiver } : {}),
-    openItems: report.openItems.filter((item) => !settled.has(item.id) && (live.isDraft || item.id !== CI_ITEM_ID)),
+    blocking,
+    report: {
+      ...report,
+      source: "live",
+      outcome: live.isDraft ? "draft" : "ready",
+      settledItems: live.settled,
+      ...(live.ciWaiver && !live.isDraft ? { ciWaiver: live.ciWaiver } : {}),
+      openItems: [
+        ...report.openItems.filter((item) => !settled.has(item.id) && (live.isDraft || item.id !== CI_ITEM_ID)),
+        ...blocking,
+      ],
+    },
   };
 }
 
@@ -241,6 +302,21 @@ function exitCodeFor(report: WorkflowStatusReport): number {
 }
 
 const itemLine = (item: OpenItem): string => `- [${item.kind}] ${item.id} — ${item.issue}`;
+
+/** The severity a reader needs to judge a finding, capitalised as the review's own bodies spell it. */
+const severityLabel = (severity: OpenItem["severity"]): string =>
+  severity === undefined ? "" : severity.charAt(0).toUpperCase() + severity.slice(1);
+
+/**
+ * US-008: the line a review finding gets. `itemLine` names no severity or place, and a finding is the
+ * one item whose `file` and `line` a reader acts on — so its facts are stated, while every indexed
+ * item keeps the line it always had.
+ */
+function blockingFindingLine(item: OpenItem): string {
+  const place = item.file === undefined ? "" : item.line === undefined ? item.file : `${item.file}:${item.line}`;
+  const facts = [severityLabel(item.severity), place].filter((fact) => fact !== "").join(", ");
+  return `${itemLine(item)}${facts === "" ? "" : ` (${facts})`}`;
+}
 
 /** Short-sha length for display; the full 40-hex head is only in the `w-ci-waiver` record itself. */
 const SHORT_SHA = 7;
@@ -274,13 +350,14 @@ function configChangeLine(entry: { readonly storyId: string } & ConfigChangeReco
   return `${entry.storyId} config change applied: ${key}${was} -> "${entry.to}" ${decision}`;
 }
 
-function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
+function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps, blocking: readonly OpenItem[]): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
+  const findings = new Set(blocking.map((item) => item.id));
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
   if (report.liveError !== undefined) deps.log(`(run record only: ${report.liveError})`);
   if (report.itemIndexMissing === true) deps.log(missingIndexLine(report.feature));
   if (report.openItems.length === 0) deps.log(NO_ITEMS);
-  for (const item of report.openItems) deps.log(itemLine(item));
+  for (const item of report.openItems) deps.log(findings.has(item.id) ? blockingFindingLine(item) : itemLine(item));
   for (const change of report.configChanges ?? []) deps.log(configChangeLine(change));
   if (report.ciWaiver) deps.log(waiverLine(report.ciWaiver));
   if (report.supplementaryItems.length === 0) return;
@@ -295,9 +372,9 @@ export async function workflowStatusCommand(
   forgeDeps: WorkflowForgeDeps = _workflowForgeDeps,
 ): Promise<number> {
   try {
-    const report = await buildReport(opts.dir, opts.feature, forgeDeps);
+    const { report, blocking } = await buildReport(opts.dir, opts.feature, forgeDeps);
     if (opts.json) deps.log(JSON.stringify(report));
-    else printPlain(report, deps);
+    else printPlain(report, deps, blocking);
     return exitCodeFor(report);
   } catch (err) {
     const message = errorMessage(err);

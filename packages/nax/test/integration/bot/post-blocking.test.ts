@@ -189,4 +189,21 @@ describe("postPrReview residual findings (US-003)", () => {
     await bot.postPrReview(blocking([adversarial], { ignoredScopeRulings: ["blocking triggers: normal, race"] }));
     expect(summaryBody()).toContain("Ignored scope ruling: blocking triggers: normal, race");
   });
+
+  // US-008: the index cannot see a review's findings — they are threads, not items (#2981) — so the
+  // summary counts the blocking ones beside the indexed open count.
+  test("US-008 AC-15 counts two blocking findings beside the index's open items", async () => {
+    const findings: PrFinding[] = [
+      { ...adversarial, trigger: "normal", issue: "lock leaks", file: "a.ts", line: 3 },
+      { ...adversarial, trigger: "normal", issue: "claim file race", file: "b.ts", line: 8 },
+    ];
+    await bot.postPrReview(blocking(findings, { itemStatus: { recorded: [], open: 0, total: 9 } }));
+    expect(summaryBody()).toContain("Open items: 0 of 9 indexed; 2 blocking review findings.");
+  });
+
+  test("US-008: a review with no blocking finding leaves the open-items line alone", async () => {
+    await bot.postPrReview(blocking([adversarial], { itemStatus: { recorded: [], open: 0, total: 9 } }));
+    expect(summaryBody()).toContain("Open items: 0 of 9.");
+    expect(summaryBody()).not.toContain("blocking review findings");
+  });
 });
