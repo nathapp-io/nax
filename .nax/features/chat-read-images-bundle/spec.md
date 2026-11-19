@@ -289,7 +289,7 @@ None. Existing `run-interaction-handler.test.ts` outcomes carry no images, and t
 10. [unit] `capRequestImages` on messages `[user with 15 images, tool-result with 10 images]` keeps all 10 tool-result images and the newest 10 user images, and appends five `[image from an earlier turn dropped from context: image/png]` lines to the user message's content.
 11. [unit] `capRequestImages` on `[tool-result with 15 images, user with 10 images]` keeps all 10 user images and the newest 10 tool-result images, and appends five dropped-from-context lines to the tool result's content.
 12. [unit] `capRequestImages` keeps the total base64 length of kept images, across user and tool-result messages, at or under `MAX_REQUEST_IMAGE_BASE64_CHARS`.
-13. [unit] `capRequestImages` returns the same array instance when no message is over either limit and some tool results carry images.
+13. [unit] When `capRequestImages` receives messages that include tool-result images and the combined image count and base64 character count across user and tool-result messages are at or below `MAX_REQUEST_IMAGES` and `MAX_REQUEST_IMAGE_BASE64_CHARS`, respectively, it returns the original array instance.
 14. [unit] `imagesAsNotes` on a tool result with content "x" and a 640x480 PNG returns that message with no `images` key and content `x\n[image: image/png 640x480]`.
 15. [unit] `estimateTokens` of a tool result with content of 400 characters and one image without dimensions equals `estimateTokens` of the same tool result without the image plus `IMAGE_TOKEN_ESTIMATE`.
 
