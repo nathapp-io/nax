@@ -29,7 +29,7 @@ export const FLOW_COST_CAP_DECIMALS = 4;
 /** A feature name koda accepts: a letter or digit first, then letters, digits, `.`, `_` and `-`. */
 export const FLOW_FEATURE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 /** A role model string (`acp:codex`) as koda's runner receives it — not a nax alias name. */
-export const FLOW_ROLE_RE = /^[A-Za-z0-9._:/\[\]=,-]{1,200}$/;
+export const FLOW_ROLE_RE = /^[A-Za-z0-9._:/[\]=,-]{1,200}$/;
 
 const COST_CAP_RE = /^\d+(\.\d{1,4})?$/;
 const SPEC_PATH_SUFFIX = ".md";
