@@ -20,7 +20,7 @@ import { safeText } from "./render";
 
 /** A commit is named short, as the fix summary names a push and `Lineage:` names a parent's push. */
 const SHORT_SHA_LENGTH = 7;
-const CHAIN_HEADING = "### Findings are chasing their own fixes";
+export const CHAIN_HEADING = "### Findings are chasing their own fixes";
 /** A parent's issue is ledger text rendered in the public comment: neutralised and capped like any other. */
 const PARENT_ISSUE_CHARS = 120;
 /** Parents named per finding before the rest are counted; one lineage can hold every item of a push. */

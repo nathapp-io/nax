@@ -230,6 +230,37 @@ describe("mergeLedgerEntries", () => {
   });
 });
 
+describe("mergeLedgerEntries ancestry (D-3)", () => {
+  const sha = (index: number): string => index.toString(16).padStart(40, "0");
+  const linked = (index: number): BotPushEntry => entry({ base: sha(index - 1), sha: sha(index) });
+
+  test("a snapshot that saw only the newer push is ordered after the current entry by its base", () => {
+    const a = linked(1);
+    const b = linked(2);
+    expect(mergeLedgerEntries([a], [b]).map(({ sha: s }) => s)).toEqual([a.sha, b.sha]);
+  });
+
+  test("a snapshot entry that is the parent of the current one goes in front of it", () => {
+    const a = linked(1);
+    const b = linked(2);
+    expect(mergeLedgerEntries([b], [a]).map(({ sha: s }) => s)).toEqual([a.sha, b.sha]);
+  });
+
+  test("cap pressure on disjoint reads evicts the older push, not the newer", () => {
+    const filler = Array.from({ length: MAX_PUSH_ENTRIES - 1 }, (_unused, index) => linked(index + 10));
+    const older = linked(1);
+    const newer = linked(2);
+    // The current block holds the older push beside the filler; the snapshot saw only the newer push.
+    const out = nextLedgerEntries({
+      current: withPushLedger(summary, [older, ...filler]),
+      snapshot: withPushLedger(summary, [newer]),
+    });
+    expect(out).toHaveLength(MAX_PUSH_ENTRIES);
+    expect(out.map(({ sha: s }) => s)).toContain(newer.sha);
+    expect(out.map(({ sha: s }) => s)).not.toContain(older.sha);
+  });
+});
+
 describe("parentIssue", () => {
   test("reads the issue the named push recorded, not another push's for the same key", () => {
     const entries = [

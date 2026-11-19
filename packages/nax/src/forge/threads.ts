@@ -1,5 +1,5 @@
 import { NaxError } from "@/errors";
-import { parseNaxBotMarker, TOP_LEVEL_MARKER_KEYS } from "./marker-grammar";
+import { isTopLevelMarkerKey, parseNaxBotMarker } from "./marker-grammar";
 import { encodeProjectPath } from "./pr-read";
 import type { PrComment, PrRef, PrThread } from "./pr-types";
 import type { ForgeDeps } from "./types";
@@ -228,7 +228,7 @@ function isRepliedTopLevelNote(discussion: GitlabDiscussion): boolean {
   const first = discussion.notes.find((note) => !note.system);
   if (!first || first.position != null) return false;
   const marker = parseNaxBotMarker(first.body);
-  return marker !== null && TOP_LEVEL_MARKER_KEYS.some((key) => key === marker.key);
+  return marker !== null && isTopLevelMarkerKey(marker.key);
 }
 
 function gitlabThread(discussion: GitlabDiscussion): PrThread {

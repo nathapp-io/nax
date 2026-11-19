@@ -183,7 +183,7 @@ function fits(entries: readonly BotPushEntry[]): boolean {
 }
 
 /** The newest entries that fit the budget: the entry cap first, then the encoded block's own limit. */
-function fitted(entries: readonly BotPushEntry[]): readonly BotPushEntry[] {
+export function fitted(entries: readonly BotPushEntry[]): readonly BotPushEntry[] {
   let kept = entries.slice(-MAX_PUSH_ENTRIES);
   while (kept.length > 1 && !fits(kept)) kept = kept.slice(1);
   return kept;
@@ -196,13 +196,18 @@ function trimItems(entry: BotPushEntry): BotPushEntry {
   return { ...entry, items: entry.items.slice(0, count) };
 }
 
+/** The entry as the ledger can hold it alone: unchanged when it fits, else its leading items that do. */
+export function budgetedEntry(entry: BotPushEntry): BotPushEntry {
+  return fits([entry]) ? entry : trimItems(entry);
+}
+
 /**
  * The ledger with this push appended: newest `MAX_PUSH_ENTRIES` entries, then the oldest dropped until
  * the encoded block fits `MAX_LEDGER_CHARS`. The appended entry is never the one dropped.
  */
 export function appendPushEntry(entries: readonly BotPushEntry[], entry: BotPushEntry): readonly BotPushEntry[] {
   const kept = fitted([...entries, entry]);
-  return fits(kept) ? kept : [trimItems(entry)];
+  return fits(kept) ? kept : [budgetedEntry(entry)];
 }
 
 /**
@@ -211,8 +216,9 @@ export function appendPushEntry(entries: readonly BotPushEntry[], entry: BotPush
  * erase a push another run recorded while it worked.
  *
  * `earlier` is the older read (a snapshot, or the append-only copies a push posts), so an entry only it
- * holds is inserted where its own neighbours say it belongs — not simply in front, which would put it
- * ahead of entries every read agrees are older (B13). The entry cap and the block budget are applied
+ * holds is inserted where its push ancestry (`base` is the sha it was made on) or, failing that, its own
+ * neighbours say it belongs — not simply in front, which would put it ahead of entries every read agrees
+ * are older (B13). The entry cap and the block budget are applied
  * after this merge, so a recovered entry competes with its true age rather than looking like the oldest.
  */
 export function mergeLedgerEntries(
@@ -230,6 +236,15 @@ export function mergeLedgerEntries(
   reindex();
   earlier.forEach((entry, at) => {
     if (index.has(entry.sha)) return;
+    // Push ancestry is provable order: right after the entry this push was made on, else right before
+    // the entry made on top of it. Only an entry with no such relative falls back to its neighbours.
+    const parentAt = index.get(entry.base);
+    const childAt = merged.findIndex(({ base }) => base === entry.sha);
+    if (parentAt !== undefined || childAt !== -1) {
+      merged.splice(parentAt !== undefined ? parentAt + 1 : childAt, 0, entry);
+      reindex();
+      return;
+    }
     // The nearest earlier neighbour already merged decides: right after the one before, else right
     // before the one after, else in front of everything this read knows.
     const before = earlier
@@ -259,8 +274,10 @@ export function pushRecordKey(sha: string): string {
  * summary rewrite cannot erase (B1). Its identity key is the push's full sha, so it is posted once.
  */
 export function pushRecordBody(entry: BotPushEntry): string {
+  // The summary budgets a push's entry before it writes it; the record takes the same budget, or the
+  // forge could refuse it after the summary succeeded and leave no copy a stale edit cannot erase.
   const body = withPushLedger(`nax bot fix push ${entry.sha.slice(0, SHORT_SHA_LENGTH)} recorded for lineage.`, [
-    entry,
+    budgetedEntry(entry),
   ]);
   return withNaxBotMarker(body, pushRecordKey(entry.sha));
 }

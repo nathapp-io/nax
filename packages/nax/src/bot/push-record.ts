@@ -18,6 +18,7 @@ import { FIX_SUMMARY_KEY } from "./ci-waiver-ready";
 import type { BotFixEnv } from "./fix-steps";
 import {
   type BotPushEntry,
+  fitted,
   mergeLedgerEntries,
   pushRecordBody,
   pushRecordEntries,
@@ -33,10 +34,12 @@ function summaryEntries(own: readonly OwnComment[]): readonly BotPushEntry[] {
 /**
  * Every push the bot recorded on this PR, in push order: the block the `fix-summary` carries and the
  * append-only copies beside it. A rewrite that dropped an entry from the block leaves it here, so
- * lineage, the push count and the fixer's facts still see the push.
+ * lineage, the push count and the fixer's facts still see the push. The union is held to the same
+ * retention as the summary (entry cap, then encoded size), so a push the summary evicted does not
+ * come back into lineage or prompt work; the backup comments themselves are left alone.
  */
 export function ownLedgerEntries(own: readonly OwnComment[]): readonly BotPushEntry[] {
-  return mergeLedgerEntries(summaryEntries(own), pushRecordEntries(own));
+  return fitted(mergeLedgerEntries(summaryEntries(own), pushRecordEntries(own)));
 }
 
 /** The post seam, so the caller's `_fixReportDeps` stub observes the record exactly like any comment. */

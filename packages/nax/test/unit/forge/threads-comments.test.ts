@@ -103,6 +103,27 @@ describe("replied GitLab top-level notes", () => {
     expect(await forge.listPrComments(gitlab, harness([[d]]).deps, "/repo")).toEqual([]);
     expect(await forge.listReviewThreads(gitlab, harness([[d]]).deps, "/repo")).toHaveLength(1);
   });
+  test("D-6 flattens a replied push record keyed by a full sha", async () => {
+    const key = `push-${"a".repeat(40)}`;
+    expect((await forge.listPrComments(gitlab, harness([[replied(key)]]).deps, "/repo")).map((c) => c.id)).toEqual([
+      "91",
+      "92",
+    ]);
+  });
+  test.each([
+    `push-${"a".repeat(39)}`,
+    `push-${"a".repeat(41)}`,
+    `push-${"A".repeat(40)}`,
+    "push-",
+    `x-push-${"a".repeat(40)}`,
+  ])("D-6 does not flatten a malformed push key %s", async (key) => {
+    expect(await forge.listPrComments(gitlab, harness([[replied(key)]]).deps, "/repo")).toEqual([]);
+  });
+  test("D-6 does not flatten a positioned push record", async () => {
+    const d = replied(`push-${"a".repeat(40)}`);
+    if (d.notes[0]) d.notes[0].position = { new_path: "a.ts", new_line: 1 };
+    expect(await forge.listPrComments(gitlab, harness([[d]]).deps, "/repo")).toEqual([]);
+  });
   test("AC-9 leaves flattened summaries out of review threads", async () => {
     expect(await forge.listReviewThreads(gitlab, harness([[replied()]]).deps, "/repo")).toEqual([]);
   });
