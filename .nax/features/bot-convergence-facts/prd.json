@@ -3,7 +3,7 @@
   "feature": "bot-convergence-facts",
   "branchName": "feat/bot-convergence-facts",
   "createdAt": "2026-11-19T03:29:04.609Z",
-  "updatedAt": "2026-11-19T05:10:01.108Z",
+  "updatedAt": "2026-11-19T05:42:42.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -316,14 +316,17 @@
         "US-001",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New Git attribution algorithm with explicit exit semantics, two review data paths, and forge/artifact outputs."
+        "reasoning": "New Git attribution algorithm with explicit exit semantics, two review data paths, and forge/artifact outputs.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-run.ts",
@@ -340,7 +343,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d184fd9f53dca885f842ecd7e416d9992a85ac6b"
     },
     {
       "id": "US-006",
