@@ -7,7 +7,6 @@ import {
   hasNaxWorkflowMarker,
   listPrComments,
   listReviewThreads,
-  MAX_FORGE_COMMENT_CHARS,
   type OwnComment,
   ownComments,
   type PrComment,
@@ -22,12 +21,11 @@ import {
 } from "@/forge";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
-import { configuredChainNoticeGeneration, type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
+import { type FindingTrigger, isBlockingFinding } from "../workflow/blocking-findings";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
-import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import {
   type CiWaiverReady,
@@ -36,21 +34,14 @@ import {
   readinessLines,
   recordCiWaiver,
 } from "./ci-waiver-ready";
-import { convergenceLines } from "./convergence-summary";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
-import { renderFixSummary } from "./fix-summary";
+import { type CurrentSummary, pushEntry, summaryBody } from "./fix-summary-body";
 import { readHeadGateNames } from "./head-gates";
 import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
-import {
-  type BotPushEntry,
-  ledgerIssue,
-  nextLedgerEntries,
-  pushLedgerChars,
-  readPushLedger,
-  withPushLedger,
-} from "./push-ledger";
+import { pushRecordEntries } from "./push-ledger";
+import { recordPush } from "./push-record";
 import { safeText } from "./render";
 import { reviewBlockingTriggers } from "./review-blocking";
 import { rulingModelReader } from "./ruling-reader";
@@ -59,10 +50,7 @@ import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
 const READY_HOLD_FINDINGS_SHOWN = 5;
-/** Room kept under the forge's comment cap for the header, the marker line and the joins between them. */
-const SUMMARY_CHARS_RESERVE = 512;
 const MAX_ISSUE_LENGTH = 200;
-const OUT_OF_ITEM_FILES_SHOWN = 20;
 export const _fixReportDeps = {
   replyToThread,
   resolveThread,
@@ -469,126 +457,44 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
 /** The summary text lives in its own module; re-exported here so `fix-report` keeps one public surface. */
 export { type FixSummaryOptions, renderFixSummary } from "./fix-summary";
 
-function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
-  if (state.outcome !== "pushed" || !state.changed) return;
-  const named = new Set(
-    env.review.agreed.flatMap((item) => (item.kind !== "comment" && item.file !== undefined ? [item.file] : [])),
-  );
-  if (named.size === 0) return;
-  const unnamed = state.changed.filter((file) => !named.has(file));
-  if (unnamed.length === 0) return;
-  const shown = unnamed
-    .slice(0, OUT_OF_ITEM_FILES_SHOWN)
-    .map((file) => `\`${safeCode(file)}\``)
-    .join(", ");
-  const remaining = unnamed.length - OUT_OF_ITEM_FILES_SHOWN;
-  return `Also changed, not named by an agreed item: ${shown}${remaining > 0 ? ` and ${remaining} more` : ""}`;
-}
-
 /**
- * US-004: the entry this execution records — only a real fix push, never the advisor-ledger-only
- * push (`outcome: "nothing"`), which changes no reviewed line a finding could sit on.
+ * The `fix-summary` comment as the forge holds it now, and the append-only per-push records found in
+ * the same read. Every write replaces the whole body, so the body this run started with is not good
+ * enough at write time: another `nax bot fix`, on another host, may have appended its own entry while
+ * this one ran. A failed read falls back to the run's own snapshot, whose entries the merge carries
+ * over anyway.
  */
-function pushEntry(env: BotFixEnv, state: BotFixState): BotPushEntry | undefined {
-  if (state.outcome !== "pushed" || state.pushedSha === undefined) return undefined;
-  return {
-    base: env.info.headSha,
-    sha: state.pushedSha,
-    at: new Date().toISOString(),
-    items: env.review.agreed.map((item) => ({
-      key: item.key,
-      generation: item.kind === "finding" ? (item.lineage?.generation ?? 0) : 0,
-      issue: ledgerIssue(item.issue),
-    })),
-  };
-}
-
-/**
- * The `fix-summary` comment as the forge holds it now. Every write replaces the whole body, and the
- * ledger inside it is the PR's only record of the bot's own pushes — so the body this run started with
- * is not good enough at write time: another `nax bot fix`, on another host, may have appended its own
- * entry while this one ran. A failed read falls back to the run's own snapshot, whose entries the merge
- * carries over anyway.
- */
-async function currentSummary(env: BotFixEnv, snapshot: OwnComment | undefined): Promise<OwnComment | undefined> {
+async function currentSummary(env: BotFixEnv, snapshot: OwnComment | undefined): Promise<CurrentSummary> {
   try {
     const comments = await _fixReportDeps.listPrComments(env.ref, env.forge, env.repoRoot);
-    return ownComments(comments, env.user.login).find(
-      ({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined,
-    );
+    const own = ownComments(comments, env.user.login);
+    return {
+      own: own.find(({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined),
+      records: pushRecordEntries(own),
+    };
   } catch (error) {
     getLogger()?.debug("bot-fix", "Could not re-read the fix summary; merging against this run's snapshot", {
       pr: env.ref.number,
       error: errorMessage(error),
     });
-    return snapshot;
+    return { own: snapshot, records: pushRecordEntries(env.own) };
   }
 }
 
-/**
- * US-007: the advisor-ledger push — only the carried ledger moved — which the brief lists before the
- * follow-up sentence a `nothing` outcome otherwise leads with.
- */
-function advisorLine(env: BotFixEnv, state: BotFixState): string | undefined {
-  if (state.outcome !== "nothing" || state.pushedSha === undefined) return undefined;
-  const sha = state.pushedSha.slice(0, SHORT_SHA_LENGTH);
-  return `Pushed ${sha}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`;
-}
-
-/** The summary's own lines, before the convergence facts the budget is measured against. */
-function summaryDetails(env: BotFixEnv, state: BotFixState): string[] {
-  const lines: string[] = [];
-  if (state.ledgerCarried)
-    lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
-  const outOfItem = outOfItemDetail(env, state);
-  if (outOfItem !== undefined) lines.push(outOfItem);
-  return lines;
-}
-
-/**
- * The summary body to write: the convergence facts, the outcome, and the ledger the comment holds now.
- *
- * The facts are budgeted against everything else the comment spends — the forge refuses an oversized
- * comment outright, and a refused write records no push at all — so the ledger block, the header, the
- * marker line and the summary's own text are subtracted before the chain section may use the rest.
- */
-function summaryBody(env: BotFixEnv, state: BotFixState, own: OwnComment | undefined): string {
-  const snapshot = env.own.find(({ key }) => key === FIX_SUMMARY_KEY)?.comment.body;
-  const current = own?.comment.body;
-  const entry = pushEntry(env, state);
-  // An unreadable block is replaced by this execution's entries alone, so the loss is not silent.
-  if (entry !== undefined && current !== undefined && readPushLedger(current).unreadable)
-    getLogger()?.warn("bot-fix", "Replaced an unreadable push ledger in the fix summary", {
-      pr: env.ref.number,
-      error: "the ledger block is not base64 JSON this version can read",
-    });
-  const entries = nextLedgerEntries(current, entry, snapshot);
-  const lead = advisorLine(env, state);
-  const options = lead === undefined ? {} : { lead: [lead] };
-  const details = summaryDetails(env, state);
-  const facts = convergenceLines(
-    {
-      entries,
-      unreachable: env.review.unreachablePushes ?? 0,
-      agreed: env.review.agreed,
-      blocking: reviewBlockingTriggers(env),
-      noticeGeneration: configuredChainNoticeGeneration(env.config),
-    },
-    MAX_FORGE_COMMENT_CHARS -
-      renderFixSummary(state, details, env.repoRoot, options).length -
-      pushLedgerChars(entries) -
-      SUMMARY_CHARS_RESERVE,
-  );
-  return withPushLedger(renderFixSummary(state, [...facts, ...details], env.repoRoot, options), entries);
-}
-
+/** The write, and the append-only copy of the push it records. */
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
-  const own = await currentSummary(
+  const summary = await currentSummary(
     env,
     env.own.find(({ key }) => key === FIX_SUMMARY_KEY),
   );
-  const body = summaryBody(env, state, own);
-  if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
+  // One entry for both writes: the block the summary carries and the copy posted beside it.
+  const entry = pushEntry(env, state);
+  const body = summaryBody(env, state, summary, entry);
+  if (summary.own) await _fixReportDeps.editComment(env.ref, summary.own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
+  // B1: and the copy no summary rewrite can erase, posted only once the summary write succeeded (a
+  // failed summary write records nothing, as before).
+  if (entry !== undefined)
+    await recordPush({ env, entry, recorded: summary.records, post: _fixReportDeps.postPrComment });
   return { patch: {}, exit: "done" };
 }

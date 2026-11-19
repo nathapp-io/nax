@@ -19,6 +19,33 @@ import { safeText } from "./render";
 const SHORT_SHA_LENGTH = 7;
 const MAX_FAILURE_LENGTH = 500;
 
+/** Truncation marker on a detail line the budget cut short. */
+const ELLIPSIS = "…";
+
+/**
+ * The detail lines that fit in `available` characters, each costing its length plus its newline. B2: a
+ * report can carry a long protected-file list, and the whole comment — not just the ledger block — must
+ * stay under the forge's limit, or the write is refused and the push is not recorded at all. A line the
+ * budget cuts short ends in an ellipsis, so a reader sees that more was reported than shown. A negative
+ * budget drops the details entirely: what remains always fits.
+ */
+export function fitDetails(lines: readonly string[], available: number): string[] {
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const cost = line.length + 1;
+    if (used + cost <= available) {
+      kept.push(line);
+      used += cost;
+      continue;
+    }
+    const room = available - used - 1 - ELLIPSIS.length;
+    if (room > 0) kept.push(`${line.slice(0, room)}${ELLIPSIS}`);
+    break;
+  }
+  return kept;
+}
+
 /** `prefix/x` -> `${bare}/x` and a bare `prefix` -> `bare`, only where `prefix` ends at a path boundary. */
 function replacePathPrefix(text: string, prefix: string, bare: string): string {
   if (prefix.length <= 1) return text;

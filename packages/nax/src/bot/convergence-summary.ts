@@ -93,26 +93,35 @@ function chars(lines: readonly string[]): number {
 
 /**
  * The chain section within `maxChars`: findings in `agreed` order until the budget runs out, then a
- * count of the ones left out. The first entry is always named — a section that names nothing says
- * less than the heading it carries — and the ledger and the push count are never trimmed.
+ * count of the ones left out. Nothing here is mandatory — a heading whose first line it could not pay
+ * for says less than the omission notice that fits, and a section with no room at all says nothing
+ * (B2). The ledger and the push count are never trimmed: they are what the section sits beside.
  */
 function chainLines(input: ConvergenceSummaryInput, maxChars: number): string[] {
   const findings = input.agreed.filter((item) => chained(item, input));
   if (findings.length === 0) return [];
+  const heading = CHAIN_HEADING.length + 1;
+  // Room for the notice every unlisted finding needs, so the section never claims a list it truncated.
+  const notice = omittedLine(findings.length).length + 1;
   const lines = [CHAIN_HEADING];
-  let used = CHAIN_HEADING.length + 1;
+  let used = heading;
   for (const item of findings) {
     const line = chainLine(item, item.lineage, input.entries);
-    // The findings this one would still leave unlisted, whose count line needs the same room.
-    const left = findings.length - (lines.length - 1) - 1;
-    const tail = left > 0 ? omittedLine(left).length + 1 : 0;
-    if (lines.length > 1 && used + line.length + 1 + tail > maxChars) break;
+    const left = findings.length - lines.length;
+    const tail = left > 0 ? notice : 0;
+    if (used + line.length + 1 + tail > maxChars) break;
     lines.push(line);
     used += line.length + 1;
   }
   const hidden = findings.length - (lines.length - 1);
-  if (hidden > 0) lines.push(omittedLine(hidden));
-  return lines;
+  if (hidden === 0) return lines;
+  const omission = omittedLine(hidden);
+  if (lines.length > 1) {
+    lines.push(omission);
+    return lines;
+  }
+  // Not even one finding fits: the notice alone names the section's subject and the reason it is empty.
+  return maxChars >= heading + omission.length + 1 ? [CHAIN_HEADING, omission] : [];
 }
 
 /**

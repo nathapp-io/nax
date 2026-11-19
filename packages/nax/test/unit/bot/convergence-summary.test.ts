@@ -230,6 +230,36 @@ describe("convergenceLines budget", () => {
     expect(lines.join("\n")).toContain("+70 more");
     expect(lines.join("\n").length).toBeLessThan(1_000);
   });
+
+  // B2: a first finding named regardless of the budget was what pushed a nearly-full comment past the
+  // forge's limit. Nothing in the section is mandatory: what does not fit is counted, not forced in.
+  test("B2: a first finding that does not fit is counted instead of named", () => {
+    const input = {
+      entries: [entry()],
+      unreachable: 0,
+      agreed: Array.from({ length: 3 }, (_unused, index) => chained(index)),
+      blocking: DEFAULT_BLOCKING,
+      noticeGeneration: 2,
+    };
+    const notice = "- 3 more finding(s) not listed: the comment is at its size limit.";
+    // Room for the heading and the notice, and not for a finding line.
+    const budget = "nax bot fix pushes on this PR: 1".length + 1 + HEADING.length + 1 + notice.length + 1;
+    const lines = convergenceLines(input, budget);
+    expect(lines).toEqual(["nax bot fix pushes on this PR: 1", HEADING, notice]);
+    expect(lines.join("\n").length).toBeLessThanOrEqual(budget);
+  });
+
+  test("B2: a comment with no room left adds no chain section at all", () => {
+    const input = {
+      entries: [entry()],
+      unreachable: 0,
+      agreed: [chained(0)],
+      blocking: DEFAULT_BLOCKING,
+      noticeGeneration: 2,
+    };
+    expect(convergenceLines(input, 0)).toEqual(["nax bot fix pushes on this PR: 1"]);
+    expect(convergenceLines(input, -500)).toEqual(["nax bot fix pushes on this PR: 1"]);
+  });
 });
 
 /** B11: a parent's issue can come from a PR comment or a review reply, so it is neutralised here. */

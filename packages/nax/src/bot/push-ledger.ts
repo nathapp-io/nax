@@ -14,8 +14,14 @@
  * A block this module cannot decode is `unreadable`, never partly trusted: a half-read record would
  * date findings to a push that never wrote their lines, so the reader reports nothing and the next
  * push replaces the block with what it knows.
+ *
+ * Two writers replace that comment's whole body (the report node and the ready-only waiver rewrite)
+ * and the forge has no conditional update, so an entry can be lost from the block by a write built
+ * from an older read. `mergeLedgerEntries` keeps push order across two such reads, and each push also
+ * posts its own copy of its entry (`PUSH_RECORD_PREFIX`), which no summary rewrite can touch — see
+ * `push-record.ts` for the reader that takes the two together.
  */
-import { markerPattern } from "@/forge";
+import { markerPattern, type OwnComment, withNaxBotMarker } from "@/forge";
 import { firstIssueLine } from "@/workflow/blocking-findings";
 
 export interface BotPushItem {
@@ -43,6 +49,8 @@ export const MAX_PUSH_ENTRIES = 64;
 export const MAX_LEDGER_CHARS = 24_000;
 /** An item names one finding; the block stays small even at the entry cap. */
 const MAX_ITEM_ISSUE_CHARS = 120;
+/** A commit is named short, exactly as the fix summary names a push. */
+const SHORT_SHA_LENGTH = 7;
 
 const LEDGER_PREFIX = "<!-- nax-bot:pushes v1 ";
 const LEDGER_SUFFIX = " -->";
@@ -198,17 +206,72 @@ export function appendPushEntry(entries: readonly BotPushEntry[], entry: BotPush
 }
 
 /**
- * An earlier read's entries the current block no longer holds, ahead of the current ones: the forge has
- * no conditional comment update, so a writer working from a stale snapshot replaces the whole body and
- * would otherwise erase a push another run recorded while it worked. Entries are identified by their
- * full sha, so a re-read never duplicates one.
+ * The union of two reads of the ledger, by full sha and in push order: the forge has no conditional
+ * comment update, so a writer working from a stale read replaces the whole body and would otherwise
+ * erase a push another run recorded while it worked.
+ *
+ * `earlier` is the older read (a snapshot, or the append-only copies a push posts), so an entry only it
+ * holds is inserted where its own neighbours say it belongs — not simply in front, which would put it
+ * ahead of entries every read agrees are older (B13). The entry cap and the block budget are applied
+ * after this merge, so a recovered entry competes with its true age rather than looking like the oldest.
  */
-export function carryOverEntries(
+export function mergeLedgerEntries(
   current: readonly BotPushEntry[],
   earlier: readonly BotPushEntry[],
 ): readonly BotPushEntry[] {
-  const known = new Set(current.map(({ sha }) => sha));
-  return [...earlier.filter(({ sha }) => !known.has(sha)), ...current];
+  const merged = [...current];
+  const index = new Map<string, number>();
+  const reindex = (): void => {
+    index.clear();
+    merged.forEach(({ sha }, at) => {
+      index.set(sha, at);
+    });
+  };
+  reindex();
+  earlier.forEach((entry, at) => {
+    if (index.has(entry.sha)) return;
+    // The nearest earlier neighbour already merged decides: right after the one before, else right
+    // before the one after, else in front of everything this read knows.
+    const before = earlier
+      .slice(0, at)
+      .reverse()
+      .find(({ sha }) => index.has(sha));
+    const after = earlier.slice(at + 1).find(({ sha }) => index.has(sha));
+    const afterAt = after === undefined ? undefined : index.get(after.sha);
+    const wanted = before !== undefined ? (index.get(before.sha) ?? -1) + 1 : (afterAt ?? 0);
+    merged.splice(afterAt === undefined ? wanted : Math.min(wanted, afterAt), 0, entry);
+    reindex();
+  });
+  return merged;
+}
+
+/** Own-comment key prefix of the append-only copy of one push's entry (B1). */
+export const PUSH_RECORD_PREFIX = "push-";
+
+/** One push, in the identity grammar: the record is keyed by its full sha, so it is recorded once. */
+export function pushRecordKey(sha: string): string {
+  return `${PUSH_RECORD_PREFIX}${sha}`;
+}
+
+/**
+ * The body a push posts as its own comment: the same block grammar the summary carries, so one reader
+ * reads either. A posted comment is never rewritten by the summary writers, so this is the copy that a
+ * summary rewrite cannot erase (B1). Its identity key is the push's full sha, so it is posted once.
+ */
+export function pushRecordBody(entry: BotPushEntry): string {
+  const body = withPushLedger(`nax bot fix push ${entry.sha.slice(0, SHORT_SHA_LENGTH)} recorded for lineage.`, [
+    entry,
+  ]);
+  return withNaxBotMarker(body, pushRecordKey(entry.sha));
+}
+
+/** The entries the append-only per-push records hold, in the order the PR lists them. */
+export function pushRecordEntries(own: readonly OwnComment[]): readonly BotPushEntry[] {
+  return own.flatMap((own) =>
+    own.threadId === undefined && own.key.startsWith(PUSH_RECORD_PREFIX)
+      ? readPushLedger(own.comment.body).entries
+      : [],
+  );
 }
 
 /** What this ledger adds to a comment: its block line with its newline, or nothing for an empty ledger. */
@@ -222,16 +285,25 @@ function readEntriesOf(body: string | undefined): readonly BotPushEntry[] {
 
 /**
  * The entries a report writes: the block the comment holds now, the entries an earlier read saw that
- * the current block lost, and this execution's push when it made one. US-008 reads the same list to
- * count the pushes the summary is about to state, so the count and the block can never disagree.
+ * the current block lost, the append-only copies every push posts, and this execution's push when it
+ * made one. US-008 reads the same list to count the pushes the summary is about to state, so the count
+ * and the block can never disagree.
  */
-export function nextLedgerEntries(
-  current: string | undefined,
-  entry: BotPushEntry | undefined,
-  snapshot?: string | undefined,
-): readonly BotPushEntry[] {
-  const kept = carryOverEntries(readEntriesOf(current), readEntriesOf(snapshot));
-  return entry === undefined ? fitted(kept) : appendPushEntry(kept, entry);
+export function nextLedgerEntries(input: NextLedgerInput): readonly BotPushEntry[] {
+  const merged = mergeLedgerEntries(readEntriesOf(input.current), readEntriesOf(input.snapshot));
+  const kept = mergeLedgerEntries(merged, input.records ?? []);
+  return input.entry === undefined ? fitted(kept) : appendPushEntry(kept, input.entry);
+}
+
+/** The three reads a ledger write starts from, plus this execution's own push when it made one. */
+export interface NextLedgerInput {
+  /** The comment as the forge holds it at write time. */
+  readonly current?: string | undefined;
+  /** The body this execution first saw; its entries survive a stale rewrite. */
+  readonly snapshot?: string | undefined;
+  /** The append-only per-push records: the copies no summary rewrite can erase (B1). */
+  readonly records?: readonly BotPushEntry[] | undefined;
+  readonly entry?: BotPushEntry | undefined;
 }
 
 /**
@@ -239,13 +311,6 @@ export function nextLedgerEntries(
  * A write is always a whole-body replace, so callers pass the body the forge holds now as `current`
  * rather than the snapshot their run started with.
  */
-export function ledgerBody(input: {
-  /** The comment as the forge holds it at write time. */
-  readonly current?: string | undefined;
-  /** The body this execution first saw; its entries survive a stale rewrite. */
-  readonly snapshot?: string | undefined;
-  readonly entry?: BotPushEntry | undefined;
-  readonly body: string;
-}): string {
-  return withPushLedger(input.body, nextLedgerEntries(input.current, input.entry, input.snapshot));
+export function ledgerBody(input: NextLedgerInput & { readonly body: string }): string {
+  return withPushLedger(input.body, nextLedgerEntries(input));
 }

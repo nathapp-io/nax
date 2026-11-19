@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotReviewDeps, makeNaxConfig, makeScriptedCallOp, makeTestRuntime } from "@test/helpers";
 import type { BotReviewArtifact } from "@/bot";
 import type { BotPushEntry } from "@/bot/push-ledger";
-import { withPushLedger } from "@/bot/push-ledger";
+import { pushRecordBody, withPushLedger } from "@/bot/push-ledger";
 import { findingKey } from "@/bot/render";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps } from "@/bot/review-step";
@@ -91,8 +91,13 @@ function summaryComment(entries: readonly BotPushEntry[]): PrComment {
   return { id: SUMMARY_ID, kind: "comment", author: "bot", body: withPushLedger(body, entries), createdAt: "" };
 }
 
+/** A push's own append-only record: the copy a summary rewrite cannot erase (B1). */
+function pushRecordComment(entry: BotPushEntry): PrComment {
+  return { id: "901", kind: "comment", author: "bot", body: pushRecordBody(entry), createdAt: "" };
+}
+
 /** An open finding thread an earlier bot review opened, at the line the tests blame. */
-function earlierThread(key = EARLIER_KEY): PrThread {
+function earlierThread(key = EARLIER_KEY, line = LINE, id = "T1"): PrThread {
   const opener = {
     id: "77",
     kind: "thread" as const,
@@ -100,7 +105,7 @@ function earlierThread(key = EARLIER_KEY): PrThread {
     body: withNaxBotMarker("**Important** (quality): Lock leaks", key),
     createdAt: "",
   };
-  return { id: "T1", replyTo: "77", path: FILE, line: LINE, resolved: false, outdated: false, comments: [opener] };
+  return { id, replyTo: "77", path: FILE, line, resolved: false, outdated: false, comments: [opener] };
 }
 
 /** A git whose answers are exactly the questions a test declared. */
@@ -277,6 +282,49 @@ describe("runBotReview finding lineage", () => {
     const artifact = await reviewArtifact();
 
     expect(agreedFinding(artifact, key)).toMatchObject({ lineage: { pushSha: PUSH } });
+  });
+  // B3: two open threads can carry one marker key (a re-raised finding whose earlier thread was never
+  // closed). The artifact keeps the first thread, so its anchor — not the second thread's — is what the
+  // lineage must read, even though the two anchors blame to different pushes.
+  test("B3: two carried-over threads with one key take the lineage of the thread the artifact keeps", async () => {
+    const firstPush = "4".repeat(40);
+    const secondPush = "6".repeat(40);
+    const secondLine = 30;
+    threads = [earlierThread(EARLIER_KEY, LINE, "T1"), earlierThread(EARLIER_KEY, secondLine, "T2")];
+    comments = [summaryComment([push, { ...push, sha: firstPush }, { ...push, sha: secondPush }])];
+    _botReviewDeps.runGit = stubGit({
+      ancestry: {
+        [`${PUSH}>${HEAD}`]: 0,
+        [`${firstPush}>${HEAD}`]: 0,
+        [`${secondPush}>${HEAD}`]: 0,
+        // The pushes are unrelated, so neither owns another's lines.
+        [`${firstPush}>${PUSH}`]: 1,
+        [`${PUSH}>${firstPush}`]: 1,
+        [`${secondPush}>${PUSH}`]: 1,
+        [`${PUSH}>${secondPush}`]: 1,
+        [`${secondPush}>${firstPush}`]: 1,
+        [`${firstPush}>${secondPush}`]: 1,
+      },
+      blameAt: { [LINE]: { sha: firstPush }, [secondLine]: { sha: secondPush } },
+    });
+
+    const artifact = await reviewArtifact();
+
+    // The artifact keeps the first thread's anchor, so that is the anchor the lineage belongs to.
+    expect(agreedFinding(artifact, EARLIER_KEY)).toMatchObject({ line: LINE, lineage: { pushSha: firstPush } });
+  });
+  // B1: the summary's block is written by whole-body writers, so a stale rewrite can drop an entry.
+  // The review reads the append-only copy each push posts beside it, so the push is still dated.
+  test("B1: a push recorded only in its own comment still gives the finding a lineage", async () => {
+    comments = [summaryComment([]), pushRecordComment(push)];
+    verdict = { ...emptyVerdict, findings: [finding] };
+    _botReviewDeps.runGit = stubGit({ ancestry: { [`${PUSH}>${HEAD}`]: 0 } });
+
+    const artifact = await reviewArtifact();
+
+    expect(agreedFinding(artifact, findingKey(finding))).toMatchObject({
+      lineage: { generation: 1, parents: ["f-a"], pushSha: PUSH },
+    });
   });
   test("AC-21 gives a merged earlier finding the lineage of its own thread key", async () => {
     threads = [earlierThread()];

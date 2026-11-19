@@ -17,7 +17,6 @@ import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
-import { FIX_SUMMARY_KEY } from "./ci-waiver-ready";
 import { findingFactLines, outsideDeclaredGrowth } from "./fix-facts";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
@@ -26,7 +25,7 @@ import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { AgreedItem, BotReviewArtifact } from "./post";
-import { type BotPushEntry, readPushLedger } from "./push-ledger";
+import { ownLedgerEntries } from "./push-record";
 import { hasPushWorthyItem, reviewBlockingTriggers } from "./review-blocking";
 
 export type BotFixStep =
@@ -204,12 +203,6 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
   };
 }
 
-/** The bot's own recorded pushes (US-004): the only record of what an earlier bot fix wrote. */
-function ownPushEntries(own: BotFixEnv["own"]): readonly BotPushEntry[] {
-  const body = own.find(({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined)?.comment.body;
-  return body === undefined ? [] : readPushLedger(body).entries;
-}
-
 /**
  * US-006: what the fix prompt may state about the round it is in — each item's trigger, lineage and
  * readiness, and the lines earlier bot pushes added outside the feature's declared files. The facts
@@ -223,7 +216,9 @@ async function fixPromptFacts(
   readonly findingFacts: readonly { readonly id: string; readonly lines: readonly string[] }[];
   readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
 }> {
-  const entries = ownPushEntries(env.own);
+  // US-004/B1: the bot's recorded pushes — the summary's block plus the append-only copy each push
+  // posts, so a summary rewrite that dropped an entry cannot change what the fixer is told.
+  const entries = ownLedgerEntries(env.own);
   const blocking = reviewBlockingTriggers(env);
   const growth = await outsideDeclaredGrowth({
     ...(prdPath === undefined ? {} : { prdPath }),

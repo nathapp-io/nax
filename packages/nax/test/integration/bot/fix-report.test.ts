@@ -65,6 +65,23 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
+/**
+ * The fix-summary bodies the report posted: one entry per write. A push also posts its own append-only
+ * record (B1), which is a separate comment with its own identity key.
+ */
+function summaries(post: { mock: { calls: readonly (readonly unknown[])[] } }): string[] {
+  return post.mock.calls
+    .map((call) => String(call[1] ?? ""))
+    .filter((body) => parseNaxBotMarker(body)?.key === "fix-summary");
+}
+
+/** The append-only per-push records the report posted, keyed by the push they name. */
+function records(post: { mock: { calls: readonly (readonly unknown[])[] } }): string[] {
+  return post.mock.calls
+    .map((call) => String(call[1] ?? ""))
+    .filter((body) => parseNaxBotMarker(body)?.key.startsWith("push-") === true);
+}
+
 describe("reportStep out-of-item files", () => {
   const prefix = "Also changed, not named by an agreed item: ";
   const named = [{ kind: "finding" as const, key: "f1", issue: "fix", severity: "minor" as const, file: "src/a.ts" }];
@@ -101,8 +118,8 @@ describe("reportStep out-of-item files", () => {
     const env = makeBotFixEnv(agreed);
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
     expect(await reportStep(env, { ...state, outcome, changed })).toEqual({ patch: {}, exit: "done" });
-    expect(post).toHaveBeenCalledTimes(1);
-    const body = post.mock.calls[0]?.[1] ?? "";
+    expect(summaries(post)).toHaveLength(1);
+    const body = summaries(post)[0] ?? "";
     expect(body.split("\n").find((line) => line.startsWith(prefix))).toBe(expected);
   });
 });
@@ -507,7 +524,9 @@ describe("reportStep", () => {
     expect(args?.slice(0, 2)).toEqual([env.ref, comment]);
     expect(args?.slice(3)).toEqual([env.forge, env.repoRoot]);
     expect(withoutLedger(args?.[2] ?? "")).toBe(renderFixSummary(state));
-    expect(post).not.toHaveBeenCalled();
+    // The summary itself is edited in place; only the push's own append-only record is posted (B1).
+    expect(summaries(post)).toEqual([]);
+    expect(records(post)).toHaveLength(1);
   });
 });
 
@@ -627,6 +646,43 @@ describe("reportStep convergence facts (US-008)", () => {
     expect(readPushLedger(body).entries.at(-1)?.sha).toBe(PUSH);
     expect(body).toContain("nax bot fix pushes on this PR:");
     expect(body).toMatch(/more finding\(s\) not listed/);
+  });
+
+  // B2: the outcome line names the protected files the fix touched, and that list is as long as the
+  // diff. A scoped report with a long one and a retained ledger was 65,184 characters before the chain,
+  // and the forge refuses the write — so the push was never recorded. The list is capped, the chain is
+  // budgeted, and what is left is what the ledger may not push past.
+  test("B2: a long protected-file list beside a retained ledger still posts under the forge limit", async () => {
+    const retained: BotPushEntry = {
+      base: BASE_SHA,
+      sha: "7".repeat(40),
+      at: "",
+      items: [{ key: "f-a", generation: 1, issue: "lock leaks" }],
+    };
+    // Far more protected paths than the comment can name: 400 × a path at the inline cap.
+    const protectedFiles = Array.from(
+      { length: 400 },
+      (_unused, index) => `.nax/protected/${index}/${"p".repeat(3_400)}.md`,
+    );
+    const env = withReview({ agreed: [{ kind: "finding", key: "f-a", issue: "lock leaks", severity: "important" }] });
+    const stored: PrComment = {
+      id: "7",
+      kind: "comment",
+      author: "bot",
+      body: withPushLedger(withNaxBotMarker("earlier summary", "fix-summary"), [retained]),
+      createdAt: "",
+    };
+    const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
+    await reportStep(
+      { ...env, own: [{ key: "fix-summary", comment: stored }] },
+      { step: "report", timings: {}, outcome: "protected", protectedFiles },
+    );
+    const body = String(edit.mock.calls[0]?.[2] ?? "");
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    // The retained record survives, and the comment says what it did not name.
+    expect(readPushLedger(body).entries).toEqual([retained]);
+    expect(body).toContain("The fix changed protected files; nothing pushed.");
+    expect(body).toContain("- and 380 more");
   });
 
   test("a fix that changed nothing states no new push but keeps the history's count", async () => {

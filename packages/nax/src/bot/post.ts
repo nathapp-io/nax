@@ -20,7 +20,7 @@ import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
 import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
-import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
+import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import type { BotPushEntry, FindingLineage } from "./push-ledger";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
@@ -273,8 +273,8 @@ function withoutFactLines(issue: string): string {
 
 function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[] {
   const seen = new Set(items.map(({ key }) => key));
-  for (const { thread, key, verdict, confirmed, reason } of effectiveEarlier(input)) {
-    if (verdict?.status !== undefined && verdict.status !== "open") continue;
+  // B3: the same first-wins selection the lineage targets use, so the anchor blamed is the anchor kept.
+  for (const { thread, key, confirmed, reason } of firstCarriedEarlier(input)) {
     if (seen.has(key)) continue;
     seen.add(key);
     // `earlierIssue` is the finding text: the visible header and the identity markers are not content.

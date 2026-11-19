@@ -16,6 +16,8 @@ import { safeText } from "./render";
 const SHORT_SHA_LENGTH = 7;
 /** US-007: the follow-ups the summary names before it counts the rest. */
 const FOLLOW_UPS_SHOWN = 10;
+/** B2: the protected files the outcome line names before it counts the rest. */
+const PROTECTED_FILES_SHOWN = 20;
 const MAX_FOLLOW_UP_KEY_LENGTH = 64;
 
 function baselineText(ci: BotFixState["ciOutcome"]): string {
@@ -62,6 +64,21 @@ function severityLabel(severity: BotFixFollowUp["severity"]): string {
   return severity.charAt(0).toUpperCase() + severity.slice(1);
 }
 
+/**
+ * B2: the protected-file list is as long as the fix's own diff, and this comment is one public comment
+ * under the forge's size limit — an uncapped list pushed the whole body past it, and the forge refuses
+ * a refused write outright, so the push was never recorded. Enough paths to see the shape, then a count.
+ */
+function protectedText(files: readonly string[]): string {
+  const shown = files.slice(0, PROTECTED_FILES_SHOWN).map((path) => `- \`${safeCode(path)}\``);
+  const hidden = files.length - PROTECTED_FILES_SHOWN;
+  return [
+    "The fix changed protected files; nothing pushed.",
+    ...shown,
+    ...(hidden > 0 ? [`- and ${hidden} more`] : []),
+  ].join("\n");
+}
+
 /** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
 export function outcomeText(state: BotFixState, repoRoot: string | undefined): string {
   switch (state.outcome) {
@@ -82,10 +99,7 @@ export function outcomeText(state: BotFixState, repoRoot: string | undefined): s
     case "no-change":
       return "The fix session changed nothing; nothing pushed.";
     case "protected":
-      return [
-        "The fix changed protected files; nothing pushed.",
-        ...(state.protectedFiles ?? []).map((path) => `- \`${safeCode(path)}\``),
-      ].join("\n");
+      return protectedText(state.protectedFiles ?? []);
     case "no-gates":
       return "No gates are configured on the base branch; nothing pushed.";
     case "gates-failed":

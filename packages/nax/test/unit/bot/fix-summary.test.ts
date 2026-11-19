@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { relative } from "node:path";
 import { type BotFixState, renderFixSummary } from "@/bot";
 import { BOT_FIX_GRAPH } from "@/bot/fix-run";
+import { fitDetails } from "@/bot/fix-summary";
 import { parseNaxBotMarker } from "@/forge";
 import { validateStepGraph } from "@/step-graph";
 import { safeCode } from "@/workflow/pr-body-safe";
@@ -60,6 +61,15 @@ describe("renderFixSummary", () => {
     expect(renderFixSummary({ ...state, outcome: "protected", protectedFiles: ["a`b\n.ts"] })).not.toContain(
       "a`b\n.ts",
     );
+  });
+  // B2: the protected list is as long as the fix's diff, and one uncapped list made the whole comment
+  // exceed the forge's limit — which refuses the write outright, so no push was ever recorded.
+  test("B2: names at most twenty protected paths and counts the rest", () => {
+    const files = Array.from({ length: 25 }, (_unused, index) => `.nax/protected/${index}.md`);
+    const body = renderFixSummary({ ...state, outcome: "protected", protectedFiles: files });
+    expect(body).toContain("- `.nax/protected/19.md`");
+    expect(body).not.toContain("- `.nax/protected/20.md`");
+    expect(body).toContain("- and 5 more");
   });
   test.each([
     ".github/[click](http://evil.example/x).yml",
@@ -268,5 +278,27 @@ describe("repair declarations and summary", () => {
     expect(
       renderFixSummary({ step: "report", timings: {}, outcome: "gates-failed", repairSkippedForCost: true }),
     ).toContain("Repair turn skipped: cost limit reached.");
+  });
+});
+
+/**
+ * B2: the comment is one public comment under the forge's limit, so the lines a report varies are
+ * capped against the room the fixed text leaves. These pin the cap on its own.
+ */
+describe("fitDetails", () => {
+  test("keeps every line that fits, each costing its own newline", () => {
+    expect(fitDetails(["ab", "cd"], 6)).toEqual(["ab", "cd"]);
+    expect(fitDetails(["ab", "cd"], 5)).toEqual(["ab"]);
+  });
+  test("truncates the line it cannot fit whole, so a reader sees there was more", () => {
+    const [kept] = fitDetails(["abcdefghij"], 6);
+    // Five characters plus the ellipsis and its newline is exactly the room available.
+    expect(kept).toBe("abcd…");
+    expect(kept?.endsWith("…")).toBe(true);
+  });
+  test("drops the details entirely when the fixed text already used the room", () => {
+    expect(fitDetails(["abc"], 0)).toEqual([]);
+    expect(fitDetails(["abc"], -40)).toEqual([]);
+    expect(fitDetails([], 100)).toEqual([]);
   });
 });

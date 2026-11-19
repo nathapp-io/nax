@@ -71,6 +71,22 @@ export function earlierIssue(thread: PrThread): string {
 }
 
 /**
+ * The carried-over threads the artifact keeps, first thread per key (B3). Two open threads can carry
+ * one marker key — a re-raised finding whose earlier thread was never closed — and `mergeEarlier` keeps
+ * the first one. The lineage targets must select with the same rule, or the second thread's anchor is
+ * blamed and its lineage overwrites the lineage of the finding the artifact actually holds.
+ */
+export function firstCarriedEarlier(input: PostReviewInput): EarlierEntry[] {
+  const seen = new Set<string>();
+  return effectiveEarlier(input).filter(({ key, verdict }) => {
+    if (verdict?.status !== undefined && verdict.status !== "open") return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
  * US-005: one lineage target per key, with the same precedence the artifact records: the current
  * verdict wins and only carried-over items use an earlier anchor. A re-raised finding keeps its key
  * (`findingKey` names the file and the issue, not the line) while a new verdict moves its anchor, so two
@@ -83,8 +99,8 @@ export function lineageTargets(input: PostReviewInput): LineageTarget[] {
     line: finding.line,
   }));
   const raised = new Set(current.map(({ key }) => key));
-  const carried = effectiveEarlier(input).flatMap<LineageTarget>(({ key, verdict, thread }) => {
-    if (!key.startsWith("f-") || raised.has(key) || (verdict !== undefined && verdict.status !== "open")) return [];
+  const carried = firstCarriedEarlier(input).flatMap<LineageTarget>(({ key, thread }) => {
+    if (!key.startsWith("f-") || raised.has(key)) return [];
     if (thread.path === undefined || thread.line === undefined) return [];
     return [{ key, file: thread.path, line: thread.line }];
   });

@@ -13,6 +13,7 @@ import { configuredBlockingTriggers, effectiveBlockingTriggers } from "@/workflo
 import { FIX_SUMMARY_KEY } from "./ci-waiver-ready";
 import type { PostReviewInput } from "./post";
 import { type BotPushEntry, readPushLedger } from "./push-ledger";
+import { ownLedgerEntries } from "./push-record";
 
 /** Only `bot.blockingTriggers` is read; taking the shared reader's own parameter keeps the two in step. */
 export type BlockingPolicyConfig = Parameters<typeof configuredBlockingTriggers>[0];
@@ -61,11 +62,11 @@ export interface ReviewHistory {
 /** A ledger this version cannot read dates no finding: it reads as no history at all, and says so. */
 function ownLedger(own: readonly OwnComment[]): readonly BotPushEntry[] {
   const body = own.find(({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined)?.comment.body;
-  if (body === undefined) return [];
-  const read = readPushLedger(body);
-  if (read.unreadable)
+  if (body !== undefined && readPushLedger(body).unreadable)
     getSafeLogger()?.warn("bot", "Could not read the bot's own push ledger; reviewing without lineage");
-  return read.entries;
+  // B1: the summary's block is written by two whole-body writers, so a rewrite can drop an entry. The
+  // append-only record each push posts cannot be rewritten, and the reader takes both.
+  return ownLedgerEntries(own);
 }
 
 /**

@@ -2,12 +2,20 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDraftEnv, makeBotFixEnv } from "@test/helpers";
 import { _fixCycleDeps, type AgreedItem, type BotFixEnv, type BotFixState, waitForPrHead } from "@/bot";
 import { _fixReportDeps, readyStep, replyStep, reportStep } from "@/bot/fix-report";
-import { type BotPushEntry, readPushLedger, withPushLedger } from "@/bot/push-ledger";
-import { NAX_WORKFLOW_PR_MARKER, type PrComment, withNaxBotMarker } from "@/forge";
+import { type BotPushEntry, pushRecordKey, readPushLedger, withPushLedger } from "@/bot/push-ledger";
+import { ownLedgerEntries } from "@/bot/push-record";
+import { NAX_WORKFLOW_PR_MARKER, ownComments, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { firstIssueLine } from "@/workflow/blocking-findings";
 
 afterEach(() => mock.restore());
+
+/** The fix-summary bodies a report posted, one per write: a push also posts its own record (B1). */
+function summaryPosts(post: { mock: { calls: readonly (readonly unknown[])[] } }): string[] {
+  return post.mock.calls
+    .map((call) => String(call[1] ?? ""))
+    .filter((body) => parseNaxBotMarker(body)?.key === "fix-summary");
+}
 
 describe("resolveOwnFindings via replyStep", () => {
   test("AC-19 never replies to or resolves an agreed workflow finding", async () => {
@@ -249,7 +257,8 @@ describe("reportStep push ledger (US-004)", () => {
     const edit = spyOn(_fixReportDeps, "editComment").mockResolvedValue();
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
     await reportStep(env, pushed);
-    expect(post).not.toHaveBeenCalled();
+    // The summary is edited in place; only the push's own append-only record is posted (B1).
+    expect(summaryPosts(post)).toEqual([]);
     const { entries } = readPushLedger(edit.mock.calls[0]?.[2] ?? "");
     expect(entries).toHaveLength(2);
     expect(entries[0]).toEqual(older);
@@ -333,5 +342,84 @@ describe("reportStep push ledger (US-004)", () => {
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
     await expect(reportStep(env, pushed)).rejects.toThrow("denied");
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * B1: both summary writers replace the whole comment body, and the forge has no conditional update, so
+ * a write built from a read taken before another run's push erases it. The push therefore also posts a
+ * record of its own — a comment no summary writer rewrites — and every reader takes the two together.
+ */
+describe("reportStep push record (B1)", () => {
+  type PostComment = typeof _fixReportDeps.postPrComment;
+  type EditComment = typeof _fixReportDeps.editComment;
+
+  /** The PR's comments as the forge holds them, so two reports can share one comment. */
+  function store(login: string) {
+    const comments: PrComment[] = [];
+    const list: typeof _fixReportDeps.listPrComments = async () => [...comments];
+    const post: PostComment = async (_ref, body) => {
+      comments.push({ id: String(comments.length + 1), kind: "comment", author: login, body, createdAt: "" });
+      return { id: String(comments.length) };
+    };
+    const edit: EditComment = async (_ref, target, body) => {
+      const at = comments.findIndex(({ id }) => id === target.id);
+      const current = comments[at];
+      if (current !== undefined) comments[at] = { ...current, body };
+    };
+    return { comments, list, post, edit };
+  }
+
+  test("a push posts its own record, keyed by the full sha, beside the summary", async () => {
+    const env = ledgerEnv([findingA]);
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
+    await reportStep(env, pushed);
+    const bodies = post.mock.calls.map((call) => String(call[1] ?? ""));
+    const record = bodies.find((body) => parseNaxBotMarker(body)?.key === pushRecordKey(PUSH_SHA));
+    expect(record).toBeDefined();
+    expect(readPushLedger(record ?? "").entries).toEqual([expect.objectContaining({ base: BASE_SHA, sha: PUSH_SHA })]);
+  });
+
+  test("a push reported twice posts one record", async () => {
+    const env = ledgerEnv([findingA]);
+    const forge = store(env.user.login);
+    spyOn(_fixReportDeps, "listPrComments").mockImplementation(forge.list);
+    spyOn(_fixReportDeps, "postPrComment").mockImplementation(forge.post);
+    spyOn(_fixReportDeps, "editComment").mockImplementation(forge.edit);
+    await reportStep(env, pushed);
+    await reportStep(env, pushed);
+    const records = forge.comments.filter(({ body }) => parseNaxBotMarker(body)?.key === pushRecordKey(PUSH_SHA));
+    expect(records).toHaveLength(1);
+  });
+
+  // The scoped probe the review ran: one report's edit lands after another run wrote its push. The
+  // block in the summary is erased; the push is not, because its own comment cannot be rewritten.
+  test("a delayed write that erases the summary's block leaves the push on the record", async () => {
+    const env = ledgerEnv([findingA]);
+    const forge = store(env.user.login);
+    spyOn(_fixReportDeps, "postPrComment").mockImplementation(forge.post);
+    spyOn(_fixReportDeps, "editComment").mockImplementation(forge.edit);
+    spyOn(_fixReportDeps, "listPrComments").mockImplementation(forge.list);
+    // The run that pushes writes its summary and its record.
+    await reportStep(env, pushed);
+    // The run whose push was rejected read the summary before that push existed, and its write lands
+    // afterwards: its body carries the stale, empty ledger, and it edits the comment it read.
+    const summary = forge.comments.find(({ body }) => parseNaxBotMarker(body)?.key === "fix-summary");
+    expect(summary).toBeDefined();
+    const stale: PrComment = {
+      id: summary?.id ?? "1",
+      kind: "comment",
+      author: env.user.login,
+      body: withNaxBotMarker("earlier summary", "fix-summary"),
+      createdAt: "",
+    };
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([stale]);
+    await reportStep(env, { step: "report", timings: {}, outcome: "push-rejected" });
+    const own = ownComments(forge.comments, env.user.login);
+    const erased = own.find(({ key }) => key === "fix-summary");
+    // The probe's symptom: the summary's own block no longer holds the push.
+    expect(readPushLedger(erased?.comment.body ?? "").entries).toEqual([]);
+    // The record a reader consults still does, so lineage and the push count are not lost.
+    expect(ownLedgerEntries(own).map(({ sha }) => sha)).toEqual([PUSH_SHA]);
   });
 });

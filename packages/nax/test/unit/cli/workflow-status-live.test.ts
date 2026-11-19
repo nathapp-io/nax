@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
-import { type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
+import { Command } from "commander";
+import { registerWorkflowCommand, type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
 import { _workflowForgeDeps } from "@/cli/workflow-forge";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
 import { DEFAULT_BLOCKING_TRIGGERS } from "@/workflow/blocking-findings";
@@ -245,13 +246,28 @@ async function fixture(dir: string, options: Options = {}) {
     if (quiet) expect(err).toEqual([]);
     return { code, out, err };
   }
+  /**
+   * The same read through the registered command, with no logger initialized: `status` runs standalone,
+   * so the CLI boundary — not a structured log record — is what must carry the warning (B6).
+   */
+  async function invokeRegistered(json = true) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const exits: number[] = [];
+    const deps: WorkflowCliDeps = { log: (s) => out.push(s), logErr: (s) => err.push(s), exit: (c) => exits.push(c) };
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
+    registerWorkflowCommand(program, deps, forgeDeps);
+    const argv = ["workflow", "status", "-f", "auth", "-d", dir, ...(json ? ["--json"] : [])];
+    await program.parseAsync(argv, { from: "user" });
+    return { out, err, exits };
+  }
   async function report() {
     const result = await invoke();
     expect(result.out).toHaveLength(1);
     const value: Record<string, unknown> = JSON.parse(result.out[0] ?? "null");
     return { ...result, value };
   }
-  return { ...fx, invoke, report, file };
+  return { ...fx, invoke, invokeRegistered, report, file };
 }
 
 function expectLive(value: Record<string, unknown>) {
@@ -606,6 +622,39 @@ describe("workflowStatusCommand blocking review findings", () => {
       ]);
       expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
       expect(code).toBe(2);
+    });
+  });
+
+  // B6: the production registration is the only path a standalone `nax workflow status` takes, and it
+  // initializes no logger. A failed blocking read must still reach stderr, with stdout left parseable.
+  test.each(["threads", "comments"] as const)(
+    "B6: the registered command warns on stderr for a failed %s read and prints one JSON document",
+    async (blockingFailure) => {
+      await withTempDir(async (dir) => {
+        const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure });
+        const { out, err, exits } = await fx.invokeRegistered(true);
+        expect(out).toHaveLength(1);
+        const value: Record<string, unknown> = JSON.parse(out[0] ?? "null");
+        expectLive(value);
+        expect(value.openItems).toEqual([CV]);
+        expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+        expect(exits).toEqual([2]);
+      });
+    },
+  );
+
+  test("B6: the registered plain command keeps the report on stdout and the warning on stderr", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, cvRuled: false, blockingFinding: {}, blockingFailure: "threads" });
+      const { out, err, exits } = await fx.invokeRegistered(false);
+      expect(out).toEqual([
+        `auth: draft ${URL}`,
+        "- [cannot-verify] _run:cv1 — manual check",
+        SUPPLEMENTARY_HEADING,
+        SUPPLEMENTARY_LINE,
+      ]);
+      expect(err.join("\n")).toContain("[workflow-status] Could not read blocking review findings");
+      expect(exits).toEqual([2]);
     });
   });
 

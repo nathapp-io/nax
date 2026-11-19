@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   appendPushEntry,
   type BotPushEntry,
-  carryOverEntries,
   MAX_LEDGER_CHARS,
   MAX_PUSH_ENTRIES,
+  mergeLedgerEntries,
   nextLedgerEntries,
   parentIssue,
   pushLedgerChars,
@@ -169,30 +169,64 @@ describe("nextLedgerEntries", () => {
   const current = `${MARKER}\n<!-- nax-bot:pushes v1 ${payload([earlier])} -->`;
 
   test("appends this execution's entry to the block the comment holds now", () => {
-    const out = nextLedgerEntries(current, entry({ sha: SHA_A }));
+    const out = nextLedgerEntries({ current, entry: entry({ sha: SHA_A }) });
     expect(out.map(({ sha }) => sha)).toEqual([SHA_B, SHA_A]);
   });
 
   test("carries over an entry a stale snapshot holds that the current block has lost", () => {
     const stale = `${MARKER}\n<!-- nax-bot:pushes v1 ${payload([entry({ sha: SHA_A })])} -->`;
-    const out = nextLedgerEntries(`<!-- nax-bot:pushes v1 ${payload([earlier])} -->`, undefined, stale);
+    const out = nextLedgerEntries({ current: `<!-- nax-bot:pushes v1 ${payload([earlier])} -->`, snapshot: stale });
     // The lost entry is older than the current one, so it is restored ahead of it, once.
     expect(out.map(({ sha }) => sha)).toEqual([SHA_A, SHA_B]);
     // A snapshot the current block already holds adds nothing.
-    expect(nextLedgerEntries(current, undefined, current)).toEqual([earlier]);
+    expect(nextLedgerEntries({ current, snapshot: current })).toEqual([earlier]);
+  });
+
+  test("B1: carries over a push only the append-only per-push record still holds", () => {
+    const recorded = entry({ sha: SHA_A });
+    const out = nextLedgerEntries({ current, records: [recorded] });
+    expect(out.map(({ sha }) => sha)).toEqual([SHA_A, SHA_B]);
   });
 
   test("reads a body with no block as an empty ledger", () => {
-    expect(nextLedgerEntries(MARKER, undefined)).toEqual([]);
+    expect(nextLedgerEntries({ current: MARKER })).toEqual([]);
   });
 });
 
-describe("carryOverEntries", () => {
-  test("restores only the entries the current block does not already hold", () => {
-    const a = entry({ sha: SHA_A });
-    const b = entry({ sha: SHA_B });
-    expect(carryOverEntries([b], [a, b])).toEqual([a, b]);
-    expect(carryOverEntries([a, b], [a, b])).toEqual([a, b]);
+/**
+ * B13: the two reads are both subsequences of one push history, so an entry only the older read holds
+ * keeps its place — and the entry cap then evicts by true age, not by the position of the merge.
+ */
+describe("mergeLedgerEntries", () => {
+  const at = (index: number): string => `2026-01-0${index}T00:00:00.000Z`;
+  const sha = (index: number): string => `${index}`.repeat(40).slice(0, 40);
+  const chain = (count: number): BotPushEntry[] =>
+    Array.from({ length: count }, (_unused, index) => entry({ sha: sha(index + 1), at: at(1) }));
+
+  test("B13: a recovered middle entry keeps its place between its neighbours", () => {
+    const [a, b, c] = chain(3);
+    if (!a || !b || !c) throw new Error("fixture");
+    expect(mergeLedgerEntries([a, c], [a, b]).map(({ sha }) => sha)).toEqual([a.sha, b.sha, c.sha]);
+    // The same entry, when it is the oldest, still goes first.
+    expect(mergeLedgerEntries([b], [a, b]).map(({ sha }) => sha)).toEqual([a.sha, b.sha]);
+  });
+
+  test("B13: under cap pressure the recovered entry survives and the oldest is the one evicted", () => {
+    const all = Array.from({ length: MAX_PUSH_ENTRIES }, (_unused, index) =>
+      entry({ sha: `${index}`.padStart(40, "f"), at: `2026-01-01T00:00:${`${index}`.padStart(2, "0")}Z` }),
+    );
+    const oldest = entry({ sha: "1".repeat(40), at: "2025-12-31T00:00:00.000Z" });
+    const middle = entry({ sha: "2".repeat(40), at: "2026-01-01T00:00:00.500Z" });
+    // The block as the comment holds it now: the oldest entry, the cap's worth of newer ones after it.
+    const current = [oldest, ...all.slice(1)];
+    const out = nextLedgerEntries({ current: withPushLedger(summary, current), records: [oldest, middle] });
+    expect(out).toHaveLength(MAX_PUSH_ENTRIES);
+    // The recovered entry is kept, in place, and the oldest is what the cap dropped.
+    expect(out.map(({ sha }) => sha)).toContain(middle.sha);
+    expect(out.map(({ sha }) => sha)).not.toContain(oldest.sha);
+    expect(out.findIndex(({ sha }) => sha === middle.sha)).toBeLessThan(
+      out.findIndex(({ sha }) => sha === all[1]?.sha),
+    );
   });
 });
 
