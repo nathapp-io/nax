@@ -10,24 +10,19 @@
  * must name the branch and hold no pending story. Both halves stop at the first failing check, so a
  * refusal names the one thing the user has to fix.
  *
- * Nothing here follows a link: every directory from the trusted root down to a run is a real directory,
- * a run is a real directory under the feature's workflow dir, a record file is a regular file, and each
- * file is read through the same handle its metadata came from — so the text the approval card counts as
- * the feature's own record is the text that is there, and a link to a file outside the tree is refused
- * rather than uploaded under `ledger.md`. `fs` has no `openat`, so the chain is verified with `lstat`
- * (which does not follow) and the file is then opened by path with `O_NOFOLLOW`, which refuses a link in
- * the last component too; neither the open nor the read can be made to wait on a FIFO. Files are streamed
- * in chunks, so an oversized run is counted and refused without ever being held in memory whole; the count
- * is the UTF-8 size of the text koda would store, not the bytes on disk, because that is what its cap
- * measures.
+ * The collector anchors its lookup at the trusted root and opens each component relative to the
+ * preceding directory handle, without following links. It retains the listed run handles through
+ * the file reads, so renaming a checked directory cannot retarget an upload. Files are read from
+ * the same handles as their stats, in bounded chunks; the cap is the uploaded text's UTF-8 size.
  */
-import { constants, type Stats } from "node:fs";
-import { type FileHandle, lstat, open, readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { constants } from "node:fs";
+import { type FileHandle, open } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { type PRD, pendingStoryIds } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
-import { ledgerFilePath } from "./ledger";
+import { DIRECTORY_FLAGS, listHandoffChildren, openHandoffChild } from "./handoff-directory";
 import { workflowFeatureDir } from "./paths";
 
 /** One file a handoff sends: the run it belongs to, its name, the mtime koda compares, and its text. */
@@ -69,14 +64,9 @@ const RECORD_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.
 /** A run directory that has a result.json, with the stat mtime the ordering uses. */
 interface RunDir {
   readonly runId: string;
-  readonly runDir: string;
+  readonly directory: FileHandle;
   readonly mtimeMs: number;
 }
-
-/** The runs a handoff may read, or the refusal for a run directory it must not read through. */
-type RunListing =
-  | { readonly ok: true; readonly runs: readonly RunDir[] }
-  | { readonly ok: false; readonly reason: string };
 
 /** One record file as its own verified handle reported it. */
 type FileRead =
@@ -101,9 +91,6 @@ type FileRead =
   /** The path holds a link or a special file, which no handoff may read. */
   | { readonly ok: false; readonly absent: false };
 
-/** errno codes that mean "there is no such path" — the only stat failures a run listing reads as absence. */
-const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
-
 function refusal(reason: string): HandoffRecordRead {
   return { ok: false, reason };
 }
@@ -113,36 +100,6 @@ function errnoCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const code: unknown = Reflect.get(error, "code");
   return typeof code === "string" ? code : undefined;
-}
-
-/**
- * The path's own stat, or undefined when there is no such path. `lstat` does not follow a link, so a
- * link answers as a link instead of as whatever it points at. Every other failure — an unreadable run
- * directory, a link loop in a path component — propagates, so a run the handoff cannot read never drops
- * out of the record and leaves an older run posing as the newest.
- */
-async function lstatOrUndefined(path: string): Promise<Stats | undefined> {
-  try {
-    return await lstat(path);
-  } catch (err) {
-    const code = errnoCode(err);
-    if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
-    throw err;
-  }
-}
-
-/**
- * The directory's entries, or `[]` when there is no such directory. Any other failure — a workflow dir
- * that cannot be read — propagates, for the same reason a failed stat does.
- */
-async function readdirOrEmpty(path: string): Promise<string[]> {
-  try {
-    return await readdir(path);
-  } catch (err) {
-    const code = errnoCode(err);
-    if (code !== undefined && MISSING_PATH_CODES.has(code)) return [];
-    throw err;
-  }
 }
 
 /** A record file that is a link or a special file, which the handoff refuses to send. */
@@ -160,72 +117,78 @@ function linkedDirReason(path: string): string {
   return `${path} is a link, not a directory of this feature; the handoff reads only the feature's own runs`;
 }
 
-/**
- * The directories from just below `anchor` down to `path` — `path` alone when it is not below the
- * anchor. Nothing above the anchor is walked: the caller already trusts that directory, and a machine
- * whose temporary root runs through a link is not the feature's doing.
- */
-function pathChain(anchor: string, path: string): readonly string[] {
-  const rest = relative(anchor, path);
-  if (rest === "" || rest.startsWith("..")) return [path];
-  const chain: string[] = [];
-  let current = anchor;
-  for (const part of rest.split(sep)) {
-    current = join(current, part);
-    chain.push(current);
-  }
-  return chain;
-}
-
-/**
- * The refusal for the first directory between `anchor` and `path` that is a link, or undefined when
- * every one of them is a real directory. `lstat` does not follow, so a link answers as a link instead
- * of as the tree it points at: reading through one would send another feature's — or another
- * machine's — run record under this feature's name.
- */
-async function linkedDirRefusal(anchor: string, path: string): Promise<string | undefined> {
-  for (const candidate of pathChain(anchor, path)) {
-    const stats = await lstatOrUndefined(candidate);
-    // A path that is not there is not a link: the run listing reads it as "no run here".
-    if (stats === undefined) return undefined;
-    if (stats.isSymbolicLink()) return linkedDirReason(candidate);
-  }
+function directoryRefusal(dirPath: string, error: unknown): string | undefined {
+  const code = errnoCode(error);
+  if (code === "ENOENT") return NO_FINISHED_RUN;
+  if (code === "ELOOP" || code === "ENOTDIR") return linkedDirReason(dirPath);
   return undefined;
 }
 
-/**
- * Every run directory under `featureWorkflowDir` that holds a result.json, newest result.json first — the
- * order `runDirsNewestFirst` uses. A workflow dir that does not exist and a stray file in place of a run
- * both read as "no run there"; a link in place of a run, and anything else the filesystem refuses, are
- * refused: following one would send files from outside the feature's own tree.
- */
-async function listRunDirs(featureWorkflowDir: string): Promise<RunListing> {
-  const runs: RunDir[] = [];
-  for (const runId of await readdirOrEmpty(featureWorkflowDir)) {
-    const runDir = join(featureWorkflowDir, runId);
-    const runStats = await lstatOrUndefined(runDir);
-    if (runStats === undefined) continue;
-    if (runStats.isSymbolicLink()) return { ok: false, reason: linkedRunReason(runId) };
-    if (!runStats.isDirectory()) continue;
-    const resultStats = await lstatOrUndefined(join(runDir, RESULT_FILE));
-    if (resultStats === undefined) continue;
-    if (!resultStats.isFile()) return { ok: false, reason: notPlainFileReason(runId, RESULT_FILE) };
-    runs.push({ runId, runDir, mtimeMs: resultStats.mtimeMs });
+/** Walk one component at a time from the trusted root; hold the final directory through collection. */
+async function collectBelow(
+  directory: FileHandle,
+  dirPath: string,
+  parts: readonly string[],
+): Promise<HandoffRecordRead> {
+  const [name, ...rest] = parts;
+  if (name === undefined) return await collectRuns(directory);
+  const childPath = join(dirPath, name);
+  let child: FileHandle;
+  try {
+    child = await openHandoffChild(directory, name, DIRECTORY_FLAGS);
+  } catch (error) {
+    const reason = directoryRefusal(childPath, error);
+    if (reason !== undefined) return refusal(reason);
+    throw error;
   }
-  return { ok: true, runs: runs.sort((a, b) => b.mtimeMs - a.mtimeMs) };
+  try {
+    return await collectBelow(child, childPath, rest);
+  } finally {
+    await child.close();
+  }
 }
+
+/** Keep the directory from the listing, not a name to resolve again when reading the record. */
+async function inspectRun(directory: FileHandle, runId: string): Promise<RunDir | string | undefined> {
+  let run: FileHandle;
+  try {
+    run = await openHandoffChild(directory, runId, DIRECTORY_FLAGS);
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code === "ENOENT") return undefined;
+    if (code === "ENOTDIR" || code === "ELOOP") return linkedRunReason(runId);
+    throw error;
+  }
+  let keep = false;
+  try {
+    const result = await openPlainFile(run, RESULT_FILE);
+    if ("ok" in result) return result.absent ? undefined : notPlainFileReason(runId, RESULT_FILE);
+    try {
+      const stats = await result.stat();
+      if (!stats.isFile()) return notPlainFileReason(runId, RESULT_FILE);
+      keep = true;
+      return { runId, directory: run, mtimeMs: stats.mtimeMs };
+    } finally {
+      await result.close();
+    }
+  } finally {
+    if (!keep) await run.close();
+  }
+}
+
+type FileRefusal = Extract<FileRead, { ok: false }>;
 
 /**
  * The file's handle, or why it cannot be read: no such file, or a link that `O_NOFOLLOW` refused.
  * The open is non-blocking, so a FIFO in the file's place answers here instead of waiting for a writer;
  * the handle's own `stat` then refuses it, because it is not a regular file.
  */
-async function openPlainFile(path: string): Promise<FileHandle | FileRead> {
+async function openPlainFile(directory: FileHandle, file: string): Promise<FileHandle | FileRefusal> {
   try {
-    return await open(path, RECORD_FILE_FLAGS);
+    return await openHandoffChild(directory, file, RECORD_FILE_FLAGS);
   } catch (err) {
     const code = errnoCode(err);
-    if (code !== undefined && MISSING_PATH_CODES.has(code)) return { ok: false, absent: true };
+    if (code === "ENOENT") return { ok: false, absent: true };
     // ELOOP: the path became a link after the listing checked it. A link is never read through.
     if (code === "ELOOP") return { ok: false, absent: false };
     // ENXIO: a socket, which has no bytes of its own to read.
@@ -273,8 +236,8 @@ async function readChunks(handle: FileHandle, mtimeMs: number, budget: number): 
  * One record file, read through the handle its metadata came from: no link is followed, a directory or
  * special file is refused, and only the bytes `budget` still allows are kept.
  */
-async function readRecordFile(path: string, budget: number): Promise<FileRead> {
-  const opened = await openPlainFile(path);
+async function readRecordFile(directory: FileHandle, file: string, budget: number): Promise<FileRead> {
+  const opened = await openPlainFile(directory, file);
   if ("ok" in opened) return opened;
   try {
     const stats = await opened.stat();
@@ -295,8 +258,7 @@ async function buildRecord(runs: readonly RunDir[]): Promise<RecordBuild> {
   let bytes = 0;
   for (const run of runs) {
     for (const file of RECORD_FILES) {
-      const path = file === RESULT_FILE ? join(run.runDir, RESULT_FILE) : ledgerFilePath(run.runDir);
-      const read = await readRecordFile(path, HANDOFF_RECORD_MAX_BYTES - bytes);
+      const read = await _handoffRecordDeps.readRecordFile(run.directory, file, HANDOFF_RECORD_MAX_BYTES - bytes);
       if (!read.ok) {
         // A missing file is not part of the record; a link or a special file is refused, never read.
         if (read.absent) continue;
@@ -322,34 +284,60 @@ function newestTie(runs: readonly RunDir[]): boolean {
   return runs.filter((run) => Math.trunc(run.mtimeMs) === newest).length > 1;
 }
 
-/**
- * The files of every run that has a result.json, newest run first (US-002).
- *
- * @param featureWorkflowDir - The feature's `workflow` directory, whose runs are the record
- * @param anchorDir - The directory already trusted, which the link check stops at; the workflow dir
- *   itself by default, so a linked workflow dir is refused but the chain above it is not walked
- * @returns The record, or the refusal for the first run, file or directory it must not read through
- */
+async function collectRuns(directory: FileHandle): Promise<HandoffRecordRead> {
+  const runs: RunDir[] = [];
+  let count = 0;
+  try {
+    for (const entry of await listHandoffChildren(directory)) {
+      if (entry.kind === "link") return refusal(linkedRunReason(entry.name));
+      const run = await inspectRun(directory, entry.name);
+      if (typeof run === "string") return refusal(run);
+      if (run === undefined) continue;
+      count++;
+      // Count all runs for the diagnostic, but never retain more descriptors than can be handed off.
+      if (count <= HANDOFF_MAX_RUNS) runs.push(run);
+      else await run.directory.close();
+    }
+    if (count === 0) return refusal(NO_FINISHED_RUN);
+    if (count > HANDOFF_MAX_RUNS) {
+      return refusal(`the feature has ${count} workflow runs; koda accepts at most ${HANDOFF_MAX_RUNS}`);
+    }
+    runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    if (newestTie(runs)) return refusal(NEWEST_TIE);
+    const built = await buildRecord(runs);
+    if (!built.ok) return refusal(built.reason);
+    if (built.bytes > HANDOFF_RECORD_MAX_BYTES) {
+      return refusal(`the run record is ${built.bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
+    }
+    return { ok: true, record: built.record, newestRunId: runs[0].runId };
+  } finally {
+    await Promise.all(runs.map((run) => run.directory.close()));
+  }
+}
+
+/** Read workflow files below a trusted directory (the workflow directory's parent by default). */
 export async function readHandoffRecordFiles(
   featureWorkflowDir: string,
-  anchorDir: string = featureWorkflowDir,
+  anchorDir: string = dirname(resolve(featureWorkflowDir)),
 ): Promise<HandoffRecordRead> {
-  const linked = await linkedDirRefusal(anchorDir, featureWorkflowDir);
-  if (linked !== undefined) return refusal(linked);
-  const listing = await listRunDirs(featureWorkflowDir);
-  if (!listing.ok) return refusal(listing.reason);
-  const { runs } = listing;
-  if (runs.length === 0) return refusal(NO_FINISHED_RUN);
-  if (runs.length > HANDOFF_MAX_RUNS) {
-    return refusal(`the feature has ${runs.length} workflow runs; koda accepts at most ${HANDOFF_MAX_RUNS}`);
+  const root = resolve(anchorDir);
+  const rest = relative(root, featureWorkflowDir);
+  if (rest === ".." || rest.startsWith(`..${sep}`) || isAbsolute(rest)) {
+    return refusal("the workflow directory is outside the trusted checkout");
   }
-  if (newestTie(runs)) return refusal(NEWEST_TIE);
-  const built = await buildRecord(runs);
-  if (!built.ok) return refusal(built.reason);
-  if (built.bytes > HANDOFF_RECORD_MAX_BYTES) {
-    return refusal(`the run record is ${built.bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
+  let anchor: FileHandle;
+  try {
+    // The caller trusts this root, but not its descendants. Refuse a link in the root's final component too.
+    anchor = await open(root, DIRECTORY_FLAGS);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return refusal(NO_FINISHED_RUN);
+    throw error;
   }
-  return { ok: true, record: built.record, newestRunId: runs[0].runId };
+  try {
+    return await collectBelow(anchor, root, rest ? rest.split(sep) : []);
+  } finally {
+    await anchor.close();
+  }
 }
 
 /** What the feature-record and PRD preflights read the record against (US-003). */
@@ -363,11 +351,11 @@ export interface HandoffRecordInput {
 }
 
 /**
- * The module's one process. `git` is stubbed in tests, the pattern `_configChangeDeps.git` uses; an
- * override here is read at call time, never captured.
+ * Injectable Git and record-file reads; overrides are read at call time.
  */
 export const _handoffRecordDeps = {
   git: (args: string[], cwd: string) => gitWithTimeout(args, cwd),
+  readRecordFile,
 };
 
 /** The committed file the handoff reads at the pushed HEAD. */
@@ -444,14 +432,13 @@ function committedPrdPath(repoRoot: string, feature: string): string {
 /** The reason the PRD committed at the pushed HEAD cannot be handed over, or undefined when it can. */
 async function committedPrdReason(input: HandoffRecordInput): Promise<string | undefined> {
   const path = committedPrdPath(input.repoRoot, input.feature);
-  let shown: { stdout: string; exitCode: number };
+  let shown: Awaited<ReturnType<typeof gitWithTimeout>>;
   try {
     shown = await _handoffRecordDeps.git(["show", `${input.head}:${path}`], input.repoRoot);
-  } catch {
-    // git could not answer at all. That and a non-zero exit are one answer: the file is not readable
-    // at this head, so the handoff has nothing to send koda.
-    return PRD_NOT_COMMITTED;
+  } catch (error) {
+    return `could not read prd.json at HEAD: Git failed: ${errorMessage(error)}`;
   }
+  if (shown.timedOut === true) return "could not read prd.json at HEAD: Git timed out";
   // A non-zero exit means the file is not committed at that head.
   if (shown.exitCode !== 0) return PRD_NOT_COMMITTED;
   let parsed: unknown;

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, stat, symlink, utimes } from "node:fs/promises";
+import { mkdir, rename, stat, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { withDepsRestore, withTempDir } from "@test/helpers";
 import type { HandoffRecordFile, HandoffRecordRead } from "@/workflow/handoff-record";
-import { isStorableRecordText, readHandoffRecordFiles } from "@/workflow/handoff-record";
+import { _handoffRecordDeps, isStorableRecordText, readHandoffRecordFiles } from "@/workflow/handoff-record";
+
+withDepsRestore(_handoffRecordDeps);
 
 const RESULT = '{"schemaVersion":1,"runId":"{run}","stories":{}}\n';
 const LEDGER = "# Workflow ledger \u2014 run: {run}\n_run: done (all stories passed)\n";
@@ -353,6 +355,26 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test("reads only the directory that was listed when a run path is renamed and reused", async () => {
+    await withTempDir(async (dir) => {
+      const original = { result: "original result", ledger: "original ledger" };
+      const run = await makeRun(dir, "r1", original);
+      const readFile = _handoffRecordDeps.readRecordFile;
+      let replaced = false;
+      _handoffRecordDeps.readRecordFile = async (...args) => {
+        if (!replaced) {
+          replaced = true;
+          await rename(run, join(dir, "archived"));
+          await makeRun(dir, "r1", { result: "replacement result", ledger: "replacement ledger" });
+        }
+        return await readFile(...args);
+      };
+
+      const record = expectOk(await readHandoffRecordFiles(dir)).record;
+      expect(record.map(({ content }) => content)).toEqual([original.result, original.ledger]);
+    });
+  });
+
   test("a run whose result.json is a link is refused, not skipped", async () => {
     await withTempDir(async (dir) => {
       await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
@@ -480,13 +502,15 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
-  test("a path a link loop runs through surfaces instead of reading as no runs", async () => {
+  test("a path through a link loop is refused instead of reading as no runs", async () => {
     await withTempDir(async (dir) => {
-      // A self-referential symlink makes every path below it answer ELOOP, not ENOENT — deterministic as root.
       const loop = join(dir, "loop");
       await symlink("loop", loop);
 
-      await expect(readHandoffRecordFiles(join(loop, "workflow"))).rejects.toThrow("ELOOP");
+      const read = await readHandoffRecordFiles(join(loop, "workflow"), dir);
+      expect(expectRefusal(read)).toBe(
+        `${loop} is a link, not a directory of this feature; the handoff reads only the feature's own runs`,
+      );
     });
   });
 

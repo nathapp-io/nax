@@ -250,12 +250,25 @@ describe("collectHandoffRecord (US-003)", () => {
     });
   });
 
-  test("a throwing git read is the same refusal as a non-zero exit", async () => {
+  test("reports a Git execution error separately from an uncommitted PRD", async () => {
     await withTempDir(async (dir) => {
       await writeRun(dir, resultJson(featureRecord()));
       stubGit({ throws: "git is missing" });
 
-      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toBe("prd.json is not committed at HEAD");
+      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toBe(
+        "could not read prd.json at HEAD: Git failed: git is missing",
+      );
+    });
+  });
+
+  test("reports the Git timeout even when Git returns a non-zero exit", async () => {
+    await withTempDir(async (dir) => {
+      await writeRun(dir, resultJson(featureRecord()));
+      _handoffRecordDeps.git = async () => ({ stdout: "", stderr: "", exitCode: 1, timedOut: true });
+
+      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toBe(
+        "could not read prd.json at HEAD: Git timed out",
+      );
     });
   });
 
