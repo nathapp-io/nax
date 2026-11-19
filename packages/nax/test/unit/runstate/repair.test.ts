@@ -235,7 +235,7 @@ describe("repairRunState (#2497)", () => {
         ]);
         expect(await Bun.file(ledger).text()).toBe("# Workflow ledger\n");
         expect(await Bun.file(path).exists()).toBe(false);
-        expect(JSON.parse(await Bun.file(join(runDir, "result.recovery.json")).text())).toEqual({
+        expect(JSON.parse(await Bun.file(join(runDir, "result.recovery.json")).text())).toMatchObject({
           schemaVersion: 1,
           rel: ".nax/features/f/workflow/r1/result.json",
           damaged: { kind: "missing" },

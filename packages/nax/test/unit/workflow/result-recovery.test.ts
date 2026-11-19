@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { stat, utimes } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { activateRunState, type RunStateHandle, repairRunState } from "@/runstate";
 import { runStateWrite } from "@/runstate/store";
+import { HANDOFF_MARK_FILE, readNewestHandoffMark } from "@/workflow/handoff-mark";
+import { runDirsNewestFirst } from "@/workflow/result";
 import {
   _resultRecoveryDeps,
   RESULT_RECOVERY_FILE,
@@ -13,6 +17,7 @@ import {
   writeResultRecovery,
 } from "@/workflow/result-recovery";
 
+withDepsRestore(_fileLockDeps);
 withDepsRestore(_resultRecoveryDeps);
 
 const RUN = "r1";
@@ -99,6 +104,11 @@ function failingRename(onDestination: string, code: string): void {
     if (String(to) === onDestination) throw Object.assign(new Error(`cannot rename to ${onDestination}`), { code });
     return rename(from, to);
   };
+}
+
+/** Create a FIFO at `path`, or report false where the platform has no `mkfifo` (the case is skipped). */
+function makeFifo(path: string): boolean {
+  return Bun.spawnSync(["mkfifo", path], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
 }
 
 beforeEach(() => {
@@ -194,6 +204,16 @@ describe("restorePendingResults", () => {
         rel: REL,
         damaged: { kind: "modified", sha256: "A".repeat(64) },
         content: "",
+      }),
+    ],
+    [
+      "an ordering time that is not a number",
+      JSON.stringify({
+        schemaVersion: 1,
+        rel: REL,
+        damaged: { kind: "missing" },
+        content: RECOVERED_TEXT,
+        orderedAt: "soon",
       }),
     ],
   ];
@@ -408,6 +428,145 @@ describe("restorePendingResults", () => {
   });
 });
 
+describe("restorePendingResults — a deferral that publishes during a replay (B2)", () => {
+  /**
+   * A deferral publishes a replacement while a replay is between reading its payload and removing the
+   * file. Without a lock of its own that removal takes the replacement too, and a damaged result is left
+   * behind with no good copy at all — which is why publication and consumption share the recovery lock.
+   */
+  async function deferDuringReplay(
+    recover: ResultRecovery,
+    outcome: "restored" | "superseded",
+  ): Promise<{ readonly resultText: string }> {
+    const paths = await seedRun({ resultText: RESULT_TEXT, recovery: recover });
+    const replacement = missingRecovery('{"runId":"replacement"}\n');
+    const lockPath = join(workflowDir, ".result-recovery.lock");
+    const unlink = _resultRecoveryDeps.unlink;
+    const removing = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let deferred = false;
+    _resultRecoveryDeps.unlink = async (path) => {
+      // The replay has read and applied its payload and is about to remove it, with its lock still held.
+      if (!deferred && String(path) === paths.recoveryPath) {
+        deferred = true;
+        removing.resolve();
+        await release.promise;
+      }
+      return unlink(path);
+    };
+    try {
+      const replay = restorePendingResults(workflowDir);
+      await removing.promise;
+      // Watch what the deferred write does next: publish over the path (unlocked) or wait for its lock.
+      const progressed = Promise.withResolvers<void>();
+      const rename = _resultRecoveryDeps.rename;
+      _resultRecoveryDeps.rename = async (from, to) => {
+        await rename(from, to);
+        if (String(to) === paths.recoveryPath) progressed.resolve();
+      };
+      const link = _fileLockDeps.link;
+      _fileLockDeps.link = async (from, to) => {
+        try {
+          return await link(from, to);
+        } finally {
+          // An attempt on the lock, whether it wins (no lock held) or loses with EEXIST (waiting).
+          if (String(to) === lockPath) progressed.resolve();
+        }
+      };
+      const deferral = writeResultRecovery(paths.resultPath, replacement);
+      await progressed.promise;
+      release.resolve();
+      expect(await replay).toEqual([{ kind: outcome, resultPath: paths.resultPath }]);
+      await deferral;
+      _resultRecoveryDeps.rename = rename;
+      _fileLockDeps.link = link;
+    } finally {
+      _resultRecoveryDeps.unlink = unlink;
+    }
+    // The replay removed the payload it consumed, and the deferral's replacement is still there.
+    expect(JSON.parse(await Bun.file(paths.recoveryPath).text())).toEqual(replacement);
+    return { resultText: await Bun.file(paths.resultPath).text() };
+  }
+
+  test("a restore's cleanup removes its own payload and not the replacement (B2)", async () => {
+    const seen = await deferDuringReplay(modifiedRecovery(sha256Of(RESULT_TEXT), RECOVERED_TEXT), "restored");
+
+    expect(seen.resultText).toBe(RECOVERED_TEXT);
+  });
+
+  test("a supersede's discard removes its own payload and not the replacement (B2)", async () => {
+    const seen = await deferDuringReplay(modifiedRecovery(sha256Of(RECOVERED_TEXT), RECOVERED_TEXT), "superseded");
+
+    expect(seen.resultText).toBe(RESULT_TEXT);
+  });
+});
+
+describe("restorePendingResults — the paths it writes and reads (B3, B5, B6)", () => {
+  test("a symlink at the staging name is never written through (B3)", async () => {
+    const paths = await seedRun({ recovery: missingRecovery() });
+    const outside = join(dir, "outside.json");
+    await Bun.write(outside, "untouched\n");
+    // The predictable staging name this module used to write: a link there must neither receive the
+    // payload nor become the result.
+    symlinkSync(outside, `${paths.resultPath}.tmp`);
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    expect(outcomes).toEqual([{ kind: "restored", resultPath: paths.resultPath }]);
+    expect(await Bun.file(outside).text()).toBe("untouched\n");
+    expect(lstatSync(paths.resultPath).isFile()).toBe(true);
+    expect(await Bun.file(paths.resultPath).text()).toBe(RECOVERED_TEXT);
+  });
+
+  test("a restored run keeps its place in the newest-first ordering (B5)", async () => {
+    const older = await seedRun({ run: "r1", recovery: { ...missingRecovery(), orderedAt: 1_000 } });
+    const newer = await seedRun({ run: "r2", resultText: RESULT_TEXT });
+    await utimes(newer.resultPath, 2, 2);
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    expect(outcomes).toEqual([{ kind: "restored", resultPath: older.resultPath }]);
+    // The replay wrote the result now, but the run keeps the ordering time the repair recorded, so the
+    // newer run is still the newest — which is what the handoff mark and the publish guards read.
+    expect((await stat(older.resultPath)).mtimeMs).toBe(1_000);
+    expect(await runDirsNewestFirst(workflowDir)).toEqual([newer.runDir, older.runDir]);
+  });
+
+  test("restoring an older run does not hide a newer run's handoff mark (B5)", async () => {
+    const older = await seedRun({ run: "r1", recovery: { ...missingRecovery(), orderedAt: 1_000 } });
+    const newer = await seedRun({ run: "r2", resultText: RESULT_TEXT });
+    const newerMark = join(newer.runDir, HANDOFF_MARK_FILE);
+    await utimes(newer.resultPath, 2, 2);
+    await Bun.write(newerMark, JSON.stringify({ schemaVersion: 1, at: "T", flowId: "fl1" }));
+
+    expect(await restorePendingResults(workflowDir)).toEqual([{ kind: "restored", resultPath: older.resultPath }]);
+
+    // The publish and handoff guards both read the newest run's mark, so a repair that promoted the
+    // older run would let a local publish run beside the publisher koda already owns.
+    expect((await readNewestHandoffMark(workflowDir))?.path).toBe(newerMark);
+  });
+
+  test("a FIFO in place of the recovery file is a per-run failure, never a wait (B6)", async () => {
+    const paths = await seedRun({ resultText: RESULT_TEXT });
+    if (!makeFifo(paths.recoveryPath)) return;
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    expect(outcomes).toEqual([{ kind: "failed", recoveryPath: paths.recoveryPath }]);
+    expect(await Bun.file(paths.resultPath).text()).toBe(RESULT_TEXT);
+  });
+
+  test("a FIFO in place of the result keeps the good copy and reports the run failed (B6)", async () => {
+    const paths = await seedRun({ recovery: missingRecovery() });
+    if (!makeFifo(paths.resultPath)) return;
+
+    const outcomes = await restorePendingResults(workflowDir);
+
+    expect(outcomes).toEqual([{ kind: "failed", recoveryPath: paths.recoveryPath }]);
+    expect(await Bun.file(paths.recoveryPath).exists()).toBe(true);
+  });
+});
+
 describe("writeResultRecovery", () => {
   test("writes the recovery beside the result and replaces it on the next write (AC-13)", async () => {
     const resultPath = join(workflowDir, RUN, "result.json");
@@ -434,35 +593,39 @@ describe("writeResultRecovery", () => {
   test("two writes of the same result path at once each land a whole payload (AC-13)", async () => {
     // Recovery files are written outside the handoff lock, so two runs can write one result path at
     // once. A staging file shared between the two callers would let the second truncate the first's
-    // payload and leave the first's rename with nothing to move.
+    // payload; the recovery lock serializes them and each stages a name of its own.
     const resultPath = join(workflowDir, RUN, "result.json");
     const recoveryPath = join(dirname(resultPath), RESULT_RECOVERY_FILE);
     const first = missingRecovery('{"runId":"first"}\n');
     const second = modifiedRecovery("c".repeat(64), '{"runId":"second"}\n');
 
-    const rename = _resultRecoveryDeps.rename;
+    const open = _resultRecoveryDeps.open;
     const staged = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    let deferFirstRename = true;
-    _resultRecoveryDeps.rename = async (from, to) => {
-      if (deferFirstRename) {
-        deferFirstRename = false;
+    let deferFirstOpen = true;
+    _resultRecoveryDeps.open = async (path, flags, mode) => {
+      if (deferFirstOpen) {
+        deferFirstOpen = false;
         staged.resolve();
         await release.promise;
       }
-      return rename(from, to);
+      return open(path, flags, mode);
     };
 
-    const firstWrite = writeResultRecovery(resultPath, first).then(
-      () => "resolved",
-      (error: unknown) => error,
-    );
-    await staged.promise;
-    await writeResultRecovery(resultPath, second);
-    release.resolve();
+    try {
+      const firstWrite = writeResultRecovery(resultPath, first);
+      await staged.promise;
+      const secondWrite = writeResultRecovery(resultPath, second);
+      release.resolve();
+      await firstWrite;
+      await secondWrite;
+    } finally {
+      _resultRecoveryDeps.open = open;
+    }
 
-    expect(await firstWrite).toBe("resolved");
-    expect([first, second]).toContainEqual(JSON.parse(await Bun.file(recoveryPath).text()));
+    // The last writer's payload is whole, and neither call left a staging file behind.
+    expect(JSON.parse(await Bun.file(recoveryPath).text())).toEqual(second);
+    expect(readdirSync(dirname(resultPath))).toEqual([RESULT_RECOVERY_FILE]);
   });
 
   test("a failed rename removes that write's staging file (AC-13)", async () => {

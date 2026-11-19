@@ -36,7 +36,7 @@ withDepsRestore(_flowHandoffDeps);
 /**
  * The real seam the default `_flowHandoffDeps.hasOpenPr` resolves through, captured before the
  * setup below replaces it. The delegation it makes — `hasOpenPr("github", branch, defaultForgeDeps,
- * repoRoot)` — is asserted by stubbing `defaultForgeDeps.run` (AC-18).
+ * repoRoot, repo)` — is asserted by stubbing `defaultForgeDeps.run` (AC-18).
  */
 const defaultHasOpenPr = _flowHandoffDeps.hasOpenPr;
 
@@ -45,13 +45,15 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 const BRANCH = "feat/x";
 /** The push destination, as a repository with an SSH `origin` resolves it. */
 const PUSH_URL = "git@github.com:o/r.git";
+/** The `owner/repo` slug of the carded repository, which is the repository the forge is asked about. */
+const REPO = "o/r";
 /** The clock the mark's timestamp comes from. */
 const AT = new Date("2026-11-18T09:30:00.000Z");
 const FEATURE = "f1";
 /** The newest run the collected record came from, which is the run the mark belongs to. */
 const NEWEST_RUN_ID = "r2";
-/** The GitHub argv an open-PR read issues for `BRANCH`. */
-const PR_LIST_ARGV = ["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number"];
+/** The GitHub argv an open-PR read issues for `BRANCH` in the carded repository. */
+const PR_LIST_ARGV = ["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--repo", REPO];
 
 const OPEN_PR_REFUSAL = `[chat] cannot hand off ${FEATURE}: branch ${BRANCH} already has an open PR; a handoff needs a branch with no PR`;
 
@@ -96,6 +98,7 @@ interface MarkCall {
 
 interface OpenPrCall {
   readonly branch: string;
+  readonly repo: string;
   readonly repoRoot: string;
 }
 
@@ -167,8 +170,8 @@ beforeEach(() => {
     signal?.throwIfAborted();
     return operation();
   };
-  _flowHandoffDeps.hasOpenPr = async (branch, repoRoot) => {
-    openPrCalls.push({ branch, repoRoot });
+  _flowHandoffDeps.hasOpenPr = async (branch, repo, repoRoot) => {
+    openPrCalls.push({ branch, repo, repoRoot });
     const next = openPrAnswers.length > 1 ? openPrAnswers.shift() : openPrAnswers[0];
     return next === undefined ? false : await next();
   };
@@ -244,16 +247,17 @@ describe("nax-flow__send — the open-PR check before the card", () => {
     expectNoTransfer();
   });
 
-  test("checks the checked-out branch at the chat's repository root (AC-5)", async () => {
+  test("checks the checked-out branch in the carded repository at the chat's repository root (AC-5)", async () => {
     _flowProviderDeps.readFlowRepoState = async () => ready("feat/handoff");
 
     await send();
 
     // Once before the card, with the branch the repository read reported...
-    expect(openPrCalls[0]).toEqual({ branch: "feat/handoff", repoRoot: REPO_ROOT });
+    expect(openPrCalls[0]).toEqual({ branch: "feat/handoff", repo: REPO, repoRoot: REPO_ROOT });
     // ...and once more at the push boundary under the handoff lock.
     expect(openPrCalls).toHaveLength(2);
     expect(openPrCalls.every((call) => call.branch === "feat/handoff")).toBe(true);
+    expect(openPrCalls.every((call) => call.repo === REPO)).toBe(true);
     expect(openPrCalls.every((call) => call.repoRoot === REPO_ROOT)).toBe(true);
   });
 
@@ -380,7 +384,7 @@ describe("nax-flow__send — an open PR in a chain", () => {
 });
 
 describe("nax-flow__send — the default open-PR seam", () => {
-  test("delegates to the forge's `hasOpenPr` with the GitHub argv at the chat's repository root (AC-18)", async () => {
+  test("delegates to the forge's `hasOpenPr` naming the carded repository (AC-18)", async () => {
     _flowHandoffDeps.hasOpenPr = defaultHasOpenPr;
     const run = spyOn(defaultForgeDeps, "run").mockResolvedValue({ exitCode: 0, stdout: "[]", stderr: "" });
     try {
@@ -393,6 +397,29 @@ describe("nax-flow__send — the default open-PR seam", () => {
     } finally {
       // mockRestore drops the recorded calls, so every assertion is made before it runs.
       run.mockRestore();
+    }
+  });
+
+  test("asks about the carded repository even when the CLI's own default names another one (B4)", async () => {
+    // `gh` reads `GH_REPO` before it discovers a repository from the working directory, so a checkout
+    // whose CLI default differs from the verified push destination could answer for a repository this
+    // handoff never touches — an empty list there would authorize the push. The argv must name the
+    // carded repository explicitly, which outranks `GH_REPO`.
+    const before = process.env.GH_REPO;
+    process.env.GH_REPO = "someone-else/other";
+    _flowHandoffDeps.hasOpenPr = defaultHasOpenPr;
+    const run = spyOn(defaultForgeDeps, "run").mockResolvedValue({ exitCode: 0, stdout: "[]", stderr: "" });
+    try {
+      await send();
+
+      const argv = run.mock.calls[0]?.[0] ?? [];
+      expect(argv).toEqual(PR_LIST_ARGV);
+      expect(argv).toContain("--repo");
+      expect(argv[argv.indexOf("--repo") + 1]).toBe(REPO);
+    } finally {
+      run.mockRestore();
+      if (before === undefined) delete process.env.GH_REPO;
+      else process.env.GH_REPO = before;
     }
   });
 });

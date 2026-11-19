@@ -2,10 +2,11 @@
  * result.json (spec §9): per-story state for resume and the feature report.
  * Written atomically (tmp + rename) after every phase change.
  */
-import { mkdir, readdir, rename, stat } from "node:fs/promises";
+import { mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { withFileLock } from "@nathapp/nax-agent/internal";
 import { activeKeepers, runStateWrite } from "@/runstate/store";
+import { writeStagedFile } from "./atomic-write";
 import { runAsHandoffLockHolder } from "./handoff-lock-owner";
 import { buildVerdict } from "./open-items";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
@@ -18,7 +19,7 @@ import type {
   WorkflowStoryRecord,
 } from "./types";
 
-export const _resultDeps = { mkdir, readdir, rename, stat };
+export const _resultDeps = { mkdir, open, readdir, rename, stat, unlink };
 
 const RESULT_FILE = "result.json";
 
@@ -163,12 +164,8 @@ export async function writePreflightTokens(
 async function writeResult(runDir: string, next: WorkflowResultFile): Promise<void> {
   await _resultDeps.mkdir(runDir, { recursive: true });
   const path = join(runDir, RESULT_FILE);
-  const tmp = `${path}.tmp`;
   const text = `${JSON.stringify(next, null, 2)}\n`;
-  await runStateWrite(path, { content: text }, async () => {
-    await Bun.write(tmp, text);
-    await _resultDeps.rename(tmp, path);
-  });
+  await runStateWrite(path, { content: text }, () => writeStagedFile(path, text, _resultDeps));
 }
 
 /**

@@ -76,6 +76,21 @@ describe("hasOpenPr", () => {
     expect(captured).toEqual([["glab", "mr", "list", "--source-branch", "feat/x", "--output", "json"]]);
   });
 
+  test("names the repository explicitly when the caller verified one (B4)", async () => {
+    const captured: string[][] = [];
+    const d = deps(() => ({ exitCode: 0, stdout: "[]", stderr: "" }), captured);
+
+    // Without the repository, `gh` resolves its own — `GH_REPO`, else the working directory's remote —
+    // which need not be the repository the caller is about to push to.
+    await hasOpenPr("github", "feat/x", d, "/repo");
+    await hasOpenPr("github", "feat/x", d, "/repo", "o/r");
+
+    expect(captured).toEqual([
+      ["gh", "pr", "list", "--head", "feat/x", "--state", "open", "--json", "number"],
+      ["gh", "pr", "list", "--head", "feat/x", "--state", "open", "--json", "number", "--repo", "o/r"],
+    ]);
+  });
+
   test.each(["not json", '{"message":"x"}'])("AC-13/14 rejects unreadable PR list %s", async (stdout) => {
     for (const forge of ["github", "gitlab"] as const) {
       const d = deps(() => ({ exitCode: 0, stdout, stderr: "" }));

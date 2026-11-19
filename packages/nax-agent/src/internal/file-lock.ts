@@ -41,7 +41,11 @@
  *   recovers a lock left by an older version's crashed creator.
  *   Special files, symlinks and invalid PID data are refused, not reclaimed.
  *   Inconclusive liveness fails closed: the waiter times out and throws
- *   rather than entering over a possible holder.
+ *   rather than entering over a possible holder. An ordinary waiter reads
+ *   that refusal on its retry path; a zero-wait attempt (`timeoutMs: 0`),
+ *   which reaches its deadline on the first create, reads the lock at the
+ *   deadline so it reports `FILE_LOCK_INVALID` rather than presenting a
+ *   malformed lock as contention.
  *
  * Reclamation is serialized by a claim file (`<target>.lock.claim`), whose
  * exclusive create elects a single "gravedigger" at a time. This closes the
@@ -335,6 +339,21 @@ async function orphanedClaimError(
   }
 }
 
+/**
+ * The malformed lock a zero-wait attempt is up against, or `undefined` when the lock is not the problem.
+ * `readLockMetadata` refuses a link, a special file or garbage metadata with `FILE_LOCK_INVALID`, and that
+ * is the error returned; any other read failure leaves the timeout as it is, because a diagnosis must
+ * never turn one failure into a different one. Reading the lock neither sleeps nor reclaims it.
+ */
+async function invalidLockError(lockPath: string): Promise<NaxError | undefined> {
+  try {
+    await readLockMetadata(lockPath);
+    return undefined;
+  } catch (error) {
+    return error instanceof NaxError && error.code === "FILE_LOCK_INVALID" ? error : undefined;
+  }
+}
+
 async function acquire(lockPath: string, options: FileLockOptions): Promise<() => Promise<void>> {
   const retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
   const deadline = _fileLockDeps.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -352,6 +371,12 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
     if (observedPid !== undefined) await reclaimAbandonedLock(lockPath, claimPath, observedPid);
     await _fileLockDeps.sleep(retryMs, signal);
   }
+  // A zero-wait attempt reaches the deadline on its first create, before any retry has read the lock, so a
+  // malformed lock would otherwise be reported as contention. Reading it here names the real problem
+  // without sleeping or reclaiming anything: a caller that hands a timeout to the next lock-taker would
+  // hand on a judging of the damage it never made.
+  const invalid = options.timeoutMs === 0 ? await invalidLockError(lockPath) : undefined;
+  if (invalid !== undefined) throw invalid;
   // The diagnosis runs only once the deadline is reached: a claim that is still being released by a
   // live gravedigger must not be named as orphaned on an earlier iteration.
   const diagnosis = await orphanedClaimError(lockPath, claimPath, options);

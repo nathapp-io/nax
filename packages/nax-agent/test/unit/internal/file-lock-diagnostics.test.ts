@@ -15,7 +15,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { readdir, utimes } from "node:fs/promises";
+import { readdir, symlink, utimes } from "node:fs/promises";
 import { NaxError } from "#src/infra/index";
 import { _fileLockDeps, withFileLock } from "#src/internal/file-lock";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
@@ -223,6 +223,69 @@ function stubReadsFailingAfterDeadline(path: string, message: string) {
     failReads: () => failing,
   };
 }
+
+describe("withFileLock — a zero-wait attempt reports a malformed lock (B7)", () => {
+  /** A zero-wait attempt: its first create fails and the deadline is already behind it. */
+  const ZERO_WAIT = { ...PATH_LOCK_OPTS, timeoutMs: 0 } as const;
+
+  /** Run a zero-wait acquisition and return its rejection, asserting it is a `NaxError`. */
+  async function zeroWaitRejection(fixture: LockFixture): Promise<NaxError> {
+    const rejection = await withFileLock(fixture.lockPath, async () => {}, ZERO_WAIT).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    if (!(rejection instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(rejection)}`);
+    return rejection;
+  }
+
+  test("reports garbage lock metadata with FILE_LOCK_INVALID, not with a contention timeout", async () => {
+    const fixture = makeLockDir();
+    await Bun.write(fixture.lockPath, "not a pid\n");
+
+    const error = await zeroWaitRejection(fixture);
+
+    expect(error.code).toBe("FILE_LOCK_INVALID");
+    expect(error.context).toMatchObject({ stage: "file-lock", lockPath: fixture.lockPath });
+  });
+
+  test("reports a symlink in place of the lock with FILE_LOCK_INVALID", async () => {
+    const fixture = makeLockDir();
+    const target = `${fixture.dir}/elsewhere.json`;
+    await Bun.write(target, `${DEAD_HOLDER_PID}\n`);
+    await symlink(target, fixture.lockPath);
+
+    const error = await zeroWaitRejection(fixture);
+
+    expect(error.code).toBe("FILE_LOCK_INVALID");
+  });
+
+  test("never waits, claims or reclaims: the lock file is left exactly as it was", async () => {
+    const fixture = makeLockDir();
+    await Bun.write(fixture.lockPath, "not a pid\n");
+    const sleeps: number[] = [];
+    Object.assign(_fileLockDeps, {
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+      },
+    });
+
+    await zeroWaitRejection(fixture);
+
+    expect(sleeps).toEqual([]);
+    expect(await Bun.file(fixture.lockPath).text()).toBe("not a pid\n");
+    expect(await Bun.file(fixture.claimPath).exists()).toBe(false);
+  });
+
+  test("keeps FILE_LOCK_TIMEOUT when a live holder is what blocks a zero-wait attempt", async () => {
+    const fixture = makeLockDir();
+    await Bun.write(fixture.lockPath, `${LIVE_PID}\n`);
+    Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid === LIVE_PID });
+
+    const error = await zeroWaitRejection(fixture);
+
+    expect(error.code).toBe("FILE_LOCK_TIMEOUT");
+  });
+});
 
 describe("withFileLock — a staged pid file is re-staged on link ENOENT (#2985)", () => {
   test("links a second staged pid file when the first vanished before its link", async () => {

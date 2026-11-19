@@ -148,6 +148,24 @@ export function normalizeGitHubRemote(url: string): string | null {
 }
 
 /**
+ * The `owner/repo` slug a normalised remote names, or null when it names no GitHub repository.
+ *
+ * A forge read that names its repository explicitly — `gh pr list --repo <owner>/<repo>` — asks about
+ * the repository the caller verified, not about whichever one the CLI resolves from its own environment
+ * (`GH_REPO`, else the working directory's remote). Two repositories can hold a branch of the same name,
+ * and only one of them is the push destination.
+ *
+ * @param remoteUrl - A remote as `normalizeGitHubRemote` returns it
+ */
+export function githubRepoSlug(remoteUrl: string): string | null {
+  const prefix = `${GITHUB_WEB_ROOT}/`;
+  if (!remoteUrl.startsWith(prefix)) return null;
+  const parts = remoteUrl.slice(prefix.length).split("/");
+  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return null;
+  return parts.join("/");
+}
+
+/**
  * One git call, or `null` when it did not answer with exit 0. A rejection is the
  * same "git could not answer" as a non-zero exit: both leave the state this check
  * needs unknown, and each caller turns that into its own message.

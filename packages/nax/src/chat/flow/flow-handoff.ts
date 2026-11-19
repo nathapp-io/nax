@@ -52,7 +52,7 @@ import {
 } from "./flow-handoff-input";
 import { isRecord } from "./flow-input";
 import type { FlowHandoffCreateBody } from "./flow-koda";
-import { checkFlowBranch, type FlowRepoReady } from "./flow-repo";
+import { checkFlowBranch, type FlowRepoReady, githubRepoSlug } from "./flow-repo";
 import {
   afterAllow,
   BILLING_NOTE,
@@ -88,7 +88,7 @@ export const _flowHandoffDeps: {
   readRunMark: typeof readRunMark;
   writeHandoffMark: typeof writeHandoffMark;
   withFileLock: typeof withFileLock;
-  hasOpenPr: (branch: string, repoRoot: string) => Promise<boolean>;
+  hasOpenPr: (branch: string, repo: string, repoRoot: string) => Promise<boolean>;
   restorePendingResults: typeof restorePendingResults;
   now: () => Date;
 } = {
@@ -98,8 +98,11 @@ export const _flowHandoffDeps: {
   readRunMark,
   writeHandoffMark,
   withFileLock,
-  // A chat handoff accepts only a GitHub `origin` (`readFlowRepoState`), so the forge is always GitHub.
-  hasOpenPr: (branch: string, repoRoot: string) => hasOpenPr("github", branch, defaultForgeDeps, repoRoot),
+  // A chat handoff accepts only a GitHub `origin` (`readFlowRepoState`), so the forge is always GitHub —
+  // and the repository is the one the card and the push name, never whichever repository the CLI would
+  // resolve from its own environment.
+  hasOpenPr: (branch: string, repo: string, repoRoot: string) =>
+    hasOpenPr("github", branch, defaultForgeDeps, repoRoot, repo),
   restorePendingResults,
   now: () => new Date(),
 };
@@ -194,23 +197,35 @@ function createBody(
  * never a green light: treating a failed `gh` as "no PR" is what let two publishers each open one, so
  * the failure is reported with the same weight as the PR itself.
  *
+ * The check names the repository the card names, which is the repository the push destination is
+ * verified against. A bare branch name is not enough: the CLI resolves its own repository from
+ * `GH_REPO` or the working directory, so a checkout whose default differs from the push destination
+ * could report an empty list from another repository and authorize a push the destination's open PR
+ * should have refused.
+ *
  * @param feature - The feature being handed off, named in the refusal
- * @param branch - The checked-out branch the push would send
- * @param repoRoot - The repository the forge is asked about
+ * @param state - The repository state the card was built from: the branch to push and its GitHub remote
+ * @param repoRoot - The directory the forge is run in
  * @returns The `[chat]` result to stop with, or `undefined` when the branch has no open PR
  */
-async function openPrRefusal(feature: string, branch: string, repoRoot: string): Promise<ToolResult | undefined> {
+async function openPrRefusal(feature: string, state: FlowRepoReady, repoRoot: string): Promise<ToolResult | undefined> {
+  const repo = githubRepoSlug(state.remoteUrl);
+  if (repo === null) {
+    return failure(
+      `[chat] cannot hand off ${feature}: could not check branch ${state.branch} for an open PR (${state.remoteUrl} is not a GitHub repository the check can name); nothing was pushed`,
+    );
+  }
   let open: boolean;
   try {
-    open = await _flowHandoffDeps.hasOpenPr(branch, repoRoot);
+    open = await _flowHandoffDeps.hasOpenPr(state.branch, repo, repoRoot);
   } catch (error) {
     return failure(
-      `[chat] cannot hand off ${feature}: could not check branch ${branch} for an open PR (${errorMessage(error)}); nothing was pushed`,
+      `[chat] cannot hand off ${feature}: could not check branch ${state.branch} for an open PR (${errorMessage(error)}); nothing was pushed`,
     );
   }
   return open
     ? failure(
-        `[chat] cannot hand off ${feature}: branch ${branch} already has an open PR; a handoff needs a branch with no PR`,
+        `[chat] cannot hand off ${feature}: branch ${state.branch} already has an open PR; a handoff needs a branch with no PR`,
       )
     : undefined;
 }
@@ -245,7 +260,7 @@ async function preflight(input: FlowHandoffInput, repoRoot: string): Promise<Han
   }
   const marked = await _flowHandoffDeps.readNewestHandoffMark(workflowFeatureDir(repoRoot, input.feature));
   if (marked !== null) return { ok: false, result: failure(`[chat] ${handoffMarkRefusal(input.feature, marked)}`) };
-  const openPr = await openPrRefusal(input.feature, state.branch, repoRoot);
+  const openPr = await openPrRefusal(input.feature, state, repoRoot);
   if (openPr !== undefined) return { ok: false, result: openPr };
   return { ok: true, state, collected };
 }
@@ -420,7 +435,7 @@ async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): P
   if (found !== null) return failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
   const cancelled = cancellationRefusal(signal);
   if (cancelled !== undefined) return cancelled;
-  const openPr = await openPrRefusal(input.feature, ready.state.branch, options.repoRoot);
+  const openPr = await openPrRefusal(input.feature, ready.state, options.repoRoot);
   if (openPr !== undefined) return openPr;
   const workflowDir = workflowFeatureDir(options.repoRoot, input.feature);
   const matches = await _flowHandoffDeps.handoffResultsMatch(workflowDir, options.repoRoot, ready.collected);

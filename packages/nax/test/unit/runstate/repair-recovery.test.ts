@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { _fileLockDeps, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
@@ -31,7 +32,7 @@ import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
 import { newStoryRecord, readResult, upsertStoryRecord, withLockedFeatureResult } from "@/workflow/result";
-import { _resultRecoveryDeps, RESULT_RECOVERY_FILE } from "@/workflow/result-recovery";
+import { _resultRecoveryDeps, RESULT_RECOVERY_FILE, restorePendingResults } from "@/workflow/result-recovery";
 
 withDepsRestore(_fileLockDeps);
 withDepsRestore(_resultRecoveryDeps);
@@ -44,6 +45,8 @@ const NAX_PRD = '{"stories":"nax"}';
 const KEPT = '{"schemaVersion":1,"runId":"r1","stories":{"US-001":{"storyId":"US-001"}}}\n';
 /** Bytes an agent left on disk in place of the kept result. */
 const DAMAGED = '{"schemaVersion":1,"runId":"r1","stories":{}}\n';
+/** A newer checkpoint a lock holder commits while a repair is trying to take the lock. */
+const NEWER = '{"schemaVersion":1,"runId":"r1","stories":{"US-003":{"storyId":"US-003"}}}\n';
 /** The result's path relative to the repository root, as `KeptFile.rel` spells it. */
 const REL = `.nax/features/${FEATURE}/workflow/${RUN}/result.json`;
 
@@ -163,7 +166,7 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
   test("a run-end repair keeps a missing result's good copy in a version-1 recovery file (AC-3)", async () => {
     await damageThenRepair("run-end");
 
-    expect(await recoveryFile()).toEqual({
+    expect(await recoveryFile()).toMatchObject({
       schemaVersion: 1,
       rel: REL,
       damaged: { kind: "missing" },
@@ -176,7 +179,7 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
 
     await damageThenRepair("run-end", "modified");
 
-    expect(await recoveryFile()).toEqual({
+    expect(await recoveryFile()).toMatchObject({
       schemaVersion: 1,
       rel: REL,
       damaged: { kind: "modified", sha256: sha256Hex(damagedBytes) },
@@ -271,6 +274,71 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
     expect(await Bun.file(recoveryPath).exists()).toBe(false);
   });
 
+  test("a checkpoint the holder wrote during the lock attempt is never replayed over (B1)", async () => {
+    // The holder commits a newer, valid checkpoint between the damage read and the failed acquisition.
+    // The recovery must describe the bytes the repair judged damaged: pairing the old kept text with the
+    // newer bytes' fingerprint makes replay discard it, where the old code restored over the checkpoint.
+    await whileHeld(async () => {
+      await Bun.write(resultPath, DAMAGED);
+      const link = _fileLockDeps.link;
+      let written = false;
+      _fileLockDeps.link = async (from, to) => {
+        if (!written && String(to) === lockPath) {
+          written = true;
+          await Bun.write(resultPath, NEWER);
+        }
+        return link(from, to);
+      };
+      try {
+        expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([
+          { path: resultPath, rel: REL, damage: ["modified"], restored: false },
+        ]);
+      } finally {
+        _fileLockDeps.link = link;
+      }
+    });
+
+    expect(await recoveryFile()).toMatchObject({
+      damaged: { kind: "modified", sha256: sha256Hex(new TextEncoder().encode(DAMAGED)) },
+      content: KEPT,
+    });
+    // The next lock-take compares the result against the damage the repair recorded, finds a newer
+    // checkpoint and keeps it.
+    expect(await restorePendingResults(workflowFeatureDir(dir, FEATURE))).toEqual([{ kind: "superseded", resultPath }]);
+    expect(await Bun.file(resultPath).text()).toBe(NEWER);
+    expect(await Bun.file(recoveryPath).exists()).toBe(false);
+  });
+
+  test("the deferral records the damaged result's own mtime as the run's ordering time (B5)", async () => {
+    // Newest-run selection reads result.json's mtime, so a replay that wrote the result with "now"
+    // would make the repaired run the newest one and hide a later run's handoff mark.
+    const damagedAt = new Date(5_000);
+    await whileHeld(async () => {
+      await Bun.write(resultPath, DAMAGED);
+      await utimes(resultPath, damagedAt, damagedAt);
+      expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([{ rel: REL, restored: false }]);
+    });
+
+    expect((await recoveryFile()).orderedAt).toBe(5_000);
+  });
+
+  test("a real malformed handoff lock takes the failed-restore path, not a deferral (B7)", async () => {
+    // A zero-wait attempt reaches its deadline before any retry reads the lock, so it must read the lock
+    // itself: a malformed lock is not contention, and a recovery file would defer a restore the spec
+    // reports as failed.
+    await Bun.write(lockPath, "not a pid\n");
+    rmSync(resultPath);
+
+    const records = await repairRunState({ trigger: "run-end", workdir: dir });
+
+    expect(records).toMatchObject([{ path: resultPath, rel: REL, restored: false }]);
+    expect(await Bun.file(recoveryPath).exists()).toBe(false);
+    const failed = warningsAboutResult().filter((warning) => warning.message.includes("[FAIL]"));
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.stage).toBe("runstate");
+    expect(failed[0]?.message).toContain(REL);
+  });
+
   test("a result this process cannot read is a failed restore, not a missing-damage copy (F1)", async () => {
     await whileHeld(async () => {
       await Bun.write(resultPath, DAMAGED);
@@ -305,10 +373,10 @@ describe("repairRunState — a damaged result under a handoff lock held outside 
     [
       "a FILE_LOCK_INVALID rejection",
       async () => {
-        // The rejection a symlink, FIFO or garbage file at `.handoff.lock` produces. A zero-wait
-        // attempt cannot surface it on its own: the deadline is reached before the diagnosis reads
-        // the lock, so the diagnosis stays best effort (US-001). The attempt's create is made to
-        // raise the very error the lock raises for that file.
+        // A FILE_LOCK_INVALID raised by the acquisition itself, as a lock read failing mid-attempt does.
+        // The production path for a symlink, FIFO or garbage file at `.handoff.lock` is the deadline read
+        // a zero-wait attempt performs (B7, covered above by its own test); this case keeps the failed
+        // restore honest for any acquisition that rejects with that code.
         rmSync(resultPath);
         const link = _fileLockDeps.link;
         _fileLockDeps.link = async (from, to) => {
