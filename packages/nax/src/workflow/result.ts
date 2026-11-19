@@ -9,6 +9,7 @@ import { activeKeepers, runStateWrite } from "@/runstate/store";
 import { runAsHandoffLockHolder } from "./handoff-lock-owner";
 import { buildVerdict } from "./open-items";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
+import { restorePendingResults } from "./result-recovery";
 import type {
   RoleTokens,
   StoryStateItem,
@@ -23,15 +24,27 @@ const RESULT_FILE = "result.json";
 
 type ResultHeader = { readonly runId: string; readonly feature: string };
 
+/**
+ * Under the feature's handoff lock. A run-end or crash repair cannot wait for a holder outside the run's
+ * call tree, so it keeps a damaged result's good copy in `result.recovery.json` instead (#2984); this
+ * lock-take is where those copies are replayed, before `task` reads the result it would merge into.
+ */
 async function withResultLock<T>(runDir: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   const featureDir = dirname(runDir);
   await _resultDeps.mkdir(featureDir, { recursive: true });
-  return await withFileLock(handoffLockPath(featureDir), task, {
-    lockName: "handoff",
-    errorPrefix: "[workflow]",
-    timeoutMs: HANDOFF_RESULT_LOCK_WAIT_MS,
-    signal,
-  });
+  return await withFileLock(
+    handoffLockPath(featureDir),
+    async () => {
+      await restorePendingResults(featureDir);
+      return await task();
+    },
+    {
+      lockName: "handoff",
+      errorPrefix: "[workflow]",
+      timeoutMs: HANDOFF_RESULT_LOCK_WAIT_MS,
+      signal,
+    },
+  );
 }
 
 export type LockedFeatureWriter = (record: WorkflowFeatureRecord) => Promise<void>;

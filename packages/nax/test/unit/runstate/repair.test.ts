@@ -214,7 +214,7 @@ describe("repairRunState (#2497)", () => {
     }
   });
 
-  test("run-end waits for a live handoff before restoring a missing checkpoint", async () => {
+  test("run-end defers a missing checkpoint to the next handoff-lock holder", async () => {
     const runDir = workflowRunDir(dir, "f", "r1");
     const path = join(runDir, "result.json");
     const ledger = join(runDir, "ledger.md");
@@ -223,34 +223,26 @@ describe("repairRunState (#2497)", () => {
     await naxWrite(ledger, "# Workflow ledger\n");
     rmSync(path);
     const lockPath = handoffLockPath(workflowFeatureDir(dir, "f"));
-    const waiting = Promise.withResolvers<void>();
-    const sleep = _fileLockDeps.sleep;
-    _fileLockDeps.sleep = (ms, signal) => {
-      waiting.resolve();
-      return sleep(ms, signal);
-    };
 
-    let finalRepair: ReturnType<typeof repairRunState> | undefined;
-    try {
-      await withFileLock(
-        lockPath,
-        async () => {
-          expect(await repairRunState(ctx)).toMatchObject([{ path, restored: false }]);
-          finalRepair = repairRunState({ trigger: "run-end", workdir: dir });
-          expect(await Promise.race([waiting.promise.then(() => "waiting"), finalRepair])).toBe("waiting");
-          expect(await Bun.file(ledger).text()).toBe("# Workflow ledger\n");
-          expect(await Bun.file(path).exists()).toBe(false);
-        },
-        { lockName: "handoff", errorPrefix: "[test]" },
-      );
-    } finally {
-      await finalRepair;
-    }
-    expect(await finalRepair).toMatchObject([{ path, damage: ["missing"], restored: true }]);
-    handle?.deactivate();
-    expect(await Bun.file(path).text()).toBe(content);
-    expect(await Bun.file(ledger).text()).toBe(
-      "# Workflow ledger\n_run: run-state repaired: .nax/features/f/workflow/r1/result.json (missing)\n",
+    await withFileLock(
+      lockPath,
+      async () => {
+        expect(await repairRunState(ctx)).toMatchObject([{ path, restored: false }]);
+        // A holder outside this call tree may wait through a whole CI run, so run-end no longer waits
+        // for it: the good copy is kept beside the result for the next holder to restore.
+        expect(await repairRunState({ trigger: "run-end", workdir: dir })).toMatchObject([
+          { path, damage: ["missing"], restored: false },
+        ]);
+        expect(await Bun.file(ledger).text()).toBe("# Workflow ledger\n");
+        expect(await Bun.file(path).exists()).toBe(false);
+        expect(JSON.parse(await Bun.file(join(runDir, "result.recovery.json")).text())).toEqual({
+          schemaVersion: 1,
+          rel: ".nax/features/f/workflow/r1/result.json",
+          damaged: { kind: "missing" },
+          content,
+        });
+      },
+      { lockName: "handoff", errorPrefix: "[test]" },
     );
   });
 

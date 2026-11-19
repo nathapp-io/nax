@@ -39,6 +39,8 @@ import {
 // biome-ignore-end lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { restorePendingResults } from "../../workflow/result-recovery";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChainAdmission, ChatChains } from "../jobs";
 import { _flowProviderDeps } from "./flow-deps";
@@ -75,9 +77,9 @@ import {
 type HandoffMark = Parameters<typeof writeHandoffMark>[1];
 
 /**
- * The record, the mark and the forge's open-PR answer, and the clock the mark's timestamp comes
- * from. Stubbed in tests so a run directory, a git repository, a forge login and a koda server are
- * all unnecessary.
+ * The record, the mark, the forge's open-PR answer and the recovery replay, and the clock the mark's
+ * timestamp comes from. Stubbed in tests so a run directory, a git repository, a forge login and a koda
+ * server are all unnecessary.
  */
 export const _flowHandoffDeps: {
   collectHandoffRecord: typeof collectHandoffRecord;
@@ -87,6 +89,7 @@ export const _flowHandoffDeps: {
   writeHandoffMark: typeof writeHandoffMark;
   withFileLock: typeof withFileLock;
   hasOpenPr: (branch: string, repoRoot: string) => Promise<boolean>;
+  restorePendingResults: typeof restorePendingResults;
   now: () => Date;
 } = {
   collectHandoffRecord,
@@ -97,6 +100,7 @@ export const _flowHandoffDeps: {
   withFileLock,
   // A chat handoff accepts only a GitHub `origin` (`readFlowRepoState`), so the forge is always GitHub.
   hasOpenPr: (branch: string, repoRoot: string) => hasOpenPr("github", branch, defaultForgeDeps, repoRoot),
+  restorePendingResults,
   now: () => new Date(),
 };
 
@@ -426,6 +430,11 @@ async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): P
 /**
  * Everything one approved handoff does after the allow: the re-check, the push, the flow, the mark.
  *
+ * The first thing it does is replay the recovery files a run-end or crash repair deferred (#2984): those
+ * repairs cannot wait for this lock, so a `result.json` they could not restore is kept beside itself and
+ * this lock-take applies it — before the recheck reads the record, so the record compared is the one on
+ * disk rather than the damaged or missing bytes the repair saw.
+ *
  * @param call - The parsed handoff, the carded state and record, and the turn's cancellation
  * @param options - The chat's repository, its koda server and the chain it answers to
  * @returns The result to report and whether koda holds a flow, or the refusal that stopped the send
@@ -434,6 +443,7 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
   const { input, ready, signal } = call;
   const { state, collected } = ready;
   try {
+    await _flowHandoffDeps.restorePendingResults(workflowFeatureDir(options.repoRoot, input.feature));
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
     const beforePush = () => handoffPushGuard(call, options);

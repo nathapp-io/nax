@@ -1,11 +1,17 @@
 /** Detect and repair agent damage to nax run state (#2497). Never throws. */
 import { appendFile, mkdir, rename } from "node:fs/promises";
-import { dirname } from "node:path";
-import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
+import { dirname, join } from "node:path";
+import { errorMessage, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
 import { holdsHandoffLock } from "../workflow/handoff-lock-owner";
-import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "../workflow/paths";
+import { handoffLockPath } from "../workflow/paths";
+import {
+  RESULT_RECOVERY_FILE,
+  type ResultRecovery,
+  restorePendingResults,
+  writeResultRecovery,
+} from "../workflow/result-recovery";
 import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
 export type RepairTrigger = "turn" | "pre-commit" | "run-end" | "crash";
@@ -31,6 +37,11 @@ export const _repairDeps = {
   clearNaxIndexFlags,
   logger: (): IndexFlagLogger | null => getSafeLogger() ?? null,
 };
+
+/** Lock failures a repair may hand to the next lock-taker instead of failing: nothing was read or written. */
+const DEFERRABLE_LOCK_CODES: ReadonlySet<string> = new Set(["FILE_LOCK_TIMEOUT", "FILE_LOCK_CLAIM_ORPHANED"]);
+/** The triggers with no keeper left to retry: run end and crash are the last chance to keep the good copy. */
+const DEFERRING_TRIGGERS: ReadonlySet<RepairTrigger> = new Set<RepairTrigger>(["run-end", "crash"]);
 
 async function damageOf(f: KeptFile, hidden: ReadonlySet<string>): Promise<Damage[]> {
   const file = Bun.file(f.path);
@@ -99,6 +110,72 @@ function failedRestore(f: KeptFile, damage: Damage[], ctx: RepairContext, error:
   return { path: f.path, rel: f.rel, damage, restored: false };
 }
 
+/** Whether the lock failure may be handed to the next holder: a lock this repair could not take, at a
+ *  trigger with no keeper left to retry. Everything else — a known-invalid lock file, an unwritable
+ *  directory, a failing write — keeps the failure path it has always had. */
+function defersToNextHolder(error: unknown, ctx: RepairContext): boolean {
+  return error instanceof NaxError && DEFERRABLE_LOCK_CODES.has(error.code) && DEFERRING_TRIGGERS.has(ctx.trigger);
+}
+
+/** The result's bytes as they are now, or undefined when there is no readable file there. */
+async function currentBytes(path: string): Promise<Uint8Array | undefined> {
+  try {
+    return await Bun.file(path).bytes();
+  } catch {
+    // No readable file: the observation is "nothing there", which is the damage worth recording.
+    return undefined;
+  }
+}
+
+/** What the repair saw on disk: no file, or the digest of the raw bytes that are there now. */
+function observedDamage(bytes: Uint8Array | undefined): ResultRecovery["damaged"] {
+  if (bytes === undefined) return { kind: "missing" };
+  return { kind: "modified", sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex") };
+}
+
+/** Whether the bytes are exactly the kept text: the damage healed between the damage read and the lock. */
+function isKeptText(bytes: Uint8Array | undefined, content: string): boolean {
+  if (bytes === undefined) return false;
+  return bytes.length === Buffer.byteLength(content, "utf8") && Buffer.from(bytes).equals(Buffer.from(content, "utf8"));
+}
+
+/**
+ * Keep the good copy of a damaged result for the next holder of the handoff lock (#2984), because a
+ * holder outside this call tree can hold that lock through a whole CI wait.
+ *
+ * Nothing is written when the damage healed while the lock was being tried: the bytes are the kept text
+ * again, so there is nothing to restore and no record to report. A failed write is the failure path the
+ * repair has always had.
+ *
+ * @param f - The file the keeper holds: what the recovery restores, and where it is written beside
+ * @param damage - What the damage read found, reported in the record
+ * @param ctx - The repair's trigger, which the log line names
+ * @returns The not-restored record, or undefined when the damage healed before the lock attempt
+ */
+async function deferRestore(f: KeptFile, damage: Damage[], ctx: RepairContext): Promise<RepairRecord | undefined> {
+  const bytes = await currentBytes(f.path);
+  if (isKeptText(bytes, f.content)) return undefined;
+  const recoveryPath = join(dirname(f.path), RESULT_RECOVERY_FILE);
+  try {
+    await writeResultRecovery(f.path, {
+      schemaVersion: 1,
+      rel: f.rel,
+      damaged: observedDamage(bytes),
+      content: f.content,
+    });
+  } catch (error) {
+    return failedRestore(f, damage, ctx, error);
+  }
+  _repairDeps
+    .logger()
+    ?.warn(
+      "runstate",
+      `[WARN] ${where(ctx)}: could not restore ${f.rel}; kept it in ${recoveryPath}; the next handoff-lock holder restores it`,
+      repairLogData(f, damage, ctx),
+    );
+  return { path: f.path, rel: f.rel, damage, restored: false };
+}
+
 async function noteInLedgers(
   keeper: RunStateKeeper,
   root: string,
@@ -161,19 +238,24 @@ async function repairResult(
   try {
     await mkdir(workflowDir, { recursive: true });
     // Inside the publisher that holds the handoff lock (a CI-repair turn), restore under its hold:
-    // deferring would let its next result write keep the damaged bytes.
+    // deferring would let its next result write keep the damaged bytes. Its own lock-take already
+    // replayed every pending recovery file, so nothing is scanned again here.
     const lockPath = handoffLockPath(workflowDir);
     if (holdsHandoffLock(lockPath)) return await repairLocked(keeper, path, state, ctx);
-    // Take the handoff lock before the path lock, as result writers do. Recheck the keeper
-    // and disk after acquiring both. Another holder may be mid-handoff, so turn/pre-commit
-    // repairs do not wait; run-end waits, before the keeper is discarded; crash repair is time-boxed.
-    return await withFileLock(lockPath, () => repairLocked(keeper, path, state, ctx), {
-      lockName: "handoff",
-      errorPrefix: "[runstate]",
-      timeoutMs: ctx.trigger === "run-end" ? HANDOFF_RESULT_LOCK_WAIT_MS : 0,
-    });
+    // Take the handoff lock before the path lock, as result writers do, then replay whatever an earlier
+    // deferral kept before judging the bytes again. One attempt only: a holder outside this call tree
+    // may keep the lock through a whole CI wait, so no repair waits for it (run-end included).
+    return await withFileLock(
+      lockPath,
+      async () => {
+        await restorePendingResults(workflowDir);
+        return await repairLocked(keeper, path, state, ctx);
+      },
+      { lockName: "handoff", errorPrefix: "[runstate]", timeoutMs: 0 },
+    );
   } catch (error) {
-    return failedRestore(file, damage, ctx, error);
+    if (!defersToNextHolder(error, ctx)) return failedRestore(file, damage, ctx, error);
+    return await deferRestore(file, damage, ctx);
   }
 }
 
