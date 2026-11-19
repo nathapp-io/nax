@@ -20,6 +20,49 @@ export interface BotPrFixPromptInput {
   readonly bar: readonly string[];
   readonly checkoutState: string;
   readonly reportPath: string;
+  /**
+   * US-006: what is known about each item — its trigger class, its lineage and whether it can hold
+   * readiness. Optional: a caller with no facts renders the prompt exactly as before.
+   */
+  readonly findingFacts?: readonly { readonly id: string; readonly lines: readonly string[] }[];
+  /** US-006: lines earlier bot fix pushes added outside the feature's declared files. */
+  readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
+}
+
+/** The section reports facts about at most this many files; the rest are counted, not listed. */
+const MAX_OUTSIDE_GROWTH_PATHS = 10;
+const FACT_INDENT = "  ";
+
+/** One item's facts: its id, then each line indented under it. */
+function factBlocks(facts: readonly { readonly id: string; readonly lines: readonly string[] }[]): string[] {
+  return facts
+    .filter(({ lines }) => lines.length > 0)
+    .map(({ id, lines }) => [`- ${id}:`, ...lines.map((line) => `${FACT_INDENT}${line}`)].join("\n"));
+}
+
+/** The growth fact: the largest file first, at most `MAX_OUTSIDE_GROWTH_PATHS` named. */
+function outsideGrowthLine(growth: readonly { readonly path: string; readonly added: number }[]): string | undefined {
+  if (growth.length === 0) return undefined;
+  const sorted = [...growth].sort((left, right) => right.added - left.added);
+  const shown = sorted
+    .slice(0, MAX_OUTSIDE_GROWTH_PATHS)
+    .map(({ path, added }) => `\`${path}\` +${added}`)
+    .join(", ");
+  const rest = sorted.length - MAX_OUTSIDE_GROWTH_PATHS;
+  const line = `Lines added by earlier nax bot fix pushes on this PR in files outside the feature's declared files: ${shown}`;
+  return rest > 0 ? `${line} and ${rest} more` : line;
+}
+
+/**
+ * The facts section, or nothing at all when there is no fact to state. A fact never carries an
+ * instruction: the caller's items say what to do, and what is known about them says only what is known.
+ */
+function factsSection(input: BotPrFixPromptInput): string {
+  const blocks = factBlocks(input.findingFacts ?? []);
+  const growth = outsideGrowthLine(input.outsideGrowth ?? []);
+  if (blocks.length === 0 && growth === undefined) return "";
+  const body = [...blocks, ...(growth === undefined ? [] : [growth])].join("\n");
+  return `\n## Facts about these findings\n${body}\n`;
 }
 
 function intent(input: BotPrFixPromptInput): string {
@@ -74,7 +117,7 @@ ${input.checkoutState}
 
 ## Items
 ${items}
-
+${factsSection(input)}
 ## The bar
 After your session nax runs these commands from the repository root, and pushes only if every one passes:
 ${input.bar.map((command) => `- ${command}`).join("\n")}

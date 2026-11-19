@@ -15,6 +15,8 @@ import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
+import { FIX_SUMMARY_KEY } from "./ci-waiver-ready";
+import { findingFactLines, outsideDeclaredGrowth } from "./fix-facts";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
@@ -22,6 +24,8 @@ import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
+import { type BotPushEntry, readPushLedger } from "./push-ledger";
+import { reviewBlockingTriggers } from "./review-blocking";
 
 export type BotFixStep =
   | "fix"
@@ -136,11 +140,13 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
   const agreedCount = env.review.agreed.length;
   if (agreedCount === 0) return { patch: { agreedCount, outcome: "nothing" }, exit: "nothing" };
   const findings = toFixFindings(env.review.agreed);
+  const intent = featureIntentPaths(env.checkout);
   const prompt = buildBotPrFixPrompt({
     mode: "fix",
     pr: env.info,
-    ...featureIntentPaths(env.checkout),
+    ...intent,
     findings,
+    ...(await fixPromptFacts(env, intent.prdPath)),
     bar: barCommands(env.checks),
     checkoutState: renderCheckoutState({
       phase: "fresh",
@@ -166,6 +172,39 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
       ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
     },
     exit: "ran",
+  };
+}
+
+/** The bot's own recorded pushes (US-004): the only record of what an earlier bot fix wrote. */
+function ownPushEntries(own: BotFixEnv["own"]): readonly BotPushEntry[] {
+  const body = own.find(({ key, threadId }) => key === FIX_SUMMARY_KEY && threadId === undefined)?.comment.body;
+  return body === undefined ? [] : readPushLedger(body).entries;
+}
+
+/**
+ * US-006: what the fix prompt may state about the round it is in — each item's trigger, lineage and
+ * readiness, and the lines earlier bot pushes added outside the feature's declared files. The facts
+ * come from the review artifact that decided this fix and from the bot's own ledger; nothing here
+ * decides anything, and a fact that cannot be read is simply absent.
+ */
+async function fixPromptFacts(
+  env: BotFixEnv,
+  prdPath: string | undefined,
+): Promise<{
+  readonly findingFacts: readonly { readonly id: string; readonly lines: readonly string[] }[];
+  readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
+}> {
+  const entries = ownPushEntries(env.own);
+  const ledger = entries.flatMap(({ items }) => items);
+  const blocking = reviewBlockingTriggers(env);
+  const growth = await outsideDeclaredGrowth({
+    ...(prdPath === undefined ? {} : { prdPath }),
+    worktree: env.checkout.worktree,
+    entries,
+  });
+  return {
+    findingFacts: env.review.agreed.map((item) => ({ id: item.key, lines: findingFactLines(item, ledger, blocking) })),
+    ...(growth === undefined ? {} : { outsideGrowth: growth }),
   };
 }
 
