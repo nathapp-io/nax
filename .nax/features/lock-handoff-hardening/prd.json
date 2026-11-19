@@ -3,7 +3,7 @@
   "feature": "lock-handoff-hardening",
   "branchName": "feat/lock-handoff-hardening",
   "createdAt": "2026-11-19T10:50:37.414Z",
-  "updatedAt": "2026-11-19T11:34:25.257Z",
+  "updatedAt": "2026-11-19T11:56:16.879Z",
   "userStories": [
     {
       "id": "US-001",
@@ -182,14 +182,17 @@
         "filesystem"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New persistent format and conditional replay integrate with keeper serialization; apply strict isolation to the SHA-256 comparison that decides whether an overwrite is allowed."
+        "reasoning": "New persistent format and conditional replay integrate with keeper serialization; apply strict isolation to the SHA-256 comparison that decides whether an overwrite is allowed.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/result.ts",
@@ -206,7 +209,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "56a5b3e33d5e730f28ef8bff3e85891fc312c2f0"
     },
     {
       "id": "US-004",
