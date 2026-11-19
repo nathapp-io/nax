@@ -12,8 +12,10 @@ import {
   withNaxBotMarker,
 } from "@/forge";
 import { getLogger } from "@/logger";
-import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
+import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
+import type { FindingTrigger } from "@/workflow/blocking-findings";
+import { parseFindingTrigger } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
@@ -38,6 +40,9 @@ export type AgreedItem =
         readonly severity: WorkflowSeverity;
         readonly suggestion?: string;
         readonly decision?: string;
+        /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
+        readonly trigger?: FindingTrigger;
+        readonly triggerEvidence?: string;
       })
   | (AgreedBase &
       AgreedLocation & {
@@ -150,7 +155,7 @@ function notQueued(input: PostReviewInput, decision: PrTriageDecision, comment: 
 function agreedItems(input: PostReviewInput): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings
     .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
-    .map(({ severity, issue, file, line, suggestion, decision }) => ({
+    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence }) => ({
       key: findingKey({ file, issue }),
       kind: "finding",
       severity,
@@ -159,6 +164,8 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
       line,
       suggestion,
       ...(decision === undefined ? {} : { decision }),
+      ...(trigger === undefined ? {} : { trigger }),
+      ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
     }));
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
@@ -185,29 +192,55 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
   return mergeEarlier(input, items);
 }
 
+const TRIGGER_LINE = "Trigger:";
+
+/**
+ * US-001: the trigger class an earlier finding's first comment states, or undefined when it states
+ * none. US-002 replaces this read with the shared `readFindingThreadFacts`.
+ */
+function earlierTrigger(body: string): FindingTrigger | undefined {
+  const line = body.split("\n").find((text) => text.startsWith(TRIGGER_LINE));
+  if (line === undefined) return undefined;
+  const stated = line.slice(TRIGGER_LINE.length).split(" - ")[0]?.trim() ?? "";
+  return parseFindingTrigger(stated);
+}
+
+/** US-001: the trigger line is metadata, not part of the issue text an item carries. */
+function withoutTriggerLines(issue: string): string {
+  const lines = issue.split("\n");
+  const kept = lines.filter((line) => !line.startsWith(TRIGGER_LINE));
+  if (kept.length === lines.length) return issue;
+  return kept
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[] {
   const seen = new Set(items.map(({ key }) => key));
   for (const { thread, key, verdict, confirmed, reason } of effectiveEarlier(input)) {
     if (verdict?.status !== undefined && verdict.status !== "open") continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    const issue = earlierIssue(thread);
+    const body = thread.comments[0]?.body ?? "";
+    const trigger = earlierTrigger(body);
+    const facts = { issue: withoutTriggerLines(earlierIssue(thread)), ...(trigger === undefined ? {} : { trigger }) };
     if (confirmed) {
       items.push({
         kind: "finding",
         key,
-        issue,
+        ...facts,
         severity: "important",
         ...(reason !== undefined && reason !== "confirmed" ? { suggestion: reason } : {}),
       });
       continue;
     }
-    const severity = issue.startsWith("**Critical**")
+    const severity = facts.issue.startsWith("**Critical**")
       ? "critical"
-      : issue.startsWith("**Minor**")
+      : facts.issue.startsWith("**Minor**")
         ? "minor"
         : "important";
-    items.push({ kind: "finding", key, issue, severity, file: thread.path, line: thread.line });
+    items.push({ kind: "finding", key, ...facts, severity, file: thread.path, line: thread.line });
   }
   return items;
 }
@@ -239,7 +272,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
   }
 }
 
-async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraft): Promise<boolean> {
+async function writeFinding(input: PostReviewInput, finding: PrFinding): Promise<boolean> {
   const own = input.own.find(({ key }) => key === findingKey(finding));
   const body = renderFindingComment(finding);
   if (own) {

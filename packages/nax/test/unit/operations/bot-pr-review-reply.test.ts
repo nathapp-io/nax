@@ -76,8 +76,32 @@ describe("parsePrReviewReply", () => {
     const finding = { issue: "bug", file: "a.ts", line: 2, observed: "broken", suggestion: "fix" };
     const draft = toFindingDraft(finding);
     assertDefined(draft, "sanitized finding");
-    expect(parse({ findings: [null, {}, finding] })?.findings).toEqual([draft]);
+    expect(parse({ findings: [null, {}, finding] })?.findings).toEqual([{ ...draft, trigger: "normal" }]);
     expect(parse({ findings: [finding] })?.findings[0]?.severity).toBe("important");
+  });
+  test("US-001 AC-3 keeps an adversarial trigger and trims its evidence", () => {
+    const finding = { issue: "bug", trigger: "adversarial", triggerEvidence: "  forged mtime on the claim file  " };
+    expect(parse({ findings: [finding] })?.findings[0]).toMatchObject({
+      trigger: "adversarial",
+      triggerEvidence: "forged mtime on the claim file",
+    });
+  });
+  test("US-001 AC-4 reads a missing trigger as normal and adds no evidence key", () => {
+    const finding = parse({ findings: [{ issue: "bug" }] })?.findings[0];
+    expect(finding).toHaveProperty("trigger", "normal");
+    expect(finding).not.toHaveProperty("triggerEvidence");
+  });
+  test("US-001 AC-5 reads an unknown trigger class as normal", () => {
+    expect(parse({ findings: [{ issue: "bug", trigger: "race" }] })?.findings[0]).toHaveProperty("trigger", "normal");
+  });
+  test.each(["", "   \n", 42] as const)("US-001 AC-6 drops evidence %j", (triggerEvidence) => {
+    const kept = parse({ findings: [{ issue: "bug", triggerEvidence: "forged mtime" }] })?.findings[0];
+    expect(kept).toHaveProperty("triggerEvidence", "forged mtime");
+    expect(parse({ findings: [{ issue: "bug", triggerEvidence }] })?.findings[0]).not.toHaveProperty("triggerEvidence");
+  });
+  test("US-001 AC-7 caps evidence at 300 characters", () => {
+    const parsed = parse({ findings: [{ issue: "bug", triggerEvidence: "z".repeat(500) }] })?.findings[0];
+    expect(parsed?.triggerEvidence).toBe("z".repeat(300));
   });
   test("AC-6 drops acId entirely", () => {
     const finding = parse({ findings: [{ issue: "bug", acId: "AC-1" }] })?.findings[0];

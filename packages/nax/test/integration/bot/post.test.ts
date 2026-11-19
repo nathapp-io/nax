@@ -5,6 +5,7 @@ import type { BotReviewArtifact, PostReviewInput } from "@/bot";
 import * as bot from "@/bot";
 import type { PrComment, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
+import type { PrFinding } from "@/operations";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
 
 const finding: WorkflowFindingDraft = {
@@ -508,6 +509,44 @@ describe("postPrReview", () => {
     );
     expect((await artifact()).headSha).toBe(input.info.headSha);
     expect(failing.mock.calls).toHaveLength(2);
+  });
+});
+
+describe("postPrReview finding triggers (US-001)", () => {
+  const triggered: PrFinding = { ...finding, trigger: "own-concurrency", triggerEvidence: "two runs" };
+  function earlierOpener(body: string) {
+    return { ...comment, author: "bot", body: withNaxBotMarker(body, "f-original") };
+  }
+  async function mergedFinding(opener: PrComment) {
+    await bot.postPrReview({
+      ...input,
+      earlier: [{ ...thread, comments: [opener] }],
+      verdict: { ...input.verdict, findings: [] },
+    });
+    return (await artifact()).agreed.find(({ kind }) => kind === "finding");
+  }
+  test("AC-16 copies the trigger class and evidence onto the agreed finding", async () => {
+    await bot.postPrReview({ ...input, verdict: { ...input.verdict, findings: [triggered] } });
+    expect((await artifact()).agreed[0]).toMatchObject({
+      key: bot.findingKey(triggered),
+      trigger: "own-concurrency",
+      triggerEvidence: "two runs",
+    });
+  });
+  test("AC-17 reads the trigger of an open earlier thread and drops its Trigger: line", async () => {
+    const merged = await mergedFinding(earlierOpener("**Important** (quality): lock leaks\n\nTrigger: manual"));
+    expect(merged).toMatchObject({ trigger: "manual" });
+    expect(merged?.issue).toBe("**Important** (quality): lock leaks");
+    expect(merged?.issue).not.toContain("Trigger:");
+  });
+  test("AC-18 writes no trigger key for an earlier thread with no Trigger: line", async () => {
+    expect(await mergedFinding(earlierOpener("**Important** (quality): lock leaks\n\nTrigger: manual"))).toHaveProperty(
+      "trigger",
+      "manual",
+    );
+    const plain = await mergedFinding(earlierOpener("**Important** (quality): lock leaks"));
+    expect(plain).not.toHaveProperty("trigger");
+    expect(plain).not.toHaveProperty("triggerEvidence");
   });
 });
 

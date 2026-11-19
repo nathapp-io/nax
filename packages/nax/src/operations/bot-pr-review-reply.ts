@@ -1,9 +1,19 @@
+import { parseFindingTrigger } from "@/workflow/blocking-findings";
 import { tryParseLLMJson } from "../utils/llm-json";
 import type { PrEarlierVerdict, PrFinding, PrReviewVerdict, PrTriageVerdict } from "./bot-types";
 import { toFindingDraft } from "./workflow-replies";
 
+const MAX_TRIGGER_EVIDENCE_CHARS = 300;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** US-001: a non-empty string, trimmed and capped; anything else is no evidence at all. */
+function triggerEvidence(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed.slice(0, MAX_TRIGGER_EVIDENCE_CHARS);
 }
 
 function strings(value: unknown): string[] {
@@ -16,11 +26,19 @@ function findings(value: unknown, decisionIds: readonly string[]): PrFinding[] {
     const draft = toFindingDraft(entry);
     if (!draft) return [];
     const { acId: _acId, ...finding } = draft;
+    const source = isRecord(entry) ? entry : {};
     const decision =
-      isRecord(entry) && typeof entry.decision === "string" && decisionIds.includes(entry.decision)
-        ? entry.decision
-        : undefined;
-    return [{ ...finding, ...(decision !== undefined && { decision }) }];
+      typeof source.decision === "string" && decisionIds.includes(source.decision) ? source.decision : undefined;
+    const evidence = triggerEvidence(source.triggerEvidence);
+    return [
+      {
+        ...finding,
+        // US-001: every finding names a class, so none is left unclassified.
+        trigger: parseFindingTrigger(source.trigger),
+        ...(evidence !== undefined ? { triggerEvidence: evidence } : {}),
+        ...(decision !== undefined ? { decision } : {}),
+      },
+    ];
   });
 }
 

@@ -225,11 +225,16 @@ const TASK_CONTRACT = `Answer every listed thread id and comment id exactly once
 "agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
 Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
 Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
+Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
+normal: reachable in ordinary use of the product.
+own-concurrency: needs two of the tool's own processes or sessions interleaving.
+adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).
+manual: needs a human acting on the checkout or state mid-operation.
 Reply with only one JSON object:
 {
   "intent": "pass | fail | n/a",
   "quality": "approved | changes",
-  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>" }],
+  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..." }],
   "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
   "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
   "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],

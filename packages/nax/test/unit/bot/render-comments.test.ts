@@ -80,6 +80,37 @@ describe("renderReviewSummary item status", () => {
 });
 
 describe("renderFindingComment", () => {
+  test("US-001 AC-10 puts the trigger class and its evidence after the issue", () => {
+    const body = bot.renderFindingComment({ ...finding, trigger: "adversarial", triggerEvidence: "forged mtime" });
+    expect(body).toContain("**Important** (quality): Leaks fd\n\nTrigger: adversarial - forged mtime");
+  });
+  test("US-001 AC-11 renders a bare class with no evidence suffix", () => {
+    const body = bot.renderFindingComment({ ...finding, trigger: "normal" });
+    expect(body.split("\n").find((line) => line.startsWith("Trigger:"))).toBe("Trigger: normal");
+  });
+  test("US-001 AC-12 renders no trigger line without a trigger", () => {
+    expect(bot.renderFindingComment({ ...finding, trigger: "manual" })).toContain("Trigger: manual");
+    expect(bot.renderFindingComment(finding)).not.toContain("Trigger:");
+  });
+  test("US-001 AC-13 places the trigger line before the suggestion", () => {
+    const body = bot.renderFindingComment({
+      ...finding,
+      suggestion: "Close it",
+      trigger: "manual",
+      triggerEvidence: "operator edit",
+    });
+    expect(body).toContain("Trigger: manual - operator edit\n\nSuggestion: Close it");
+  });
+  test("US-001 AC-14 breaks links in the evidence", () => {
+    const body = bot.renderFindingComment({ ...finding, trigger: "adversarial", triggerEvidence: "[x](http://e.com)" });
+    expect(body).toContain(`Trigger: adversarial - ${bot.safeText("[x](http://e.com)", 2_000)}`);
+    expect(body).not.toContain("](");
+  });
+  test("US-001 AC-15 keeps the finding key unchanged", () => {
+    const body = bot.renderFindingComment({ ...finding, trigger: "adversarial", triggerEvidence: "forged mtime" });
+    expect(body).toContain("Trigger: adversarial");
+    expect(parseNaxBotMarker(body)).toEqual({ key: bot.findingKey(finding) });
+  });
   test("AC-1 marks the finding identity", () => {
     expect(parseNaxBotMarker(bot.renderFindingComment(finding))).toEqual({ key: bot.findingKey(finding) });
   });

@@ -1,6 +1,7 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
 import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft } from "@/operations/workflow-types";
+import type { FindingTrigger } from "@/workflow/blocking-findings";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
@@ -9,6 +10,8 @@ import { earlierKey, findingKey, safeText, threadKey } from "./render";
 import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
 const TEXT_LIMIT = 2_000;
+/** US-001: matches the parser's cap on `triggerEvidence`. */
+const EVIDENCE_LIMIT = 300;
 const AUTHOR_LIMIT = 100;
 const ITEM_RULING_LIMIT = 20;
 const ITEM_ID_LIMIT = 100;
@@ -56,8 +59,15 @@ function severityLabel(finding: WorkflowFindingDraft): string {
 }
 
 /** A stable marked inline finding, with all author prose neutralised. */
-export function renderFindingComment(finding: WorkflowFindingDraft): string {
+export function renderFindingComment(
+  finding: WorkflowFindingDraft & { readonly trigger?: FindingTrigger; readonly triggerEvidence?: string },
+): string {
   let body = `**${severityLabel(finding)}** (${finding.kind}): ${safeText(finding.issue, TEXT_LIMIT)}`;
+  if (finding.trigger !== undefined) {
+    const evidence =
+      finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
+    body += `\n\nTrigger: ${finding.trigger}${evidence}`;
+  }
   if (finding.suggestion) body += `\n\nSuggestion: ${safeText(finding.suggestion, TEXT_LIMIT)}`;
   return withNaxBotMarker(body, findingKey(finding));
 }
