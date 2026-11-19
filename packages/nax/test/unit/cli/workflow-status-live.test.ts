@@ -20,6 +20,16 @@ const FINDING_KEY = "f-abc";
 const FINDING_PATH = "packages/nax/src/action-file.ts";
 const FINDING_LINE = 42;
 const FINDING_LINE_TEXT = `- [finding] ${FINDING_KEY} — bot review: lock leaks (Important, ${FINDING_PATH}:${FINDING_LINE})`;
+/** The one open item the US-008 fixtures produce: the review finding, with its severity and place. */
+const FINDING_ITEM: OpenItem = {
+  id: FINDING_KEY,
+  kind: "finding",
+  severity: "important",
+  file: FINDING_PATH,
+  line: FINDING_LINE,
+  issue: "bot review: lock leaks",
+};
+
 /** The ledger's own supplementary item, which every live report of this fixture carries. */
 const SUPPLEMENTARY_HEADING = "Also to verify (not blocking):";
 const SUPPLEMENTARY_LINE = "- [cannot-verify] US-001:cv1 — Redis TTL";
@@ -510,16 +520,7 @@ describe("workflowStatusCommand blocking review findings", () => {
       const fx = await fixture(dir, { isDraft: true, blockingFinding: {} });
       const { code, value } = await fx.report();
       expectLive(value);
-      expect(value.openItems).toEqual([
-        {
-          id: FINDING_KEY,
-          kind: "finding",
-          severity: "important",
-          file: FINDING_PATH,
-          line: FINDING_LINE,
-          issue: "bot review: lock leaks",
-        },
-      ]);
+      expect(value.openItems).toEqual([FINDING_ITEM]);
       expect(code).toBe(2);
       const plain = await fx.invoke(false);
       expect(plain.out).toContain(FINDING_LINE_TEXT);
@@ -551,7 +552,7 @@ describe("workflowStatusCommand blocking review findings", () => {
       expect(clear.code).toBe(0);
       const held = await (await fixture(dir, { record: { outcome: "ready" }, blockingFinding: {} })).report();
       expectLive(held.value);
-      expect(held.value.openItems.map((item) => item.id)).toEqual([FINDING_KEY]);
+      expect(held.value.openItems).toEqual([FINDING_ITEM]);
       expect(held.code).toBe(2);
     });
   });
