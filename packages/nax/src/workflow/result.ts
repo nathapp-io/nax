@@ -36,12 +36,24 @@ export function newStoryRecord(storyId: string, maxRounds: number, now: string):
   };
 }
 
+/** The result envelope understood by resume readers. Feature state is validated separately. */
+export function isWorkflowResult(value: unknown): value is WorkflowResultFile {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "schemaVersion" in value &&
+    value.schemaVersion === 1 &&
+    "stories" in value &&
+    typeof value.stories === "object"
+  );
+}
+
 export async function readResult(runDir: string): Promise<WorkflowResultFile | null> {
   const file = Bun.file(join(runDir, RESULT_FILE));
   if (!(await file.exists())) return null;
   try {
-    const parsed = (await file.json()) as WorkflowResultFile;
-    return parsed?.schemaVersion === 1 && typeof parsed.stories === "object" ? parsed : null;
+    const parsed: unknown = await file.json();
+    return isWorkflowResult(parsed) ? parsed : null;
   } catch {
     return null;
   }

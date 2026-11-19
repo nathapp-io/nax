@@ -22,8 +22,10 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { type PRD, pendingStoryIds } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
+import { isFeatureRecord } from "./feature-record";
 import { DIRECTORY_FLAGS, listHandoffChildren, openHandoffChild } from "./handoff-directory";
 import { workflowFeatureDir } from "./paths";
+import { isWorkflowResult } from "./result";
 
 /** One file a handoff sends: the run it belongs to, its name, the mtime koda compares, and its text. */
 export interface HandoffRecordFile {
@@ -409,7 +411,7 @@ function unfinishedRecordReason(resultText: string, head: string): string | unde
     // A record that does not parse cannot say what the run did.
     return NOT_A_FINISHED_RECORD;
   }
-  if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !isRecord(parsed.featureWorkflow)) {
+  if (!isWorkflowResult(parsed) || !isFeatureRecord(parsed.featureWorkflow)) {
     return NOT_A_FINISHED_RECORD;
   }
   const { step, outcome, head: recordedHead, url } = parsed.featureWorkflow;

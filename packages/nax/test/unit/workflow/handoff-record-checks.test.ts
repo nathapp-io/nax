@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
+import { loadPriorFeature, newFeatureRecord } from "@/workflow/feature-record";
 import type { HandoffRecordRead } from "@/workflow/handoff-record";
 import { _handoffRecordDeps, collectHandoffRecord, readHandoffRecordFiles } from "@/workflow/handoff-record";
 import { workflowFeatureDir } from "@/workflow/paths";
@@ -45,9 +46,16 @@ function stubGit(answer: GitAnswer): void {
   };
 }
 
+const FINISHED = {
+  ...newFeatureRecord({ now: "2026-01-01T00:00:00.000Z", seed: null, minors: [] }),
+  step: "done",
+  outcome: "local-only",
+  head: HEAD,
+} as const;
+
 /** The feature record a finished run leaves, with `overrides` merged over it (an `undefined` value drops the key). */
 function featureRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { step: "done", outcome: "local-only", head: HEAD, ...overrides };
+  return { ...FINISHED, ...overrides };
 }
 
 /** A schema-version-1 result.json holding `featureWorkflow`, or one holding none at all. */
@@ -116,13 +124,15 @@ const NOT_FINISHED = "the newest workflow run's result.json is not a finished fe
 describe("collectHandoffRecord (US-003)", () => {
   test("a finished local-only run at HEAD with a matching committed PRD is accepted, with readHandoffRecordFiles' entries", async () => {
     await withTempDir(async (dir) => {
-      await writeRun(dir, resultJson(featureRecord()));
+      await writeRun(dir, resultJson(FINISHED));
       stubGit({ stdout: prdText() });
+      const workflowDir = workflowFeatureDir(dir, FEATURE);
 
       const read = await collectHandoffRecord(handoffInput(dir));
 
+      expect(await loadPriorFeature(workflowDir, "new-run")).toEqual(FINISHED);
       expectOk(read);
-      expect(read).toEqual(await readHandoffRecordFiles(workflowFeatureDir(dir, FEATURE)));
+      expect(read).toEqual(await readHandoffRecordFiles(workflowDir));
     });
   });
 
@@ -165,6 +175,17 @@ describe("collectHandoffRecord (US-003)", () => {
       stubGit({ stdout: prdText() });
 
       expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toBe(NOT_FINISHED);
+    });
+  });
+
+  test("refuses a finished-looking feature record that publish-only cannot load", async () => {
+    await withTempDir(async (dir) => {
+      await writeRun(dir, resultJson({ step: "done", outcome: "local-only", head: HEAD }));
+      stubGit({ stdout: prdText() });
+
+      expect(await loadPriorFeature(workflowFeatureDir(dir, FEATURE), "new-run")).toBeNull();
+      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toBe(NOT_FINISHED);
+      expect(calls).toHaveLength(0);
     });
   });
 

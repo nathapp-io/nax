@@ -69,7 +69,7 @@ export async function collectStoryRecords(featureDir: string): Promise<Readonly<
   return Object.fromEntries(found);
 }
 
-function isFeatureRecord(v: unknown): v is WorkflowFeatureRecord {
+export function isFeatureRecord(v: unknown): v is WorkflowFeatureRecord {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return (
