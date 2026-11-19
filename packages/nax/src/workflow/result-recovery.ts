@@ -140,10 +140,10 @@ async function commitResult(resultPath: string, content: string): Promise<void> 
   });
 }
 
-/** Best effort: the recovery file's removal, or why it is still there. */
-async function removeRecovery(recoveryPath: string): Promise<string | undefined> {
+/** Best effort removal of a staging or recovery file: why it is still there, when it is. */
+async function removeQuietly(path: string): Promise<string | undefined> {
   try {
-    await _resultRecoveryDeps.unlink(recoveryPath);
+    await _resultRecoveryDeps.unlink(path);
     return undefined;
   } catch (error) {
     return errorMessage(error);
@@ -184,7 +184,7 @@ function failed(recoveryPath: string, resultPath: string, error: unknown): Recov
 
 /** A newer write replaced the damaged result: the recovery has nothing left to restore. */
 async function supersede(resultPath: string, recoveryPath: string): Promise<RecoveryOutcome> {
-  const unlinkError = await removeRecovery(recoveryPath);
+  const unlinkError = await removeQuietly(recoveryPath);
   warn(
     withUnlinkNote(`[WARN] discarded ${recoveryPath}: the result no longer holds the recorded damage`, unlinkError),
     {
@@ -220,7 +220,7 @@ async function restoreRun(runDir: string): Promise<RecoveryOutcome | undefined> 
   } catch (error) {
     return failed(recoveryPath, resultPath, error);
   }
-  const unlinkError = await removeRecovery(recoveryPath);
+  const unlinkError = await removeQuietly(recoveryPath);
   await noteInLedger(runDir, recovery);
   warn(withUnlinkNote(`[WARN] restored ${recovery.rel} from ${recoveryPath}`, unlinkError), {
     path: recovery.rel,
@@ -282,7 +282,15 @@ export async function writeResultRecovery(resultPath: string, recovery: ResultRe
   const dir = dirname(resultPath);
   await _resultRecoveryDeps.mkdir(dir, { recursive: true });
   const recoveryPath = join(dir, RESULT_RECOVERY_FILE);
-  const tmp = `${recoveryPath}.tmp`;
+  // A staging name of its own per call: a repair writes this file outside the handoff lock, so two
+  // of them can reach one result path at once and must never share (and truncate) a staged payload.
+  const tmp = `${recoveryPath}.${crypto.randomUUID()}.tmp`;
   await Bun.write(tmp, `${JSON.stringify(recovery, null, 2)}\n`);
-  await _resultRecoveryDeps.rename(tmp, recoveryPath);
+  try {
+    await _resultRecoveryDeps.rename(tmp, recoveryPath);
+  } catch (error) {
+    // The rename did not happen, so this call's staged payload is nobody's: never leave it behind.
+    await removeQuietly(tmp);
+    throw error;
+  }
 }

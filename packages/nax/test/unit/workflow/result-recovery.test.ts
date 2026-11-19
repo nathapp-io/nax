@@ -430,4 +430,51 @@ describe("writeResultRecovery", () => {
 
     expect(JSON.parse(await Bun.file(paths.recoveryPath).text())).toEqual(missingRecovery());
   });
+
+  test("two writes of the same result path at once each land a whole payload (AC-13)", async () => {
+    // Recovery files are written outside the handoff lock, so two runs can write one result path at
+    // once. A staging file shared between the two callers would let the second truncate the first's
+    // payload and leave the first's rename with nothing to move.
+    const resultPath = join(workflowDir, RUN, "result.json");
+    const recoveryPath = join(dirname(resultPath), RESULT_RECOVERY_FILE);
+    const first = missingRecovery('{"runId":"first"}\n');
+    const second = modifiedRecovery("c".repeat(64), '{"runId":"second"}\n');
+
+    const rename = _resultRecoveryDeps.rename;
+    const staged = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let deferFirstRename = true;
+    _resultRecoveryDeps.rename = async (from, to) => {
+      if (deferFirstRename) {
+        deferFirstRename = false;
+        staged.resolve();
+        await release.promise;
+      }
+      return rename(from, to);
+    };
+
+    const firstWrite = writeResultRecovery(resultPath, first).then(
+      () => "resolved",
+      (error: unknown) => error,
+    );
+    await staged.promise;
+    await writeResultRecovery(resultPath, second);
+    release.resolve();
+
+    expect(await firstWrite).toBe("resolved");
+    expect([first, second]).toContainEqual(JSON.parse(await Bun.file(recoveryPath).text()));
+  });
+
+  test("a failed rename removes that write's staging file (AC-13)", async () => {
+    const resultPath = join(workflowDir, RUN, "result.json");
+    const recoveryPath = join(dirname(resultPath), RESULT_RECOVERY_FILE);
+    _resultRecoveryDeps.rename = async () => {
+      throw Object.assign(new Error("cannot rename"), { code: "EIO" });
+    };
+
+    await expect(writeResultRecovery(resultPath, missingRecovery())).rejects.toThrow("cannot rename");
+
+    expect(await Bun.file(recoveryPath).exists()).toBe(false);
+    expect(readdirSync(dirname(resultPath))).toEqual([]);
+  });
 });
