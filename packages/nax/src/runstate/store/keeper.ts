@@ -28,8 +28,8 @@ export class RunStateKeeper {
     return p.feature === this.feature;
   }
 
-  record(path: string, p: RunStatePath, content: string): void {
-    this.kept.set(path, { ...p, path, content, orderedAt: Date.now() });
+  record(path: string, p: RunStatePath, content: string, orderedAt: number = Date.now()): void {
+    this.kept.set(path, { ...p, path, content, orderedAt });
   }
 
   get(path: string): KeptFile | undefined {

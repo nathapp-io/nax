@@ -43,6 +43,8 @@ function sha256Of(bytes: Uint8Array | string): string {
   return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 }
 
+const PENDING_UUID = "3c4a84ad-f038-4f33-8418-39af6efdf74c";
+
 function missingRecovery(content: string = RECOVERED_TEXT): ResultRecovery {
   return { schemaVersion: 1, rel: REL, damaged: { kind: "missing" }, content };
 }
@@ -649,19 +651,26 @@ describe("writeResultRecovery — a recovery lock that cannot be taken (B8)", ()
     expect(await Bun.file(written).exists()).toBe(false);
   });
 
-  test("a replay consumes a deferred payload beside the canonical one and removes only what it read (B8)", async () => {
-    const paths = await seedRun({ recoveryText: JSON.stringify(missingRecovery('{"runId":"first"}\n')) });
-    await Bun.write(`${paths.recoveryPath}.pending-a`, JSON.stringify(missingRecovery()));
+  test("a replay commits the newest checkpoint by orderedAt and discards the older copy after (B12)", async () => {
+    const older = { ...missingRecovery('{"runId":"older"}\n'), orderedAt: 1_000 };
+    const newer = { ...missingRecovery('{"runId":"newer"}\n'), orderedAt: 2_000 };
+    const paths = await seedRun({ recoveryText: JSON.stringify(older) });
+    await Bun.write(`${paths.recoveryPath}.pending-${PENDING_UUID}`, JSON.stringify(newer));
 
     const outcomes = await restorePendingResults(workflowDir);
 
-    // The canonical payload restores the result; the deferred one then finds the damage gone and is
-    // discarded. Neither payload file survives its own replay, and no payload is removed unread.
-    expect(outcomes).toEqual([
-      { kind: "restored", resultPath: paths.resultPath },
-      { kind: "superseded", resultPath: paths.resultPath },
-    ]);
+    expect(outcomes.map((o) => o.kind)).toEqual(["restored", "superseded"]);
+    expect(await Bun.file(paths.resultPath).text()).toBe('{"runId":"newer"}\n');
     expect(readdirSync(paths.runDir)).toEqual(["result.json"]);
+  });
+
+  test("a staging sibling of a pending payload is never replayed or unlinked (B11)", async () => {
+    const paths = await seedRun({});
+    const staged = `${paths.recoveryPath}.pending-${PENDING_UUID}.staged-${PENDING_UUID}`;
+    await Bun.write(staged, JSON.stringify(missingRecovery()));
+
+    expect(await restorePendingResults(workflowDir)).toEqual([]);
+    expect(await Bun.file(staged).exists()).toBe(true);
   });
 
   test("a payload that cannot be published is still the caller's failure (B8)", async () => {
