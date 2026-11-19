@@ -3,7 +3,7 @@
   "feature": "bot-convergence-facts",
   "branchName": "feat/bot-convergence-facts",
   "createdAt": "2026-11-19T03:29:04.609Z",
-  "updatedAt": "2026-11-19T04:40:45.149Z",
+  "updatedAt": "2026-11-19T05:10:01.108Z",
   "userStories": [
     {
       "id": "US-001",
@@ -247,14 +247,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Adds a bounded comment codec and integrates it into separate summary creation, edit and readiness paths."
+        "reasoning": "Adds a bounded comment codec and integrates it into separate summary creation, edit and readiness paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-report.ts",
@@ -271,7 +274,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a02bf22cbb075ad7ad7e9da0ac6802bb4ca84e7e"
     },
     {
       "id": "US-005",
