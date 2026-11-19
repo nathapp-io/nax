@@ -158,8 +158,13 @@ describe("outsideDeclaredGrowth", () => {
   /** A rename record: numstat carries no path inline, the old and the new path follow as fields. */
   const rename = (added: number, from: string, to: string): string => `${added}\t0\t\0${from}\0${to}\0`;
 
-  const deps = (overrides: Partial<OutsideGrowthDeps> = {}) =>
-    ({ loadPRD: async () => declaredPRD, runGit: git(""), exists: tree(), ...overrides }) as OutsideGrowthDeps;
+  function deps(overrides: Partial<OutsideGrowthDeps> = {}): OutsideGrowthDeps {
+    return {
+      loadPRD: overrides.loadPRD ?? (async () => declaredPRD),
+      runGit: overrides.runGit ?? git(""),
+      exists: overrides.exists ?? tree(),
+    };
+  }
 
   test("AC-8: only the undeclared path is reported", async () => {
     const runGit = git(records("10\t0\tsrc/a.ts", "20\t2\tsrc/c.ts", "5\t1\tsrc/b.ts"));
