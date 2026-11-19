@@ -3,7 +3,7 @@
   "feature": "bot-convergence-facts",
   "branchName": "feat/bot-convergence-facts",
   "createdAt": "2026-11-19T03:29:04.609Z",
-  "updatedAt": "2026-11-19T04:20:27.377Z",
+  "updatedAt": "2026-11-19T04:40:45.149Z",
   "userStories": [
     {
       "id": "US-001",
@@ -181,14 +181,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Wires permission-checked scope into review, artifacts and readiness; authorization regressions can release a hold incorrectly."
+        "reasoning": "Wires permission-checked scope into review, artifacts and readiness; authorization regressions can release a hold incorrectly.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -205,7 +208,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f0c9ac5a7c6419f5d421532cf7ecc828d2945788"
     },
     {
       "id": "US-004",
