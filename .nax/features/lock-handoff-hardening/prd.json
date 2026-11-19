@@ -1,0 +1,309 @@
+{
+  "project": "nax-monorepo",
+  "feature": "lock-handoff-hardening",
+  "branchName": "feat/lock-handoff-hardening",
+  "createdAt": "2026-11-19T10:50:37.414Z",
+  "updatedAt": "2026-11-19T12:38:59.245Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Diagnose orphaned claims and protect staged PID files",
+      "description": "**Goal** — Give operators an actionable orphaned-claim error and keep a swept staged PID file from aborting an otherwise valid lock acquisition (#2980, #2985).\n\n**Motivation** — Every later caller then fails with `FILE_LOCK_TIMEOUT`, the same error a live holder causes, so the operator retries a wait that cannot succeed.\n\n**Approach** — At the deadline, `acquire` runs `orphanedClaimError(lockPath, claimPath, options)` before building the timeout. It returns the new error only when all three hold: the lock is provably abandoned (`abandonedPid(lockPath)` is not `undefined`), the claim file holds a pid (`readLockMetadata(claimPath)` returns a non-null `pid`), and `isPidAlive` reports that pid dead. Any read failure in this check is swallowed and the timeout is thrown as today: the diagnosis must never change the failure into a different one. The error:\n\n```ts\nnew NaxError(\n  `${options.errorPrefix} The ${options.lockName} lock is blocked by a reclamation claim that dead process ${pid} left: ${claimPath}. ` +\n    `Retrying cannot clear it. Stop every process that uses ${lockPath}, then remove ${claimPath}.`,\n  \"FILE_LOCK_CLAIM_ORPHANED\",\n  { stage: \"file-lock\", lockName: options.lockName, lockPath, claimPath, claimPid: pid },\n);\n```\n\nThe module comment's recovery paragraph gains one sentence naming this error. `tryCreateExclusive` re-stages on `ENOENT` once: a fresh `randomUUID()` staged name, the same `writeFile`/`link` steps, the same `finally` unlink of each staged file it wrote. The sweep reads each candidate's mtime with `_fileLockDeps.stat` and skips one whose age, `_fileLockDeps.now() - mtimeMs` (the basis `readLockMetadata` uses), is below `STAGED_PID_SWEEP_AGE_MS`; a `stat` failure skips that file (best effort, as today). `STAGED_PID_SWEEP_AGE_MS` stays module-private. The module comment's staged-file sentence (\"the next acquisition there removes staged files whose pid is proven dead\") gains \"and that are older than `STAGED_PID_SWEEP_AGE_MS`\".\n\n- `acquire` (`file-lock.ts`, not exported). Baseline: on the deadline it throws `FILE_LOCK_TIMEOUT`. Target: on the deadline it first checks for an orphaned claim (US-001) and throws `FILE_LOCK_CLAIM_ORPHANED` when one is found, else `FILE_LOCK_TIMEOUT` as today.\n- `tryCreateExclusive(path)` (`file-lock.ts`, not exported). Baseline: a `link` failure other than `EEXIST` or an unsupported-link code is thrown. Target: an `ENOENT` from `link` writes a fresh staged file and links once more; a second `ENOENT` is thrown as today.\n- `sweepOrphanedStagedFiles(path)` (`file-lock.ts`, not exported). Baseline: removes every staged file whose pid is proven dead. Target: removes a staged file only when its pid is proven dead **and** its mtime is at least `STAGED_PID_SWEEP_AGE_MS` (new constant, `10_000`) old.\n- `_fileLockDeps`. Baseline: no `stat`. Target: gains `stat` (from `node:fs/promises`) so the sweep's age read is injectable.\n\nExtend the existing lock tests without growing the large suite: the two-waiter aged-claim fixture now expects `FILE_LOCK_CLAIM_ORPHANED` for each waiter and keeps its no-operation and unchanged-byte assertions; age the proven-dead staged file with `utimes` in the existing sweep fixture and keep the dead-removed/live-kept assertions. Put the new diagnostics and sweep cases in the test satellite.\n\n**Scope** — In: the nax-agent file-lock implementation, comments and tests. Out: consumer-side queue and repair handling (US-004), handoff forge checks (US-002), and sidecar IO (US-003). Removing an orphaned claim automatically, at any age or pid state (#2980 ruling: fail closed). The holder-pid liveness check's own cross-namespace weakness (a lock whose holder pid means nothing locally); only the staged-file sweep changes. `nax approvals rm`'s handling of a lock error: the new code falls to its existing branch, which prints the error message verbatim.\n\n**Interface**\n```ts\nwithFileLock<T>(lockPath: string, operation: () => Promise<T>, options: FileLockOptions): Promise<T>\n```\n`_fileLockDeps` (`writeFile`, `link`, `readdir`, `open`, `unlink`, `now`, `sleep`, `isPidAlive`), exported to nax through `@nathapp/nax-agent/internal`, gains the `stat` seam described above.",
+      "acceptanceCriteria": [
+        "Given an abandoned lock with a holder pid proven dead and a `<lock>.claim` holding a pid `isPidAlive` reports dead, when `withFileLock` reaches its deadline, then it rejects with a `NaxError` whose code is `FILE_LOCK_CLAIM_ORPHANED`.",
+        "When `withFileLock` rejects with `FILE_LOCK_CLAIM_ORPHANED`, then its error context carries `stage: \"file-lock\"`, the lock name and `lockPath`, `claimPath` equal to `<lock>.claim`, and `claimPid` equal to the claim's pid.",
+        "When `withFileLock` rejects with `FILE_LOCK_CLAIM_ORPHANED`, then its message names the claim path and dead pid and says that retrying cannot clear it and that every process using the lock must be stopped before removing the claim.",
+        "When `withFileLock` rejects with `FILE_LOCK_CLAIM_ORPHANED`, then the claim and abandoned lock files still hold their original bytes.",
+        "When `withFileLock` rejects with `FILE_LOCK_CLAIM_ORPHANED`, then the operation was never called.",
+        "Given an abandoned lock and a claim pid that is alive or whose liveness is inconclusive, when `withFileLock` reaches its deadline, then it rejects with `FILE_LOCK_TIMEOUT`, as today.",
+        "Given a live lock holder and a claim holding a dead pid, when `withFileLock` reaches its deadline, then it rejects with `FILE_LOCK_TIMEOUT`.",
+        "Given an abandoned lock and an empty claim file (fallback create crashed before its write), when `withFileLock` reaches its deadline, then it rejects with `FILE_LOCK_TIMEOUT`.",
+        "When reading the claim during the deadline check fails (a stubbed `_fileLockDeps.open` throws for the claim path after the deadline), then `withFileLock` rejects with `FILE_LOCK_TIMEOUT`, not with the read error.",
+        "When reading the lock during the deadline check fails, then `withFileLock` rejects with `FILE_LOCK_TIMEOUT`, not with the read error.",
+        "When `_fileLockDeps.link` rejects once with `ENOENT` for the lock path and then succeeds, then the `withFileLock` operation runs with the caller's pid in the lock file.",
+        "When the first `_fileLockDeps.link` call for the lock path rejects with `ENOENT` and the retry succeeds, then `_fileLockDeps.writeFile` is called for two different staged paths.",
+        "When the first `_fileLockDeps.link` call for the lock path rejects with `ENOENT` and the retry succeeds, then neither staged file exists after acquisition.",
+        "When `_fileLockDeps.link` rejects with `ENOENT` on both attempts, then `withFileLock` rejects with the second `ENOENT` error.",
+        "When `_fileLockDeps.link` rejects with `ENOENT` on both attempts, then `withFileLock` never calls the operation.",
+        "Given a staged pid file whose pid is proven dead and whose mtime is less than 10 seconds before `_fileLockDeps.now()`, when another process acquires a lock in the same directory, then the staged file remains on disk.",
+        "Given a staged pid file whose pid is proven dead and whose mtime is at least 10 seconds before `_fileLockDeps.now()`, when another process acquires a lock in the same directory, then the staged file is removed.",
+        "When `_fileLockDeps.stat` rejects for a staged file, then the lock acquisition still succeeds.",
+        "When `_fileLockDeps.stat` rejects for a staged file, then that file remains on disk after acquisition."
+      ],
+      "tags": [
+        "feature",
+        "concurrency",
+        "file-lock"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The deadline diagnosis, bounded link retry, and age filter change one existing lock module without replacing the reclamation protocol; its injected filesystem and clock seams make the race cases deterministic in one TDD session.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/file-lock.ts",
+        "packages/nax-agent/test/unit/internal/file-lock.test.ts",
+        "packages/nax-agent/src/internal/process-alive.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/internal/file-lock-diagnostics.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/internal/file-lock.test.ts",
+          "reason": "\"two contending waiters leave an aged claim and its abandoned lock intact\" asserts each waiter rejects with `code: \"FILE_LOCK_TIMEOUT\"`; its fixture is an abandoned lock (`424242`, `isPidAlive` false) with an aged claim holding dead pid `999999`, which is exactly the orphaned-claim case, so it now asserts `code: \"FILE_LOCK_CLAIM_ORPHANED\"`. Its other assertions (operation never called, lock and claim bytes unchanged) stay."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/internal/file-lock.test.ts",
+          "reason": "\"an acquisition removes staged pid files a dead process left, never a live one's\" writes the dead process's staged file just before acquiring, so its mtime is younger than `STAGED_PID_SWEEP_AGE_MS` and the aged sweep keeps it; the fixture ages the dead file past the bound (as the aged-claim test does with `utimes`) and keeps both assertions (dead removed, live kept)."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "60582ce37d220b5621b836625d31687399da6005"
+    },
+    {
+      "id": "US-002",
+      "title": "Refuse handoff when GitHub reports an open PR or cannot answer",
+      "description": "**Goal** — Make chat handoff require a successful GitHub check for no open PR both before approval and just before push (#2983).\n\n**Motivation** — HEAD still matches the older `local-only` result, `collectHandoffRecord` accepts it, and a chat handoff pushes and asks koda to own a feature whose PR is already open.\n\n**Approach** — `preflight` runs the check after `collectHandoffRecord` accepts the record and after the mark read, so a feature already handed over (koda then owns its PR) still gets the `handoffMarkRefusal` text. `handoffPushGuard` runs it after the run-mark read and the cancellation read and before `handoffResultsMatch`, so it is the last forge read before the push and runs under the handoff lock. Both use one helper, `openPrRefusal(feature, branch, repoRoot)`, returning a `ToolResult` or `undefined`:\n\n- open PR: `[chat] cannot hand off <feature>: branch <branch> already has an open PR; a handoff needs a branch with no PR`\n- forge failure (any throw): `[chat] cannot hand off <feature>: could not check branch <branch> for an open PR (<errorMessage>); nothing was pushed`\n\n- `hasOpenPr(forge: ForgeKind, branch: string, deps: ForgeDeps, cwd: string): Promise<boolean>` and `defaultForgeDeps`, both exported from the `@/forge` barrel. `hasOpenPr` throws `FORGE_PR_LIST_FAILED` on a non-zero `gh` exit and `FORGE_PR_LIST_UNPARSEABLE` on unparseable output.\n- The chat handoff (`src/chat/flow/flow-handoff.ts`) accepts only a GitHub `origin` (`readFlowRepoState`, `src/chat/flow/flow-repo.ts`), so the handoff's forge is always `\"github\"`.\n\nUS-002 `_flowHandoffDeps.hasOpenPr` is called by `sendFlowHandoff`; its seam ACs trigger `sendFlowHandoff`. Keep preflight refusals on the existing `refusedHandoff` path. Add `_flowHandoffDeps.hasOpenPr = async () => false` to the fixture setups in `flow-handoff.test.ts`, `flow-handoff-recheck.test.ts`, and `chain-handoff-run.test.ts`, restore it with the other deps, and leave their assertions unchanged. Also stub it inside the recheck fixture's separate Bun process so it never calls real `gh`.\n\n**Scope** — In: GitHub PR checks and refusal behavior in the handoff form, including the existing chain refusal path, and unit coverage and fixture updates for those paths. Out: recovery within the handoff lock (US-004). A chat handoff restoring a recovery file in its preflight: preflight reads without the lock, so a run whose `result.json` is missing is refused there (`NO_FINISHED_RUN`) and its recovery file waits for the next `nax run` or publish to take the lock. Recording a confirmed draft PR in `result.json` before the CI wait (#2983 option not chosen); publish (`finalize.ts`) is unchanged. An open-PR check on GitLab for the handoff: the chat handoff accepts only a GitHub origin. Naming the open PR's URL in the handoff refusal: `hasOpenPr` answers only whether one exists.\n\n**Interface** — `_flowHandoffDeps.hasOpenPr: (branch: string, repoRoot: string) => Promise<boolean>`, defaulting to `hasOpenPr(\"github\", branch, defaultForgeDeps, repoRoot)` (US-002).\n```ts\nhasOpenPr(forge: ForgeKind, branch: string, deps: ForgeDeps, cwd: string): Promise<boolean>\n```",
+      "acceptanceCriteria": [
+        "Given a feature whose preflight otherwise passes, when `_flowHandoffDeps.hasOpenPr` resolves `true` in preflight, then `sendFlowHandoff` returns a failed result with content `[chat] cannot hand off <feature>: branch <branch> already has an open PR; a handoff needs a branch with no PR`.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `true` during otherwise passing preflight, then `sendFlowHandoff` never calls `options.approve`.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `true` during otherwise passing preflight, then `sendFlowHandoff` does not push.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `true` during otherwise passing preflight, then `sendFlowHandoff` does not send a koda create.",
+        "When `sendFlowHandoff` checks for an open PR, then it calls `_flowHandoffDeps.hasOpenPr` with the checked-out branch from repository state as its first argument and the chat's `repoRoot` as its second.",
+        "When `_flowHandoffDeps.hasOpenPr` rejects in preflight with a `NaxError` whose code is `FORGE_PR_LIST_FAILED`, then `sendFlowHandoff` returns a result with `isError: true` whose content starts `[chat] cannot hand off <feature>: could not check branch <branch> for an open PR (` and contains the error's message.",
+        "When `_flowHandoffDeps.hasOpenPr` throws in preflight or under the handoff lock (including auth, network, or unparseable output failures), then `sendFlowHandoff` returns the failed could-not-check `ToolResult` for that branch.",
+        "When `_flowHandoffDeps.hasOpenPr` throws in preflight or under the handoff lock (including auth, network, or unparseable output failures), then `sendFlowHandoff` makes no push.",
+        "When `_flowHandoffDeps.hasOpenPr` throws in preflight or under the handoff lock (including auth, network, or unparseable output failures), then `sendFlowHandoff` sends no koda create.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` in preflight and `true` on its second call (after approval, under the handoff lock), then `sendFlowHandoff` returns the open-PR refusal.",
+        "When an open PR appears between preflight and push and the second `_flowHandoffDeps.hasOpenPr` call reports it, then the `handoffPushGuard` refusal prevents any push.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` in preflight and `true` on its second call (after approval, under the handoff lock), then `sendFlowHandoff` does not send a koda create.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` in preflight and `true` on its second call (after approval, under the handoff lock), then `sendFlowHandoff` does not write a handoff mark.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` in preflight and rejects on its second call, then `sendFlowHandoff` returns the could-not-check refusal ending in `; nothing was pushed`.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` on both calls and other checks pass, then `sendFlowHandoff` proceeds to push as it does today.",
+        "When `_flowHandoffDeps.hasOpenPr` resolves `false` on both calls and other checks pass, then `sendFlowHandoff` proceeds to koda create as it does today.",
+        "Given a chat chain whose next step is the feature's handoff, when preflight refuses it for an open PR, then the existing `refusedHandoff` path stops that chain with the refusal text as the stop reason (without the `[chat] ` prefix, as before).",
+        "When the default `_flowHandoffDeps.hasOpenPr` runs, then its `hasOpenPr(\"github\", branch, defaultForgeDeps, repoRoot)` delegation is observable as the stubbed `defaultForgeDeps.run` receiving `gh pr list --head <branch> --state open --json number` with `cwd` equal to `repoRoot`.",
+        "Given a handoff mark already on the newest run and a `hasOpenPr` stub that would resolve `true`, when `sendFlowHandoff` runs preflight, then it returns the existing `handoffMarkRefusal` text.",
+        "Given a handoff mark already on the newest run and a `hasOpenPr` stub that would resolve `true`, when `sendFlowHandoff` runs preflight, then `hasOpenPr` is never called.",
+        "When the post-approval `hasOpenPr` call resolves `true`, then `_flowHandoffDeps.handoffResultsMatch` is never called for that send."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "github",
+        "handoff"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One handoff module adds a branch eligibility check at two existing hooks using a read-only forge adapter; other changes are test fixtures.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/flow/flow-handoff.ts",
+        "packages/nax/src/forge/pr.ts",
+        "packages/nax/src/chat/flow/flow-repo.ts",
+        "packages/nax/src/chat/flow/flow-send-steps.ts",
+        "packages/nax/test/unit/chat/flow/flow-handoff-recheck.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/flow/flow-handoff-open-pr.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/flow/flow-handoff.test.ts",
+          "reason": "its shared setup stubs `_flowHandoffDeps` member by member and the new default `hasOpenPr` would run the real `gh` against the fake repo root and refuse every happy-path send; the setup gains `_flowHandoffDeps.hasOpenPr = async () => false` (and restores it with the others). No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/flow/flow-handoff-recheck.test.ts",
+          "reason": "its shared setup stubs `_flowHandoffDeps` member by member and the new default `hasOpenPr` would run the real `gh` against the fake repo root and refuse every happy-path send; the setup gains `_flowHandoffDeps.hasOpenPr = async () => false` (and restores it with the others). No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-handoff-run.test.ts",
+          "reason": "its setup stubs `_flowHandoffDeps` member by member and the new default `hasOpenPr` would run the real `gh` and refuse the chained handoff; the setup gains `_flowHandoffDeps.hasOpenPr = async () => false` (and restores it). No assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "96d5f2d05f83885b7b532860f182d45e9f089515"
+    },
+    {
+      "id": "US-003",
+      "title": "Persist and conditionally replay result recovery files",
+      "description": "**Goal** — Add a workflow leaf module that atomically writes kept result text and restores it only when the original damage still matches (#2984).\n\n**Motivation** — On timeout `failedRestore` is returned, the runner deactivates the keeper right after (`runner.ts`, `runState?.deactivate()`), and the kept bytes are gone; the run also stalls two minutes before exiting.\n\n**Approach** — `restorePendingResults` lists the entries of `workflowDir`. A missing `workflowDir` (ENOENT) yields `[]` with no log. Only entries that `lstat` as real directories are run directories: symlinks, regular files (`.handoff.lock`, `.handoff.lock.claim`) and other entries are skipped silently, as `listRunDirs` in `handoff-record.ts` skips non-directories. A run directory without `result.recovery.json` (ENOENT or ENOTDIR on it) is skipped silently. For each run directory holding `result.recovery.json`:\n\n1. parses it; a file that does not parse, has another `schemaVersion`, or fails the structural check (`rel` and `content` are strings; `damaged.kind` is `\"missing\"`, or `\"modified\"` with a `sha256` of 64 lowercase hex characters) is left on disk and yields `unreadable` with a `[WARN]` log (fail closed: nothing is overwritten from a file it cannot read);\n2. reads `result.json` in the same run directory as raw bytes and compares it with `damaged`: missing and still missing, or the SHA-256 (lowercase hex) of its raw bytes equal to `damaged.sha256`;\n3. on a match, writes `content` to `result.json` through `runStateWrite` (tmp + rename, as `writeResult` in `result.ts` does), removes the recovery file, appends `_run: run-state repaired: <rel> (<missing|modified>)` to `<runDir>/ledger.md` when that ledger exists — through `runStateWrite(ledgerPath, { append: line }, ...)` inline, the form `appendLedger` in `workflow/ledger.ts` uses but without its `mirrorLedger` run-log line, so an active keeper records it as nax's own write — logs a `[WARN]` line, and yields `restored`;\n4. on no match (a newer write replaced the damaged result), removes the recovery file, logs a `[WARN]` line, and yields `superseded`;\n5. when any step for one run directory fails before `result.json` is written (a read, the tmp write, the rename), keeps the recovery file unchanged, logs a `[WARN]` line, yields `failed`, and goes on with the remaining run directories. A failure removing the recovery file after `result.json` was written still yields `restored`; the next call then finds the result no longer matches and yields `superseded`.\n\nEvery log line uses `storyId: \"_run\"` as its first key and the `runstate` stage. `result-recovery.ts` imports `runStateWrite` from `@/runstate/store` (as `result.ts` does), never from the `@/runstate` barrel: `repair.ts` imports this module, so the barrel would close a runtime cycle (`check:import-cycles`).\n\n**Scope** — In: `src/workflow/result-recovery.ts` and its unit tests; test the keeper-facing write and append using the existing `repairRunState({ trigger: \"turn\" })` API. Out: wiring recovery to handoff, writer and repair lock callers (US-004); nothing calls the new module in production yet. A lock holder that reads the damaged `result.json` and merges into it before the recovery file is applied (the holder's own write supersedes the recovery file); unchanged from today.\n\n**Interface**\n```ts\n/** `<runDir>/result.recovery.json`: the good bytes of a damaged result.json a repair could not restore. */\nexport const RESULT_RECOVERY_FILE = \"result.recovery.json\";\n\nexport interface ResultRecovery {\n  readonly schemaVersion: 1;\n  /** The result path relative to the repository root, as `KeptFile.rel` spells it. */\n  readonly rel: string;\n  /** What the repair saw on disk: no file, or a file whose UTF-8 bytes hash to `sha256` (lowercase hex). */\n  readonly damaged: { readonly kind: \"missing\" } | { readonly kind: \"modified\"; readonly sha256: string };\n  /** The kept (good) result.json text. */\n  readonly content: string;\n}\n\nexport type RecoveryOutcome =\n  | { readonly kind: \"restored\"; readonly resultPath: string }\n  | { readonly kind: \"superseded\"; readonly resultPath: string }\n  | { readonly kind: \"unreadable\"; readonly recoveryPath: string }\n  | { readonly kind: \"failed\"; readonly recoveryPath: string };\n\n/** Create `dirname(resultPath)` (recursive), then write the recovery file beside `resultPath` (tmp + rename). Replaces an existing one. */\nexport function writeResultRecovery(resultPath: string, recovery: ResultRecovery): Promise<void>;\n\n/** Under the handoff lock: apply or discard every run's recovery file in `workflowDir`. Never throws. */\nexport function restorePendingResults(workflowDir: string): Promise<readonly RecoveryOutcome[]>;\n\n/** Test seam for the module's filesystem calls, as `_resultDeps` is for result.ts. */\nexport const _resultRecoveryDeps: {\n  readdir: typeof readdir;\n  lstat: typeof lstat;\n  mkdir: typeof mkdir;\n  rename: typeof rename;\n  unlink: typeof unlink;\n};\n```",
+      "acceptanceCriteria": [
+        "Given a run with `result.recovery.json` whose `damaged.kind` is `\"missing\"` and no `result.json`, when `restorePendingResults(workflowDir)` runs, then `result.json` is written with text equal to the recovery `content`; and, in the same setup: Given a run with a `\"missing\"` recovery and no `result.json`, when `restorePendingResults` runs, then it removes the recovery file; and Given a workflow directory with one pending `\"missing\"` recovery and no `result.json` in that run, when `restorePendingResults` runs, then it returns `[{ kind: \"restored\", resultPath }]`.",
+        "Given a recovery with `damaged.kind` `\"modified\"` and a `result.json` whose raw bytes hash (SHA-256, lowercase hex) to `damaged.sha256`, when `restorePendingResults` runs, then it rewrites `result.json` with text equal to the recovery `content`; and, in the same setup: Given a `\"modified\"` recovery with `damaged.sha256` equal to the SHA-256 digest of the raw `result.json` bytes, when `restorePendingResults` runs, then it removes the recovery file; and Given a `\"modified\"` recovery with `damaged.sha256` equal to the SHA-256 digest of the raw `result.json` bytes, when `restorePendingResults` runs, then its resolved outcomes include `{ kind: \"restored\", resultPath }` for that run.",
+        "Given a `\"modified\"` recovery and a `result.json` whose hash differs from `damaged.sha256`, or a `\"missing\"` recovery and a present `result.json`, when `restorePendingResults` runs, then the existing result bytes are unchanged; and, in the same setup: Given a `\"modified\"` recovery and a `result.json` whose hash differs from `damaged.sha256`, or a `\"missing\"` recovery and a present `result.json`, when `restorePendingResults` runs, then it removes the recovery file; and Given a single pending `\"modified\"` recovery and a `result.json` whose hash differs from `damaged.sha256`, or a single pending `\"missing\"` recovery and a present `result.json`, when `restorePendingResults` runs, then it returns `[{ kind: \"superseded\", resultPath }]`.",
+        "When `restorePendingResults` encounters invalid JSON, a `schemaVersion` other than `1`, a non-string `rel` or `content`, or an invalid `damaged` discriminator or `\"modified\"` record without a 64-character lowercase hexadecimal `sha256`, then it returns `[{ kind: \"unreadable\", recoveryPath }]` for that run; and, in the same setup: When `restorePendingResults` encounters that invalid JSON, wrong schema version, or structurally invalid recovery, then both the result and recovery files are left unchanged.",
+        "Given a run with an existing `ledger.md`, when `restorePendingResults` restores that run, then it appends `_run: run-state repaired: <rel> (missing)` or `(modified)` according to the recovery's damage; and, in the same setup: Given a run without `ledger.md`, when `restorePendingResults` restores that run, then it does not create a ledger.",
+        "When `restorePendingResults` scans an existing workflow directory with no recovery files, then it returns `[]`; and, in the same setup: When `restorePendingResults` scans an existing workflow directory with no recovery files, then it writes nothing.",
+        "Given an active keeper for the run, when `restorePendingResults` appends the ledger line and `repairRunState({ trigger: \"turn\" })` runs afterward, then `repairRunState` returns `[]`; and, in the same setup: Given an active keeper for the run, when `restorePendingResults` appends the ledger line and `repairRunState({ trigger: \"turn\" })` runs afterward, then the ledger retains that line.",
+        "Given a workflow directory with a regular `.handoff.lock` file and a real run directory with a recovery file, when `restorePendingResults` runs, then it returns only that run's outcome.",
+        "When `restorePendingResults` scans non-directory workflow entries, including a regular `.handoff.lock` or `.handoff.lock.claim` or a symlink to a run directory, then it emits no log for those skipped entries.",
+        "Given a run entry symlinked to a directory holding a recovery file, when `restorePendingResults` runs, then it returns no outcome for that entry; and, in the same setup: Given a run entry symlinked to a directory holding a recovery file, when `restorePendingResults` runs, then it writes nothing through the symlink.",
+        "When `restorePendingResults` is called on a missing `workflowDir`, then it returns `[]`; and, in the same setup: When `restorePendingResults` is called on a missing `workflowDir`, then it logs nothing.",
+        "When `_resultRecoveryDeps.readdir` rejects with a non-ENOENT filesystem error, then `restorePendingResults` resolves without throwing, so the caller can continue its lock-held task; and, in the same setup: When `_resultRecoveryDeps.readdir` rejects with a non-ENOENT filesystem error, then `restorePendingResults` logs a `[WARN]` line at stage `runstate` with `storyId: \"_run\"` as its first data key.",
+        "When `writeResultRecovery(resultPath, recovery)` succeeds, then the sibling `result.recovery.json` parses to `recovery`; and, in the same setup: When `writeResultRecovery(resultPath, recovery)` writes again for the same result path, then the sibling `result.recovery.json` parses to the replacement payload.",
+        "Given a missing run directory (including one deleted by the agent), when `writeResultRecovery(resultPath, recovery)` succeeds, then it has recreated the directory and written `result.recovery.json` there.",
+        "When `restorePendingResults` returns an `unreadable` outcome, then it logs a `[WARN]` line at stage `runstate` with `storyId: \"_run\"` first and the recovery file path in the message.",
+        "Given two runs with matching recovery files, when `_resultRecoveryDeps.rename` fails for the first run's `result.json`, then the first run's recovery file bytes are unchanged; and, in the same setup: Given two runs with matching recovery files, when `_resultRecoveryDeps.rename` fails for the first run's `result.json`, then `restorePendingResults` resolves with `failed` for the first and `restored` for the second.",
+        "When `restorePendingResults` encounters a filesystem failure before committing a run's result (including a read, temp write, or rename failure), then it logs a `[WARN]` for that run and continues without throwing.",
+        "When `restorePendingResults` fails to remove a recovery file after writing `result.json`, then it still returns `restored` for that run.",
+        "Given a restore that changes the result so it no longer matches the recorded damage, and an unlink failure injected only on the first call, when `restorePendingResults` runs a second time with the result unchanged since that restore, then it returns `superseded` for the run, removes the recovery file, and leaves the restored result bytes unchanged."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "recovery",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New persistent format and conditional replay integrate with keeper serialization; apply strict isolation to the SHA-256 comparison that decides whether an overwrite is allowed.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/result.ts",
+        "packages/nax/src/workflow/ledger.ts",
+        "packages/nax/src/workflow/handoff-record.ts",
+        "packages/nax/src/runstate/store/registry.ts",
+        "packages/nax/test/unit/runstate/repair.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/result-recovery.ts",
+        "packages/nax/test/unit/workflow/result-recovery.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "56a5b3e33d5e730f28ef8bff3e85891fc312c2f0"
+    },
+    {
+      "id": "US-004",
+      "title": "Defer blocked repairs and replay recovery under the handoff lock",
+      "description": "**Goal** — Preserve the good copy of a damaged result without waiting for the handoff lock at run end or crash, and replay it before work at each handoff-lock entry point (#2984).\n\n**Motivation** — A holder outside the run's call tree (a chat chain job publishing the same feature, or another process) can hold that lock through a whole CI wait.\n\n**Approach** — `repairResult` passes `timeoutMs: 0` for every trigger, and its `HANDOFF_RESULT_LOCK_WAIT_MS` import goes (`result.ts` writers keep it). In its `catch`, when the error is a `NaxError` whose code is `FILE_LOCK_TIMEOUT` or `FILE_LOCK_CLAIM_ORPHANED`, the trigger is `run-end` or `crash`, and `needsRestore(damage)`, it reads the result's current raw bytes (none when missing); when those bytes equal the kept `file.content` (the damage healed between the damage read and the lock attempt) it writes nothing and returns no record for that file. Otherwise it writes the recovery file from the kept `file` and that observation, and logs one `.warn` line whose message starts `[WARN]`, names the result's `rel` and the recovery path, and says the next handoff-lock holder restores it; it does not call `failedRestore` then. When writing the recovery file fails, it calls `failedRestore` with that write error, whose `[FAIL]` message names the result's `rel`. Every other error keeps today's `failedRestore`. A lock left by a dead holder is not reclaimed by a zero-wait attempt (the deadline check precedes reclamation in `acquire`); the recovery file is then applied by the next lock-taker that waits, such as a result writer, which reclaims the dead holder's lock first. `processQueueFile` (`src/execution/queue-handler.ts`) today swallows a queue-lock timeout by matching the message prefix `[queue] Timed out acquiring queue lock`; US-001's new error does not match it, so an orphaned queue-lock claim would throw out of the first pipeline stage. Its catch changes to match a `NaxError` whose code is `FILE_LOCK_TIMEOUT` or `FILE_LOCK_CLAIM_ORPHANED`, keeping the warn-and-return-`undefined` behaviour. The `holdsHandoffLock` branch (a repair inside the publisher's own hold) does not call `restorePendingResults`: the publisher's `withResultLock` already ran it at lock-take.\n\n- `handOver` (`flow-handoff.ts`, not exported): calls `_flowHandoffDeps.restorePendingResults(workflowDir)` first, before `recheck` (US-004).\n- `repairResult` (`repair.ts`). Baseline: run-end waits `HANDOFF_RESULT_LOCK_WAIT_MS`; any failure returns `failedRestore`. Target: every trigger tries the lock once (`timeoutMs: 0`); on `FILE_LOCK_TIMEOUT` or `FILE_LOCK_CLAIM_ORPHANED` at `run-end` or `crash`, it writes a recovery file for damage requiring content restoration that has not already healed, before returning `restored: false`. Inside a newly acquired lock it calls `restorePendingResults(workflowDir)` before `repairLocked`.\n- `withResultLock` (`src/workflow/result.ts`, not exported): calls `restorePendingResults(featureDir)` inside the lock, before `task`.\n- `flow-handoff.ts` imports it through the same `biome-ignore lint/style/noRestrictedImports` form its other workflow imports use.\n\nUS-004 wires US-003's `restorePendingResults` into three existing entry points: `withLockedFeatureResult` / `upsertStoryRecord` (through `withResultLock`), `repairRunState` (through `repairResult`'s locked path) and `sendFlowHandoff` (through `handOver`). Each gets a seam AC that triggers the entry point and observes the restore. US-004 wires US-003's `writeResultRecovery` into `repairRunState({ trigger: \"run-end\" | \"crash\" })`; its seam AC triggers `repairRunState`. For modified damage, hash the raw bytes from the post-failure re-read, not the initial damage read or a UTF-8 decoding of the disk bytes. Compare those raw bytes to the UTF-8 encoding of the kept text for the healed case. Keep `FILE_LOCK_INVALID` on the existing failure path: the deadline diagnosis in US-001 is best effort, so a zero-wait `FILE_LOCK_TIMEOUT` is not itself proof that an on-disk lock is valid. Do not defer a known invalid lock, retry acquisition, or expose a deadline-probe error as a new lock outcome. The queue catch applies to acquisition failures, not errors from the processor callback. The deferral warning uses `storyId: \"_run\"` as its first data key and the `runstate` stage.\n\nUpdate the former wait-and-restore regression in `test/unit/runstate/repair.test.ts`: assert `restored: false`, the result still missing, and a `\"missing\"` sidecar holding the kept content. Cover the post-release restore in the new recovery tests. In the `src/workflow/result.ts` writer seam test, deactivate the original keeper after deferral so `readResultForUpdate` cannot make the test pass by merging from in-memory bytes instead of the recovery file. For the reentrant publisher seam, observe the real recovery scan via `_resultRecoveryDeps.readdir` for that workflow directory. Mirror `flow-handoff-recheck.test.ts` for the locked sequencing, using a restored record whose bytes or mtime differ from the carded record so the existing `sameRecord` comparison detects the change. Put queue catch cases in the existing `test/unit/execution/queue-handler.test.ts` and advance lock time through `_fileLockDeps.now` and `sleep`, rather than waiting out the real queue timeout.\n\n**Scope** — In: repair deferral, recovery at the three existing lock entry points, and queue handling of the new lock code. Out: defining the recovery format or replay algorithm (US-003), changing the reclamation protocol (US-001), and defining open-PR behavior (US-002). A run summary section for kept damage: the case is reported as a `[WARN]` log line, because the runner's final repair runs after the summary is printed. A lock holder that reads the damaged `result.json` and merges into it before the recovery file is applied (the holder's own write supersedes the recovery file); unchanged from today. Changing `HANDOFF_RESULT_LOCK_WAIT_MS` or the result writers' wait. Turn and pre-commit repairs writing a recovery file: their keeper stays active and retries on the next turn. A chat handoff restoring a recovery file in its preflight: preflight reads without the lock, so a run whose `result.json` is missing is refused there (`NO_FINISHED_RUN`) and its recovery file waits for the next `nax run` or publish to take the lock. Writing a recovery file for `FILE_LOCK_INVALID` (a symlink, FIFO or garbage at `.handoff.lock`) or a workflow-directory `mkdir` failure; both keep today's `failedRestore`. De-duplicating the two run-end passes (completion phase and runner `finally`): each pass that finds the damage writes the recovery file again and logs its own `[WARN]` line.\n\n**Interface** — `_flowHandoffDeps` gains `restorePendingResults: typeof restorePendingResults` (US-004). The recovery module is consumed through:\n```ts\nexport function writeResultRecovery(resultPath: string, recovery: ResultRecovery): Promise<void>;\nexport function restorePendingResults(workflowDir: string): Promise<readonly RecoveryOutcome[]>;\nhandoffLockPath(workflowDir: string): string\n```\nExisting shapes remain `KeptFile { path, rel, root, kind, content }`, `RepairRecord { path, rel, damage, restored }` and `Damage = \"missing\" | \"modified\" | \"hidden\"`.",
+      "acceptanceCriteria": [
+        "Given a keeper's `result.json` is missing on disk and a live holder outside the run's call tree keeps the feature's handoff lock held, when `repairRunState({ trigger: \"run-end\" })` runs, then it resolves with that file's record `restored: false` without waiting for the lock (an injected `_fileLockDeps.sleep` is never called for the handoff lock).",
+        "Given a keeper's `result.json` is missing on disk and a live holder outside the run's call tree holds the feature's handoff lock, when `repairRunState({ trigger: \"run-end\" })` runs, then the result remains missing after that attempt.",
+        "Given a keeper's `result.json` is missing on disk and a live holder outside the run's call tree holds the feature's handoff lock, when `repairRunState({ trigger: \"run-end\" })` runs, then the sibling `result.recovery.json` parses to a version-1 record with `content` equal to the kept text, `rel` equal to the kept file's `rel`, and `damaged` equal to `{ kind: \"missing\" }`.",
+        "Given a keeper's `result.json` is modified on disk under the same live handoff lock held outside the run's call tree, when `repairRunState({ trigger: \"run-end\" })` runs, then the recovery file's `damaged` is `{ kind: \"modified\", sha256 }` where `sha256` is the lowercase hexadecimal SHA-256 of the modified raw bytes.",
+        "When `repairRunState({ trigger: \"crash\" })` finds a damaged kept result and the handoff lock is held by a holder outside the run's call tree, then it writes `result.recovery.json` beside the result, as for run-end.",
+        "When the run-end repair lock attempt rejects with `FILE_LOCK_CLAIM_ORPHANED` (an abandoned lock with an orphaned claim), then `repairRunState({ trigger: \"run-end\" })` writes the recovery file, as for `FILE_LOCK_TIMEOUT`; and, in the same setup: When the run-end repair lock attempt rejects with `FILE_LOCK_CLAIM_ORPHANED` (an abandoned lock with an orphaned claim), then the repair record is `restored: false`.",
+        "When `repairRunState({ trigger: \"turn\" })` finds a damaged kept result while the same handoff lock is held externally, then it writes no recovery file.",
+        "When `repairRunState({ trigger: \"turn\" })` finds a damaged kept result while the same handoff lock is held externally, then the record is `restored: false`.",
+        "When a run-end repair successfully writes the recovery file, then the only `.warn` call for that file is at stage `runstate` with `storyId: \"_run\"` first and a message starting `[WARN]` that names the result's `rel` and the recovery file path and says the next handoff-lock holder restores it (no `[FAIL]` message).",
+        "When writing the recovery file fails (`_resultRecoveryDeps.rename` rejects), then the run-end `repairRunState` still resolves with the result's record `restored: false`.",
+        "When writing the recovery file fails (`_resultRecoveryDeps.rename` rejects), then the run-end repair logs a `[FAIL]` message naming the result's `rel` with data `error` equal to the recovery write's error message.",
+        "Given a run-end repair that wrote a recovery file for a missing result and a holder that has released the lock, when `upsertStoryRecord` takes the lock through `withResultLock`, then the final `result.json` contains the kept stories plus the upserted record, because the kept content was restored first.",
+        "Given a run-end repair that wrote a recovery file and a released handoff lock, when a later `repairRunState({ trigger: \"turn\" })` by an active keeper takes that lock, then `result.json` is left equal to the kept content; and, in the same setup: Given a run-end repair that wrote a recovery file and a released handoff lock, when a later `repairRunState({ trigger: \"turn\" })` by an active keeper takes that lock, then the recovery file is removed.",
+        "When `sendFlowHandoff` runs an approved handoff, then it calls `_flowHandoffDeps.restorePendingResults` with the feature's workflow directory while holding the handoff lock, before the second `collectHandoffRecord` call.",
+        "Given a recovery file written after preflight collected the record for the newest run and that run's `result.json` is now missing, when `sendFlowHandoff` reaches the post-approval recheck with the real `restorePendingResults`, then `result.json` is restored to the recovery `content`.",
+        "Given preflight collected the newest run's record, and afterwards that run's `result.json` was removed and a recovery file for it (`damaged.kind` `\"missing\"`, content differing from the carded record) was written, when the approved send reaches its post-approval recheck, then the real `restorePendingResults` restores `result.json` from the recovery file, `sendFlowHandoff` returns the existing `[chat] the run record changed while the card was open; nothing was pushed` refusal, and nothing is pushed.",
+        "Given a kept result reported modified at the damage read that equals the kept content on the raw-byte re-read after a failed run-end lock attempt (`Bun.write` of the kept content is injected between the reads), when `repairRunState({ trigger: \"run-end\" })` resolves, then it has written no recovery file for that result; and, in the same setup: Given a kept result reported modified at the damage read that equals the kept content on the raw-byte re-read after a failed run-end lock attempt (`Bun.write` of the kept content is injected between the reads), when `repairRunState({ trigger: \"run-end\" })` resolves, then it returns no record for that file.",
+        "When a `withLockedFeatureResult` task calls `repairRunState({ trigger: \"turn\" })` inside the publisher's own handoff hold, then `restorePendingResults` is called once at the publisher's lock-take and not again from repair.",
+        "When a run-end lock attempt rejects with `FILE_LOCK_INVALID` or workflow-directory `mkdir` fails, then `repairRunState` returns the existing `failedRestore` record with `restored: false` for that result; and, in the same setup: When a run-end lock attempt rejects with `FILE_LOCK_INVALID` or workflow-directory `mkdir` fails, then the existing `failedRestore` warning starts `[FAIL]` and names the result's `rel`.",
+        "Given the queue lock is abandoned with an orphaned claim (`_fileLockDeps.isPidAlive` is false for both pids), when `processQueueFile` runs, then it resolves `undefined`, as for a timeout.",
+        "Given the queue lock is abandoned with an orphaned claim (`_fileLockDeps.isPidAlive` is false for both pids), when `processQueueFile` runs, then it logs the `queue` warning `Failed to process queue file`, as for a timeout.",
+        "When `processQueueFile`'s lock acquisition rejects with a `NaxError` whose code is `FILE_LOCK_INVALID`, then `processQueueFile` still rejects with that error."
+      ],
+      "tags": [
+        "feature",
+        "runstate",
+        "workflow",
+        "handoff",
+        "concurrency"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Wires recovery and SHA-256 damage capture across multiple lifecycle and lock boundaries; independent tests must pin byte matching, lock ordering and error propagation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/runstate/repair.ts",
+        "packages/nax/src/chat/flow/flow-handoff.ts",
+        "packages/nax/src/workflow/result-recovery.ts",
+        "packages/nax/src/execution/queue-handler.ts",
+        "packages/nax/test/unit/chat/flow/flow-handoff-recheck.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/runstate/repair-recovery.test.ts",
+        "packages/nax/test/unit/chat/flow/flow-handoff-recovery.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/runstate/repair.test.ts",
+          "reason": "\"run-end waits for a live handoff before restoring a missing checkpoint\" asserts run-end blocks on a held handoff lock and then restores the result (`restored: true`, the ledger line); run-end now tries the lock once, so it asserts the run-end record is `restored: false`, the result is still missing, and the recovery file beside it holds the kept content with `damaged.kind` `\"missing\"`; the restore after release is covered by the new recovery tests."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "41dc1865a55420700351af5ba06488cb235a8cbc"
+    }
+  ],
+  "analysis": "This is an enhancement to the existing Bun/TypeScript monorepo, not a new subsystem. It closes #2980, #2983, #2984, and #2985 without changing the dependency direction: nax consumes the nax-agent lock and NaxError through @nathapp/nax-agent/internal; nax-agent ships Node-compatible source and must not import nax. ACP, nax-ai, and the React UI need no changes. Codebase-memory MCP was not exposed in this session; findings were verified with repository reads and text search.\n\nUS-001 — packages/nax-agent/src/internal/file-lock.ts:134 sweeps staged files after acquisition; :170 stages a PID before atomically linking it, distinguishes link contention from unsupported-link fallback and environmental failures, and cleans up its own stage. The same helper creates the reclamation claim (:252). Metadata reads use a nonblocking no-follow open and file-handle stat (:209, :227), and abandonment distinguishes `undefined` from `null` for an aged empty lock (:244). The deadline comes after one exclusive-create attempt and before reclamation or sleep (:265); the new probe is diagnostic only and must not let its reads replace the existing timeout. packages/nax-agent/src/internal/process-alive.ts:43 treats only ESRCH as proof of absence for valid PIDs. Preserve exclusive create, abort, fallback, and claimant-only release; age is a staged-file safeguard, not a lease or cross-namespace liveness fix. The shared export already exists at packages/nax-agent/src/internal.ts:37; packages/nax-agent/src/internal/path-file-lock.ts:32 and packages/nax/src/utils/queue-file-lock.ts:24 wrap it. Direct nax consumers include workflow result, runstate repair, chat handoff, chat ask files (packages/nax/src/interaction/chat-ask-files.ts:264), and recent models (packages/nax/src/chat/recent-models.ts:160). Changing the code on only a provably orphaned claim is an observable compatibility change. The approvals CLI's existing timeout-specific branch is at packages/nax/src/cli/approvals.ts:373; the new error falls through to existing message handling. Baseline lock tests use injectable seams and filesystem fixtures (packages/nax-agent/test/unit/internal/file-lock.test.ts:20, :38); update the staged sweep and aged-claim fixtures (:351, :415) and keep the live-holder, fallback, invalid file, and reclamation-race assertions. Use deterministic fake time/mtime and errno interleavings instead of needing a PID namespace or real delays.\n\nUS-002 — packages/nax/src/workflow/finalize.ts:517 opens the draft before the CI wait and the abort check (:531); packages/nax/src/step-graph/run.ts:271 awaits the step before :302 persists, so a valid older local-only checkpoint cannot prove there is no PR. packages/nax/src/chat/flow/flow-handoff.ts:185 currently checks repository, branch, record and mark before approval; :270 stops only a chain waiting for the matching feature (stripping the `[chat] ` display prefix from the stop reason); :359 guards the push inside the lock acquired at :406. packages/nax/src/chat/flow/flow-send-steps.ts:347 runs that guard after Git verification, and :377 preserves cancellation precedence before pushing and creating. Reuse the GitHub-only origin contract (packages/nax/src/chat/flow/flow-repo.ts:35, :111) and existing forge barrel (packages/nax/src/forge/index.ts:32, :60); packages/nax/src/forge/pr.ts:39 already lists open PRs, including drafts, and rejects CLI or parsing failures. This adds reliance on available GitHub CLI/auth/network for handoff, not a change to publishing, user authorization, flow spec sends, or GitLab. Two checks close the approval window but are not a remote transaction with other actors. Relevant tests and seam setup: packages/nax/test/unit/chat/flow/flow-handoff.test.ts:172, packages/nax/test/unit/chat/flow/flow-handoff-recheck.test.ts:169, and packages/nax/test/unit/chat/jobs/chain-handoff-run.test.ts:218; the subprocess fixture in flow-handoff-recheck.test.ts:351 also needs its own default-false PR stub because parent mocks do not cross processes. Stub defaultForgeDeps.run for the one real-adapter test, and restore overrides after each test.\n\nUS-003 — The feature workflow tree and lock are already local and ignored (packages/nax/src/workflow/paths.ts:4, :28). New result-recovery.ts owns the versioned sidecar and is not wired into callers yet. Follow result.ts's atomic result write (packages/nax/src/workflow/result.ts:140), ledger.ts's recorded append (packages/nax/src/workflow/ledger.ts:47), and handoff-record.ts's lstat directory filter (packages/nax/src/workflow/handoff-record.ts:222), but recovery must silently skip symlink run entries rather than issue a handoff refusal. Hash raw bytes, not parsed or re-encoded result text; resolve result and ledger paths from the enumerated run directory, never from recovery.rel. Keep malformed sidecars and failed pre-write attempts intact. Distinguish failures before commit from cleanup/ledger failures after commit; an unlink failure must not undo the restoration. Atomic sidecar replacement must not expose partial JSON to a concurrent lock taker. packages/nax/src/runstate/store/registry.ts:64 records the intent before I/O, then :88 serializes it against repair's path lock; recording both restores and ledger appends matters when a keeper is active. The path classifier only tracks canonical workflow result and ledger files (packages/nax/src/runstate/store/paths.ts:18); keep the new sidecar out of that tracked set. Avoid the runtime cycle through packages/nax/src/runstate/index.ts:2, which re-exports repair; import @/runstate/store. Ledger append must not add a mirror log. Relevant existing fixtures include packages/nax/test/unit/workflow/handoff-record.test.ts:235, :431 and packages/nax/test/unit/runstate/repair.test.ts:252; add isolated module tests with temporary real directories, injected filesystem failures, and a keeper-facing regression.\n\nUS-004 — packages/nax/src/runstate/repair.ts:148 takes the per-path lock to snapshot damage, releases it before the feature lock, then calls repairLocked (:137). Retain that lock order: recovery can call runStateWrite, which itself takes the path lock. packages/nax/src/workflow/result.ts:26 is the shared lock seam for publisher, preflight-token writes and story/feature upserts (:44, :103, :123, :226); its 120-second writer wait (packages/nax/src/workflow/paths.ts:36) stays intact. The publisher enters through packages/nax/src/workflow/feature.ts:278 and marks its async call tree (packages/nax/src/workflow/handoff-lock-owner.ts:16); an in-tree repair already has the lock and must not replay sidecars again. Approved chat handoffs acquire the same lock and run handOver before push and mark (packages/nax/src/chat/flow/flow-handoff.ts:380, :406). Restore there before rereading the approved record, not in preflight; the existing equality check includes file content and mtime (:278). Use the byte re-read when deferring repair and allow it to observe a healed file. Defer only the two specified lock errors for run-end/crash damage requiring content restore, not mkdir, invalid-lock, hidden-only, or routine-turn failures. Zero-wait does not reclaim a stale holder; the next successful lock taker can still replay the sidecar. Completion and finally can both run the repair (packages/nax/src/execution/runner-completion.ts:314; packages/nax/src/execution/runner.ts:410), the latter immediately before keeper deactivation; crash repair is already budgeted (packages/nax/src/execution/crash-signals.ts:169). These lifecycle sites do not need edits. Queue processing is another compatibility seam: replace the prefix catch at packages/nax/src/execution/queue-handler.ts:164 with the two typed lock codes and preserve propagation of processor and other errors; packages/nax/src/pipeline/stages/queue-check.ts:98 depends on the warn-and-return behavior. packages/nax/src/errors.ts:7 re-exports the same NaxError class. Update packages/nax/test/unit/runstate/repair.test.ts:217 from wait-and-restore to immediate deferral; preserve the external-holder and reentrant-publisher tests (:176, :194). Add recovery integration tests at writer, repair, and approved send entry points and queue catch coverage in packages/nax/test/unit/execution/queue-handler.test.ts:175.\n\nDelivery/migration: US-001, US-002, and US-003 are independent; land them before US-004 (which both extends US-002's seam and consumes the other two stories). No config, public request, result.json schema, lock format, or dependency migration. Existing workflow directories need no backfill; sidecars are created on demand, and only upgraded lock takers replay them. Older code is not relied on to diagnose orphan claims, replay sidecars or preserve recent staged files; prefer upgrading all lock sharers before relying on the new behavior. If an orphan claim is diagnosed, stop all users of that lock before removing it manually; deployment must never automate this. Use temporary fixtures and injectable seams instead of live forge calls, real 120-second waits or shared global state. Done means failures distinguish actionable claims from contention, live creation survives a staged-file sweep race, a PR or inability to check blocks transfer, and a good result survives keeper shutdown without overwriting a newer result.",
+  "outOfScope": [
+    "Removing an orphaned claim automatically, at any age or pid state (#2980 ruling: fail closed).",
+    "The holder-pid liveness check's own cross-namespace weakness (a lock whose holder pid means nothing locally); only the staged-file sweep changes.",
+    "Recording a confirmed draft PR in `result.json` before the CI wait (#2983 option not chosen); publish (`finalize.ts`) is unchanged.",
+    "An open-PR check on GitLab for the handoff: the chat handoff accepts only a GitHub origin.",
+    "Naming the open PR's URL in the handoff refusal: `hasOpenPr` answers only whether one exists.",
+    "A run summary section for kept damage: the case is reported as a `[WARN]` log line, because the runner's final repair runs after the summary is printed.",
+    "A lock holder that reads the damaged `result.json` and merges into it before the recovery file is applied (the holder's own write supersedes the recovery file); unchanged from today.",
+    "Changing `HANDOFF_RESULT_LOCK_WAIT_MS` or the result writers' wait.",
+    "Turn and pre-commit repairs writing a recovery file: their keeper stays active and retries on the next turn.",
+    "A chat handoff restoring a recovery file in its preflight: preflight reads without the lock, so a run whose `result.json` is missing is refused there (`NO_FINISHED_RUN`) and its recovery file waits for the next `nax run` or publish to take the lock.",
+    "Writing a recovery file for `FILE_LOCK_INVALID` (a symlink, FIFO or garbage at `.handoff.lock`) or a workflow-directory `mkdir` failure; both keep today's `failedRestore`.",
+    "De-duplicating the two run-end passes (completion phase and runner `finally`): each pass that finds the damage writes the recovery file again and logs its own `[WARN]` line.",
+    "`nax approvals rm`'s handling of a lock error: the new code falls to its existing branch, which prints the error message verbatim."
+  ],
+  "routingProfile": "native-codex-ds"
+}

@@ -7,21 +7,26 @@
  * on the machine that ran the chain, so the record travels with the request — and
  * every check koda would apply to it is applied here first, before anything is pushed.
  *
- * The order is the design's: parse, read the repository, check the branch, collect the
- * record, refuse a feature already handed over, use chain approval or ask the user, then run the same
- * post-allow sequence the spec form runs, and finally mark the run with what koda
- * answered. The mark is what stops a second local publisher (US-004).
+ * The order is the design's: parse, read the repository, check the branch, collect the record, refuse
+ * a feature already handed over, refuse a branch that already has an open PR, use chain approval or
+ * ask the user, then run the same post-allow sequence the spec form runs, and finally mark the run
+ * with what koda answered. The mark is what stops a second local publisher (US-004). The open-PR check
+ * runs twice — before the card and again inside the handoff lock at the push boundary — because a PR
+ * can appear over the approval window, and a forge that cannot answer is a refusal, never a green
+ * light.
  *
  * Approval opens a window the local checks have already closed: the record and the mark are re-read
- * after it, the mark and result listing are checked again at the push boundary, and the whole
- * mark-to-mark sequence of one feature is serialized across processes and against result writers. So a handoff that finished
- * while this one was waiting is seen before anything is pushed, and a cancelled turn stops waiting.
+ * after it, the mark, the open PR and the result listing are checked again at the push boundary, and
+ * the whole mark-to-mark sequence of one feature is serialized across processes and against result
+ * writers. So a handoff that finished while this one was waiting is seen before anything is pushed,
+ * and a cancelled turn stops waiting.
  *
- * Every collaborator of the record and the mark is behind `_flowHandoffDeps`; the push,
- * the repository reads and the koda create stay on `_flowProviderDeps`.
+ * Every collaborator of the record, the mark and the forge answer is behind `_flowHandoffDeps`; the
+ * push, the repository reads and the koda create stay on `_flowProviderDeps`.
  */
 import type { ToolResult } from "@nathapp/nax-agent";
 import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
+import { defaultForgeDeps, hasOpenPr } from "@/forge";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffMarkRefusal, readNewestHandoffMark, readRunMark, writeHandoffMark } from "../../workflow/handoff-mark";
 // biome-ignore-start lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
@@ -34,6 +39,8 @@ import {
 // biome-ignore-end lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { restorePendingResults } from "../../workflow/result-recovery";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChainAdmission, ChatChains } from "../jobs";
 import { _flowProviderDeps } from "./flow-deps";
@@ -45,7 +52,7 @@ import {
 } from "./flow-handoff-input";
 import { isRecord } from "./flow-input";
 import type { FlowHandoffCreateBody } from "./flow-koda";
-import { checkFlowBranch, type FlowRepoReady } from "./flow-repo";
+import { checkFlowBranch, type FlowRepoReady, githubRepoRef } from "./flow-repo";
 import {
   afterAllow,
   BILLING_NOTE,
@@ -70,8 +77,9 @@ import {
 type HandoffMark = Parameters<typeof writeHandoffMark>[1];
 
 /**
- * The record and the mark, and the clock the mark's timestamp comes from. Stubbed in
- * tests so a run directory, a git repository and a koda server are all unnecessary.
+ * The record, the mark, the forge's open-PR answer and the recovery replay, and the clock the mark's
+ * timestamp comes from. Stubbed in tests so a run directory, a git repository, a forge login and a koda
+ * server are all unnecessary.
  */
 export const _flowHandoffDeps: {
   collectHandoffRecord: typeof collectHandoffRecord;
@@ -80,6 +88,8 @@ export const _flowHandoffDeps: {
   readRunMark: typeof readRunMark;
   writeHandoffMark: typeof writeHandoffMark;
   withFileLock: typeof withFileLock;
+  hasOpenPr: (branch: string, repo: string, repoRoot: string) => Promise<boolean>;
+  restorePendingResults: typeof restorePendingResults;
   now: () => Date;
 } = {
   collectHandoffRecord,
@@ -88,6 +98,12 @@ export const _flowHandoffDeps: {
   readRunMark,
   writeHandoffMark,
   withFileLock,
+  // A chat handoff accepts only a GitHub `origin` (`readFlowRepoState`), so the forge is always GitHub —
+  // and the repository is the one the card and the push name, host included, never whichever repository or
+  // host the CLI would resolve from its own environment.
+  hasOpenPr: (branch: string, repo: string, repoRoot: string) =>
+    hasOpenPr("github", branch, defaultForgeDeps, repoRoot, repo),
+  restorePendingResults,
   now: () => new Date(),
 };
 
@@ -174,10 +190,56 @@ function createBody(
 }
 
 /**
+ * The open-PR check, as the result that stops the send — or nothing when the branch has no PR.
+ *
+ * A handoff asks koda to own a feature from a branch koda opens the PR for, so a branch that already
+ * carries an open PR belongs to someone else's publish. A forge that cannot answer is a refusal too,
+ * never a green light: treating a failed `gh` as "no PR" is what let two publishers each open one, so
+ * the failure is reported with the same weight as the PR itself.
+ *
+ * The check names the repository the card names, which is the repository the push destination is
+ * verified against, and it names its host with it (`github.com/owner/repo`). A bare branch name is not
+ * enough: the CLI resolves its own repository from `GH_REPO` or the working directory, and — even with
+ * `--repo owner/repo` — its own host from `GH_HOST`, so a checkout whose defaults differ from the push
+ * destination could report an empty list from another repository or another host, and authorize a push the
+ * destination's open PR should have refused.
+ *
+ * @param feature - The feature being handed off, named in the refusal
+ * @param state - The repository state the card was built from: the branch to push and its GitHub remote
+ * @param repoRoot - The directory the forge is run in
+ * @returns The `[chat]` result to stop with, or `undefined` when the branch has no open PR
+ */
+async function openPrRefusal(feature: string, state: FlowRepoReady, repoRoot: string): Promise<ToolResult | undefined> {
+  const repo = githubRepoRef(state.remoteUrl);
+  if (repo === null) {
+    return failure(
+      `[chat] cannot hand off ${feature}: could not check branch ${state.branch} for an open PR (${state.remoteUrl} is not a GitHub repository the check can name); nothing was pushed`,
+    );
+  }
+  let open: boolean;
+  try {
+    open = await _flowHandoffDeps.hasOpenPr(state.branch, repo, repoRoot);
+  } catch (error) {
+    return failure(
+      `[chat] cannot hand off ${feature}: could not check branch ${state.branch} for an open PR (${errorMessage(error)}); nothing was pushed`,
+    );
+  }
+  return open
+    ? failure(
+        `[chat] cannot hand off ${feature}: branch ${state.branch} already has an open PR; a handoff needs a branch with no PR`,
+      )
+    : undefined;
+}
+
+/**
  * The local checks a handoff runs before the card, in the design's order: the request,
  * the repository (branch, clean tree, head, GitHub remote — read with no spec paths,
- * because a handoff sends none), koda's branch rules, the record and the PRD, and a
- * mark already on the newest run.
+ * because a handoff sends none), koda's branch rules, the record and the PRD, a
+ * mark already on the newest run, and whether the branch already has an open PR.
+ *
+ * The PR check is last: a feature handed over already has its PR opened by koda, and its user
+ * needs the mark refusal — naming what koda holds — rather than a second refusal about a PR that
+ * exists because of the handoff.
  *
  * @param input - The parsed handoff request
  * @param repoRoot - The chat's repository root
@@ -199,6 +261,8 @@ async function preflight(input: FlowHandoffInput, repoRoot: string): Promise<Han
   }
   const marked = await _flowHandoffDeps.readNewestHandoffMark(workflowFeatureDir(repoRoot, input.feature));
   if (marked !== null) return { ok: false, result: failure(`[chat] ${handoffMarkRefusal(input.feature, marked)}`) };
+  const openPr = await openPrRefusal(input.feature, state, repoRoot);
+  if (openPr !== undefined) return { ok: false, result: openPr };
   return { ok: true, state, collected };
 }
 
@@ -357,7 +421,14 @@ async function recheck(call: SendCall, options: FlowProviderOptions): Promise<To
   }
 }
 
-/** After the asynchronous Git checks, confirm the verified run is still unmarked and newest. */
+/**
+ * The last checks before the push: the run this send will mark is still unmarked, the turn is live,
+ * the branch still has no open PR, and the verified run's results still match the carded record.
+ *
+ * The PR check sits here — after the run-mark read and the cancellation, and before the results
+ * match — because this is the last forge read before the push, under the handoff lock, and the
+ * approval window is long enough for a PR to appear in it.
+ */
 async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): Promise<ToolResult | undefined> {
   const { input, ready, signal } = call;
   const runDir = workflowRunDir(options.repoRoot, input.feature, ready.collected.newestRunId);
@@ -365,6 +436,8 @@ async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): P
   if (found !== null) return failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
   const cancelled = cancellationRefusal(signal);
   if (cancelled !== undefined) return cancelled;
+  const openPr = await openPrRefusal(input.feature, ready.state, options.repoRoot);
+  if (openPr !== undefined) return openPr;
   const workflowDir = workflowFeatureDir(options.repoRoot, input.feature);
   const matches = await _flowHandoffDeps.handoffResultsMatch(workflowDir, options.repoRoot, ready.collected);
   return matches ? undefined : failure(RECORD_CHANGED_MESSAGE);
@@ -372,6 +445,11 @@ async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): P
 
 /**
  * Everything one approved handoff does after the allow: the re-check, the push, the flow, the mark.
+ *
+ * The first thing it does is replay the recovery files a run-end or crash repair deferred (#2984): those
+ * repairs cannot wait for this lock, so a `result.json` they could not restore is kept beside itself and
+ * this lock-take applies it — before the recheck reads the record, so the record compared is the one on
+ * disk rather than the damaged or missing bytes the repair saw.
  *
  * @param call - The parsed handoff, the carded state and record, and the turn's cancellation
  * @param options - The chat's repository, its koda server and the chain it answers to
@@ -381,6 +459,7 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
   const { input, ready, signal } = call;
   const { state, collected } = ready;
   try {
+    await _flowHandoffDeps.restorePendingResults(workflowFeatureDir(options.repoRoot, input.feature));
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
     const beforePush = () => handoffPushGuard(call, options);

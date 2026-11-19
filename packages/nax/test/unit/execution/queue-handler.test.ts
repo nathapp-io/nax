@@ -11,9 +11,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _fileLockDeps } from "@nathapp/nax-agent/internal";
+import { assertNaxError, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { clearQueueFile, processQueueFile, readQueueFile } from "@/execution";
 import { getLogger, initLogger, resetLogger } from "@/logger";
+
+withDepsRestore(_fileLockDeps);
 
 async function readWarnLines(
   logFile: string,
@@ -229,5 +233,104 @@ describe("processQueueFile — read/process/clear in one lock (BUG-11)", () => {
 
     expect(applyCount).toBe(1);
     expect(secondResult).toBeUndefined();
+  });
+});
+
+describe("processQueueFile — an unusable queue lock", () => {
+  let workdir: string;
+  let logFile: string;
+  let lockPath: string;
+
+  beforeEach(() => {
+    resetLogger();
+    workdir = makeTempDir("nax-queue-handler-lock-");
+    logFile = join(workdir, "audit.jsonl");
+    initLogger({ level: "silent", filePath: logFile });
+    lockPath = join(workdir, ".queue.txt.lock");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  /** Reach the lock's deadline on its own clock, so no case waits out the real queue timeout. */
+  function expireLockClock(): void {
+    let now = 0;
+    _fileLockDeps.now = () => {
+      now += 10_000;
+      return now;
+    };
+    _fileLockDeps.sleep = async () => {
+      // A waiter that has already reached its deadline must not sit in backoff.
+    };
+  }
+
+  /** The warn the caller reports in place of the stage failing: one line, the queue's own. */
+  async function expectQueueWarn(): Promise<{ stage: string; message: string; data?: Record<string, unknown> }[]> {
+    const warns = await readWarnLines(logFile);
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.stage).toBe("queue");
+    expect(warns[0]?.message).toBe("Failed to process queue file");
+    return warns;
+  }
+
+  test.each([
+    ["a lock a live process holds", "4242\n", `${process.pid}\n`, "Timed out acquiring queue lock"],
+    ["an orphaned reclamation claim", "4242\n", "4343\n", "reclamation claim"],
+  ])(
+    "an acquisition failure on %s resolves undefined with a queue warning (AC-20, AC-21)",
+    async (_label, lockBody, claimBody, expected) => {
+      await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+      await Bun.write(lockPath, lockBody);
+      await Bun.write(`${lockPath}.claim`, claimBody);
+      const isPidAlive = _fileLockDeps.isPidAlive;
+      _fileLockDeps.isPidAlive = (pid) => pid === process.pid;
+      expireLockClock();
+      let called = false;
+
+      const result = await processQueueFile(workdir, async () => {
+        called = true;
+        return "done";
+      });
+      _fileLockDeps.isPidAlive = isPidAlive;
+
+      expect(called).toBe(false);
+      expect(result).toBeUndefined();
+      const warns = await expectQueueWarn();
+      expect(String(warns[0]?.data?.error)).toContain(expected);
+      // Nothing was claimed: the queue file is still there for the next check.
+      expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(true);
+    },
+  );
+
+  test("a lock that is not a lock file still rejects (AC-22)", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\n");
+    await Bun.write(lockPath, "not-a-pid\n");
+    let called = false;
+
+    const caught = await processQueueFile(workdir, async () => {
+      called = true;
+    }).catch((error: unknown) => error);
+
+    assertNaxError(caught, "processQueueFile rejection");
+    expect(caught.code).toBe("FILE_LOCK_INVALID");
+    expect(caught.message).toContain("Expected a regular lock file with valid PID metadata");
+    expect(called).toBe(false);
+    expect(await readWarnLines(logFile)).toHaveLength(0);
+  });
+
+  test("a processor's own lock failure is the caller's, not the queue's", async () => {
+    // Applying a queue command writes run state, which can time out on a lock of its own. That is a
+    // failure of the story's work, not of queue infra, so it must reach the caller.
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");
+
+    const caught = await processQueueFile(workdir, async () => {
+      throw new NaxError("[runstate] Timed out acquiring handoff lock", "FILE_LOCK_TIMEOUT", { stage: "file-lock" });
+    }).catch((error: unknown) => error);
+
+    assertNaxError(caught, "processQueueFile rejection");
+    expect(caught.code).toBe("FILE_LOCK_TIMEOUT");
+    expect(await readWarnLines(logFile)).toHaveLength(0);
   });
 });

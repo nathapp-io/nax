@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, utimes } from "node:fs/promises";
+import { lstat, mkdir, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { newFeatureRecord } from "@/workflow/feature-record";
@@ -41,6 +41,22 @@ describe("workflow result.json", () => {
     expect(await readResult(run)).toBeNull();
     await Bun.write(join(run, "result.json"), "{not json");
     expect(await readResult(run)).toBeNull();
+  });
+
+  test("a write never publishes through a link left at the old staging name (B3)", async () => {
+    await withTempDir(async (runDir) => {
+      const outside = join(runDir, "outside.json");
+      await Bun.write(outside, "untouched\n");
+      // The predictable staging name the writer used: a link there must neither receive the payload nor
+      // become result.json.
+      await symlink(outside, join(runDir, "result.json.tmp"));
+
+      await upsertStoryRecord(runDir, header("run-1"), newStoryRecord("US-001", 5, "t"));
+
+      expect(await Bun.file(outside).text()).toBe("untouched\n");
+      expect((await lstat(join(runDir, "result.json"))).isFile()).toBe(true);
+      expect((await readResult(runDir))?.stories["US-001"]?.storyId).toBe("US-001");
+    });
   });
 
   test("loadPriorStoryRecord: newest other run, unfinished records only", async () => {

@@ -1,11 +1,18 @@
 /** Detect and repair agent damage to nax run state (#2497). Never throws. */
-import { appendFile, mkdir, rename } from "node:fs/promises";
-import { dirname } from "node:path";
-import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
+import { constants } from "node:fs";
+import { appendFile, type FileHandle, mkdir, open, rename } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { errorMessage, NaxError, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
 import { holdsHandoffLock } from "../workflow/handoff-lock-owner";
-import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "../workflow/paths";
+import { handoffLockPath } from "../workflow/paths";
+import {
+  RESULT_RECOVERY_FILE,
+  type ResultRecovery,
+  restorePendingResults,
+  writeResultRecovery,
+} from "../workflow/result-recovery";
 import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
 export type RepairTrigger = "turn" | "pre-commit" | "run-end" | "crash";
@@ -30,7 +37,19 @@ export const _repairDeps = {
   hiddenNaxPaths,
   clearNaxIndexFlags,
   logger: (): IndexFlagLogger | null => getSafeLogger() ?? null,
+  readResultBytes,
 };
+
+/** The result as one read saw it: what the repair judged, and what a deferral records. */
+interface ResultObservation {
+  /** The raw bytes that read returned, or undefined when there was no file to read. */
+  readonly bytes: Uint8Array | undefined;
+}
+
+/** Lock failures a repair may hand to the next lock-taker instead of failing: nothing was read or written. */
+const DEFERRABLE_LOCK_CODES: ReadonlySet<string> = new Set(["FILE_LOCK_TIMEOUT", "FILE_LOCK_CLAIM_ORPHANED"]);
+/** The triggers with no keeper left to retry: run end and crash are the last chance to keep the good copy. */
+const DEFERRING_TRIGGERS: ReadonlySet<RepairTrigger> = new Set<RepairTrigger>(["run-end", "crash"]);
 
 async function damageOf(f: KeptFile, hidden: ReadonlySet<string>): Promise<Damage[]> {
   const file = Bun.file(f.path);
@@ -99,6 +118,129 @@ function failedRestore(f: KeptFile, damage: Damage[], ctx: RepairContext, error:
   return { path: f.path, rel: f.rel, damage, restored: false };
 }
 
+/** Whether the lock failure may be handed to the next holder: a lock this repair could not take, at a
+ *  trigger with no keeper left to retry. Everything else — a known-invalid lock file, an unwritable
+ *  directory, a failing write — keeps the failure path it has always had. */
+function defersToNextHolder(error: unknown, ctx: RepairContext): boolean {
+  return error instanceof NaxError && DEFERRABLE_LOCK_CODES.has(error.code) && DEFERRING_TRIGGERS.has(ctx.trigger);
+}
+
+/** errno codes that mean "there is no such path": the only read failure that is an observation of absence. */
+const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
+/**
+ * The result is read read-only and never blocking, so a FIFO where the result belongs answers the open
+ * instead of waiting for a writer that may never come. A link is followed on purpose: the repair judges
+ * the bytes at the path and then restores over it, replacing the link rather than writing through it.
+ */
+const RESULT_READ_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK;
+
+/** The errno code of a thrown filesystem error, when it carries one. */
+function errnoCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code: unknown = Reflect.get(error, "code");
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * The result's raw bytes, or undefined when there is no such file.
+ *
+ * One read decides everything about the result: the damage the repair judges, the fingerprint the recovery
+ * records, and whether the damage healed before the lock attempt. Two reads cannot be paired safely — a
+ * holder that publishes a newer checkpoint between them would be fingerprinted as the damage the repair
+ * never judged, and replay would then keep the stale copy over it.
+ *
+ * A read that fails for any reason other than absence propagates: it is not an observation of absence, and
+ * recording it as one would keep a "missing" copy that replay discards as superseded the next time the
+ * result is readable.
+ */
+async function readResultBytes(path: string): Promise<Uint8Array | undefined> {
+  let handle: FileHandle;
+  try {
+    handle = await open(path, RESULT_READ_FLAGS);
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
+    throw error;
+  }
+  try {
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
+/** What the repair saw on disk: no file, or the digest of the raw bytes that are there now. */
+function observedDamage(bytes: Uint8Array | undefined): ResultRecovery["damaged"] {
+  if (bytes === undefined) return { kind: "missing" };
+  return { kind: "modified", sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex") };
+}
+
+/** Whether the bytes are exactly the kept text: the damage healed between the damage read and the lock. */
+function isKeptText(bytes: Uint8Array | undefined, content: string): boolean {
+  if (bytes === undefined) return false;
+  return bytes.length === Buffer.byteLength(content, "utf8") && Buffer.from(bytes).equals(Buffer.from(content, "utf8"));
+}
+
+/** What the one read proves about the keeper's snapshot: no file, different bytes, or a nax index flag. */
+function damageFromRead(f: KeptFile, bytes: Uint8Array | undefined, hidden: ReadonlySet<string>): Damage[] {
+  return [
+    ...(bytes === undefined ? (["missing"] as const) : []),
+    ...(bytes !== undefined && !isKeptText(bytes, f.content) ? (["modified"] as const) : []),
+    ...(hidden.has(f.rel) ? (["hidden"] as const) : []),
+  ];
+}
+
+/**
+ * Keep the good copy of a damaged result for the next holder of the handoff lock (#2984), because a
+ * holder outside this call tree can hold that lock through a whole CI wait.
+ *
+ * The recovery records the damage `observed` at the damage read, not what the result holds now: a newer
+ * checkpoint the holder wrote during the failed acquisition must stay as it is, so the fingerprint it is
+ * compared with on replay is the one this repair actually judged damaged. Nothing is written when the
+ * damage healed while the lock was being tried: the bytes are the kept text again, so there is nothing to
+ * restore and no record to report. A read that failed for a reason other than absence, and a failed
+ * write, are the failure path the repair has always had.
+ *
+ * The recovery also carries the run's place in the newest-first ordering — the instant the keeper saved
+ * this checkpoint, `f.orderedAt` — and never the moment this repair noticed the damage. A result that is
+ * missing has no mtime to read, and the deferral time can be later than a newer run's checkpoint, which
+ * would make replay promote this run above it and hide that run's handoff mark.
+ *
+ * @param f - The file the keeper holds: what the recovery restores, and where it is written beside
+ * @param damage - What the damage read found, reported in the record
+ * @param ctx - The repair's trigger, which the log line names
+ * @param observed - The result as the one read saw it, which the recovery records
+ * @returns The not-restored record, or undefined when the damage healed before the lock attempt
+ */
+async function deferRestore(
+  f: KeptFile,
+  damage: Damage[],
+  ctx: RepairContext,
+  observed: ResultObservation,
+): Promise<RepairRecord | undefined> {
+  let recoveryPath = join(dirname(f.path), RESULT_RECOVERY_FILE);
+  try {
+    if (isKeptText(await _repairDeps.readResultBytes(f.path), f.content)) return undefined;
+    recoveryPath = await writeResultRecovery(f.path, {
+      schemaVersion: 1,
+      rel: f.rel,
+      damaged: observedDamage(observed.bytes),
+      content: f.content,
+      orderedAt: f.orderedAt,
+    });
+  } catch (error) {
+    return failedRestore(f, damage, ctx, error);
+  }
+  _repairDeps
+    .logger()
+    ?.warn(
+      "runstate",
+      `[WARN] ${where(ctx)}: could not restore ${f.rel}; kept it in ${recoveryPath}; the next handoff-lock holder restores it`,
+      repairLogData(f, damage, ctx),
+    );
+  return { path: f.path, rel: f.rel, damage, restored: false };
+}
+
 async function noteInLedgers(
   keeper: RunStateKeeper,
   root: string,
@@ -142,38 +284,59 @@ function repairLocked(
   });
 }
 
+/** What the damage read left the repair: a damage nothing can restore, or one a deferral can hand over. */
+type PendingResult =
+  | { readonly kind: "hidden-only"; readonly file: KeptFile; readonly damage: Damage[] }
+  | {
+      readonly kind: "restorable";
+      readonly file: KeptFile;
+      readonly damage: Damage[];
+      readonly observed: ResultObservation;
+    };
+
 async function repairResult(
   keeper: RunStateKeeper,
   path: string,
   state: HiddenState,
   ctx: RepairContext,
 ): Promise<RepairRecord | undefined> {
-  const pending = await withPathLock(path, async () => {
+  const pending = await withPathLock(path, async (): Promise<PendingResult | undefined> => {
     const file = keeper.get(path);
     if (!file || keeper.isInFlight(path)) return undefined;
-    return { file, damage: await damageOf(file, state.hidden) };
+    // One read of the result: the damage it proves, and the very bytes a deferral fingerprints. Reading
+    // again for the fingerprint would let a checkpoint another process publishes in between be recorded
+    // as the damage this repair judged, and replay would then keep the stale copy over it.
+    const observed: ResultObservation = { bytes: await _repairDeps.readResultBytes(path) };
+    const damage = damageFromRead(file, observed.bytes, state.hidden);
+    if (!needsRestore(damage)) return { kind: "hidden-only", file, damage };
+    return { kind: "restorable", file, damage, observed };
   });
   if (!pending || pending.damage.length === 0) return undefined;
-  const { file, damage } = pending;
-  if (!needsRestore(damage)) return await repairFile(file, damage, ctx, state.cleared);
+  if (pending.kind === "hidden-only") return await repairFile(pending.file, pending.damage, ctx, state.cleared);
+  const { file, damage, observed } = pending;
 
   const workflowDir = dirname(dirname(path));
   try {
     await mkdir(workflowDir, { recursive: true });
     // Inside the publisher that holds the handoff lock (a CI-repair turn), restore under its hold:
-    // deferring would let its next result write keep the damaged bytes.
+    // deferring would let its next result write keep the damaged bytes. Its own lock-take already
+    // replayed every pending recovery file, so nothing is scanned again here.
     const lockPath = handoffLockPath(workflowDir);
     if (holdsHandoffLock(lockPath)) return await repairLocked(keeper, path, state, ctx);
-    // Take the handoff lock before the path lock, as result writers do. Recheck the keeper
-    // and disk after acquiring both. Another holder may be mid-handoff, so turn/pre-commit
-    // repairs do not wait; run-end waits, before the keeper is discarded; crash repair is time-boxed.
-    return await withFileLock(lockPath, () => repairLocked(keeper, path, state, ctx), {
-      lockName: "handoff",
-      errorPrefix: "[runstate]",
-      timeoutMs: ctx.trigger === "run-end" ? HANDOFF_RESULT_LOCK_WAIT_MS : 0,
-    });
+    // Take the handoff lock before the path lock, as result writers do, then replay whatever an earlier
+    // deferral kept before judging the bytes again. One attempt only: a holder outside this call tree
+    // may keep the lock through a whole CI wait, so no repair waits for it (run-end included).
+    return await withFileLock(
+      lockPath,
+      async () => {
+        await restorePendingResults(workflowDir);
+        return await repairLocked(keeper, path, state, ctx);
+      },
+      { lockName: "handoff", errorPrefix: "[runstate]", timeoutMs: 0 },
+    );
   } catch (error) {
-    return failedRestore(file, damage, ctx, error);
+    if (!defersToNextHolder(error, ctx)) return failedRestore(file, damage, ctx, error);
+    return await deferRestore(file, damage, ctx, observed);
   }
 }
 

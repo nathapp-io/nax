@@ -2,13 +2,15 @@
  * result.json (spec §9): per-story state for resume and the feature report.
  * Written atomically (tmp + rename) after every phase change.
  */
-import { mkdir, readdir, rename, stat } from "node:fs/promises";
+import { mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { withFileLock } from "@nathapp/nax-agent/internal";
 import { activeKeepers, runStateWrite } from "@/runstate/store";
+import { writeStagedFile } from "./atomic-write";
 import { runAsHandoffLockHolder } from "./handoff-lock-owner";
 import { buildVerdict } from "./open-items";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
+import { restorePendingResults } from "./result-recovery";
 import type {
   RoleTokens,
   StoryStateItem,
@@ -17,21 +19,33 @@ import type {
   WorkflowStoryRecord,
 } from "./types";
 
-export const _resultDeps = { mkdir, readdir, rename, stat };
+export const _resultDeps = { mkdir, open, readdir, rename, stat, unlink };
 
 const RESULT_FILE = "result.json";
 
 type ResultHeader = { readonly runId: string; readonly feature: string };
 
+/**
+ * Under the feature's handoff lock. A run-end or crash repair cannot wait for a holder outside the run's
+ * call tree, so it keeps a damaged result's good copy in `result.recovery.json` instead (#2984); this
+ * lock-take is where those copies are replayed, before `task` reads the result it would merge into.
+ */
 async function withResultLock<T>(runDir: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   const featureDir = dirname(runDir);
   await _resultDeps.mkdir(featureDir, { recursive: true });
-  return await withFileLock(handoffLockPath(featureDir), task, {
-    lockName: "handoff",
-    errorPrefix: "[workflow]",
-    timeoutMs: HANDOFF_RESULT_LOCK_WAIT_MS,
-    signal,
-  });
+  return await withFileLock(
+    handoffLockPath(featureDir),
+    async () => {
+      await restorePendingResults(featureDir);
+      return await task();
+    },
+    {
+      lockName: "handoff",
+      errorPrefix: "[workflow]",
+      timeoutMs: HANDOFF_RESULT_LOCK_WAIT_MS,
+      signal,
+    },
+  );
 }
 
 export type LockedFeatureWriter = (record: WorkflowFeatureRecord) => Promise<void>;
@@ -150,12 +164,8 @@ export async function writePreflightTokens(
 async function writeResult(runDir: string, next: WorkflowResultFile): Promise<void> {
   await _resultDeps.mkdir(runDir, { recursive: true });
   const path = join(runDir, RESULT_FILE);
-  const tmp = `${path}.tmp`;
   const text = `${JSON.stringify(next, null, 2)}\n`;
-  await runStateWrite(path, { content: text }, async () => {
-    await Bun.write(tmp, text);
-    await _resultDeps.rename(tmp, path);
-  });
+  await runStateWrite(path, { content: text }, () => writeStagedFile({ path, content: text }, _resultDeps));
 }
 
 /**

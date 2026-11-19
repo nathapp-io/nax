@@ -7,10 +7,20 @@
 
 import { rename, unlink } from "node:fs/promises";
 import path from "node:path";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { QueueCommand } from "../queue";
 import { parseQueueFile } from "../queue";
 import { withQueueFileLock } from "../utils/queue-file-lock";
+
+/**
+ * The lock failures `processQueueFile` reports in place of failing the stage: the queue lock could not
+ * be taken, so no command was read or applied. `FILE_LOCK_CLAIM_ORPHANED` is one of them — a claim a
+ * dead process left blocks every later caller, and the stage is the wrong place to fail a run over it.
+ * Every other error, `FILE_LOCK_INVALID` (a lock path that is not a lock file) included, is the
+ * caller's: it says the queue itself is unusable, not that it is busy.
+ */
+const ACQUISITION_FAILURE_CODES: ReadonlySet<string> = new Set(["FILE_LOCK_TIMEOUT", "FILE_LOCK_CLAIM_ORPHANED"]);
 
 /**
  * Safely get logger instance, returns null if not initialized
@@ -140,10 +150,13 @@ export async function processQueueFile<T>(
   const queuePath = path.join(workdir, ".queue.txt");
   const processingPath = path.join(workdir, ".queue.txt.processing");
   const logger = getSafeLogger();
+  /** Set once the lock is held and the batch claimed: from there on, an error is the caller's. */
+  let acquired = false;
 
   try {
     return await withQueueFileLock(queuePath, async () => {
       const commands = await claimCommandsLocked(queuePath, processingPath, logger);
+      acquired = true;
       if (commands === null) return undefined;
 
       const result = await processor(commands);
@@ -161,7 +174,7 @@ export async function processQueueFile<T>(
       return result;
     });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("[queue] Timed out acquiring queue lock")) {
+    if (!acquired && error instanceof NaxError && ACQUISITION_FAILURE_CODES.has(error.code)) {
       logger?.warn("queue", "Failed to process queue file", { error: error.message });
       return undefined;
     }

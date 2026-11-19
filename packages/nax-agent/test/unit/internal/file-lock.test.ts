@@ -350,12 +350,16 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
 
   test("an acquisition removes staged pid files a dead process left, never a live one's", async () => {
     // A process that dies between staging and cleanup leaves `.lock-<pid>-<uuid>.pid` beside the
-    // guarded files, where an auto-commit's `git add -A` could pick it up.
+    // guarded files, where an auto-commit's `git add -A` could pick it up. Only a staged file that
+    // has also aged past STAGED_PID_SWEEP_AGE_MS is removed: a creator in another pid namespace
+    // writes a pid this one cannot probe, and its staged file must survive until it links.
     const { dir, lockPath } = makeLockDir();
     const dead = `${dir}/.lock-424242-00000000-0000-4000-8000-000000000000.pid`;
     const live = `${dir}/.lock-7777-00000000-0000-4000-8000-000000000001.pid`;
     await Bun.write(dead, "424242\n");
     await Bun.write(live, "7777\n");
+    const aged = new Date(_fileLockDeps.now() - 20_000);
+    await utimes(dead, aged, aged);
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
     try {
       await withFileLock(lockPath, async () => {}, PATH_LOCK_OPTS);
@@ -442,7 +446,9 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
       resume.resolve();
       for (const waiter of await waiters) {
         expect(waiter.status).toBe("rejected");
-        if (waiter.status === "rejected") expect(waiter.reason).toMatchObject({ code: "FILE_LOCK_TIMEOUT" });
+        // An abandoned lock whose claim holds a dead pid is #2980's orphaned
+        // claim: the waiter must name it instead of reporting a generic timeout.
+        if (waiter.status === "rejected") expect(waiter.reason).toMatchObject({ code: "FILE_LOCK_CLAIM_ORPHANED" });
       }
       expect(operation).not.toHaveBeenCalled();
       expect(await Bun.file(lockPath).text()).toBe("424242\n");

@@ -27,6 +27,17 @@ export function viewArgv(forge: ForgeKind, branch: string, githubFields: string)
 }
 
 /**
+ * The argv that lists a branch's open PRs/MRs. GitHub names the repository explicitly when the caller
+ * supplies one: the CLI otherwise resolves it from its own environment — `GH_REPO`, else the working
+ * directory's remote — which need not be the repository the caller is about to write to.
+ */
+function listArgv(forge: ForgeKind, branch: string, repo: string | undefined): string[] {
+  if (forge !== "github") return ["glab", "mr", "list", "--source-branch", branch, "--output", "json"];
+  const repository = repo === undefined ? [] : ["--repo", repo];
+  return ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number", ...repository];
+}
+
+/**
  * Whether an open PR/MR exists for the branch.
  *
  * BUG-8: a non-zero exit must NOT read as "no open PR". A `gh` auth failure or a
@@ -35,13 +46,22 @@ export function viewArgv(forge: ForgeKind, branch: string, githubFields: string)
  * safe decision is to skip.
  *
  * `glab mr list` has no `--state` flag: it lists open MRs unless told otherwise (nax#2598).
+ *
+ * @param repo - The repository to ask about, as `[HOST/]OWNER/REPO`, when the caller has verified which
+ *   repository it is about to push to. GitHub is then asked about that repository and no other, so a
+ *   `GH_REPO` set in the environment, or a checkout whose default remote differs, cannot answer for a
+ *   different repository. Naming the host (`github.com/owner/repo`) is what keeps `GH_HOST` from
+ *   answering for a repository of the same name on another host. `glab` resolves its own repository and
+ *   ignores this.
  */
-export async function hasOpenPr(forge: ForgeKind, branch: string, deps: ForgeDeps, cwd: string): Promise<boolean> {
-  const cmd =
-    forge === "github"
-      ? ["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number"]
-      : ["glab", "mr", "list", "--source-branch", branch, "--output", "json"];
-  const result = await deps.run(cmd, { cwd });
+export async function hasOpenPr(
+  forge: ForgeKind,
+  branch: string,
+  deps: ForgeDeps,
+  cwd: string,
+  repo?: string,
+): Promise<boolean> {
+  const result = await deps.run(listArgv(forge, branch, repo), { cwd });
   if (result.exitCode !== 0) {
     throw new NaxError(
       `hasOpenPr: forge CLI exited with code ${result.exitCode}: ${result.stderr.trim()}`,

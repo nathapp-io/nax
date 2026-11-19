@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import type { RunStateKeeper } from "./keeper";
 import { classifyRunStatePath, type RunStatePath } from "./paths";
 
-export type WriteIntent = { readonly content: string } | { readonly append: string };
+export type WriteIntent = { readonly content: string; readonly orderedAt?: number } | { readonly append: string };
 
 const active = new Set<RunStateKeeper>();
 
@@ -71,7 +71,7 @@ async function recordThenWrite(
   if (keepers.length === 0) return write();
   const contents = await contentsFor(keepers, abs, intent);
   for (const [k, content] of contents) {
-    k.record(abs, classified, content);
+    k.record(abs, classified, content, "content" in intent ? intent.orderedAt : undefined);
     k.begin(abs);
   }
   try {

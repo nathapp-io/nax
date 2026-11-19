@@ -220,6 +220,8 @@ describe("createHostJobs handoff", () => {
     _flowHandoffDeps.readNewestHandoffMark = async () => null;
     _flowHandoffDeps.readRunMark = async () => null;
     _flowHandoffDeps.writeHandoffMark = mock(async () => {});
+    // The default seam would ask the real forge about the fixture repository and refuse the handoff.
+    _flowHandoffDeps.hasOpenPr = async () => false;
 
     const asks = createChatAskController({
       mode: "guarded",
