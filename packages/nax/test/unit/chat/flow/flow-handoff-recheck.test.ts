@@ -176,6 +176,8 @@ beforeEach(async () => {
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
+  // The default seam would ask the real forge about the fixture repository and refuse every send.
+  _flowHandoffDeps.hasOpenPr = async () => false;
   _flowHandoffDeps.now = () => AT;
   options = {
     repoRoot,
@@ -372,6 +374,7 @@ async function withOtherPublisher(
       _flowProviderDeps.isDirty = async () => false;
       _flowProviderDeps.commitAndPush = async () => ({ committed: false, pushed: true });
       _flowProviderDeps.createKodaFlow = async () => ({ kind: "held", requestId: "held-by-child" });
+      _flowHandoffDeps.hasOpenPr = async () => false;
       _handoffRecordDeps.git = async () => ({
         stdout: JSON.stringify({ branchName: state.branch, userStories: [] }), stderr: "", exitCode: 0,
       });

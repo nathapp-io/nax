@@ -183,6 +183,8 @@ beforeEach(() => {
     signal?.throwIfAborted();
     return operation();
   };
+  // The default seam would ask the real forge about the fixture repository and refuse every send.
+  _flowHandoffDeps.hasOpenPr = async () => false;
   _flowHandoffDeps.now = () => AT;
   options = {
     repoRoot: REPO_ROOT,
