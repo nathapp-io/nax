@@ -123,6 +123,7 @@ export {
   toolCall,
   transcriptMessage,
 } from "./loop-handlers";
+export { type FakeMcpConnection, type FakeMcpConnectionOptions, makeFakeMcpConnection } from "./mcp-fake-connection";
 // The stubs `nax memory link` is driven through, shared by the two files that cover it.
 export {
   answerProbe,

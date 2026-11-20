@@ -93,6 +93,11 @@ export async function connectMcpServer(args: {
     listTools() {
       return Promise.resolve(shared.tools);
     },
+    // The pool's only way to learn that the stdio server exited; the reason is
+    // the shared layer's own, passed through unredacted for the pool to redact.
+    onClose(listener) {
+      return shared.onClose(listener);
+    },
     async callTool(name, input, callOpts) {
       const result = await shared.call(name, input, {
         // SDK-level cancellation under the pool's own deadline race (pool.ts MEM-5).

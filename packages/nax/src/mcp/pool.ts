@@ -29,6 +29,7 @@ export const MCP_DEFAULT_RETRY = { maxAttempts: 3, baseDelayMs: 2000 } as const;
 export type McpServerEvent = { readonly serverId: string; readonly workdir: string; readonly at: string } & (
   | { readonly kind: "connected"; readonly pid: number | null; readonly toolCount: number }
   | { readonly kind: "connect-failed"; readonly reason: string; readonly attempt: number }
+  | { readonly kind: "disconnected"; readonly reason: string; readonly reconnect: boolean }
   | { readonly kind: "closed" }
 );
 
@@ -140,6 +141,24 @@ export function createMcpPool(opts: {
   // filesystem allows, and a delimiter collision would silently merge two keys.
   const keyOf = (serverId: string, workdir: string): string => JSON.stringify([serverId, workdir]);
   const entries = new Map<string, Promise<Entry | undefined>>();
+  /**
+   * The `open()` call whose result is current for a key. A listener evicts only
+   * while its own token is still current, so a repeated exit report from a
+   * connection that was already replaced never touches the key.
+   */
+  const openTokens = new Map<string, number>();
+  let nextOpenToken = 0;
+  /**
+   * Disconnects per key. Uncounted against here: US-001 reconnects after every
+   * exit, and the cap that reads this map arrives with US-002.
+   */
+  const disconnects = new Map<string, number>();
+  /**
+   * Connections that reported an exit. Recorded per connection, not per key: a
+   * call that failed may only be re-dispatched while it is still in doubt
+   * whether its connection is dead (US-003 reads this).
+   */
+  const reportedClose = new WeakSet<McpConnection>();
   const events: McpServerEvent[] = [];
   let closed = false;
 
@@ -147,9 +166,54 @@ export function createMcpPool(opts: {
     events.push(event);
   };
 
-  async function open(serverId: string, workdir: string): Promise<Entry | undefined> {
+  /**
+   * A connection's stdio process exited. Everything that decides the key's fate
+   * happens synchronously, before any await: the exit may be reported from
+   * inside `open()` itself (before it returns), and the next `entry()` runs in
+   * that same turn.
+   */
+  function evict(args: {
+    key: string;
+    serverId: string;
+    workdir: string;
+    connection: McpConnection;
+    /** The pid read at connect time: the live getter may already read null. */
+    pid: number | null;
+    token: number;
+    reason: string;
+  }): void {
+    reportedClose.add(args.connection);
+    if (closed || openTokens.get(args.key) !== args.token) return;
+    disconnects.set(args.key, (disconnects.get(args.key) ?? 0) + 1);
+    entries.delete(args.key);
+    openTokens.delete(args.key);
+    const server = opts.servers[args.serverId];
+    const reason = server === undefined ? args.reason : redactMcpReason(args.reason, server);
+    record({
+      kind: "disconnected",
+      serverId: args.serverId,
+      workdir: args.workdir,
+      at: new Date().toISOString(),
+      reason,
+      reconnect: true,
+    });
+    getSafeLogger()?.warn("mcp", `[pool] ${args.serverId} disconnected`, {
+      storyId: opts.storyId,
+      serverId: args.serverId,
+      workdir: args.workdir,
+      reason,
+    });
+    // Asynchronously reap the dead transport and its pid, exactly as the
+    // connect-failure path does. Both rejections are swallowed: the key is
+    // already gone above, and a failing cleanup must not undo that.
+    void args.connection.close().catch(() => {});
+    if (args.pid !== null) void opts.pidRegistry?.unregister(args.pid).catch(() => {});
+  }
+
+  async function open(serverId: string, workdir: string, token: number): Promise<Entry | undefined> {
     const server = opts.servers[serverId];
     if (server === undefined || !server.enabled) return undefined;
+    const key = keyOf(serverId, workdir);
 
     // Trust backstop (US-005): an MCP server entry is repository-controlled —
     // merged config chooses the binary that gets spawned. Asserted before the
@@ -167,7 +231,7 @@ export function createMcpPool(opts: {
       let spawnedPid: number | undefined;
       let registration: Promise<void> | undefined;
       try {
-        connection = await connectMcpServer({
+        const connected = await connectMcpServer({
           serverId,
           workdir,
           command: server.command,
@@ -183,10 +247,11 @@ export function createMcpPool(opts: {
             registration = opts.pidRegistry?.register(pid).catch(() => {});
           },
         });
+        connection = connected;
         signal.throwIfAborted();
         await registration;
-        const pid = connection.pid;
-        const tools = await connection.listTools();
+        const pid = connected.pid;
+        const tools = await connected.listTools();
         record({ kind: "connected", serverId, workdir, at: new Date().toISOString(), pid, toolCount: tools.length });
         getSafeLogger()?.info("mcp", `[pool] ${serverId} connected`, {
           storyId: opts.storyId,
@@ -195,7 +260,16 @@ export function createMcpPool(opts: {
           pid,
           tools: tools.length,
         });
-        return { connection, tools };
+        // Listen only AFTER the connected event is recorded. The shared layer
+        // reports an exit it saw before anyone listened from inside onClose
+        // itself, so registering earlier would let `disconnected` precede
+        // `connected` and chat `/mcp`, which shows the latest event, would call
+        // a dead server connected.
+        connected.onClose((reason) => evict({ key, serverId, workdir, connection: connected, pid, token, reason }));
+        // Nothing writes the entry back after this point: a listener that fired
+        // synchronously above already evicted the key, and reinstalling it here
+        // would resurrect the dead connection.
+        return { connection: connected, tools };
       } catch (error) {
         if (connection !== undefined) await connection.close().catch(() => {});
         // connect has rejected (and reaped its half-open transport) before removal.
@@ -227,9 +301,14 @@ export function createMcpPool(opts: {
     const existing = entries.get(key);
     if (existing !== undefined) return existing;
     // Memoize the PROMISE, not the result: concurrent first use must await one
-    // in-flight connect, never start a second subprocess.
-    const pending = open(serverId, workdir);
+    // in-flight connect, never start a second subprocess. `open` runs through
+    // its first await before returning, and no continuation can run before this
+    // frame ends — so both the promise and the current-open token are installed
+    // before the listener this open registers can fire and evict the key.
+    const token = ++nextOpenToken;
+    const pending = open(serverId, workdir, token);
     entries.set(key, pending);
+    openTokens.set(key, token);
     return pending;
   }
 
