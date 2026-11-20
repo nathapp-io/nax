@@ -148,4 +148,11 @@ describe("checkBotModelOverride", () => {
       "configured tiers: none",
     );
   });
+
+  // Branch fix B3: `models[agent]?.[tier]` reads through Object.prototype, so a name such as
+  // `constructor` answered with an inherited function and passed this preflight — the fix session
+  // then started runtime setup and failed somewhere no reason reached the user.
+  test.each(["constructor", "toString", "valueOf", "__proto__"])("B3: an inherited name is refused: %s", (name) => {
+    expect(checkBotModelOverride(nativeTiers(tiers), name)).toStartWith(`invalid --model "${name}": No model entry`);
+  });
 });

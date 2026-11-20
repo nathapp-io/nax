@@ -391,3 +391,38 @@ describe("runFeatureMachine — publish records the decision summaries (US-002)"
     expect(final.flaggedDecisionSummaries).toEqual({ "D-1": "Keep the lock" });
   });
 });
+
+/**
+ * Branch fix B2: a ledger that could not be read says nothing, while an empty read says "nothing is
+ * flagged". Reading them the same let a transient ledger error clear an earlier publish's ids and
+ * summaries, which dropped the advisor items from the item-thread input and closed their threads
+ * though no decision had settled.
+ */
+describe("runFeatureMachine — an unreadable ledger preserves what the last read recorded (B2)", () => {
+  const recorded = {
+    ...atPublish(),
+    flaggedDecisions: ["D-1"],
+    flaggedDecisionSummaries: { "D-1": "Keep the lock" },
+  };
+
+  test("the earlier ids and summaries survive a failed read", async () => {
+    const h = harness({
+      flagged: async () => {
+        throw new Error("ledger unreadable");
+      },
+      record: recorded,
+    });
+    const final = await runFeatureMachine(h.env);
+    expect(final.step).toBe("done");
+    expect(final.flaggedDecisions).toEqual(["D-1"]);
+    expect(final.flaggedDecisionSummaries).toEqual({ "D-1": "Keep the lock" });
+    expect(warns()).toHaveLength(1);
+  });
+
+  test("a successful empty read still clears them", async () => {
+    const h = harness({ flagged: async () => [], record: recorded });
+    const final = await runFeatureMachine(h.env);
+    expect(final.flaggedDecisions).toEqual([]);
+    expect("flaggedDecisionSummaries" in final).toBe(false);
+  });
+});

@@ -547,3 +547,35 @@ describe("classifyModelSelector (nax#2571)", () => {
     });
   });
 });
+
+/**
+ * Branch fix B3: the tier map used to be read as `models[agent]?.[tier]`, which walks the object
+ * prototype. `constructor`, `toString`, `valueOf` and `__proto__` therefore answered with an
+ * inherited member and resolved as a model definition instead of `MODEL_NOT_FOUND` — so the bot's
+ * `--model` preflight accepted a name no config declares. Own-property membership is what makes
+ * preflight and dispatch give the same answer.
+ */
+describe("B3: only a key an agent declares is a tier", () => {
+  const models: ModelsConfig = { native: { fast: "anthropic/claude-haiku-4-5" } };
+
+  test.each(["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"])(
+    "resolveModelForAgent refuses the inherited name %s",
+    (name) => {
+      expect(() => resolveModelForAgent(models, "native", name, "native")).toThrow(NaxError);
+    },
+  );
+
+  test.each(["constructor", "toString", "valueOf", "__proto__"])(
+    "resolveTierMembership reads the inherited name %s as no tier",
+    (name) => {
+      expect(resolveTierMembership(models, "native", name, "native")).toEqual({
+        isTier: false,
+        viaDefaultAgentFallback: false,
+      });
+    },
+  );
+
+  test("the string selector refuses it through resolveConfiguredModel", () => {
+    expect(() => resolveConfiguredModel(models, "native", "constructor", "native")).toThrow(NaxError);
+  });
+});

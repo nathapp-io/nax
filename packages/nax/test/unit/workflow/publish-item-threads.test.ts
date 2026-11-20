@@ -375,6 +375,30 @@ test("AC-16: the posted record carries the flagged decisions' summaries", async 
   expect(posted?.flaggedDecisionSummaries).toEqual({ "D-1": "Keep the lock" });
 });
 
+// Branch fix B2: an unreadable ledger must not reach the item-thread post as "nothing is flagged".
+// The post is what derives the index's item keys, so losing D-1 there closes the advisor thread the
+// index already holds even though no decision settled.
+test("B2: a failed ledger read leaves the posted record's flagged decisions as the earlier read left them", async () => {
+  const h = harness({ ...published, reasons: ["flagged advisor decision"] });
+  h.env.steps.flaggedDecisions = async () => {
+    throw new Error("ledger unreadable");
+  };
+  const earlier = {
+    ...h.env.record,
+    flaggedDecisions: ["D-1"],
+    flaggedDecisionSummaries: { "D-1": "Keep the lock" },
+  };
+  const out = await publishStep(h.env, earlier);
+  const posted = h.inputs[0]?.record;
+  if (!posted) throw new Error("missing publish input");
+  expect(posted.flaggedDecisions).toEqual(["D-1"]);
+  expect(posted.flaggedDecisionSummaries).toEqual({ "D-1": "Keep the lock" });
+  expect(buildOpenItems(posted).map((item) => item.id)).toContain("D-1");
+  // The patch states nothing about it either, so the record on disk keeps the earlier read's ids.
+  expect(out.patch).not.toHaveProperty("flaggedDecisions");
+  expect(out.patch).not.toHaveProperty("flaggedDecisionSummaries");
+});
+
 test("publish preserves item-thread failure counts in its ledger", async () => {
   const h = harness();
   const lines: string[] = [];

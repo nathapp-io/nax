@@ -1,4 +1,4 @@
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, stripControlChars } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
 import type {
   BotFixCycleResult,
@@ -12,7 +12,7 @@ import type {
 } from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
-import { initLogger } from "@/logger";
+import { initLogger, redactSecrets } from "@/logger";
 import { parseChatAsksFlag, readChatAskSecret } from "./run-chat-asks";
 
 export interface BotCliDeps {
@@ -209,16 +209,26 @@ function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
 /** How much of a failed fix session's cause reaches the terminal; the bot log holds all of it. */
 const MAX_FIX_FAILURE_STDERR_CHARS = 300;
 
+/** Every line terminator a session's stderr may use, so no carriage return survives the split. */
+const LINE_BREAK = /\r\n|\r|\n/;
+
 /**
  * #2999: a `fix-failed` outcome is not self-explanatory — a script cannot tell it from a clean no-op
  * otherwise — so stderr names the cause. Only its first line, and only its first
  * `MAX_FIX_FAILURE_STDERR_CHARS` characters: a session failure is often a whole stack trace, and the
  * full text is a JSON field in `bot.jsonl`.
+ *
+ * This is the one place a raw session error reaches a terminal, so it gets the logger's own
+ * treatment first (branch fix B1): the whole failure is redacted, because a multi-line secret such as
+ * a PEM block is only recognised with its end marker in hand; control and ANSI sequences are
+ * stripped, so an escape cannot rewrite the line and a carriage return cannot drive the cursor back
+ * over it; and only then is the first line taken and capped, so the cap can never cut a delimiter
+ * that made a secret recognisable.
  */
 function failureReason(result: BotFixResult): string {
   if ("reason" in result) return result.reason;
   if (result.outcome !== "fix-failed" || result.fixFailure === undefined) return result.outcome;
-  const [first = ""] = result.fixFailure.split("\n");
+  const [first = ""] = stripControlChars(redactSecrets(result.fixFailure)).split(LINE_BREAK);
   return `fix-failed: ${first.slice(0, MAX_FIX_FAILURE_STDERR_CHARS)}`;
 }
 

@@ -280,6 +280,47 @@ describe("US-005 fix-failed reporting", () => {
   });
 });
 
+/**
+ * Branch fix B1: this line is the one place a raw session error reaches a terminal. It has to pass
+ * the logger's own redactor and lose its terminal control characters first, or a credential in a
+ * session's stderr is printed intact and a CR drives the cursor back over the line.
+ */
+describe("B1: the printed cause is redacted and cleaned before it is capped", () => {
+  test("masks a credential the shared redactor knows", async () => {
+    const token = `ghp_${"A1b2C3d4".repeat(5)}`;
+    result = { outcome: "fix-failed", fixFailure: `git push failed: ${token}`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: git push failed: [REDACTED]"]);
+    expect(stderr.join()).not.toContain(token);
+  });
+
+  test("prints one line and no carriage return for a CRLF cause", async () => {
+    result = { outcome: "fix-failed", fixFailure: "line one\r\nline two", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+
+  test("drops an ANSI escape from the cause", async () => {
+    result = { outcome: "fix-failed", fixFailure: "\u001b[31mred failure\u001b[0m", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: red failure"]);
+  });
+
+  test("redacts the whole failure before taking its first line, so a multi-line secret is masked", async () => {
+    // A PEM block is a *multi-line* secret: taking the first line before redaction leaves the
+    // `-----BEGIN ...` header on the terminal, which is the half of a credential no redactor
+    // downstream can recover.
+    const pem = [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu",
+      "-----END RSA PRIVATE KEY-----",
+    ].join("\n");
+    result = { outcome: "fix-failed", fixFailure: `${pem}\nagent exited 1`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: [REDACTED]"]);
+  });
+});
+
 describe("US-016 fix CLI log", () => {
   test("AC-21 prints log path last on success", async () => {
     result = { outcome: "nothing", step: "done", timings: {}, logPath: "/x/bot.jsonl" };

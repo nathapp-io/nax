@@ -16,6 +16,7 @@ import { ciRemainingAfterRepair, ciRepairPlan } from "./ci-repair-steps";
 import { HELD_REASON_PREFIX } from "./close";
 import type { FeatureEnv } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
+import { carryFlaggedDecisions, readFlaggedDecisions } from "./flagged-decisions";
 import { ledgerCannotVerify } from "./gate-timing";
 import { ledgerText } from "./ledger";
 import { postItemThreadsAfterPublish } from "./publish-item-threads";
@@ -25,7 +26,6 @@ import { type RestatedMinor, splitRestatedMinors } from "./restated-minors";
 import { describeFindings } from "./run-log";
 import type {
   BranchReviewVerdict,
-  FlaggedDecision,
   MinorItem,
   ReReviewVerdict,
   StorySummary,
@@ -458,25 +458,6 @@ export async function gateRepairStep(
 }
 
 /**
- * US-005: the feature's trusted ledger decisions a human still has to confirm. Best effort by
- * design — an unreadable ledger is a warning, never a failed publish — and an empty list means
- * `publishStep` records no field, exactly like an absent step. US-002: each entry carries the line
- * that names the decision, so the id and its summary are one list until `publishStep` splits them.
- */
-async function collectFlaggedDecisions(env: FeatureEnv): Promise<readonly FlaggedDecision[]> {
-  if (!env.steps.flaggedDecisions) return [];
-  try {
-    return await env.steps.flaggedDecisions();
-  } catch (err) {
-    getSafeLogger()?.warn("workflow", "Flagged advisor decisions unavailable", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
-    return [];
-  }
-}
-
-/**
  * nax#2550: HEAD read fail-soft, after a step already did its work. A failed read must not lose that
  * work, so the record just keeps no `head` (done record: it then matches no later HEAD, and the next
  * run does not skip as already finished) or no `lastHead` (a resume falls back to `startHead`).
@@ -502,17 +483,8 @@ export async function publishStep(
   // US-002 (nax#2666): the advisor rules before the single ledger commit, so nothing commits after the
   // push and this local HEAD *is* the pushed head. Threads and CI reads cite it as it is.
   const head = await readHeadSoft(env);
-  const flagged = await collectFlaggedDecisions(env);
-  // US-002: the one list the step returned is split here, in one place, into the ids the record
-  // already carried and the id-to-summary map the open items name a decision by.
-  const flaggedIds = flagged.map((d) => d.id);
-  const flaggedSummaries = Object.fromEntries(flagged.map((d) => [d.id, d.summary]));
-  const threads = await postItemThreadsAfterPublish(
-    env,
-    { ...rec, flaggedDecisions: flaggedIds, flaggedDecisionSummaries: flaggedSummaries },
-    out,
-    head,
-  );
+  const flagged = await carryFlaggedDecisions(rec, await readFlaggedDecisions(env.steps));
+  const threads = await postItemThreadsAfterPublish(env, flagged.record, out, head);
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
@@ -561,12 +533,7 @@ export async function publishStep(
       passed:
         out.pushFailed !== true &&
         featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
-      ...(flaggedIds.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flaggedIds } : {}),
-      // US-002: the map is this read's fact, so it is stated unconditionally — a re-publish that
-      // flags nothing *clears* what an earlier one recorded (the runner deletes a key stated as
-      // `undefined`) instead of leaving a stale summary beside `flaggedDecisions: []`. A record
-      // written before this field existed reads no key at all, which is the same answer.
-      flaggedDecisionSummaries: flaggedIds.length > 0 ? flaggedSummaries : undefined,
+      ...(flagged.patch ?? {}),
       // US-003/B1: only an outcome says whether this publish left the PR without an index, and only
       // a settled outcome says so either way. No outcome (no step, nothing posted, the step threw),
       // and an outcome that could not confirm the index, put no key here, so an earlier `true`

@@ -115,6 +115,18 @@ describe("runBotFix --model refusal", () => {
     expect(load).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledTimes(1);
   });
+
+  // Branch fix B3: `constructor` is inherited from Object.prototype, so the resolver used to answer
+  // it with a function and let the run start. It is no tier, so it is refused here — before the
+  // runtime — exactly like any other unknown name.
+  test("B3: an inherited prototype name is refused before the runtime is created", async () => {
+    expect(await runBotFix({ ...fixInput, model: "constructor" })).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringMatching(/^invalid --model "constructor"/),
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(preRun).not.toHaveBeenCalled();
+  });
 });
 
 describe("runBotReview --model refusal", () => {
