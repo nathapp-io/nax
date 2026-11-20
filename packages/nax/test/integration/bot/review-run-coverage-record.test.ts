@@ -227,3 +227,61 @@ describe("runBotReview coverage record", () => {
     expect(coverageRecords()).toEqual([{ headSha: head, uncovered: [] }]);
   });
 });
+
+describe("a coverage record that could not be written (B2)", () => {
+  /** An index that names an earlier reviewed head, so a complete review would advance past it. */
+  const reviewedIndex: RecordRulingsOutcome = {
+    index: { reviewedHead: reviewedBase, reviewedBase, keys: [] },
+    recorded: [],
+    settled: [],
+    open: [],
+    asked: 0,
+    failed: 0,
+  };
+  const advance = mock<typeof _botReviewDeps.advanceReviewedHead>(async () => ({ kind: "unchanged" }));
+  /** The retry of an earlier review of this same head: the old record still names files it never read. */
+  const retried = async () => {
+    issueComments = [existingRecord()];
+  };
+  const refusesCoverage = (method: "POST" | "PATCH") => (argv: string[]) =>
+    argv.includes(method) && parseCoverageRecord(bodyOf(argv)) !== null;
+
+  beforeEach(() => {
+    outcome = reviewedIndex;
+    Object.assign(_botReviewDeps, { advanceReviewedHead: advance });
+    advance.mockClear();
+  });
+
+  test("AC-14 a refused edit leaves the reviewed head where it was", async () => {
+    await retried();
+    refuse = refusesCoverage("PATCH");
+    expect(await runBotReview(review_)).toMatchObject({ outcome: "posted" });
+    // The premise: this review had to replace the stale record, and that write was refused.
+    expect(coverageWrites()).toHaveLength(1);
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  test("AC-15 a refused post of a first record leaves the reviewed head where it was", async () => {
+    refuse = refusesCoverage("POST");
+    expect(await runBotReview(review_)).toMatchObject({ outcome: "posted" });
+    expect(coverageWrites()).toHaveLength(1);
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  test("AC-16 the write result never reaches the public posted result", async () => {
+    await retried();
+    refuse = refusesCoverage("PATCH");
+    const result = await runBotReview(review_);
+    expect(result).not.toHaveProperty("coverageRecordFailed");
+    if (result.outcome !== "posted") throw new Error(`expected a posted review, got ${result.outcome}`);
+    expect(result.failed).toBe(0);
+  });
+
+  test("AC-17 the same review whose record landed advances the head", async () => {
+    await retried();
+    expect(await runBotReview(review_)).toMatchObject({ outcome: "posted" });
+    // The stale record was replaced by this head's, with nothing left unread.
+    expect(coverageRecords()).toEqual([{ headSha: head, uncovered: [] }]);
+    expect(advance).toHaveBeenCalledTimes(1);
+  });
+});

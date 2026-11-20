@@ -10,6 +10,7 @@ export {
   type CallerRulingsReport,
   loadCallerRulings,
 } from "./caller-rulings";
+export { type CarriedEntry, type CarriedRecord, carriedRecordBody, parseCarriedRecord } from "./carried-record";
 export {
   _checkoutDeps,
   botWorktreePath,
@@ -101,6 +102,8 @@ export {
   renderReviewSummary,
   renderThreadReply,
 } from "./render-comments";
+export { type AdvanceAfterReviewInput, advanceAfterReview } from "./review-advance";
+export { type ReviewCarryInput, reviewCarry } from "./review-carry";
 export {
   _botReviewDeps,
   BOT_REVIEW_GRAPH,

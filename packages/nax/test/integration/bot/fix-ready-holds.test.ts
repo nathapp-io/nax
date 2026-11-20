@@ -9,8 +9,9 @@ import {
   type BotReviewArtifact,
   readyStep,
 } from "@/bot";
+import { carriedRecordBody, carriedRecordKey, carryWidenKey } from "@/bot/carried-record";
 import { _rulingsDeps } from "@/bot/rulings";
-import { withNaxBotMarker } from "@/forge";
+import { NAX_WORKFLOW_PR_MARKER, withNaxBotMarker } from "@/forge";
 import type { FindingTrigger } from "@/workflow/blocking-findings";
 import { markReadyArgv } from "@/workflow/promote";
 
@@ -88,6 +89,62 @@ describe("readyStep pushed-head hold", () => {
     const result = await readyStep(env, { ...pushed, readyOnly: true });
     expect(result.patch.markedReady).toBe(true);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("readyStep carried state after CI", () => {
+  test("an unreadable fresh carry holds the plain PR instead of trusting the snapshot", async () => {
+    const env = draftEnv();
+    spyOn(_fixReportDeps, "waitForChecks").mockImplementation(async () => {
+      spyOn(_fixReportDeps, "listPrComments").mockRejectedValue(new Error("offline"));
+      return greenCi;
+    });
+    const run = spyOn(env.forge, "run");
+    expect((await readyStep(env, readyPass)).patch).toEqual({
+      markedReady: false,
+      readyHeld: "carried findings could not be re-read after CI",
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+  test.each([
+    [false, "signal"],
+    [true, "signal"],
+    [false, "blocker"],
+    [true, "blocker"],
+  ] as const)("holds a new same-head carry during CI (workflow: %s, %s)", async (workflow, kind) => {
+    const headSha = "a".repeat(40);
+    const base = draftEnv();
+    const env = {
+      ...base,
+      info: { ...base.info, headSha, body: workflow ? NAX_WORKFLOW_PR_MARKER : "" },
+      review: { ...base.review, headSha },
+    };
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue({
+      recorded: [],
+      settled: [],
+      open: [],
+      asked: 0,
+      failed: 0,
+      index: { keys: [] },
+    });
+    spyOn(_fixReportDeps, "readHeadGateNames").mockResolvedValue([]);
+    const run = spyOn(env.forge, "run");
+    spyOn(_fixReportDeps, "waitForChecks").mockImplementation(async () => {
+      const record = carriedRecordBody({ headSha, findings: [{ key: "f-new", severity: "important", issue: "Race" }] });
+      const body =
+        kind === "signal"
+          ? withNaxBotMarker("Incomplete", carryWidenKey(headSha))
+          : withNaxBotMarker(record.body, carriedRecordKey(headSha));
+      spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([
+        { id: "new", kind: "comment", author: "bot", body, createdAt: "later" },
+      ]);
+      return greenCi;
+    });
+    const result = await readyStep(env, readyPass);
+    expect(result.patch.markedReady).toBe(false);
+    expect(result.patch.readyHeld).toContain(kind === "signal" ? "carried finding coverage is incomplete" : "f-new");
+    expect(run).not.toHaveBeenCalledWith(markReadyArgv(env.ref.forge, env.info.url), expect.anything());
   });
 });
 

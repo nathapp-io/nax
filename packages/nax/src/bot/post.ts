@@ -2,15 +2,7 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import {
-  editComment,
-  hasNaxWorkflowMarker,
-  postInlineComment,
-  postPrComment,
-  replyToThread,
-  unresolveThread,
-  withNaxBotMarker,
-} from "@/forge";
+import { editComment, postInlineComment, postPrComment, replyToThread, unresolveThread } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
@@ -18,8 +10,11 @@ import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/block
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
+import { type CarriedFinding, carriedOpen } from "./carried-findings";
+import type { CarriedEntry } from "./carried-record";
 import type { BotChecks } from "./checks";
-import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
+import { postCoverageRecord, recordsCodeReview } from "./coverage-record";
+import { postCarriedRecord } from "./post-carried";
 import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import type { BotPushEntry, FindingLineage } from "./push-ledger";
 import { commentKey, findingKey, threadKey } from "./render";
@@ -44,6 +39,7 @@ export type AgreedItem =
         /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
         readonly trigger?: FindingTrigger;
         readonly triggerEvidence?: string;
+        readonly raisedBy?: CarriedEntry["raisedBy"];
         /** US-004/US-005: the push whose lines the finding sits on; absent before any lineage read. */
         readonly lineage?: FindingLineage;
         /** US-005: the lineage of this finding could not be read, which is not the same as none. */
@@ -69,6 +65,12 @@ export interface BotReviewEvent {
   /** Unverified forge logins; consumers must check artifact trust and commenter permissions. */
   readonly disagreedBy: readonly string[];
 }
+
+/**
+ * B1: a finding an earlier review of the already-reviewed head recorded but could not anchor — the
+ * reviewer gave it no line, or the inline write failed — so it has no thread for `mergeEarlier` to carry.
+ */
+export type { CarriedFinding } from "./carried-findings";
 
 export interface BotReviewArtifact {
   readonly version: 1 | 2 | 3;
@@ -150,17 +152,42 @@ export interface PostReviewInput {
     readonly unknown: ReadonlySet<string>;
     readonly unreachable: number;
   };
+  /**
+   * B1: the findings an earlier review of the already-reviewed head recorded, read back from that
+   * review's artifact. Its own review covered only what changed since, so its verdict says nothing about
+   * them; a blocking one is carried into `agreed` and the summary, or readiness at this head would
+   * release a finding nothing has fixed.
+   */
+  readonly carriedFindings?: readonly CarriedFinding[];
+  /**
+   * In-range pushes that may clear a carry if their item cites the review that raised it.
+   */
+  readonly carriedFixPushes?: readonly BotPushEntry[];
   readonly stateDir: string;
   readonly deps: ForgeDeps;
   readonly cwd: string;
 }
-export interface PostReviewOutcome {
+export interface PostReviewCounts {
   readonly earlierAnswered: number;
   readonly inlineFindings: number;
   readonly threadsAnswered: number;
   readonly commentsAnswered: number;
   readonly offLine: number;
   readonly failed: number;
+}
+export interface PostReviewOutcome extends PostReviewCounts {
+  /**
+   * B2: the coverage record for this head did not land, so the PR may still name files an earlier review
+   * of the same head did not read. Dropped from the posted result, but the reviewed head must not advance
+   * on it: the next default review would be conversation-only and could never replace the record.
+   */
+  readonly coverageRecordFailed?: true;
+  /**
+   * B1: the carried-findings record did not land whole, so a finding this review could not re-report may
+   * have no durable record. The reviewed head must not advance on it: the next review would skip the only
+   * changes that could re-raise it.
+   */
+  readonly carriedRecordFailed?: true;
 }
 
 export const BOT_REVIEW_FILENAME = "bot-review.json";
@@ -199,7 +226,7 @@ function lineageFacts(
   return input.lineage?.unknown.has(key) === true ? { lineageUnknown: true } : {};
 }
 
-function agreedItems(input: PostReviewInput): AgreedItem[] {
+function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings
     .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
     .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence }) => {
@@ -215,6 +242,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
         ...(decision === undefined ? {} : { decision }),
         ...(trigger === undefined ? {} : { trigger }),
         ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
+        ...(reviewId === undefined ? {} : { raisedBy: reviewId }),
         ...lineageFacts(input, key),
       };
     });
@@ -240,6 +268,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
     if (!comment || !input.writers?.has(comment.author)) continue;
     items.push({ key: commentKey(comment.id), kind: "comment", issue: comment.body, reason: verdict.reason });
   }
+  items.push(...carriedOpen(input));
   return mergeEarlier(input, items);
 }
 
@@ -308,7 +337,7 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
   return items;
 }
 
-async function persistArtifact(input: PostReviewInput): Promise<void> {
+async function persistArtifact(input: PostReviewInput, reviewId: string | undefined): Promise<void> {
   const artifact: BotReviewArtifact = {
     version: 3,
     ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
@@ -322,7 +351,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     trusted: !input.staticMode,
     intent: input.verdict.intent,
     quality: reviewQuality(input.scope, input.verdict.quality),
-    agreed: agreedItems(input),
+    agreed: agreedItems(input, reviewId),
     ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
     ...(input.lineage === undefined || input.lineage.unreachable === 0
       ? {}
@@ -390,12 +419,13 @@ function collectSummaryOnly(input: PostReviewInput, finding: PrFinding, into: Su
 
 async function postFindings(input: PostReviewInput): Promise<{
   inlineFindings: number;
-  offLine: WorkflowFindingDraft[];
+  reopenFailed: number;
+  offLine: PrFinding[];
   minor: WorkflowFindingDraft[];
   residual: PrFinding[];
 }> {
   const seen = new Set<string>();
-  const offLine: WorkflowFindingDraft[] = [];
+  const offLine: PrFinding[] = [];
   const minor: WorkflowFindingDraft[] = [];
   const residual: PrFinding[] = [];
   const summaryOnly: SummaryOnlyLists = {
@@ -404,6 +434,7 @@ async function postFindings(input: PostReviewInput): Promise<{
     residual,
   };
   let inlineFindings = 0;
+  let reopenFailed = 0;
   for (const finding of input.verdict.findings) {
     if (input.settledKeys?.has(findingKey(finding))) continue;
     if (!finding.file || finding.line === undefined) {
@@ -416,7 +447,10 @@ async function postFindings(input: PostReviewInput): Promise<{
     if (collectSummaryOnly(input, finding, summaryOnly)) continue;
     try {
       if (await writeFinding(input, finding)) inlineFindings++;
-      else offLine.push(finding);
+      else {
+        reopenFailed++;
+        offLine.push(finding);
+      }
     } catch (cause) {
       // A failed edit is not a failed new-line post; do not hide it or duplicate the comment.
       if (input.own.some((own) => own.key === key)) throw cause;
@@ -424,7 +458,7 @@ async function postFindings(input: PostReviewInput): Promise<{
       offLine.push(finding);
     }
   }
-  return { inlineFindings, offLine, minor, residual };
+  return { inlineFindings, reopenFailed, offLine, minor, residual };
 }
 
 /**
@@ -484,6 +518,7 @@ async function postSummary(
     ...(input.buildFailed === undefined ? {} : { buildFailed: input.buildFailed }),
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
+    carried: carriedOpen(input),
     ...threads,
     ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
     ...(input.blockingSource === undefined ? {} : { blockingSource: input.blockingSource }),
@@ -502,49 +537,19 @@ async function postSummary(
   else await postPrComment(input.ref, body, input.deps, input.cwd);
 }
 
-/**
- * Only a real code review of a workflow PR has coverage to record: a static (untrusted) review reads
- * nothing by design, and a conversation-only review owes no file a look.
- */
-function recordsCoverage(input: PostReviewInput): boolean {
-  if (input.staticMode || input.scope === "conversation-only") return false;
-  return hasNaxWorkflowMarker(input.info.body);
-}
-
-/**
- * The record a later readiness check reads back (US-013/US-014): the head this review looked at and the
- * required files it did not read. The summary lists the same files, so the two can never disagree.
- *
- * Best-effort: the record is a claim *about* the review. A forge that refuses the write must not turn a
- * completed review into a failed one, so the failure is logged and the outcome left alone.
- */
-async function postCoverageRecord(input: PostReviewInput): Promise<void> {
-  if (!recordsCoverage(input)) return;
-  try {
-    const body = withNaxBotMarker(
-      renderCoverageRecord({ headSha: input.info.headSha, uncovered: input.unreadFiles ?? [] }),
-      COVERAGE_RECORD_KEY,
-    );
-    const own = input.own.find(({ key }) => key === COVERAGE_RECORD_KEY);
-    if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
-    else await postPrComment(input.ref, body, input.deps, input.cwd);
-  } catch (cause) {
-    getLogger()?.warn("bot-post", "Could not write the review coverage record", {
-      pr: input.ref.number,
-      error: errorMessage(cause),
-    });
-  }
-}
-
 /** Save complete fix inputs before mutation, then publish findings and the final summary. */
 export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
-  await persistArtifact(input);
+  const reviewId = crypto.randomUUID();
+  await persistArtifact(input, recordsCodeReview(input) ? reviewId : undefined);
   const findings = await postFindings(input);
   const threads = await postThreads(input);
   const earlier = await postEarlier(input);
-  const failed = threads.failed + earlier.failed;
+  const failed = threads.failed + earlier.failed + findings.reopenFailed;
   await postSummary(input, findings, { ...threads, failed });
-  await postCoverageRecord(input);
+  const coverageRecorded = await postCoverageRecord(input);
+  // A full rerun can target an already-indexed head: do not replace its carry with an incomplete review.
+  const complete = failed === 0 && coverageRecorded && (input.unreadFiles?.length ?? 0) === 0;
+  const carriedRecorded = await postCarriedRecord(input, findings.offLine, { id: reviewId, complete });
   return {
     inlineFindings: findings.inlineFindings,
     ...threads,
@@ -552,5 +557,7 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
     failed,
     commentsAnswered: input.verdict.comments.length,
     offLine: findings.offLine.length,
+    ...(coverageRecorded ? {} : { coverageRecordFailed: true as const }),
+    ...(carriedRecorded ? {} : { carriedRecordFailed: true as const }),
   };
 }

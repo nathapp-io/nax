@@ -355,7 +355,8 @@ describe("runBotFix", () => {
   });
   test("AC-8 exact head lookup uses runtime output directory", async () => {
     await runBotFix(input);
-    expect(latest).toHaveBeenCalledWith(runtime.outputDir, 42, env.info.headSha);
+    // B4: the lookup matches the whole reference, not just the PR number.
+    expect(latest).toHaveBeenCalledWith(runtime.outputDir, expect.objectContaining({ number: 42 }), env.info.headSha);
   });
   test("AC-9/10 no review refuses before fix or push access", async () => {
     latest.mockImplementation(async () => null);

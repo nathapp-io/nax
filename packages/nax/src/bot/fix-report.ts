@@ -27,6 +27,7 @@ import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
+import { carriedReadiness } from "./carried-hold";
 import {
   type CiWaiverReady,
   FIX_SUMMARY_KEY,
@@ -246,6 +247,8 @@ async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<Ci
     // Rulings and index membership can change without a push while CI runs.
     const { info, user, comments, outcome } = await readReadyRulings(env);
     if (info.headSha !== expectedSha) return { held: "PR head changed since this execution" };
+    const findings = await openFindingHold({ ...env, own: ownComments(comments, user.login) });
+    if (findings) return { held: findings };
     const ready = workflowPrReadiness({
       outcome,
       ci,
@@ -387,7 +390,11 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
  */
 async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   const review = readinessReview(env);
-  const keys = await openKeys(env, blockingKeys(review, reviewBlockingTriggers(env)));
+  const blocking = reviewBlockingTriggers(env);
+  const carried = carriedReadiness(env.own, review.headSha, blocking);
+  if (carried.kind === "held") return carried.reason;
+  const reviewed = blockingKeys(review, blocking);
+  const keys = await openKeys(env, [...reviewed, ...carried.keys.filter((key) => !reviewed.includes(key))]);
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");
@@ -408,6 +415,15 @@ async function plainReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWai
     return { held: `CI ${ci.outcome}: ${ci.detail}` };
   const held = await readyHeadHold(env, state);
   if (held !== undefined) return { held };
+  try {
+    const comments = await _fixReportDeps.listPrComments(env.ref, env.forge, env.repoRoot);
+    const findings = await openFindingHold({ ...env, own: ownComments(comments, env.user.login) });
+    if (findings) return { held: findings };
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not re-read carried findings after CI", { error: errorMessage(error) });
+    return { held: "carried findings could not be re-read after CI" };
+  }
   const waiver = await recordCiWaiver({ env, state, ci, post: _fixReportDeps.postPrComment });
   if (waiver.held !== undefined || waiver.ciWaived === undefined) return waiver;
   const moved = await readyHeadHold(env, state);

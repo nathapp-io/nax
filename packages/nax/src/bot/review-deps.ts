@@ -21,11 +21,13 @@ import { preparePrCheckout } from "./checkout";
 import { prepareInPlaceCheckout } from "./checkout-in-place";
 import { resolveBotChecks } from "./checks";
 import { recordFindingRulings } from "./finding-rulings";
+import { loadLatestCarry } from "./fix-input";
 import { readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
 import { openBotLog } from "./log";
 import { postPrReview } from "./post";
 import { runPrReview } from "./review-step";
+import { advanceReviewedHead } from "./reviewed-head";
 import { recordPrRulings } from "./rulings";
 import { setupBotRuntime } from "./run-setup";
 
@@ -79,6 +81,8 @@ export const _botReviewDeps = {
   recordPrRulings,
   recordFindingRulings,
   postPrReview,
+  advanceReviewedHead,
+  loadLatestCarry,
   async writeJson(path: string, value: unknown): Promise<void> {
     await Bun.write(path, `${JSON.stringify(value, null, 2)}\n`);
   },

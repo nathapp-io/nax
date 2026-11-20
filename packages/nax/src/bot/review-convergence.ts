@@ -113,3 +113,26 @@ export async function reviewHistory(input: ReviewHistoryInput): Promise<ReviewHi
   if (botPushes.length === 0 || input.rangeBase === undefined) return { botPushes };
   return { botPushes, inRange: await pushesInRange(input, input.rangeBase, botPushes) };
 }
+
+/** US-005: the push facts each half of the review environment needs, or nothing to add. */
+interface ReviewPushFacts {
+  readonly prompt: { readonly botPushes?: readonly BotPushEntry[] };
+  readonly post: {
+    readonly botPushes?: readonly BotPushEntry[];
+    readonly worktree?: string;
+    /** In-range candidates; carriedOpen still requires evidence of which review the fix saw. */
+    readonly carriedFixPushes?: readonly BotPushEntry[];
+  };
+}
+
+export async function reviewPushFacts(input: ReviewHistoryInput): Promise<ReviewPushFacts> {
+  const history = await reviewHistory(input);
+  const inRange = history.inRange ?? [];
+  return {
+    prompt: inRange.length > 0 ? { botPushes: inRange } : {},
+    post:
+      history.botPushes.length > 0
+        ? { botPushes: history.botPushes, worktree: input.worktree, carriedFixPushes: inRange }
+        : {},
+  };
+}

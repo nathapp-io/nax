@@ -10,6 +10,7 @@ import type { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { CiWaitResult } from "../workflow/ci-wait";
+import type { ItemIndex } from "../workflow/item-threads";
 import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
@@ -25,12 +26,20 @@ import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
-import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
+import {
+  BOT_REVIEW_FILENAME,
+  type PostReviewCounts,
+  type PostReviewInput,
+  type PostReviewOutcome,
+  reviewQuality,
+} from "./post";
+import { clearCarryWidens } from "./post-carried";
 import { lineageTargets } from "./post-earlier";
-import type { BotPushEntry } from "./push-ledger";
-import { type ReviewHistoryInput, reviewConvergence, reviewHistory } from "./review-convergence";
+import { advanceAfterReview } from "./review-advance";
+import { reviewCarry } from "./review-carry";
+import { reviewConvergence, reviewPushFacts } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
-import { type BotReviewScope, readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
+import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
 import { hasNonWriterAuthor } from "./writers";
@@ -50,7 +59,7 @@ export type BotReviewResult =
       readonly artifactPath: string;
       readonly logPath?: string;
       readonly callerRulings?: CallerRulingsReport;
-    } & PostReviewOutcome)
+    } & PostReviewCounts)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
 export interface BotReviewInput {
@@ -91,26 +100,10 @@ interface ReviewEnv extends ReviewPreparation {
   readonly ctx: PrStepContext;
   readonly review: PrReviewInput;
   readonly post: Omit<PostReviewInput, "verdict">;
-}
-
-/** US-005: the push facts each half of the review environment needs, or nothing to add. */
-interface ReviewPushFacts {
-  readonly prompt: { readonly botPushes?: readonly BotPushEntry[] };
-  readonly post: { readonly botPushes?: readonly BotPushEntry[]; readonly worktree?: string };
-}
-
-/** Only an incremental review has an earlier range whose pushes its prompt must describe. */
-function incrementalBase(scope: BotReviewScope, range: { readonly rangeBase: string }): string | undefined {
-  return scope === "incremental" ? range.rangeBase : undefined;
-}
-
-async function reviewPushFacts(input: Omit<ReviewHistoryInput, "isAncestor">): Promise<ReviewPushFacts> {
-  const history = await reviewHistory({ ...input, isAncestor: _botReviewDeps.isAncestor });
-  const inRange = history.inRange ?? [];
-  return {
-    prompt: inRange.length > 0 ? { botPushes: inRange } : {},
-    post: history.botPushes.length > 0 ? { botPushes: history.botPushes, worktree: input.worktree } : {},
-  };
+  /** The index this review read at preparation; absent when the PR carries none. */
+  readonly reviewedIndex?: ItemIndex;
+  /** The bot's own login, as the forge reports it. */
+  readonly login: string;
 }
 
 /**
@@ -286,7 +279,13 @@ function setupCommands(preparation: ReviewPreparation): string[] {
 async function reviewEnvironment(
   input: BotReviewInput,
   prepared: PreparedReview,
-  context: { ctx: PrStepContext; stateDir: string; cost: BotCostEnv; checks: Omit<ReviewPreparation, "ci"> },
+  context: {
+    ctx: PrStepContext;
+    stateDir: string;
+    cost: BotCostEnv;
+    checks: Omit<ReviewPreparation, "ci">;
+    outputDir: string;
+  },
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
@@ -355,23 +354,34 @@ async function reviewEnvironment(
         setupFailed: preparation.preRunFailed ?? preparation.buildFailed,
         ciFiles: await listCiConfigFiles(checkout.worktree),
       });
-  // One chosen range feeds the review, the summary and the artifact, so no two can disagree.
-  const range =
-    input.full === true
-      ? { rangeBase: checkout.mergeBase }
-      : await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor);
-  const scope = reviewScopeOf({ ...range, mergeBase: checkout.mergeBase });
+  // One chosen range feeds the review, the summary and the artifact; a carry record this head cannot
+  // read widens it back to the merge base (B3).
+  const { range, scope, carried } = await reviewCarry({
+    outputDir: context.outputDir,
+    ref,
+    own: items.own,
+    index: reviewedIndex,
+    full: input.full === true,
+    checkout,
+    head: info.headSha,
+    load: _botReviewDeps.loadLatestCarry,
+    isAncestor: _botReviewDeps.isAncestor,
+  });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
+    isAncestor: _botReviewDeps.isAncestor,
     own: items.own,
     worktree: checkout.worktree,
     head: info.headSha,
-    rangeBase: incrementalBase(scope, range),
+    // Only an incremental review has an earlier range whose pushes its prompt must describe.
+    rangeBase: scope === "incremental" ? range.rangeBase : undefined,
   });
   return {
     ...preparation,
     cost: context.cost,
     ctx,
+    reviewedIndex,
+    login: items.login,
     review: {
       mergeBase: checkout.mergeBase,
       ...range,
@@ -417,6 +427,7 @@ async function reviewEnvironment(
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
+      carriedFindings: carried,
       stateDir,
       deps: _botReviewDeps.forge,
       cwd: repoRoot,
@@ -424,6 +435,24 @@ async function reviewEnvironment(
       ...push.post,
     },
   };
+}
+
+/** US-002: only a complete review advances the head; `review-advance.ts` holds the whole rule. */
+async function advance(env: ReviewEnv, state: ReviewState): Promise<void> {
+  const referenced = await advanceAfterReview({
+    posted: state.posted,
+    unreadFiles: state.unreadFiles,
+    reviewedIndex: env.reviewedIndex,
+    scope: env.post.scope,
+    ref: env.post.ref,
+    login: env.login,
+    head: env.post.info.headSha,
+    mergeBase: env.review.mergeBase,
+    deps: _botReviewDeps.forge,
+    cwd: env.post.cwd,
+    advance: _botReviewDeps.advanceReviewedHead,
+  });
+  if (referenced && env.post.scope === "full") await clearCarryWidens(env.post);
 }
 
 async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRuntime>): Promise<BotReviewResult> {
@@ -449,11 +478,13 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     intent: state.verdict.intent,
     quality,
   });
+  const { coverageRecordFailed, carriedRecordFailed, ...posted } = state.posted;
+  await advance(env, state);
   return {
     outcome: "posted",
     spentUsd: env.cost.spentUsd(),
     limitUsd: env.cost.limitUsd,
-    ...state.posted,
+    ...posted,
     intent: state.verdict.intent,
     quality,
     staticMode: env.review.staticMode,
@@ -506,6 +537,7 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
       checks,
       ctx: context.ctx,
       stateDir,
+      outputDir: runtime.outputDir,
       cost: botCostEnv(config, runtime, input.costLimitUsd),
     });
     const result = await executeReview(env, runtime);

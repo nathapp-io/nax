@@ -16,6 +16,7 @@ import { _workflowDeps } from "../workflow/step-context";
 import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
+import { withCarriedFixFindings } from "./fix-carried";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
 import {
@@ -403,7 +404,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       agentName: resolveDefaultAgent(config),
       pr: { forge: ref.forge, number: ref.number, base: checkout.mergeBase, head: info.headSha },
     });
-    const review = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha);
+    const review = await deps.loadLatestReview(runtime.outputDir, ref, info.headSha);
     if (!review)
       return finishFix(
         {
@@ -413,7 +414,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         log,
       );
     // A conversation-only review reads no code; the head's readiness findings live in its code review.
-    const codeReview = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha, { codeOnly: true });
+    const codeReview = await deps.loadLatestReview(runtime.outputDir, ref, info.headSha, { codeOnly: true });
     if (!input.readyOnly) {
       const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
       if (!access.ok)
@@ -451,9 +452,10 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      const result = await executeFix(env, runtime, input);
+      const fixEnv = input.readyOnly ? env : await withCarriedFixFindings(env);
+      const result = await executeFix(fixEnv, runtime, input);
       if (!checkout.inPlace && !input.readyOnly && result.outcome !== "refused")
-        await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
+        await persistSavedFix({ env: fixEnv, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
       return finishFix(result, log);
     } finally {
       await preserveFixReport(env.ctx.reportPath, stateDir);

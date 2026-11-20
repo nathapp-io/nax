@@ -338,7 +338,7 @@ describe("postPrReview re-raised resolved findings", () => {
         "Could not reopen a re-raised finding thread",
         expect.objectContaining({ key, threadId: "T1", error: expect.stringContaining("write failed") }),
       );
-      expect(result).toMatchObject({ inlineFindings: 0, offLine: 1 });
+      expect(result).toMatchObject({ inlineFindings: 0, offLine: 1, failed: 1 });
       expect(summaryBody()).toContain("### Findings not on a changed line\n- **Important** `a.ts:3` Leak");
       expect(run.mock.calls).toHaveLength(3);
     } finally {

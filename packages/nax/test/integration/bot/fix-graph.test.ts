@@ -15,6 +15,7 @@ let calls: BotFixStep[];
 let writes: { path: string; value: unknown }[];
 
 beforeEach(() => {
+  spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
   calls = [];
   writes = [];
   const env = makeBotFixEnv();

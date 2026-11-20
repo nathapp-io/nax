@@ -21,6 +21,7 @@ export const SavedFixSchema = z.object({
   sha: shaSchema,
   headSha: shaSchema,
   agreedKeys: z.array(z.string()),
+  findingProvenance: z.array(z.object({ key: z.string().min(1), raisedBy: z.string().min(1) })).optional(),
   outcome: z.enum(SAVABLE_OUTCOMES),
   savedAt: z.string().datetime(),
 });
@@ -141,11 +142,26 @@ export async function reuseSavedFix(input: {
       logFailure("checkout", env.ref.number, result.stderr || `git exited ${result.exitCode}`);
       return initial;
     }
-    return { step: "check", timings: {}, reusedFix: entry.sha, fixSha: entry.sha, agreedCount: keys.length };
+    return {
+      step: "check",
+      timings: {},
+      reusedFix: entry.sha,
+      fixSha: entry.sha,
+      agreedCount: keys.length,
+      ...(entry.findingProvenance === undefined ? {} : { reusedFindingProvenance: entry.findingProvenance }),
+    };
   } catch (error) {
     logFailure("reuse", env.ref.number, error);
     return initial;
   }
+}
+
+function findingProvenance(env: BotFixEnv, state: BotFixState): SavedFix["findingProvenance"] {
+  if (state.reusedFix !== undefined) return state.reusedFindingProvenance?.slice();
+  const entries = env.review.agreed.flatMap((item) =>
+    item.kind === "finding" && item.raisedBy !== undefined ? [{ key: item.key, raisedBy: item.raisedBy }] : [],
+  );
+  return entries.length === 0 ? undefined : entries;
 }
 
 /** Called only after the graph, while its checkout and logger are still alive. */
@@ -176,6 +192,7 @@ export async function persistSavedFix(input: {
         sha,
         headSha: env.info.headSha,
         agreedKeys: env.review.agreed.map((item) => item.key).sort(),
+        findingProvenance: findingProvenance(env, state),
         outcome: outcome.data,
         savedAt: new Date().toISOString(),
       },

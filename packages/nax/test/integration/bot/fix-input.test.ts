@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import * as bot from "@/bot";
 import { resolveWorkflowConfig } from "@/config";
+import type { PrRef } from "@/forge";
 import { workflowBranchFixOp } from "@/operations";
 import * as workflow from "@/workflow";
 import { _workflowDeps } from "@/workflow/step-context";
 
 const original = { ..._workflowDeps };
 const dirs: string[] = [];
+/** The PR every artifact in this file belongs to; the loader matches the whole reference (B4). */
+const REF: PrRef = { forge: "github", host: "github.com", repo: "o/r", number: 42 };
 afterEach(async () => {
   Object.assign(_workflowDeps, original);
   await Promise.all(dirs.splice(0).map(cleanupTempDir));
@@ -22,7 +25,7 @@ function temp(): string {
 function artifact(headSha: string, trusted = true): bot.BotReviewArtifact {
   return {
     version: 1,
-    pr: { forge: "github", host: "github.com", repo: "o/r", number: 42 },
+    pr: REF,
     headSha,
     trusted,
     intent: "pass",
@@ -41,20 +44,20 @@ describe("loadLatestReview", () => {
     const dir = temp();
     const review = { ...artifact("h1"), version, ...(version === 2 ? { checks: null, events: [] } : {}) };
     await writeReview(dir, "only", review, 100);
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(review);
-    expect(await bot.loadLatestReview(dir, 42, "other")).toBeNull();
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(review);
+    expect(await bot.loadLatestReview(dir, REF, "other")).toBeNull();
   });
   test("AC-1 returns the newest exact-head artifact regardless of trusted", async () => {
     const dir = temp();
     await writeReview(dir, "old", artifact("h1"), 100);
     await writeReview(dir, "new", artifact("h1", false), 200);
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(artifact("h1", false));
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(artifact("h1", false));
   });
   test("AC-2 ignores newer mismatched heads", async () => {
     const dir = temp();
     await writeReview(dir, "old", artifact("h1"), 100);
     await writeReview(dir, "new", artifact("h0"), 200);
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(artifact("h1"));
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(artifact("h1"));
   });
   test.each([
     ["AC-3 malformed JSON", "{bad"],
@@ -64,10 +67,38 @@ describe("loadLatestReview", () => {
   ])("ignores %s", async (_label, content) => {
     const dir = temp();
     await writeReview(dir, "only", content, 100);
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toBeNull();
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toBeNull();
   });
   test("AC-5 returns null without the PR directory", async () => {
-    expect(await bot.loadLatestReview(temp(), 42, "h1")).toBeNull();
+    expect(await bot.loadLatestReview(temp(), REF, "h1")).toBeNull();
+  });
+  test("B4 refuses an artifact another repository at the same number and head wrote", async () => {
+    const dir = temp();
+    const foreign: bot.BotReviewArtifact = {
+      ...artifact("h1"),
+      pr: { ...REF, repo: "other/repo" },
+    };
+    await writeReview(dir, "only", foreign, 100);
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toBeNull();
+    // The artifact of this PR, older, is still the one it loads.
+    await writeReview(dir, "mine", artifact("h1"), 50);
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(artifact("h1"));
+  });
+  test("B4 refuses an artifact that records no reference at all", async () => {
+    const dir = temp();
+    const anonymous = { version: 1, headSha: "h1", agreed: [] };
+    await writeReview(dir, "only", anonymous, 100);
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toBeNull();
+  });
+  test("B3 skips an artifact whose agreed list is not a list", async () => {
+    const dir = temp();
+    await writeReview(dir, "broken", { ...artifact("h1"), agreed: "leak" }, 200);
+    await writeReview(dir, "older", artifact("h1"), 100);
+    // The unreadable artifact is skipped, not read as a review that found nothing.
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(artifact("h1"));
+    const only = temp();
+    await writeReview(only, "broken", { ...artifact("h1"), agreed: "leak" }, 200);
+    expect(await bot.loadLatestReview(only, REF, "h1")).toBeNull();
   });
   test("saved-checks round trip keeps a command list with blank entries", async () => {
     const dir = temp();
@@ -82,7 +113,7 @@ describe("loadLatestReview", () => {
       events: [],
     };
     await writeReview(dir, "only", review, 100);
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toEqual(review);
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toEqual(review);
   });
   test.each([
     ["all entries blank", ["", " "]],
@@ -100,7 +131,7 @@ describe("loadLatestReview", () => {
       },
       100,
     );
-    expect(await bot.loadLatestReview(dir, 42, "h1")).toBeNull();
+    expect(await bot.loadLatestReview(dir, REF, "h1")).toBeNull();
   });
 });
 

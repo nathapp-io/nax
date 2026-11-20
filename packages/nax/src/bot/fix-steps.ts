@@ -89,6 +89,8 @@ export interface BotFixState extends GraphState<BotFixStep> {
   /** The CI waiver the ready pass recorded before readying the PR (US-007). */
   readonly ciWaived?: { readonly checks: readonly string[]; readonly reason: string };
   readonly reusedFix?: string;
+  /** The reviews the saved patch actually worked from; older saves may not have this evidence. */
+  readonly reusedFindingProvenance?: readonly { readonly key: string; readonly raisedBy: string }[];
   readonly fixSha?: string;
   readonly fixFailure?: string;
   readonly agreedCount?: number;

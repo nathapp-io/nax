@@ -31,6 +31,10 @@ const SHORT_SHA_CHARS = 7;
 const MAX_REPLY_ID_CHARS = 20;
 const ITEM_KEY_PATTERN = /^w-([A-Za-z0-9._:-]+)\.[a-f0-9]{8}$/;
 const SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
+/** The index body's first line: how many items it lists and how many of them are settled. */
+const MODERN_COUNT_LINE = /^nax workflow items: (\d+) \((\d+) settled\)$/;
+/** The first line the older writers wrote: an item count, and no settled count at all. */
+const LEGACY_COUNT_LINE = /^nax workflow open items: (\d+)$/;
 const REPLY_INSTRUCTION =
   "Rule on it by replying: fixed <sha>, waive: <reason>, confirm, override: <reason>, or verified. Any other reply from a collaborator is read as a ruling only when its meaning is clear.";
 const CHANGE_INSTRUCTION = "To change it, reply on this thread.";
@@ -257,10 +261,22 @@ export function renderItemIndex(index: ItemIndex, settled = 0): string {
   ].join("\n");
 }
 
+/**
+ * US-001: the settled count of an index body. `parseItemIndex` reads the count only to validate
+ * it, so a writer that re-renders the index needs this to keep the count it found. A legacy first
+ * line carries no settled count, so it has none: zero.
+ */
+export function parseItemIndexSettled(body: string): number | null {
+  if (parseItemIndex(body) === null) return null;
+  const [countLine] = bodyLines(body);
+  const modern = MODERN_COUNT_LINE.exec(countLine ?? "");
+  return modern ? Number(modern[2]) : 0;
+}
+
 export function parseItemIndex(body: string): ItemIndex | null {
   const [countLine, headLine, ...rest] = bodyLines(body);
-  const modern = /^nax workflow items: (\d+) \((\d+) settled\)$/.exec(countLine ?? "");
-  const count = modern?.[1] ?? /^nax workflow open items: (\d+)$/.exec(countLine ?? "")?.[1];
+  const modern = MODERN_COUNT_LINE.exec(countLine ?? "");
+  const count = modern?.[1] ?? LEGACY_COUNT_LINE.exec(countLine ?? "")?.[1];
   if (count === undefined || Number(modern?.[2] ?? 0) > Number(count)) return null;
   if (!headLine?.startsWith("Reviewed head: ")) return null;
   const head = validSha(headLine.slice("Reviewed head: ".length));

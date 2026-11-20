@@ -47,11 +47,20 @@ export function pushEntry(env: BotFixEnv, state: BotFixState): BotPushEntry | un
     base: env.info.headSha,
     sha: state.pushedSha,
     at: new Date().toISOString(),
-    items: env.review.agreed.map((item) => ({
-      key: item.key,
-      generation: item.kind === "finding" ? (item.lineage?.generation ?? 0) : 0,
-      issue: ledgerIssue(item.issue),
-    })),
+    items: env.review.agreed.map((item) => {
+      const raisedBy =
+        item.kind !== "finding"
+          ? undefined
+          : state.reusedFix === undefined
+            ? item.raisedBy
+            : state.reusedFindingProvenance?.find(({ key }) => key === item.key)?.raisedBy;
+      return {
+        key: item.key,
+        generation: item.kind === "finding" ? (item.lineage?.generation ?? 0) : 0,
+        issue: ledgerIssue(item.issue),
+        ...(raisedBy === undefined ? {} : { raisedBy }),
+      };
+    }),
   };
 }
 
