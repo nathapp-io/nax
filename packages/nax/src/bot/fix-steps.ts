@@ -17,7 +17,7 @@ import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
-import { findingFactLines, outsideDeclaredGrowth } from "./fix-facts";
+import { findingFactLines, type LineagePushFact, lineagePushFacts, outsideDeclaredGrowth } from "./fix-facts";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
@@ -210,18 +210,23 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
  * readiness, and the lines earlier bot pushes added outside the feature's declared files. The facts
  * come from the review artifact that decided this fix and from the bot's own ledger; nothing here
  * decides anything, and a fact that cannot be read is simply absent.
+ *
+ * #2998: a push several findings sit on is named once, beside the per-finding lines, instead of once
+ * per parent on every finding's `Lineage:` line.
  */
 async function fixPromptFacts(
   env: BotFixEnv,
   prdPath: string | undefined,
 ): Promise<{
   readonly findingFacts: readonly { readonly id: string; readonly lines: readonly string[] }[];
+  readonly lineagePushes?: readonly LineagePushFact[];
   readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
 }> {
   // US-004/B1: the bot's recorded pushes — the summary's block plus the append-only copy each push
   // posts, so a summary rewrite that dropped an entry cannot change what the fixer is told.
   const entries = ownLedgerEntries(env.own);
   const blocking = reviewBlockingTriggers(env);
+  const lineagePushes = lineagePushFacts(env.review.agreed, entries);
   const growth = await outsideDeclaredGrowth({
     ...(prdPath === undefined ? {} : { prdPath }),
     worktree: env.checkout.worktree,
@@ -232,6 +237,7 @@ async function fixPromptFacts(
       id: item.key,
       lines: findingFactLines(item, entries, blocking),
     })),
+    ...(lineagePushes.length === 0 ? {} : { lineagePushes }),
     ...(growth === undefined ? {} : { outsideGrowth: growth }),
   };
 }

@@ -207,6 +207,72 @@ describe("fixStep facts (US-006)", () => {
   });
 });
 
+/** #2998: two findings sit on the lines of the same earlier bot push, and the ledger holds its issues. */
+const LINEAGE_PUSH = "0123456789abcdef0123456789abcdef01234567";
+const LINEAGE_PUSH_SHORT = LINEAGE_PUSH.slice(0, 7);
+
+const lineageAgreed: readonly bot.AgreedItem[] = [
+  {
+    kind: "finding",
+    key: "f-1",
+    severity: "important",
+    issue: "Lock leaks again",
+    file: "a.ts",
+    line: 3,
+    lineage: { generation: 3, parents: ["p-1", "p-2"], pushSha: LINEAGE_PUSH },
+  },
+  {
+    kind: "finding",
+    key: "f-2",
+    severity: "minor",
+    issue: "Claim files leak",
+    file: "b.ts",
+    line: 9,
+    lineage: { generation: 3, parents: ["p-1", "p-2"], pushSha: LINEAGE_PUSH },
+  },
+];
+
+/** A PR whose published `fix-summary` records the push both findings' lineages name. */
+function envWithLineage(): bot.BotFixEnv {
+  const base = environment(lineageAgreed);
+  const body = withPushLedger("", [
+    {
+      base: "base-0",
+      sha: LINEAGE_PUSH,
+      at: "2026-01-01T00:00:00Z",
+      items: [
+        { key: "p-1", generation: 0, issue: "lock leaks" },
+        { key: "p-2", generation: 0, issue: "claim files leak" },
+      ],
+    },
+  ]);
+  return {
+    ...base,
+    own: [{ key: "fix-summary", comment: { id: "1", kind: "comment", author: "bot", body, createdAt: "" } }],
+  };
+}
+
+describe("fixStep per-push lineage facts (#2998)", () => {
+  const heading = `Earlier nax bot fix push ${LINEAGE_PUSH_SHORT} was for:`;
+
+  test("AC-16: one earlier push is named once however many findings sit on it", async () => {
+    const run = fakePromptFix();
+    await bot.fixStep(envWithLineage(), state());
+    expect(promptOf(run).split(heading)).toHaveLength(2);
+  });
+
+  test("AC-17: each finding's fact block carries exactly one Lineage line", async () => {
+    const run = fakePromptFix();
+    await bot.fixStep(envWithLineage(), state());
+    const blocks = factsSection(promptOf(run)).split(/\n(?=- f-\d+:)/);
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((block) => block.split("\n").filter((line) => line.startsWith(`  Lineage:`)))).toEqual([
+      [`  Lineage: generation 3, on lines added by nax bot fix ${LINEAGE_PUSH_SHORT} for p-1, p-2`],
+      [`  Lineage: generation 3, on lines added by nax bot fix ${LINEAGE_PUSH_SHORT} for p-1, p-2`],
+    ]);
+  });
+});
+
 describe("checkStep", () => {
   test("US-002 AC-8: rejects pinned instruction edits before gates", async () => {
     bot._fixStepsDeps.changedPaths = async () => ["AGENTS.md", "src/a.ts"];

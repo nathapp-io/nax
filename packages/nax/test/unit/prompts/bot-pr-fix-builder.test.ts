@@ -147,6 +147,49 @@ describe("the repair verification rule in the bot fix prompt (US-002)", () => {
 });
 
 /**
+ * #2998: a push several findings sit on is listed once, in the facts section, instead of once per
+ * finding per parent. The heading names the push; each of its items follows at the fact indent.
+ */
+describe("the per-push lineage facts in the bot fix prompt (#2998)", () => {
+  const facts = (text: string): string => section(text, "Facts about these findings", "The bar");
+  const push = { sha: "9a87207", items: [{ key: "w-D-1", issue: "add a lock" }, { key: "w-D-2" }] };
+  const heading = "Earlier nax bot fix push 9a87207 was for:";
+
+  test("AC-12: a push's items render a facts section with the push heading", () => {
+    const text = prompts.buildBotPrFixPrompt({ ...base, lineagePushes: [push] });
+    expect(text).toContain("## Facts about these findings");
+    expect(facts(text).split("\n")).toContain(heading);
+  });
+
+  test("AC-13: each item follows the push heading at the builder's fact indent", () => {
+    const lines = facts(prompts.buildBotPrFixPrompt({ ...base, lineagePushes: [push] })).split("\n");
+    expect(lines.slice(lines.indexOf(heading) + 1)).toEqual(["  - w-D-1: add a lock", "  - w-D-2"]);
+  });
+
+  test("AC-14: the push lines follow every finding block and precede the growth line", () => {
+    const body = facts(
+      prompts.buildBotPrFixPrompt({
+        ...base,
+        findingFacts: [
+          { id: "f-1", lines: ["Lineage: generation 3, on lines added by nax bot fix 9a87207 for w-D-1, w-D-2"] },
+          { id: "f-2", lines: ["Trigger: normal"] },
+        ],
+        lineagePushes: [push],
+        outsideGrowth: [{ path: "src/c.ts", added: 20 }],
+      }),
+    );
+    const pushAt = body.indexOf(heading);
+    expect(pushAt).toBeGreaterThan(body.indexOf("- f-2:"));
+    expect(pushAt).toBeGreaterThan(body.indexOf("- f-1:"));
+    expect(body.indexOf("Lines added by earlier nax bot fix pushes")).toBeGreaterThan(pushAt);
+  });
+
+  test("AC-15: an empty lineagePushes with no other fact renders no section", () => {
+    expect(prompts.buildBotPrFixPrompt({ ...base, lineagePushes: [] })).not.toContain("## Facts about these findings");
+  });
+});
+
+/**
  * US-003: a fix can never push a protected path — `fixProtectedPaths` refuses it after the session —
  * so the prompt says so before the agent spends time on an item it cannot land.
  */
