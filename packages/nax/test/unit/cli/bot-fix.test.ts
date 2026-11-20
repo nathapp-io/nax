@@ -242,6 +242,44 @@ describe("US-001 ready-only CLI pass", () => {
   });
 });
 
+describe("US-005 fix-failed reporting", () => {
+  test("AC-9 prints fix-failed with the session's failure, not the bare outcome", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: boom"]);
+  });
+  test("AC-10 keeps exit code two for a failed fix session", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {} };
+    await run(["42"]);
+    expect(exits).toEqual([2]);
+  });
+  test("AC-11 prints only the first line of a multi-line failure", async () => {
+    result = { outcome: "fix-failed", fixFailure: "line one\nline two", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+  test("AC-12 still reports a bare no-change outcome", async () => {
+    result = { outcome: "no-change", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["no-change"]);
+  });
+  test("AC-13 still exits two for no-change", async () => {
+    result = { outcome: "no-change", step: "done", timings: {} };
+    await run(["42"]);
+    expect(exits).toEqual([2]);
+  });
+  test("caps the printed cause at 300 characters", async () => {
+    result = { outcome: "fix-failed", fixFailure: "x".repeat(400), step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual([`fix-failed: ${"x".repeat(300)}`]);
+  });
+  test("still prints the log path, where the full failure lives", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {}, logPath: "/x/bot.jsonl" };
+    await run(["42"]);
+    expect(stdout.at(-1)).toBe("nax bot fix: log /x/bot.jsonl");
+  });
+});
+
 describe("US-016 fix CLI log", () => {
   test("AC-21 prints log path last on success", async () => {
     result = { outcome: "nothing", step: "done", timings: {}, logPath: "/x/bot.jsonl" };

@@ -54,6 +54,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "pushed"
     | "nothing"
     | "no-change"
+    | "fix-failed"
     | "protected"
     | "no-gates"
     | "gates-failed"
@@ -280,17 +281,31 @@ async function unsafeTree(env: BotFixEnv, state: BotFixState): Promise<StepResul
   };
 }
 
-export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
-  const unsafe = await unsafeTree(env, _state);
+export async function checkStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
+  const unsafe = await unsafeTree(env, state);
   if (unsafe) return unsafe;
   // changedPaths uses --no-renames: a move out of a protected directory is still a protected edit.
   const changed = await _fixStepsDeps.changedPaths(env.checkout.worktree, env.checkout.startHead ?? env.info.headSha);
-  if (changed.length === 0) return { patch: { changed, outcome: "no-change" }, exit: "no-change" };
+  if (changed.length === 0) return noChanges(env, state, changed);
   const protectedFiles = fixProtectedPaths(changed);
   if (protectedFiles.length > 0) {
     return { patch: { changed, protectedFiles, outcome: "protected" }, exit: "protected" };
   }
   return { patch: { changed }, exit: "changed" };
+}
+
+/**
+ * #2999: a session that failed and changed nothing is a failure, not a no-op — `no-change` says the
+ * fixer looked and had nothing to do, and the two are the same result otherwise. A failed session that
+ * did change files is untouched by this: the gates decide, and the summary still names the failure.
+ */
+function noChanges(env: BotFixEnv, state: BotFixState, changed: readonly string[]): StepResult<BotFixState> {
+  const failure = state.fixFailure;
+  if (failure === undefined || failure === "") {
+    return { patch: { changed, outcome: "no-change" }, exit: "no-change" };
+  }
+  getLogger()?.warn("bot-fix", "Fix session failed", { storyId: "_bot", pr: env.info.number, failure });
+  return { patch: { changed, outcome: "fix-failed" }, exit: "fix-failed" };
 }
 
 export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {

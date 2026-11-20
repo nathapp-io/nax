@@ -155,7 +155,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     check: {
       kind: "git",
       produces: ["changed", "protectedFiles", "outcome", "recoveryPath"],
-      exits: ["no-change", "protected", "changed", "dirty"],
+      exits: ["no-change", "fix-failed", "protected", "changed", "dirty"],
       transitions: [{ on: "changed", to: "gates" }, { to: "report" }],
       run: (env, state) => _botFixDeps.checkStep(env, state),
     },

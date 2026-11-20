@@ -176,6 +176,15 @@ describe("renderFixSummary", () => {
     expect(body).not.toContain("https://");
     expect(body).not.toContain("x".repeat(501));
   });
+  test("US-005 AC-8: a failed fix session says it failed rather than that it changed nothing", () => {
+    expect(renderFixSummary({ ...state, outcome: "fix-failed", fixFailure: "boom" })).toContain(
+      "The fix session failed before changing anything; nothing pushed.",
+    );
+  });
+  test("US-005 AC-8: the fix-failed line replaces the no-change wording", () => {
+    const body = renderFixSummary({ ...state, outcome: "fix-failed", fixFailure: "boom" });
+    expect(body).not.toContain("The fix session changed nothing; nothing pushed.");
+  });
   test("marks the summary identity", () => {
     expect(parseNaxBotMarker(renderFixSummary({ ...state, outcome: "nothing" }))).toEqual({ key: "fix-summary" });
   });

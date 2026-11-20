@@ -2,6 +2,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
 import type {
   BotFixCycleResult,
+  BotFixResult,
   BotFixState,
   loadBotDecisions,
   loadCallerRulings,
@@ -183,7 +184,7 @@ async function fixCyclePass(input: BotInput, options: BotFixOptions, deps: BotCl
   });
   const result = cycle.fix;
   if (result.outcome !== "pushed" && result.outcome !== "nothing") {
-    deps.logErr("reason" in result ? result.reason : result.outcome);
+    deps.logErr(failureReason(result));
     if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
     return 2;
   }
@@ -203,6 +204,22 @@ async function fixCyclePass(input: BotInput, options: BotFixOptions, deps: BotCl
 function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
   if (outcome === "pushed") return `pushed ${sha?.slice(0, SHORT_SHA_LENGTH)}`;
   return sha ? `nothing to fix; pushed advisor ledger ${sha.slice(0, SHORT_SHA_LENGTH)}` : "nothing to fix";
+}
+
+/** How much of a failed fix session's cause reaches the terminal; the bot log holds all of it. */
+const MAX_FIX_FAILURE_STDERR_CHARS = 300;
+
+/**
+ * #2999: a `fix-failed` outcome is not self-explanatory — a script cannot tell it from a clean no-op
+ * otherwise — so stderr names the cause. Only its first line, and only its first
+ * `MAX_FIX_FAILURE_STDERR_CHARS` characters: a session failure is often a whole stack trace, and the
+ * full text is a JSON field in `bot.jsonl`.
+ */
+function failureReason(result: BotFixResult): string {
+  if ("reason" in result) return result.reason;
+  if (result.outcome !== "fix-failed" || result.fixFailure === undefined) return result.outcome;
+  const [first = ""] = result.fixFailure.split("\n");
+  return `fix-failed: ${first.slice(0, MAX_FIX_FAILURE_STDERR_CHARS)}`;
 }
 
 /** How the ready pass reads to a human: waived, readied, held for a reason, or not a draft at all. */

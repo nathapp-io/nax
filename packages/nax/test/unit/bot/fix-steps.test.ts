@@ -32,6 +32,51 @@ describe("checkStep", () => {
   });
 });
 
+/** A safe tree whose diff is `changed` — the only two reads the check step makes. */
+async function checkEnvWith(changed: readonly string[]): Promise<BotFixEnv> {
+  _fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+  _fixStepsDeps.changedPaths = async () => [...changed];
+  return makeBotFixEnv();
+}
+
+/** #2999: a session that failed and left the tree untouched is a failure, not a no-op. */
+describe("checkStep after a failed fix session (#2999)", () => {
+  test("US-005 AC-1: a failed session that changed nothing is fix-failed, not no-change", async () => {
+    expect(await checkStep(await checkEnvWith([]), { ...state, fixFailure: "boom" })).toEqual({
+      patch: { changed: [], outcome: "fix-failed" },
+      exit: "fix-failed",
+    });
+  });
+  test("US-005 AC-2: the failure is warned on bot-fix with its cause", async () => {
+    const warn = spyOn(getLogger(), "warn");
+    try {
+      await checkStep(await checkEnvWith([]), { ...state, fixFailure: "boom" });
+      expect(warn).toHaveBeenCalledWith("bot-fix", "Fix session failed", {
+        storyId: "_bot",
+        pr: 42,
+        failure: "boom",
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  test("US-005 AC-3: a session that changed nothing without failing stays no-change", async () => {
+    expect(await checkStep(await checkEnvWith([]), state)).toEqual({
+      patch: { changed: [], outcome: "no-change" },
+      exit: "no-change",
+    });
+  });
+  test("US-005 AC-4: a failed session that left changes still goes to the gates", async () => {
+    expect(await checkStep(await checkEnvWith(["src/a.ts"]), { ...state, fixFailure: "boom" })).toEqual({
+      patch: { changed: ["src/a.ts"] },
+      exit: "changed",
+    });
+  });
+  test("an empty failure string is no failure at all", async () => {
+    expect((await checkStep(await checkEnvWith([]), { ...state, fixFailure: "" })).exit).toBe("no-change");
+  });
+});
+
 describe("pushStep", () => {
   test.each([0, 1])("US-008 AC-13/15: leased temporary push exits %s", async (exitCode) => {
     const base = makeBotFixEnv();

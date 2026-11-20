@@ -50,7 +50,9 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     gateRepairRounds: (state.gateRepairRounds ?? 0) + 1,
     repairMode,
     fixSha: headBefore,
-    ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
+    // #2999: `check` reads the latest session's failure, so a repair that ran cleanly has to clear the
+    // earlier one — a stated `undefined` is how `runStepGraph` removes the field.
+    fixFailure: result.failure,
     ...(result.dirty ? { fixDirty: true } : {}),
   };
   if (repairMode === "prepare") {
