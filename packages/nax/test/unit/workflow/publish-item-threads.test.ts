@@ -351,7 +351,7 @@ describe("publishStep item-thread seam", () => {
 
 test("publish indexes the same flagged decisions as its persisted record", async () => {
   const h = harness({ ...published, reasons: ["flagged advisor decision"] });
-  h.env.steps.flaggedDecisions = async () => ["D1"];
+  h.env.steps.flaggedDecisions = async () => [{ id: "D1", summary: "a summary" }];
   const out = await publishStep(h.env, h.env.record);
   const posted = h.inputs[0]?.record;
   expect(posted?.flaggedDecisions).toEqual(["D1"]);
@@ -362,6 +362,17 @@ test("publish indexes the same flagged decisions as its persisted record", async
       .map(itemKey);
   expect(keys(posted)).toEqual(keys({ ...h.env.record, ...out.patch }));
   expect(buildOpenItems(posted).map((item) => item.id)).toContain("D1");
+});
+
+// US-002: the item threads are posted from a record the publish step builds, so the summaries have
+// to reach *that* record too — otherwise the thread's issue text and the persisted one diverge and
+// the posted key would not match the key the next publish derives.
+test("AC-16: the posted record carries the flagged decisions' summaries", async () => {
+  const h = harness({ ...published, reasons: ["flagged advisor decision"] });
+  h.env.steps.flaggedDecisions = async () => [{ id: "D-1", summary: "Keep the lock" }];
+  await publishStep(h.env, h.env.record);
+  const posted = h.inputs[0]?.record;
+  expect(posted?.flaggedDecisionSummaries).toEqual({ "D-1": "Keep the lock" });
 });
 
 test("publish preserves item-thread failure counts in its ledger", async () => {

@@ -25,6 +25,7 @@ import { type RestatedMinor, splitRestatedMinors } from "./restated-minors";
 import { describeFindings } from "./run-log";
 import type {
   BranchReviewVerdict,
+  FlaggedDecision,
   MinorItem,
   ReReviewVerdict,
   StorySummary,
@@ -457,11 +458,12 @@ export async function gateRepairStep(
 }
 
 /**
- * US-005: the ids of the feature's trusted ledger decisions a human still has to confirm. Best
- * effort by design — an unreadable ledger is a warning, never a failed publish — and an empty
- * list means `publishStep` records no field, exactly like an absent step.
+ * US-005: the feature's trusted ledger decisions a human still has to confirm. Best effort by
+ * design — an unreadable ledger is a warning, never a failed publish — and an empty list means
+ * `publishStep` records no field, exactly like an absent step. US-002: each entry carries the line
+ * that names the decision, so the id and its summary are one list until `publishStep` splits them.
  */
-async function collectFlaggedDecisions(env: FeatureEnv): Promise<readonly string[]> {
+async function collectFlaggedDecisions(env: FeatureEnv): Promise<readonly FlaggedDecision[]> {
   if (!env.steps.flaggedDecisions) return [];
   try {
     return await env.steps.flaggedDecisions();
@@ -501,7 +503,16 @@ export async function publishStep(
   // push and this local HEAD *is* the pushed head. Threads and CI reads cite it as it is.
   const head = await readHeadSoft(env);
   const flagged = await collectFlaggedDecisions(env);
-  const threads = await postItemThreadsAfterPublish(env, { ...rec, flaggedDecisions: flagged }, out, head);
+  // US-002: the one list the step returned is split here, in one place, into the ids the record
+  // already carried and the id-to-summary map the open items name a decision by.
+  const flaggedIds = flagged.map((d) => d.id);
+  const flaggedSummaries = Object.fromEntries(flagged.map((d) => [d.id, d.summary]));
+  const threads = await postItemThreadsAfterPublish(
+    env,
+    { ...rec, flaggedDecisions: flaggedIds, flaggedDecisionSummaries: flaggedSummaries },
+    out,
+    head,
+  );
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
@@ -550,7 +561,10 @@ export async function publishStep(
       passed:
         out.pushFailed !== true &&
         featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
-      ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
+      ...(flaggedIds.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flaggedIds } : {}),
+      // US-002: the map is written only when there are ids, so an empty ledger leaves no empty key
+      // behind — and a record written before this field existed keeps the old issue text.
+      ...(flaggedIds.length > 0 ? { flaggedDecisionSummaries: flaggedSummaries } : {}),
       // US-003/B1: only an outcome says whether this publish left the PR without an index, and only
       // a settled outcome says so either way. No outcome (no step, nothing posted, the step threw),
       // and an outcome that could not confirm the index, put no key here, so an earlier `true`

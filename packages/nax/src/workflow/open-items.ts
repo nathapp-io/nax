@@ -46,6 +46,8 @@ function gateItems(rec: WorkflowFeatureRecord): OpenItem[] {
 /**
  * US-002: a held finish-approval, then every decision id flagged for a human that the approval did
  * not already name — `flaggedDecisions` spans every run of the feature, so it can repeat the hold.
+ * US-002 (this story): when the record carries the decision's summary, the issue says what the
+ * decision was about; a record written before summaries existed keeps the baseline text.
  */
 function advisorItems(rec: WorkflowFeatureRecord): OpenItem[] {
   const approval = rec.approval;
@@ -54,13 +56,16 @@ function advisorItems(rec: WorkflowFeatureRecord): OpenItem[] {
       ? { id: approval.decisionId ?? APPROVAL_ITEM_ID, kind: "advisor", issue: approval.rationale }
       : undefined;
   const named = new Set(held ? [held.id] : []);
+  const summaries = rec.flaggedDecisionSummaries;
+  const issue = (id: string): string => {
+    const summary = summaries?.[id];
+    return summary !== undefined && summary !== ""
+      ? `advisor decision ${id} needs a human: ${summary}`
+      : `advisor decision ${id} needs a human: see nax advisor list`;
+  };
   const flagged = (rec.flaggedDecisions ?? [])
     .filter((id) => !named.has(id))
-    .map((id) => ({
-      id,
-      kind: "advisor" as const,
-      issue: `advisor decision ${id} needs a human: see nax advisor list`,
-    }));
+    .map((id) => ({ id, kind: "advisor" as const, issue: issue(id) }));
   return held ? [held, ...flagged] : flagged;
 }
 

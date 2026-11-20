@@ -216,6 +216,15 @@ export interface MinorItem {
 
 export type StoryState = WorkflowEndState | "not-run";
 
+/**
+ * US-002: one advisor decision a human still has to confirm, as the `flaggedDecisions` step
+ * reports it — the id the record carries, and the one line that names it to a reader.
+ */
+export interface FlaggedDecision {
+  readonly id: string;
+  readonly summary: string;
+}
+
 export interface StorySummary {
   readonly id: string;
   readonly title: string;
@@ -392,6 +401,14 @@ export interface WorkflowFeatureRecord {
    * before the step existed.
    */
   readonly flaggedDecisions?: readonly string[];
+  /**
+   * US-002: the one-line summary that names each flagged decision (`advisorDecisionSummary`), by
+   * decision id. Written by `publish` from the same read that produced `flaggedDecisions`, and only
+   * when that list is non-empty — so an open item can say what the decision was about instead of
+   * pointing at `nax advisor list`. Absent on records written before this field existed, which keep
+   * the old issue text.
+   */
+  readonly flaggedDecisionSummaries?: Readonly<Record<string, string>>;
   /**
    * US-003: the PR this run published has no nax item index, so every bot command will refuse it
    * (`no nax item index on this PR`). Written by `publish` from the item-thread step's outcome —

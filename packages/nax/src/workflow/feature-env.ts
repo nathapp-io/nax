@@ -1,4 +1,5 @@
 /** Wires the feature machine to the real steps, the result.json sink and the status block (spec §7). */
+import { advisorDecisionSummary } from "@/finish";
 import { forgeReadProviderForUrl } from "@/forge-tools";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { adjudicateResidual } from "./adjudicate";
@@ -120,10 +121,11 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     readCiFailures: (input) => readCiFailuresFor(fc, input),
     // US-005: every trusted decision in the feature's ledger flagged for a human, across all its
     // runs and in ledger order. The throw is the machine's to handle: the step warns and goes on.
+    // US-002: each one carries the line that names it, so the open item says what it was about.
     flaggedDecisions: async () =>
       (await _workflowDeps.readTrustedDecisions(fc.projectDir, fc.feature, fc.outputDir))
         .filter((d) => d.needsHumanConfirm === true)
-        .map((d) => d.id),
+        .map((d) => ({ id: d.id, summary: advisorDecisionSummary(d) })),
     modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };
