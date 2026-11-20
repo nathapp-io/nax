@@ -28,6 +28,8 @@ export interface BotPushItem {
   readonly key: string;
   readonly generation: number;
   readonly issue: string;
+  /** Review that raised the item the fixer worked from; absent on legacy pushes. */
+  readonly raisedBy?: string;
 }
 
 export interface BotPushEntry {
@@ -80,9 +82,9 @@ function encode(entries: readonly BotPushEntry[]): string {
 
 function readItem(value: unknown): BotPushItem | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { key, generation, issue } = value as Record<string, unknown>;
+  const { key, generation, issue, raisedBy } = value as Record<string, unknown>;
   if (typeof key !== "string" || typeof generation !== "number" || typeof issue !== "string") return undefined;
-  return { key, generation, issue };
+  return { key, generation, issue, ...(typeof raisedBy === "string" && raisedBy !== "" ? { raisedBy } : {}) };
 }
 
 function readItems(values: readonly unknown[]): BotPushItem[] | undefined {

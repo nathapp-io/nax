@@ -107,6 +107,14 @@ describe("loadLatestReview code-only selection (US-001)", () => {
     oneHead();
     expect(await bot.loadLatestReview("/o", REF, "h", { codeOnly: true })).toEqual(code);
   });
+  test("a GitLab slug still requires an exact case match", async () => {
+    const gitlab = { ...REF, forge: "gitlab" as const, host: "gitlab.test" };
+    bot._fixInputDeps.glob = async () => ["older"];
+    bot._fixInputDeps.readText = async () => JSON.stringify({ ...code, pr: { ...gitlab, repo: "O/R" } });
+    bot._fixInputDeps.mtimeMs = async () => 1;
+    expect(await bot.loadLatestReview("/o", gitlab, "h")).toBeNull();
+    expect(await bot.loadLatestReview("/o", { ...gitlab, repo: "O/R" }, "h")).toMatchObject({ headSha: "h" });
+  });
   test("AC-11 without the option the newest artifact wins", async () => {
     oneHead();
     expect(await bot.loadLatestReview("/o", REF, "h")).toEqual(conversation);

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotReviewDeps, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import type { loadLatestReview } from "@/bot/fix-input";
+import { carriedFromArtifact } from "@/bot/carried-findings";
+import type { loadLatestCarry } from "@/bot/fix-input";
 import type { BotReviewArtifact } from "@/bot/post";
 import { _botReviewDeps, type BotReviewInput, type BotReviewResult, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, type runPrReview } from "@/bot/review-step";
@@ -68,7 +69,7 @@ const advance = mock<typeof advanceReviewedHead>(async () => {
   order.push("advance");
   return { kind: "unchanged" };
 });
-const load = mock<typeof loadLatestReview>(async () => null);
+const load = mock<typeof loadLatestCarry>(async () => ({ findings: [], widen: false }));
 
 /** A fresh runtime and the review dependencies over it; every review run closes the runtime it used. */
 function installDeps(): void {
@@ -87,7 +88,7 @@ function installDeps(): void {
     runPrReview: review,
     postPrReview: post,
     advanceReviewedHead: advance,
-    loadLatestReview: load,
+    loadLatestCarry: load,
     writeJson: async () => {},
   });
   _botReviewDeps.classifyPrTrust = async () => ({
@@ -143,7 +144,7 @@ beforeEach(() => {
     return { kind: "unchanged" };
   });
   load.mockClear();
-  load.mockImplementation(async () => null);
+  load.mockImplementation(async () => ({ findings: [], widen: false }));
   installDeps();
 });
 afterEach(async () => {
@@ -253,13 +254,23 @@ describe("runBotReview advances the reviewed head after a complete review", () =
     expect(await advanceCalls()).toBe(0);
   });
 
-  test("B1 a post whose carried-findings record did not land does not advance", async () => {
-    expect(await advanceCalls()).toBe(1);
+  test("internal record flags hold the index but are absent from the public result", async () => {
     post.mockImplementation(async () => {
       order.push("post");
       return { ...posted, carriedRecordFailed: true as const };
     });
-    expect(await advanceCalls()).toBe(0);
+    advance.mockClear();
+    const result = await runBotReview(input);
+    expect(advance).not.toHaveBeenCalled();
+    const exposesInternalFlags: Extract<
+      keyof PostedResult,
+      "carriedRecordFailed" | "coverageRecordFailed"
+    > extends never
+      ? false
+      : true = false;
+    expect(exposesInternalFlags).toBe(false);
+    expect(result).not.toHaveProperty("carriedRecordFailed");
+    expect(result).not.toHaveProperty("coverageRecordFailed");
   });
 
   test("AC-12 a failed advance still posts the same result", async () => {
@@ -292,25 +303,23 @@ describe("runBotReview carries an earlier review's summary-only findings (B1)", 
   };
 
   test("AC-14 an incremental review since the reviewed head reads that head's artifact", async () => {
-    load.mockImplementation(async () => earlier);
+    load.mockImplementation(async () => carriedFromArtifact(earlier.agreed));
     await runBotReview(input);
     // B4: the loader is handed the whole reference, so a shared output directory cannot hand it another
     // repository's review of the same number and head.
-    expect(load).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ number: 7 }), reviewedHead, {
-      codeOnly: true,
-    });
+    expect(load).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ number: 7 }), reviewedHead);
     expect(post.mock.calls[0]?.[0].carriedFindings).toEqual(earlier.agreed.filter((item) => item.kind === "finding"));
   });
 
   test("AC-15 a full review re-reads the range itself, so it carries nothing", async () => {
-    load.mockImplementation(async () => earlier);
+    load.mockImplementation(async () => carriedFromArtifact(earlier.agreed));
     await runBotReview({ ...input, full: true });
     expect(load).not.toHaveBeenCalled();
     expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
   });
 
   test("AC-16 an index with no reviewed head has no earlier review to carry from", async () => {
-    load.mockImplementation(async () => earlier);
+    load.mockImplementation(async () => carriedFromArtifact(earlier.agreed));
     outcome = { ...outcome, index: { reviewedBase, keys: [] } };
     await runBotReview(input);
     expect(load).not.toHaveBeenCalled();
@@ -318,10 +327,9 @@ describe("runBotReview carries an earlier review's summary-only findings (B1)", 
   });
 
   test("AC-17 an earlier artifact with no finding items carries nothing", async () => {
-    load.mockImplementation(async () => ({
-      ...earlier,
-      agreed: [{ kind: "comment", key: "c-1", issue: "rename", reason: "clearer" }],
-    }));
+    load.mockImplementation(async () =>
+      carriedFromArtifact([{ kind: "comment", key: "c-1", issue: "rename", reason: "clearer" }]),
+    );
     await runBotReview(input);
     expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
   });

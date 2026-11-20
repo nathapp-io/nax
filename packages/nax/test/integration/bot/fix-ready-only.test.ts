@@ -77,12 +77,12 @@ describe("runBotFix ready-only", () => {
     });
     expect(f.readyStep).not.toHaveBeenCalled();
   });
-  test("US-001 AC-9: open findings survive a newer conversation-only review of the head", async () => {
+  test.each([false, true])("keeps earlier code findings with a GitHub slug case mismatch: %s", async (caseMismatch) => {
     const f = fixture();
     const code: BotReviewArtifact = {
       version: 3,
       scope: "full",
-      pr: f.env.ref,
+      pr: caseMismatch ? { ...f.env.ref, repo: f.env.ref.repo.toUpperCase() } : f.env.ref,
       headSha: f.env.info.headSha,
       trusted: true,
       intent: "pass",
@@ -95,9 +95,10 @@ describe("runBotFix ready-only", () => {
       quality: "not-reviewed",
       agreed: [],
     };
-    // Two artifacts of one head, served through the real selector: the newer review read no code.
+    // Only the earlier code review was written from a checkout with different slug casing.
     _fixInputDeps.glob = async () => ["newer", "older"];
-    _fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? conversation : code);
+    _fixInputDeps.readText = async (path) =>
+      JSON.stringify(path === "newer" ? { ...conversation, pr: f.env.ref } : code);
     _fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
     _botFixDeps.loadLatestReview = loadLatestReview;
     // B1: the open-finding hold reconciles with the PR; this PR reports no settlement and no closed thread.

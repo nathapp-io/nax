@@ -26,12 +26,17 @@ import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
-import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
+import {
+  BOT_REVIEW_FILENAME,
+  type PostReviewCounts,
+  type PostReviewInput,
+  type PostReviewOutcome,
+  reviewQuality,
+} from "./post";
 import { lineageTargets } from "./post-earlier";
-import type { BotPushEntry } from "./push-ledger";
 import { advanceAfterReview } from "./review-advance";
 import { reviewCarry } from "./review-carry";
-import { type ReviewHistoryInput, reviewConvergence, reviewHistory } from "./review-convergence";
+import { reviewConvergence, reviewPushFacts } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
@@ -53,7 +58,7 @@ export type BotReviewResult =
       readonly artifactPath: string;
       readonly logPath?: string;
       readonly callerRulings?: CallerRulingsReport;
-    } & PostReviewOutcome)
+    } & PostReviewCounts)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
 export interface BotReviewInput {
@@ -98,29 +103,6 @@ interface ReviewEnv extends ReviewPreparation {
   readonly reviewedIndex?: ItemIndex;
   /** The bot's own login, as the forge reports it. */
   readonly login: string;
-}
-
-/** US-005: the push facts each half of the review environment needs, or nothing to add. */
-interface ReviewPushFacts {
-  readonly prompt: { readonly botPushes?: readonly BotPushEntry[] };
-  readonly post: {
-    readonly botPushes?: readonly BotPushEntry[];
-    readonly worktree?: string;
-    /** B1: only a push after the reviewed head can have fixed a finding raised at it. */
-    readonly carriedFixPushes?: readonly BotPushEntry[];
-  };
-}
-
-async function reviewPushFacts(input: Omit<ReviewHistoryInput, "isAncestor">): Promise<ReviewPushFacts> {
-  const history = await reviewHistory({ ...input, isAncestor: _botReviewDeps.isAncestor });
-  const inRange = history.inRange ?? [];
-  return {
-    prompt: inRange.length > 0 ? { botPushes: inRange } : {},
-    post:
-      history.botPushes.length > 0
-        ? { botPushes: history.botPushes, worktree: input.worktree, carriedFixPushes: inRange }
-        : {},
-  };
 }
 
 /**
@@ -381,11 +363,12 @@ async function reviewEnvironment(
     full: input.full === true,
     checkout,
     head: info.headSha,
-    load: _botReviewDeps.loadLatestReview,
+    load: _botReviewDeps.loadLatestCarry,
     isAncestor: _botReviewDeps.isAncestor,
   });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
+    isAncestor: _botReviewDeps.isAncestor,
     own: items.own,
     worktree: checkout.worktree,
     head: info.headSha,

@@ -19,6 +19,7 @@
  */
 import { type OwnComment, stripNaxBotMarkers } from "@/forge";
 import type { WorkflowSeverity } from "@/operations";
+import { FINDING_TRIGGERS, type FindingTrigger } from "@/workflow/blocking-findings";
 
 /** Own-comment key prefix of one head's record: like `push-`, the key names what it speaks for. */
 export const CARRIED_RECORD_PREFIX = "w-carry:";
@@ -36,6 +37,10 @@ export interface CarriedEntry {
   readonly file?: string;
   readonly line?: number;
   readonly suggestion?: string;
+  readonly trigger?: FindingTrigger;
+  readonly triggerEvidence?: string;
+  /** Identifies the review that raised the finding, even after further carries. */
+  readonly raisedBy?: string;
 }
 
 export interface CarriedRecord {
@@ -82,15 +87,23 @@ function isSeverity(value: unknown): value is WorkflowSeverity {
 }
 
 /** A finding as the record holds it, or undefined when it is not one: no field is guessed. */
-function readEntry(value: unknown): CarriedEntry | undefined {
+export function readCarriedEntry(value: unknown): CarriedEntry | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const item = value as Record<string, unknown>;
   if (typeof item.key !== "string" || item.key === "") return undefined;
   if (typeof item.issue !== "string" || !isSeverity(item.severity)) return undefined;
+  const { trigger, triggerEvidence, raisedBy } = item;
+  const knownTrigger = FINDING_TRIGGERS.find((candidate) => candidate === trigger);
+  if (trigger !== undefined && knownTrigger === undefined) return undefined;
+  if (triggerEvidence !== undefined && typeof triggerEvidence !== "string") return undefined;
+  if (raisedBy !== undefined && (typeof raisedBy !== "string" || raisedBy === "")) return undefined;
   return {
     key: item.key,
     severity: item.severity,
     issue: item.issue,
+    ...(knownTrigger === undefined ? {} : { trigger: knownTrigger }),
+    ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
+    ...(raisedBy === undefined ? {} : { raisedBy }),
     ...(typeof item.file === "string" ? { file: item.file } : {}),
     ...(typeof item.line === "number" && Number.isFinite(item.line) ? { line: item.line } : {}),
     ...(typeof item.suggestion === "string" ? { suggestion: item.suggestion } : {}),
@@ -105,7 +118,7 @@ function readPayload(decoded: unknown): CarriedRecord | undefined {
     return undefined;
   const findings: CarriedEntry[] = [];
   for (const value of item.findings) {
-    const entry = readEntry(value);
+    const entry = readCarriedEntry(value);
     if (entry === undefined) return undefined;
     findings.push(entry);
   }

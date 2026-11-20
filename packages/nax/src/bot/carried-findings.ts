@@ -26,11 +26,10 @@
  * reviews the whole range, which re-reads the very findings the missing record would have held.
  */
 import type { OwnComment, PrRef } from "@/forge";
-import type { WorkflowSeverity } from "@/operations";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding } from "@/workflow/blocking-findings";
 import type { ItemIndex } from "../workflow/item-threads";
-import { type CarriedEntry, carriedRecordComment, parseCarriedRecord } from "./carried-record";
-import type { AgreedItem, BotReviewArtifact, PostReviewInput } from "./post";
+import { type CarriedEntry, carriedRecordComment, parseCarriedRecord, readCarriedEntry } from "./carried-record";
+import type { AgreedItem, PostReviewInput } from "./post";
 import { findingKey } from "./render";
 import type { BotReviewScope } from "./review-rulings";
 
@@ -43,9 +42,8 @@ export type CarriedFinding = Extract<AgreedItem, { readonly kind: "finding" }>;
  * *after* the review that raised it claims to have fixed it. Only blocking findings travel — nothing
  * else holds readiness, and every later summary would otherwise grow for nothing.
  *
- * The push that ends a carry is `carriedFixPushes`, not the whole ledger (B1): a push made at or before
- * the review that reported the finding cannot have fixed it, and counting its key would release the
- * finding the review had just raised.
+ * In-range ancestry alone cannot date a push: an older push can be merged later. The push item must
+ * cite the exact review that raised this finding, proving the fix saw it before pushing.
  */
 export function carriedOpen(input: PostReviewInput): CarriedFinding[] {
   const earlier = input.carriedFindings ?? [];
@@ -53,26 +51,25 @@ export function carriedOpen(input: PostReviewInput): CarriedFinding[] {
   const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
   const raised = new Set(input.verdict.findings.map(findingKey));
   const threaded = new Set(input.own.flatMap(({ key, threadId }) => (threadId === undefined ? [] : [key])));
-  const pushed = new Set((input.carriedFixPushes ?? []).flatMap(({ items }) => items.map(({ key }) => key)));
+  const pushed = (input.carriedFixPushes ?? []).flatMap(({ items }) => items);
   const kept: CarriedFinding[] = [];
   const seen = new Set<string>();
   for (const finding of earlier) {
     if (seen.has(finding.key) || !isBlockingFinding(finding, blocking)) continue;
-    if (raised.has(finding.key) || threaded.has(finding.key) || pushed.has(finding.key)) continue;
+    if (raised.has(finding.key) || threaded.has(finding.key)) continue;
     if (input.settledKeys?.has(finding.key) === true) continue;
+    if (
+      finding.raisedBy !== undefined &&
+      pushed.some(({ key, raisedBy }) => key === finding.key && raisedBy === finding.raisedBy)
+    )
+      continue;
     seen.add(finding.key);
     kept.push(finding);
   }
   return kept;
 }
 
-/** `loadLatestReview`, narrowed to what this module reads of it. */
-export type LoadReview = (
-  outputDir: string,
-  ref: PrRef,
-  headSha: string,
-  options?: { readonly codeOnly?: boolean },
-) => Promise<BotReviewArtifact | null>;
+export type LoadCarry = (outputDir: string, ref: PrRef, headSha: string) => Promise<CarriedRead>;
 
 export interface EarlierCarriedInput {
   readonly outputDir: string;
@@ -84,7 +81,7 @@ export interface EarlierCarriedInput {
   readonly rangeBase: string;
   /** The bot's own comments on the PR, where the durable record lives (B1). */
   readonly own: readonly OwnComment[];
-  readonly load: LoadReview;
+  readonly load: LoadCarry;
 }
 
 export interface CarriedRead {
@@ -93,7 +90,7 @@ export interface CarriedRead {
   readonly widen: boolean;
 }
 
-const NOTHING: CarriedRead = { findings: [], widen: false };
+export const NO_CARRY: CarriedRead = { findings: [], widen: false };
 
 type RecordRead =
   | { readonly kind: "absent" }
@@ -116,27 +113,6 @@ function readRecord(own: readonly OwnComment[], head: string): RecordRead {
   return { kind: "usable", findings: record.findings.map(asCarried) };
 }
 
-function isSeverity(value: unknown): value is WorkflowSeverity {
-  return value === "critical" || value === "important" || value === "minor";
-}
-
-/** One artifact finding, or undefined when it is not one a reviewer could have written. */
-function readFinding(value: unknown): CarriedFinding | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const item = value as Record<string, unknown>;
-  if (item.kind !== "finding" || typeof item.key !== "string" || item.key === "") return undefined;
-  if (typeof item.issue !== "string" || !isSeverity(item.severity)) return undefined;
-  return {
-    kind: "finding",
-    key: item.key,
-    issue: item.issue,
-    severity: item.severity,
-    ...(typeof item.file === "string" ? { file: item.file } : {}),
-    ...(typeof item.line === "number" && Number.isFinite(item.line) ? { line: item.line } : {}),
-    ...(typeof item.suggestion === "string" ? { suggestion: item.suggestion } : {}),
-  };
-}
-
 /**
  * B3: an artifact's findings, with every unusable entry skipped. A review that recorded finding items and
  * yields none of them is not a review that carried nothing — it is a record this reader cannot use, so
@@ -147,8 +123,8 @@ export function carriedFromArtifact(agreed: unknown): CarriedRead {
   if (!Array.isArray(agreed)) return { findings: [], widen: true };
   const candidates = agreed.filter((item) => (item as { readonly kind?: unknown } | null)?.kind === "finding");
   const findings = candidates.flatMap((item) => {
-    const finding = readFinding(item);
-    return finding === undefined ? [] : [finding];
+    const finding = readCarriedEntry(item);
+    return finding === undefined ? [] : [asCarried(finding)];
   });
   return { findings, widen: candidates.length > 0 && findings.length === 0 };
 }
@@ -161,11 +137,10 @@ export function carriedFromArtifact(agreed: unknown): CarriedRead {
  */
 export async function earlierCarriedFindings(input: EarlierCarriedInput): Promise<CarriedRead> {
   const reviewedHead = input.index?.reviewedHead;
-  if (reviewedHead === undefined) return NOTHING;
-  if (input.scope !== "incremental" || input.rangeBase !== reviewedHead) return NOTHING;
+  if (reviewedHead === undefined) return NO_CARRY;
+  if (input.scope !== "incremental" || input.rangeBase !== reviewedHead) return NO_CARRY;
   const record = readRecord(input.own, reviewedHead);
   if (record.kind === "usable") return { findings: record.findings, widen: false };
   if (record.kind === "unusable") return { findings: [], widen: true };
-  const earlier = await input.load(input.outputDir, input.ref, reviewedHead, { codeOnly: true });
-  return earlier === null ? NOTHING : carriedFromArtifact(earlier.agreed);
+  return input.load(input.outputDir, input.ref, reviewedHead);
 }

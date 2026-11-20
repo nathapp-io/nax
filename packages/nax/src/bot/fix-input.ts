@@ -5,6 +5,7 @@ import type { PrRef } from "@/forge";
 import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
+import { type CarriedRead, carriedFromArtifact, NO_CARRY } from "./carried-findings";
 import { BOT_GIT_NETWORK_TIMEOUT_MS } from "./checkout";
 import { botGit } from "./git";
 import { type AgreedItem, BOT_REVIEW_FILENAME, type BotReviewArtifact } from "./post";
@@ -42,30 +43,7 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
       (value.version !== 1 && value.version !== 2 && value.version !== 3)
     )
       return null;
-    if ("checks" in value && value.checks !== null && !checksSchema.safeParse(value.checks).success) {
-      getLogger()?.warn("bot-fix", "Ignoring review artifact with invalid checks; re-run nax bot review", { path });
-      return null;
-    }
-    const review = value as BotReviewArtifact;
-    // B3: an artifact whose agreed list is not a list cannot be read as "it found nothing"; skip it whole.
-    if (review.agreed !== undefined && !Array.isArray(review.agreed)) {
-      getLogger()?.warn("bot-fix", "Ignoring review artifact with an unreadable agreed list; re-run nax bot review", {
-        path,
-      });
-      return null;
-    }
-    if (review.version < 3 && Array.isArray(review.agreed)) {
-      const agreed = review.agreed.filter((item: AgreedItem) => item?.kind === "finding");
-      const dropped = review.agreed.length - agreed.length;
-      if (dropped > 0)
-        getLogger()?.warn(
-          "bot-fix",
-          "Dropped unchecked thread and comment items from an older review; re-run nax bot review",
-          { path, dropped },
-        );
-      return { ...review, agreed };
-    }
-    return review;
+    return value as BotReviewArtifact;
   } catch (cause) {
     // A corrupt or concurrently removed artifact must not hide the other reviews.
     getLogger()?.debug("bot-fix", "Ignoring unreadable review artifact", { path, error: errorMessage(cause) });
@@ -73,50 +51,104 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
   }
 }
 
-/**
- * Select only exact-head reviews of *this* PR; persisted trust is diagnostic, never authorization.
- *
- * B4: the run directory is keyed by the PR number alone, so two repositories sharing one output directory
- * collide on `pr-<n>`. The artifact's own `pr` is therefore matched against the whole reference — forge,
- * host, repository and number — before it can be selected; an artifact that records none is skipped,
- * because nothing proves it is this PR's.
- *
- * `codeOnly` skips a conversation-only artifact (US-001): that review read no code because the head was
- * already reviewed, so the head's open findings live in the earlier code review, not in it.
- */
+function fixReview(review: BotReviewArtifact, path: string): BotReviewArtifact | null {
+  if (review.checks !== undefined && review.checks !== null && !checksSchema.safeParse(review.checks).success) {
+    getLogger()?.warn("bot-fix", "Ignoring review artifact with invalid checks; re-run nax bot review", { path });
+    return null;
+  }
+  // B3: an artifact whose agreed list is not a list cannot be read as "it found nothing"; skip it whole.
+  if (review.agreed !== undefined && !Array.isArray(review.agreed)) {
+    getLogger()?.warn("bot-fix", "Ignoring review artifact with an unreadable agreed list; re-run nax bot review", {
+      path,
+    });
+    return null;
+  }
+  if (review.version < 3 && Array.isArray(review.agreed)) {
+    const agreed = review.agreed.filter((item: AgreedItem) => item?.kind === "finding");
+    const dropped = review.agreed.length - agreed.length;
+    if (dropped > 0)
+      getLogger()?.warn(
+        "bot-fix",
+        "Dropped unchecked thread and comment items from an older review; re-run nax bot review",
+        { path, dropped },
+      );
+    return { ...review, agreed };
+  }
+  return review;
+}
+
+interface ReviewSearch<T> {
+  readonly outputDir: string;
+  readonly ref: PrRef;
+  readonly headSha: string;
+  readonly codeOnly: boolean;
+  readonly select: (review: BotReviewArtifact, path: string) => T | null;
+}
+
+async function reviewPaths({ outputDir, ref }: Pick<ReviewSearch<unknown>, "outputDir" | "ref">): Promise<string[]> {
+  try {
+    return await _fixInputDeps.glob(join("bot", `pr-${ref.number}`, "*", BOT_REVIEW_FILENAME), outputDir);
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return [];
+    throw cause;
+  }
+}
+
+/** Check identity and usability before letting a candidate compete on modification time. */
+async function selectReview<T>(input: ReviewSearch<T>): Promise<{ latest: T | null; matched: boolean }> {
+  let latest: T | null = null;
+  let newest = Number.NEGATIVE_INFINITY;
+  let matched = false;
+  for (const path of await reviewPaths(input)) {
+    const review = await readReview(path);
+    if (review?.headSha !== input.headSha || !samePr(review.pr, input.ref)) continue;
+    if (input.codeOnly && review.scope === "conversation-only") continue;
+    matched = true;
+    const usable = input.select(review, path);
+    if (usable === null) continue;
+    try {
+      const mtime = await _fixInputDeps.mtimeMs(path);
+      if (mtime > newest) {
+        latest = usable;
+        newest = mtime;
+      }
+    } catch (cause) {
+      getLogger()?.debug("bot-fix", "Ignoring vanished review artifact", { path, error: errorMessage(cause) });
+    }
+  }
+  return { latest, matched };
+}
+
+/** Exact-head fix inputs, optionally excluding reviews that read only the conversation. */
 export async function loadLatestReview(
   outputDir: string,
   ref: PrRef,
   headSha: string,
   options: { readonly codeOnly?: boolean } = {},
 ): Promise<BotReviewArtifact | null> {
-  let paths: string[];
-  try {
-    paths = await _fixInputDeps.glob(join("bot", `pr-${ref.number}`, "*", BOT_REVIEW_FILENAME), outputDir);
-  } catch (cause) {
-    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return null;
-    throw cause;
-  }
-  let latest: BotReviewArtifact | null = null;
-  let newest = Number.NEGATIVE_INFINITY;
-  for (const path of paths) {
-    const review = await readReview(path);
-    if (review?.headSha !== headSha) continue;
-    if (!samePr(review.pr, ref)) continue;
-    if (options.codeOnly === true && review.scope === "conversation-only") continue;
-    let mtime: number;
-    try {
-      mtime = await _fixInputDeps.mtimeMs(path);
-    } catch (cause) {
-      getLogger()?.debug("bot-fix", "Ignoring vanished review artifact", { path, error: errorMessage(cause) });
-      continue;
-    }
-    if (mtime > newest) {
-      latest = review;
-      newest = mtime;
-    }
-  }
+  const { latest } = await selectReview({
+    outputDir,
+    ref,
+    headSha,
+    codeOnly: options.codeOnly === true,
+    select: fixReview,
+  });
   return latest;
+}
+
+/** Prefer the newest usable code artifact; an unusable match is not the same as no bot review. */
+export async function loadLatestCarry(outputDir: string, ref: PrRef, headSha: string): Promise<CarriedRead> {
+  const { latest, matched } = await selectReview({
+    outputDir,
+    ref,
+    headSha,
+    codeOnly: true,
+    select(review) {
+      const carry = carriedFromArtifact(review.agreed);
+      return carry.widen ? null : carry;
+    },
+  });
+  return latest ?? (matched ? { findings: [], widen: true } : NO_CARRY);
 }
 
 /** B4: every part of the reference must agree; an artifact that names none is not this PR's. */
@@ -125,8 +157,11 @@ function samePr(recorded: PrRef | undefined, wanted: PrRef): boolean {
   return (
     recorded.forge === wanted.forge &&
     recorded.host === wanted.host &&
-    recorded.repo === wanted.repo &&
-    recorded.number === wanted.number
+    recorded.number === wanted.number &&
+    typeof recorded.repo === "string" &&
+    (wanted.forge === "github"
+      ? recorded.repo.toLowerCase() === wanted.repo.toLowerCase()
+      : recorded.repo === wanted.repo)
   );
 }
 

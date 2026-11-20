@@ -16,33 +16,30 @@
  * review then starts before this head and re-reads its changes rather than skipping them.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { editComment, hasNaxWorkflowMarker, postPrComment, withNaxBotMarker } from "@/forge";
+import { editComment, postPrComment, withNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
-import type { WorkflowFindingDraft } from "@/operations/workflow-types";
+import type { PrFinding } from "@/operations/bot-types";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding } from "@/workflow/blocking-findings";
 import { type CarriedFinding, carriedOpen } from "./carried-findings";
 import { type CarriedEntry, carriedRecordBody, carriedRecordComment, carriedRecordKey } from "./carried-record";
+import { recordsCodeReview } from "./coverage-record";
 import type { PostReviewInput } from "./post";
 import { findingKey } from "./render";
 
-function entryOf({ key, severity, issue, file, line, suggestion }: CarriedFinding): CarriedEntry {
-  return {
-    key,
-    severity,
-    issue,
-    ...(file === undefined ? {} : { file }),
-    ...(line === undefined ? {} : { line }),
-    ...(suggestion === undefined ? {} : { suggestion }),
-  };
+function entryOf({ kind, ...entry }: CarriedFinding): CarriedEntry {
+  return entry;
 }
 
 /** A blocking finding this review could not anchor: no thread owns it, so only a record can carry it. */
-function offLineFinding(finding: WorkflowFindingDraft, key: string): CarriedFinding {
+function offLineFinding(finding: PrFinding, key: string, raisedBy: string): CarriedFinding {
   return {
     kind: "finding",
     key,
     issue: finding.issue,
     severity: finding.severity,
+    raisedBy,
+    ...(finding.trigger === undefined ? {} : { trigger: finding.trigger }),
+    ...(finding.triggerEvidence === undefined ? {} : { triggerEvidence: finding.triggerEvidence }),
     ...(finding.file === undefined ? {} : { file: finding.file }),
     ...(finding.line === undefined ? {} : { line: finding.line }),
     ...(finding.suggestion === undefined ? {} : { suggestion: finding.suggestion }),
@@ -50,7 +47,7 @@ function offLineFinding(finding: WorkflowFindingDraft, key: string): CarriedFind
 }
 
 /** The findings the next review must still hold, in the order this review would list them. */
-export function carriedForRecord(input: PostReviewInput, offLine: readonly WorkflowFindingDraft[]): CarriedFinding[] {
+function carriedForRecord(input: PostReviewInput, offLine: readonly PrFinding[], reviewId: string): CarriedFinding[] {
   const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
   const kept = [...carriedOpen(input)];
   const seen = new Set(kept.map(({ key }) => key));
@@ -58,37 +55,30 @@ export function carriedForRecord(input: PostReviewInput, offLine: readonly Workf
     const key = findingKey(finding);
     if (seen.has(key) || !isBlockingFinding(finding, blocking)) continue;
     seen.add(key);
-    kept.push(offLineFinding(finding, key));
+    kept.push(offLineFinding(finding, key, reviewId));
   }
   return kept;
-}
-
-/**
- * Only a review that read code of a workflow PR has a range whose skipped part needs carrying: a static
- * review reads nothing by choice, and a conversation-only review owes no file a look.
- */
-function recordsCarry(input: PostReviewInput): boolean {
-  if (input.staticMode || input.scope === "conversation-only") return false;
-  return hasNaxWorkflowMarker(input.info.body);
 }
 
 /** Whether the reviewed head may advance: true when the record this review needed landed whole. */
 export async function postCarriedRecord(
   input: PostReviewInput,
-  offLine: readonly WorkflowFindingDraft[],
+  offLine: readonly PrFinding[],
+  reviewId: string,
 ): Promise<boolean> {
-  if (!recordsCarry(input)) return true;
-  const findings = carriedForRecord(input, offLine);
+  if (!recordsCodeReview(input)) return true;
+  const findings = carriedForRecord(input, offLine, reviewId);
   const { body, dropped } = carriedRecordBody({ headSha: input.info.headSha, findings: findings.map(entryOf) });
   if (dropped > 0) {
     getLogger()?.warn("bot-post", "Carried findings record exceeded its budget; holding the reviewed head", {
       pr: input.ref.number,
       dropped,
     });
+    return false;
   }
+  const own = carriedRecordComment(input.own, input.info.headSha);
   try {
     const marked = withNaxBotMarker(body, carriedRecordKey(input.info.headSha));
-    const own = carriedRecordComment(input.own, input.info.headSha);
     if (own) await editComment(input.ref, own.comment, marked, input.deps, input.cwd);
     else await postPrComment(input.ref, marked, input.deps, input.cwd);
   } catch (cause) {
@@ -96,8 +86,8 @@ export async function postCarriedRecord(
       pr: input.ref.number,
       error: errorMessage(cause),
     });
-    // A record with nothing in it loses nothing when the write fails; an advance on it is still safe.
-    return findings.length === 0 && dropped === 0;
+    // Only a new empty record can fail without leaving missing or stale findings.
+    return own === undefined && findings.length === 0;
   }
-  return dropped === 0;
+  return true;
 }

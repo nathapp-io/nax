@@ -17,11 +17,13 @@ import {
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
-import { CARRIED_RECORD_PREFIX, carriedRecordKey, parseCarriedRecord } from "@/bot/carried-record";
-import { loadLatestReview } from "@/bot/fix-input";
+import { CARRIED_RECORD_PREFIX, carriedRecordKey, MAX_CARRIED_ENTRIES, parseCarriedRecord } from "@/bot/carried-record";
+import { COVERAGE_RECORD_KEY, parseCoverageRecord } from "@/bot/coverage-record";
+import { _fixInputDeps, loadLatestCarry, loadLatestReview } from "@/bot/fix-input";
 import { _fixReportDeps, readyStep } from "@/bot/fix-report";
+import { pushEntry } from "@/bot/fix-summary-body";
 import { BOT_REVIEW_FILENAME, type BotReviewArtifact, type PostReviewInput, postPrReview } from "@/bot/post";
-import type { BotPushEntry } from "@/bot/push-ledger";
+import { type BotPushEntry, pushRecordBody } from "@/bot/push-ledger";
 import { findingKey } from "@/bot/render";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import type { runPrReview } from "@/bot/review-step";
@@ -69,6 +71,7 @@ const emptyVerdict: PrReviewVerdict = {
 const emptyOutcome: RecordRulingsOutcome = { recorded: [], settled: [], open: [], asked: 0, failed: 0 };
 
 const original = { ..._botReviewDeps };
+const fixInputOriginal = { ..._fixInputDeps };
 const reportOriginal = { ..._fixReportDeps };
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 let tempDir: string;
@@ -88,9 +91,7 @@ const advance = mock(async () => ({ kind: "unchanged" as const }));
 /** B4: the whole reference, as the review and the loader now pass it. */
 const prRef: PrRef = { forge: "github", host: "test", repo: "o/r", number: PR };
 /** The review artifact is the point of the two-head case, so the temporary output dir is the store. */
-const loadEarlier = mock(async (outputDir: string, ref: PrRef, head: string, options?: { codeOnly?: boolean }) =>
-  loadLatestReview(outputDir, ref, head, options ?? {}),
-);
+const loadEarlier = mock(loadLatestCarry);
 const forge: ForgeDeps = {
   async run(argv): Promise<ForgeRunResult> {
     calls.push(argv);
@@ -128,6 +129,7 @@ beforeEach(() => {
   forgeState = [];
   refuse = () => false;
   for (const fn of [review, record, ancestor, advance, loadEarlier, post]) fn.mockClear();
+  loadEarlier.mockImplementation(loadLatestCarry);
   review.mockImplementation(async () => ({ ran: true, verdict }));
   record.mockImplementation(async () => outcome);
   ancestor.mockImplementation(async () => true);
@@ -136,6 +138,7 @@ beforeEach(() => {
 afterEach(async () => {
   Object.assign(_botReviewDeps, original);
   Object.assign(_fixReportDeps, reportOriginal);
+  Object.assign(_fixInputDeps, fixInputOriginal);
   mock.restore();
   resetLogger();
   await Promise.allSettled(runtimes.splice(0).map((runtime) => runtime.close()));
@@ -162,7 +165,7 @@ function install(headSha: string): void {
     recordPrRulings: record,
     runPrReview: review,
     postPrReview: post,
-    loadLatestReview: loadEarlier,
+    loadLatestCarry: loadEarlier,
     advanceReviewedHead: advance,
     writeJson: async () => {},
   });
@@ -239,7 +242,7 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
 
   test("carries the finding on another machine, from the record on the PR (B1)", async () => {
     // No artifact of head B on this machine at all: the review of C runs on another worker.
-    loadEarlier.mockImplementation(async () => null);
+    loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
     await reviewHead(headB, [openFinding]);
     expect(forgeState.map(parseNaxBotMarker).map((marker) => marker?.key)).toContain(carriedRecordKey(headB));
     await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
@@ -247,7 +250,7 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
   });
 
   test("carries nothing at all when neither the PR nor this machine holds a record", async () => {
-    loadEarlier.mockImplementation(async () => null);
+    loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
     await reviewHead(headB, [openFinding]);
     // A PR whose record comment was deleted: nothing claims this head's findings, so nothing is carried.
     forgeState = forgeState.filter((body) => parseNaxBotMarker(body)?.key !== carriedRecordKey(headB));
@@ -267,6 +270,95 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
     // The review re-read the whole range instead of skipping the part that reported the finding.
     expect(post.mock.calls[0]?.[0].scope).toBe("full");
     expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
+  });
+
+  test.each(["older review", "legacy push", "same review"])(
+    "an in-range push citing %s clears a carry only if it saw B's finding",
+    async (source) => {
+      const sha = "e".repeat(40);
+      const older = source === "older review";
+      if (older) await reviewHead(published, [openFinding]);
+      if (source === "legacy push") {
+        forgeState.push(
+          pushRecordBody({
+            base: published,
+            sha,
+            at: "",
+            items: [{ key: openKey, generation: 1, issue: openFinding.issue }],
+          }),
+        );
+      }
+      if (!older) await reviewHead(headB, [openFinding]);
+      if (source !== "legacy push") {
+        const basedOn = older ? published : headB;
+        const review = await artifactFor(basedOn);
+        const finding = review.agreed.find(({ key }) => key === openKey);
+        expect(finding).toHaveProperty("raisedBy", expect.any(String));
+        const base = makeBotFixDraftEnv();
+        const entry = pushEntry(
+          { ...base, info: { ...base.info, headSha: basedOn }, review },
+          {
+            step: "report",
+            timings: {},
+            pushedSha: sha,
+            outcome: "pushed",
+          },
+        );
+        if (entry === undefined) throw new Error("expected a fix push entry");
+        forgeState.push(pushRecordBody(entry));
+      }
+      // The SHA is absent from B and reachable from C, even when the push was made before B's review.
+      ancestor.mockImplementation(async (_dir, candidate, head) => candidate !== sha || head === headC);
+      if (older) await reviewHead(headB, [openFinding]);
+      await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+      expect(post.mock.lastCall?.[0].carriedFixPushes?.map((entry) => entry.sha)).toEqual([sha]);
+      expect((await artifactFor(headC)).agreed.map(({ key }) => key)).toEqual(
+        source === "same review" ? [] : [openKey],
+      );
+    },
+  );
+
+  test.each([false, true])(
+    "preserves trigger and evidence under an own-concurrency-only policy (artifact fallback: %s)",
+    async (fallback) => {
+      config = makeNaxConfig({ outputDir: tempDir, bot: { blockingTriggers: ["own-concurrency"] } });
+      const finding = {
+        ...openFinding,
+        trigger: "own-concurrency" as const,
+        triggerEvidence: "Concurrent runs share the cache",
+      };
+      await reviewHead(headB, [finding]);
+      if (fallback) forgeState = forgeState.filter((body) => parseNaxBotMarker(body)?.key !== carriedRecordKey(headB));
+      await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+      expect((await artifactFor(headC)).agreed).toEqual([
+        expect.objectContaining({ key: openKey, trigger: finding.trigger, triggerEvidence: finding.triggerEvidence }),
+      ]);
+    },
+  );
+
+  test.each([["non-array"], [undefined], [[{ kind: "finding" }]]])(
+    "checks artifact usability before ranking: %j",
+    async (badAgreed) => {
+      const reviewOfB = { version: 3, pr: prRef, headSha: headB, scope: "full" };
+      const bad = { ...reviewOfB, agreed: badAgreed };
+      const good = {
+        ...reviewOfB,
+        agreed: [{ kind: "finding", key: openKey, severity: "critical", issue: openFinding.issue }],
+      };
+      _fixInputDeps.glob = async () => ["newer", "older"];
+      _fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? bad : good);
+      _fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
+      await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+      expect(post.mock.lastCall?.[0]).toMatchObject({ scope: "incremental", carriedFindings: good.agreed });
+    },
+  );
+
+  test("widens when the real loader finds only a matching artifact with non-array agreed", async () => {
+    _fixInputDeps.glob = async () => ["unusable"];
+    _fixInputDeps.readText = async () => JSON.stringify({ version: 3, pr: prRef, headSha: headB, agreed: {} });
+    _fixInputDeps.mtimeMs = async () => 1;
+    await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+    expect(post.mock.lastCall?.[0]?.scope).toBe("full");
   });
 
   test("holds the reviewed head when the record it needed cannot be written (B1)", async () => {
@@ -350,9 +442,11 @@ describe("what ends a carry", () => {
       base: published,
       sha: headB,
       at: "",
-      items: [{ key: openKey, generation: 1, issue: openFinding.issue }],
+      items: [{ key: openKey, generation: 1, issue: openFinding.issue, raisedBy: "review-B" }],
     };
-    expect(await agreedKeys(carriedInput(stateDir, { carriedFixPushes: [entry] }))).toEqual([]);
+    const input = carriedInput(stateDir, { carriedFixPushes: [entry] });
+    const carriedFindings = input.carriedFindings?.map((item) => ({ ...item, raisedBy: "review-B" }));
+    expect(await agreedKeys(carriedInput(stateDir, { ...input, carriedFindings }))).toEqual([]);
   });
 
   test("a push at or before the review that raised the finding cannot end the carry (B1)", async () => {
@@ -418,6 +512,74 @@ describe("the carried findings record the post leaves on the PR (B1)", () => {
     await postPrReview(carriedInput(stateDir, { info: { ...info, headSha: headC } }));
     const keys = records().map((body) => parseNaxBotMarker(body)?.key);
     expect(keys).toEqual([carriedRecordKey(headB), carriedRecordKey(headC)]);
+  });
+
+  test.each(["unread", "reply", "summary", "coverage", "budget"])(
+    "does not replace the earlier record on a full rerun with %s failure",
+    async (failure) => {
+      await postPrReview(carriedInput(stateDir));
+      const prior = records()[0] ?? "";
+      expect(parseCarriedRecord(prior)?.findings.map(({ key }) => key)).toEqual([openKey]);
+      const own: OwnComment[] = [
+        {
+          key: carriedRecordKey(headC),
+          comment: { id: "1", kind: "comment", author: BOT, body: prior, createdAt: "" },
+        },
+      ];
+      const finder =
+        failure === "budget"
+          ? Array.from({ length: MAX_CARRIED_ENTRIES + 1 }, (_, index) => ({
+              ...openFinding,
+              issue: `Finding ${index}`,
+            }))
+          : [];
+      const threads =
+        failure === "reply"
+          ? [{ id: "t1", replyTo: "1", path: "file.ts", resolved: false, outdated: false, comments: [] }]
+          : [];
+      const threadVerdicts = threads.map(({ id }) => ({ id, decision: "disagree" as const, reason: "not relevant" }));
+      refuse = (argv) =>
+        (failure === "reply" && argv.some((arg) => arg.endsWith("/replies"))) ||
+        parseNaxBotMarker(bodyOf(argv))?.key ===
+          (failure === "summary" ? "summary" : failure === "coverage" ? COVERAGE_RECORD_KEY : "no-refusal");
+      const postRerun = postPrReview(
+        carriedInput(stateDir, {
+          own,
+          scope: "full",
+          carriedFindings: [],
+          threads,
+          verdict: { ...emptyVerdict, findings: finder, threads: threadVerdicts },
+          unreadFiles: failure === "unread" ? ["file.ts"] : [],
+        }),
+      );
+      if (failure === "summary") await expect(postRerun).rejects.toThrow();
+      else {
+        const outcome = await postRerun;
+        expect(outcome.failed).toBe(failure === "reply" ? 1 : 0);
+        expect(outcome.carriedRecordFailed === true).toBe(failure === "budget");
+        expect(outcome.coverageRecordFailed === true).toBe(failure === "coverage");
+      }
+      expect(records()).toEqual([prior]);
+      if (failure === "unread") {
+        const body = calls.map(bodyOf).findLast((text) => parseNaxBotMarker(text)?.key === COVERAGE_RECORD_KEY);
+        expect(parseCoverageRecord(body ?? "")?.uncovered).toEqual(["file.ts"]);
+      }
+    },
+  );
+
+  test("a complete full rerun can replace the prior record with no remaining blockers", async () => {
+    await postPrReview(carriedInput(stateDir));
+    const prior = records()[0] ?? "";
+    const own: OwnComment[] = [
+      {
+        key: carriedRecordKey(headC),
+        comment: { id: "1", kind: "comment", author: BOT, body: prior, createdAt: "" },
+      },
+    ];
+    const outcome = await postPrReview(carriedInput(stateDir, { own, scope: "full", carriedFindings: [] }));
+    expect(outcome.carriedRecordFailed).toBeUndefined();
+    expect(records()).toHaveLength(2);
+    expect(parseCarriedRecord(records()[1] ?? "")).toEqual({ headSha: headC, findings: [] });
   });
 
   test("a conversation-only review writes no record: it read no range to carry across", async () => {

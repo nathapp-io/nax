@@ -15,7 +15,7 @@
 import type { OwnComment, PrRef } from "@/forge";
 import { getLogger } from "@/logger";
 import type { ItemIndex } from "../workflow/item-threads";
-import { type CarriedFinding, earlierCarriedFindings, type LoadReview } from "./carried-findings";
+import { type CarriedFinding, earlierCarriedFindings, type LoadCarry } from "./carried-findings";
 import type { PrCheckout } from "./checkout";
 import { type BotReviewScope, reviewRange, reviewScopeOf } from "./review-rulings";
 
@@ -29,7 +29,7 @@ export interface ReviewCarryInput {
   readonly full: boolean;
   readonly checkout: PrCheckout;
   readonly head: string;
-  readonly load: LoadReview;
+  readonly load: LoadCarry;
   readonly isAncestor: (dir: string, ancestor: string, head: string) => Promise<boolean>;
 }
 

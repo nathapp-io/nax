@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { carriedFromArtifact, earlierCarriedFindings, type LoadReview } from "@/bot/carried-findings";
-import { type CarriedEntry, carriedRecordBody, carriedRecordKey } from "@/bot/carried-record";
+import { carriedFromArtifact, earlierCarriedFindings, type LoadCarry } from "@/bot/carried-findings";
+import { type CarriedEntry, carriedRecordBody, carriedRecordKey, parseCarriedRecord } from "@/bot/carried-record";
 import type { BotReviewArtifact } from "@/bot/post";
 import { type OwnComment, type PrRef, withNaxBotMarker } from "@/forge";
 
@@ -42,10 +42,10 @@ function recordComment(findings: readonly CarriedEntry[], headSha = reviewedHead
   };
 }
 
-let load: ReturnType<typeof mock<LoadReview>>;
+let load: ReturnType<typeof mock<LoadCarry>>;
 
 beforeEach(() => {
-  load = mock<LoadReview>(async () => artifact());
+  load = mock<LoadCarry>(async () => carriedFromArtifact(artifact().agreed));
 });
 
 /** An incremental review of a head the index says was reviewed already. */
@@ -71,13 +71,13 @@ describe("where a review reads an earlier review's carried findings (B1)", () =>
 
   test("falls back to this machine's artifact when the PR carries no record", async () => {
     const read = await carry();
-    expect(load).toHaveBeenCalledWith("/output", ref, reviewedHead, { codeOnly: true });
+    expect(load).toHaveBeenCalledWith("/output", ref, reviewedHead);
     expect(read.findings.map(({ key }) => key)).toEqual([leak.key]);
     expect(read.widen).toBe(false);
   });
 
   test("carries nothing when neither the PR nor this machine holds a record", async () => {
-    load.mockImplementation(async () => null);
+    load.mockImplementation(async () => ({ findings: [], widen: false }));
     expect(await carry()).toEqual({ findings: [], widen: false });
   });
 
@@ -91,7 +91,7 @@ describe("where a review reads an earlier review's carried findings (B1)", () =>
   });
 
   test("ignores a record comment that sits in a review thread", async () => {
-    load.mockImplementation(async () => null);
+    load.mockImplementation(async () => ({ findings: [], widen: false }));
     const threaded = { ...recordComment([leak]), threadId: "t1" };
     expect((await carry({ own: [threaded] })).findings).toEqual([]);
     expect(load).toHaveBeenCalled();
@@ -128,6 +128,18 @@ describe("a carry record this review cannot use (B3)", () => {
   test.each([undefined, null, "leak"])("widens the review when the artifact's agreed field is %j", (agreed) => {
     expect(carriedFromArtifact(agreed)).toEqual({ findings: [], widen: true });
   });
+
+  test.each([{ trigger: "invented" }, { triggerEvidence: 42 }])(
+    "rejects invalid trigger metadata in both carry sources: %j",
+    (fields) => {
+      const entry = { ...leak, ...fields };
+      const payload = Buffer.from(JSON.stringify({ headSha: reviewedHead, findings: [entry] })).toString("base64");
+      expect(
+        parseCarriedRecord(`Carried blocking findings at ${reviewedHead}: 1\n<!-- nax-bot:carried v1 ${payload} -->`),
+      ).toBeNull();
+      expect(carriedFromArtifact([{ kind: "finding", ...entry }])).toEqual({ findings: [], widen: true });
+    },
+  );
 
   test("widens the review when no finding entry of the artifact is usable", () => {
     expect(carriedFromArtifact([{ kind: "finding" }])).toEqual({ findings: [], widen: true });

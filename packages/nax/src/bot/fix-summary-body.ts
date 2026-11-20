@@ -51,6 +51,7 @@ export function pushEntry(env: BotFixEnv, state: BotFixState): BotPushEntry | un
       key: item.key,
       generation: item.kind === "finding" ? (item.lineage?.generation ?? 0) : 0,
       issue: ledgerIssue(item.issue),
+      ...(item.kind === "finding" && item.raisedBy !== undefined ? { raisedBy: item.raisedBy } : {}),
     })),
   };
 }
