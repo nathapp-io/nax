@@ -29,6 +29,21 @@ export function carriedRecordKey(headSha: string): string {
   return `${CARRIED_RECORD_PREFIX}${headSha}`;
 }
 
+/** Incomplete reviews leave this signal alongside, not in place of, the last complete record. */
+export function carryWidenKey(headSha: string): string {
+  return `w-carry-incomplete:${headSha}`;
+}
+
+export const CARRY_WIDEN_CLEARED = "A complete full review restored carried finding coverage.";
+
+export function carryWidenComment(own: readonly OwnComment[], headSha: string): OwnComment | undefined {
+  return own.find((candidate) => candidate.key === carryWidenKey(headSha) && candidate.threadId === undefined);
+}
+
+export function carryWidenPending(comment: OwnComment | undefined): boolean {
+  return comment !== undefined && !comment.comment.body.split(/\r?\n/).includes(CARRY_WIDEN_CLEARED);
+}
+
 /** One finding as the record holds it: the identity a later review matches, and what it says. */
 export interface CarriedEntry {
   readonly key: string;

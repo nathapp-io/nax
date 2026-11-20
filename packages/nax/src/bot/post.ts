@@ -549,7 +549,7 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
   const coverageRecorded = await postCoverageRecord(input);
   // A full rerun can target an already-indexed head: do not replace its carry with an incomplete review.
   const complete = failed === 0 && coverageRecorded && (input.unreadFiles?.length ?? 0) === 0;
-  const carriedRecorded = !complete || (await postCarriedRecord(input, findings.offLine, reviewId));
+  const carriedRecorded = await postCarriedRecord(input, findings.offLine, { id: reviewId, complete });
   return {
     inlineFindings: findings.inlineFindings,
     ...threads,

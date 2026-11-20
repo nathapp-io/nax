@@ -28,7 +28,14 @@
 import type { OwnComment, PrRef } from "@/forge";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding } from "@/workflow/blocking-findings";
 import type { ItemIndex } from "../workflow/item-threads";
-import { type CarriedEntry, carriedRecordComment, parseCarriedRecord, readCarriedEntry } from "./carried-record";
+import {
+  type CarriedEntry,
+  carriedRecordComment,
+  carryWidenComment,
+  carryWidenPending,
+  parseCarriedRecord,
+  readCarriedEntry,
+} from "./carried-record";
 import type { AgreedItem, PostReviewInput } from "./post";
 import { findingKey } from "./render";
 import type { BotReviewScope } from "./review-rulings";
@@ -138,7 +145,9 @@ export function carriedFromArtifact(agreed: unknown): CarriedRead {
 export async function earlierCarriedFindings(input: EarlierCarriedInput): Promise<CarriedRead> {
   const reviewedHead = input.index?.reviewedHead;
   if (reviewedHead === undefined) return NO_CARRY;
-  if (input.scope !== "incremental" || input.rangeBase !== reviewedHead) return NO_CARRY;
+  if (input.scope === "full" || input.rangeBase !== reviewedHead) return NO_CARRY;
+  if (carryWidenPending(carryWidenComment(input.own, reviewedHead))) return { findings: [], widen: true };
+  if (input.scope !== "incremental") return NO_CARRY;
   const record = readRecord(input.own, reviewedHead);
   if (record.kind === "usable") return { findings: record.findings, widen: false };
   if (record.kind === "unusable") return { findings: [], widen: true };

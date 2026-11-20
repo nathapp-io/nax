@@ -59,6 +59,8 @@ export async function reviewCarry(input: ReviewCarryInput): Promise<ReviewCarry>
     load: input.load,
   });
   if (!carry.widen) return { range, scope, carried: carry.findings };
-  getLogger().warn("bot", "Carry record unusable; reviewing the full range", { pr: input.ref.number });
+  getLogger().warn("bot", "Carried findings incomplete or unreadable; reviewing the full range", {
+    pr: input.ref.number,
+  });
   return { range: full, scope: scopeOf(full, input.checkout.mergeBase), carried: [] };
 }

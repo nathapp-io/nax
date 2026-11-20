@@ -21,7 +21,16 @@ import { getLogger } from "@/logger";
 import type { PrFinding } from "@/operations/bot-types";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding } from "@/workflow/blocking-findings";
 import { type CarriedFinding, carriedOpen } from "./carried-findings";
-import { type CarriedEntry, carriedRecordBody, carriedRecordComment, carriedRecordKey } from "./carried-record";
+import {
+  CARRY_WIDEN_CLEARED,
+  type CarriedEntry,
+  carriedRecordBody,
+  carriedRecordComment,
+  carriedRecordKey,
+  carryWidenComment,
+  carryWidenKey,
+  carryWidenPending,
+} from "./carried-record";
 import { recordsCodeReview } from "./coverage-record";
 import type { PostReviewInput } from "./post";
 import { findingKey } from "./render";
@@ -64,10 +73,44 @@ function carriedForRecord(input: PostReviewInput, offLine: readonly PrFinding[],
 export async function postCarriedRecord(
   input: PostReviewInput,
   offLine: readonly PrFinding[],
-  reviewId: string,
+  review: { readonly id: string; readonly complete: boolean },
 ): Promise<boolean> {
   if (!recordsCodeReview(input)) return true;
-  const findings = carriedForRecord(input, offLine, reviewId);
+  const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
+  const hasNewBlocker = offLine.some((finding) => isBlockingFinding(finding, blocking));
+  if (!review.complete) return !hasNewBlocker || writeCarryWiden(input, true);
+
+  const findings = carriedForRecord(input, offLine, review.id);
+  if (!(await replaceCarriedRecord(input, findings))) {
+    if (hasNewBlocker) await writeCarryWiden(input, true);
+    return false;
+  }
+  // Only a full verdict can supersede a signal left by a possibly wider review of this head.
+  return input.scope !== "full" || writeCarryWiden(input, false);
+}
+
+async function writeCarryWiden(input: PostReviewInput, pending: boolean): Promise<boolean> {
+  const head = input.info.headSha;
+  const own = carryWidenComment(input.own, head);
+  if (pending === carryWidenPending(own)) return true;
+  const text = pending
+    ? "Carried finding coverage is incomplete. Review the full range before relying on this head."
+    : CARRY_WIDEN_CLEARED;
+  try {
+    const body = withNaxBotMarker(text, carryWidenKey(head));
+    if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+    else await postPrComment(input.ref, body, input.deps, input.cwd);
+    return true;
+  } catch (cause) {
+    getLogger()?.warn("bot-post", "Could not update the full-review signal for carried findings", {
+      pr: input.ref.number,
+      error: errorMessage(cause),
+    });
+    return false;
+  }
+}
+
+async function replaceCarriedRecord(input: PostReviewInput, findings: readonly CarriedFinding[]): Promise<boolean> {
   const { body, dropped } = carriedRecordBody({ headSha: input.info.headSha, findings: findings.map(entryOf) });
   if (dropped > 0) {
     getLogger()?.warn("bot-post", "Carried findings record exceeded its budget; holding the reviewed head", {

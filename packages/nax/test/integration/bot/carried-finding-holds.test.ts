@@ -17,7 +17,14 @@ import {
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
-import { CARRIED_RECORD_PREFIX, carriedRecordKey, MAX_CARRIED_ENTRIES, parseCarriedRecord } from "@/bot/carried-record";
+import {
+  CARRIED_RECORD_PREFIX,
+  CARRY_WIDEN_CLEARED,
+  carriedRecordKey,
+  carryWidenKey,
+  MAX_CARRIED_ENTRIES,
+  parseCarriedRecord,
+} from "@/bot/carried-record";
 import { COVERAGE_RECORD_KEY, parseCoverageRecord } from "@/bot/coverage-record";
 import { _fixInputDeps, loadLatestCarry, loadLatestReview } from "@/bot/fix-input";
 import { _fixReportDeps, readyStep } from "@/bot/fix-report";
@@ -247,6 +254,65 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
     expect(forgeState.map(parseNaxBotMarker).map((marker) => marker?.key)).toContain(carriedRecordKey(headB));
     await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
     expect((await artifactFor(headC)).agreed.map((item) => item.key)).toContain(openKey);
+  });
+
+  test.each([false, true])(
+    "a partial full review at the published head makes the next worker review the full range (prior carry: %s)",
+    async (withPrior) => {
+      const index = { reviewedHead: published, reviewedBase: publishedBase, keys: [] };
+      const carryAtPublished = () =>
+        forgeState.filter((body) => parseNaxBotMarker(body)?.key === carriedRecordKey(published));
+      if (withPrior) await reviewHead(published, [{ ...openFinding, issue: "Earlier blocker" }]);
+      const prior = carryAtPublished();
+      expect(prior).toHaveLength(withPrior ? 1 : 0);
+      calls = [];
+      advance.mockClear();
+      outcome = { ...emptyOutcome, index };
+      install(published);
+      review.mockImplementationOnce(async () => ({
+        ran: true,
+        verdict: { ...emptyVerdict, findings: [openFinding] },
+        unreadFiles: ["unread.ts"],
+      }));
+      expect(await runBotReview({ ...reviewInput, full: true })).toMatchObject({ outcome: "posted", offLine: 1 });
+      expect(summaryBody()).toContain(openFinding.issue);
+      expect(advance).not.toHaveBeenCalled();
+      expect(carryAtPublished()).toEqual(prior);
+      expect(forgeState.map(parseNaxBotMarker)).toContainEqual({ key: carryWidenKey(published) });
+
+      // A different worker can only see the forge's state, not the first worker's artifact.
+      loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
+      await reviewHead(headC, [], index);
+      expect(post.mock.lastCall?.[0]?.scope).toBe("full");
+    },
+  );
+
+  test("a failed finding reopen in a workflow review keeps the index from advancing", async () => {
+    const finding = { ...openFinding, file: "file.ts", line: 1 };
+    const thread = {
+      id: "T1",
+      replyTo: "12",
+      path: finding.file,
+      line: finding.line,
+      resolved: true,
+      outdated: false,
+      comments: [
+        {
+          id: "12",
+          kind: "thread" as const,
+          author: BOT,
+          body: withNaxBotMarker("Finding", findingKey(finding)),
+          createdAt: "",
+        },
+      ],
+    };
+    verdict = { ...emptyVerdict, findings: [finding] };
+    install(headB);
+    _botReviewDeps.listReviewThreads = async () => [thread];
+    refuse = (argv) => argv.includes("id=T1");
+    expect(await runBotReview(reviewInput)).toMatchObject({ outcome: "posted", offLine: 1, failed: 1 });
+    expect(calls.some((argv) => argv.includes("id=T1"))).toBe(true);
+    expect(advance).not.toHaveBeenCalled();
   });
 
   test("carries nothing at all when neither the PR nor this machine holds a record", async () => {
@@ -567,20 +633,37 @@ describe("the carried findings record the post leaves on the PR (B1)", () => {
     },
   );
 
-  test("a complete full rerun can replace the prior record with no remaining blockers", async () => {
-    await postPrReview(carriedInput(stateDir));
-    const prior = records()[0] ?? "";
-    const own: OwnComment[] = [
-      {
-        key: carriedRecordKey(headC),
-        comment: { id: "1", kind: "comment", author: BOT, body: prior, createdAt: "" },
-      },
-    ];
-    const outcome = await postPrReview(carriedInput(stateDir, { own, scope: "full", carriedFindings: [] }));
-    expect(outcome.carriedRecordFailed).toBeUndefined();
-    expect(records()).toHaveLength(2);
-    expect(parseCarriedRecord(records()[1] ?? "")).toEqual({ headSha: headC, findings: [] });
-  });
+  test.each([false, true])(
+    "a complete full rerun clears the prior record only if the edit lands (%s refused)",
+    async (refused) => {
+      await postPrReview(carriedInput(stateDir));
+      const prior = records()[0] ?? "";
+      const signalKey = carryWidenKey(headC);
+      const own: OwnComment[] = [
+        {
+          key: carriedRecordKey(headC),
+          comment: { id: "1", kind: "comment", author: BOT, body: prior, createdAt: "" },
+        },
+        {
+          key: signalKey,
+          comment: { id: "2", kind: "comment", author: BOT, body: "Incomplete", createdAt: "" },
+        },
+      ];
+      refuse = (argv) =>
+        refused && argv.includes("PATCH") && parseNaxBotMarker(bodyOf(argv))?.key === carriedRecordKey(headC);
+      const outcome = await postPrReview(carriedInput(stateDir, { own, scope: "full", carriedFindings: [] }));
+      expect(forgeState.includes(withNaxBotMarker(CARRY_WIDEN_CLEARED, signalKey))).toBe(!refused);
+      if (refused) {
+        expect(outcome.carriedRecordFailed).toBe(true);
+        expect(records()).toEqual([prior]);
+        expect(parseCarriedRecord(prior)?.findings.map(({ key }) => key)).toEqual([openKey]);
+      } else {
+        expect(outcome.carriedRecordFailed).toBeUndefined();
+        expect(records()).toHaveLength(2);
+        expect(parseCarriedRecord(records()[1] ?? "")).toEqual({ headSha: headC, findings: [] });
+      }
+    },
+  );
 
   test("a conversation-only review writes no record: it read no range to carry across", async () => {
     await postPrReview(carriedInput(stateDir, { scope: "conversation-only" }));
