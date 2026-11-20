@@ -534,6 +534,43 @@ describe("toolCardModel ok summary", () => {
   });
 });
 
+describe("toolCardModel Read and Write summary wording (#2991)", () => {
+  function readText(preview: string): readonly string[] {
+    return okCard({ name: "Read", input: { path: "a" }, preview }).summary.map((line) => line.text);
+  }
+
+  test("summarises an image Read as an image", () => {
+    expect(readText("[image: image/png 256x256, 1030 bytes]")).toEqual(["Read image · png · 256×256 · 1 KB"]);
+  });
+
+  test("summarises an image Read without a pixel size", () => {
+    expect(readText("[image: image/jpeg, 120 bytes]")).toEqual(["Read image · jpeg · 120 B"]);
+  });
+
+  test("falls back to the line count for a near-miss label", () => {
+    expect(readText("[image: image/png 256x256, 1030 bytes] extra")).toEqual(["Read 1 line"]);
+    expect(readText("[image: image/png 256x256, 10x bytes]")).toEqual(["Read 1 line"]);
+    expect(readText("[image: image/png 256x256, 1030 bytes]\nmore")).toEqual(["Read 2 lines"]);
+    expect(readText("[image: 256x256, 1030 bytes]")).toEqual(["Read 1 line"]);
+  });
+
+  test("says 1 line for a one-line Read", () => {
+    expect(readText("only")).toEqual(["Read 1 line"]);
+  });
+
+  test("keeps the plural and the floor marker", () => {
+    expect(readText("a\nb")).toEqual(["Read 2 lines"]);
+    expect(readText(previewOfSize(4096, 40))).toEqual(["Read 40+ lines"]);
+  });
+
+  test("says 1 line for a one-line Write and keeps the plural", () => {
+    const wrote = (content: string) =>
+      okCard({ name: "Write", input: { path: "y.ts", content } }).summary.map((line) => line.text);
+    expect(wrote("x\n")).toEqual(["Wrote 1 line to y.ts"]);
+    expect(wrote("x\ny")).toEqual(["Wrote 2 lines to y.ts"]);
+  });
+});
+
 describe("toolCardModel ok collapsing", () => {
   const wideEdit = { path: "z.ts", old_string: TEN_OLD_LINES, new_string: TEN_NEW_LINES };
 
