@@ -30,8 +30,8 @@ describe("buildMcpRollup", () => {
       ],
     });
     expect(rollup.servers).toEqual([
-      { serverId: "memory", workdirs: 2, connected: 2, failed: 0, toolsAdvertised: 3 },
-      { serverId: "docs", workdirs: 1, connected: 0, failed: 1, toolsAdvertised: 0 },
+      { serverId: "memory", workdirs: 2, connected: 2, failed: 0, disconnected: 0, toolsAdvertised: 3 },
+      { serverId: "docs", workdirs: 1, connected: 0, failed: 1, disconnected: 0, toolsAdvertised: 0 },
     ]);
     // Carried through unchanged — the entry now names the lock that withheld it.
     expect(rollup.withheld).toEqual([withheldEntry]);
@@ -39,6 +39,48 @@ describe("buildMcpRollup", () => {
 
   test("an empty run rolls up to nothing", () => {
     expect(buildMcpRollup({ runId: "r1", events: [], withheld: [] }).servers).toEqual([]);
+  });
+
+  test("US-004 AC-1 counts a server's disconnected events, with or without a reconnect", () => {
+    const rollup = buildMcpRollup({
+      runId: "r1",
+      withheld: [],
+      events: [
+        {
+          kind: "disconnected",
+          serverId: "memory",
+          workdir: "/a",
+          at,
+          reason: "the server process exited",
+          reconnect: true,
+        },
+        {
+          kind: "disconnected",
+          serverId: "memory",
+          workdir: "/a",
+          at,
+          reason: "the server process exited",
+          reconnect: false,
+        },
+      ],
+    });
+    expect(rollup.servers).toEqual([
+      { serverId: "memory", workdirs: 1, connected: 0, failed: 0, disconnected: 2, toolsAdvertised: 0 },
+    ]);
+  });
+
+  test("US-004 AC-2 a server with only connected events reports no disconnects", () => {
+    const rollup = buildMcpRollup({
+      runId: "r1",
+      withheld: [],
+      events: [
+        { kind: "connected", serverId: "memory", workdir: "/a", at, pid: 1, toolCount: 3 },
+        { kind: "connected", serverId: "memory", workdir: "/b", at, pid: 2, toolCount: 1 },
+      ],
+    });
+    expect(rollup.servers).toEqual([
+      { serverId: "memory", workdirs: 2, connected: 2, failed: 0, disconnected: 0, toolsAdvertised: 3 },
+    ]);
   });
 });
 

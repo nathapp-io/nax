@@ -14,17 +14,18 @@ function lastOutcome(events: readonly McpServerEvent[], id: string): McpServerEv
   return events.findLast((event) => event.serverId === id && event.kind !== "closed");
 }
 
+/** One outcome as a status; anything that is not up or failed to come up is down. */
+function outcomeLabel(outcome: McpServerEvent | undefined): string {
+  if (outcome?.kind === "connected") return `connected, ${outcome.toolCount} tools`;
+  if (outcome?.kind === "connect-failed") return `failed: ${outcome.reason}`;
+  // The reason is the pool's already-redacted text, so it is safe to show.
+  if (outcome?.kind === "disconnected") return `disconnected: ${outcome.reason}`;
+  return "not connected";
+}
+
 function status(row: ChatMcpServerRow, state: ChatMcpState): string {
   if (!row.locked) return "not locked (run nax mcp lock)";
-  const outcome = lastOutcome(state.events(), row.id);
-  const base =
-    outcome === undefined
-      ? "not connected"
-      : outcome.kind === "connected"
-        ? `connected, ${outcome.toolCount} tools`
-        : outcome.kind === "connect-failed"
-          ? `failed: ${outcome.reason}`
-          : "not connected";
+  const base = outcomeLabel(lastOutcome(state.events(), row.id));
   const withheld = state.withheld().filter((entry) => entry.serverId === row.id).length;
   return withheld > 0 ? `${base}, ${withheld} withheld (run nax mcp lock)` : base;
 }

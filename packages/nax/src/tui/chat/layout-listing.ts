@@ -4,11 +4,12 @@
  * (`formatMcpListing` writes the lines), and `/help`, `/skills` and `/plugins` follow.
  *
  * `listingTone` is the whole colour rule, checked in this order: a line that reports
- * something is **not locked** or **not connected** is a `warning`; a line that says it
- * **failed** is `danger`; a line that is `connected` is `success`; anything else is `plain`
- * and keeps the terminal's own colour. The order is the rule rather than an implementation
- * detail — "not connected" contains "connected", and a missing lock is *why* a server is
- * down, so the warning has to win over the success it would otherwise read as.
+ * something is **not locked**, **not connected** or **disconnected** is a `warning`; a line
+ * that says it **failed** is `danger`; a line that is `connected` is `success`; anything
+ * else is `plain` and keeps the terminal's own colour. The order is the rule rather than an
+ * implementation detail — "not connected" and "disconnected" both contain "connected", and a
+ * missing lock is *why* a server is down, so the warning has to win over the success it
+ * would otherwise read as.
  *
  * A line wider than the layout wraps at a word boundary, its continuation starting in the
  * listing's own column (the title's), and a blank line of the text is kept as a blank row —
@@ -46,8 +47,8 @@ type ListingEntry = Extract<TranscriptEntry, { kind: "listing" }>;
 /** What one listing line reports; `plain` keeps the terminal's own colour. */
 export type ListingTone = "warning" | "danger" | "success" | "plain";
 
-/** A line naming a server that is not locked or not connected is a warning, first of all. */
-const WARNING_MARKERS = ["not locked", "not connected"] as const;
+/** A line naming a server that is not locked, not connected or disconnected is a warning, first of all. */
+const WARNING_MARKERS = ["not locked", "not connected", "disconnected"] as const;
 /** A line reporting that something failed is an error. */
 const DANGER_MARKER = "failed";
 /** A line reporting that something is up is a success. */

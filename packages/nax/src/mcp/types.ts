@@ -38,5 +38,11 @@ export interface McpConnection {
     input: Record<string, unknown>,
     opts: { timeoutMs: number; maxBytes: number },
   ): Promise<McpCallResult>;
+  /**
+   * stdio only, as in the shared layer: called once when the process exits
+   * without `close()` having been called — including when the exit happened
+   * before this listener was registered.
+   */
+  onClose(listener: (reason: string) => void): void;
   close(): Promise<void>;
 }
