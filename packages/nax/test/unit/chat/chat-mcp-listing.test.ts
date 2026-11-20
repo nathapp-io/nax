@@ -23,6 +23,14 @@ const failed = (serverId: string, reason: string): McpServerEvent => ({
   reason,
   attempt: 1,
 });
+const disconnected = (serverId: string, reason: string): McpServerEvent => ({
+  kind: "disconnected",
+  serverId,
+  workdir: "/w",
+  at: "t",
+  reason,
+  reconnect: true,
+});
 const withheldEntry = (serverId: string, name: string): McpWithheldEntry => ({
   serverId,
   name,
@@ -64,6 +72,16 @@ describe("formatMcpListing", () => {
   test("AC-11 a later connected event supersedes an earlier failure", () => {
     const text = formatMcpListing(state({ events: [failed("docs", "boom"), connected("docs", 2)] }));
     expect(lineOf(text, "docs").endsWith("connected, 2 tools")).toBe(true);
+  });
+  test("US-004 AC-3 a latest disconnected event prints its reason, not 'not connected'", () => {
+    const text = formatMcpListing(state({ events: [disconnected("docs", "the server process exited")] }));
+    expect(lineOf(text, "docs").endsWith("disconnected: the server process exited")).toBe(true);
+  });
+  test("US-004 AC-4 a later connected event supersedes a disconnect, with its tool count", () => {
+    const text = formatMcpListing(
+      state({ events: [disconnected("docs", "the server process exited"), connected("docs", 4)] }),
+    );
+    expect(lineOf(text, "docs").endsWith("connected, 4 tools")).toBe(true);
   });
   test("a later failure supersedes an earlier connection, and other servers' events are ignored", () => {
     const text = formatMcpListing(state({ events: [connected("docs", 2), failed("other", "x"), failed("docs", "y")] }));

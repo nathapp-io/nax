@@ -61,6 +61,8 @@ describe("listingTone", () => {
     ["b  not connected", "warning"],
     ["c  failed: x", "danger"],
     ["d  connected, 3 tools", "success"],
+    // A disconnect names the down state, though "disconnected" contains "connected".
+    ["f  disconnected: the server process exited", "warning"],
     ["e", "plain"],
   ] as const)("reports %s as %s", (line, tone) => {
     expect(listingTone(line)).toBe(tone);

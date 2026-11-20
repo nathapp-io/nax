@@ -16,6 +16,12 @@ export interface McpServerSummary {
   readonly workdirs: number;
   readonly connected: number;
   readonly failed: number;
+  /**
+   * Times an attached server's connection went away mid-run, whether or not the
+   * pool replaced it. A run whose `connected` count is below its `disconnected`
+   * count lost its tools more than once.
+   */
+  readonly disconnected: number;
   readonly toolsAdvertised: number;
 }
 
@@ -26,20 +32,40 @@ export interface McpRunRollup {
   readonly events: readonly McpServerEvent[];
 }
 
+/** What one server's events add up to before they become a `McpServerSummary`. */
+interface ServerAccumulator {
+  readonly workdirs: Set<string>;
+  connected: number;
+  failed: number;
+  disconnected: number;
+  tools: number;
+}
+
 export function buildMcpRollup(args: {
   runId: string;
   events: readonly McpServerEvent[];
   withheld: readonly McpWithheldEntry[];
 }): McpRunRollup {
-  const byServer = new Map<string, { workdirs: Set<string>; connected: number; failed: number; tools: number }>();
+  const byServer = new Map<string, ServerAccumulator>();
   for (const event of args.events) {
-    const entry = byServer.get(event.serverId) ?? { workdirs: new Set<string>(), connected: 0, failed: 0, tools: 0 };
+    const entry = byServer.get(event.serverId) ?? {
+      workdirs: new Set<string>(),
+      connected: 0,
+      failed: 0,
+      disconnected: 0,
+      tools: 0,
+    };
     entry.workdirs.add(event.workdir);
     if (event.kind === "connected") {
       entry.connected++;
       entry.tools = Math.max(entry.tools, event.toolCount);
     } else if (event.kind === "connect-failed") {
       entry.failed++;
+    } else if (event.kind === "disconnected") {
+      // Both halves of the reconnect decision count: a server that was pinned
+      // unavailable after `MCP_MAX_RECONNECTS` exits lost its tools just as hard
+      // as one the pool replaced.
+      entry.disconnected++;
     }
     byServer.set(event.serverId, entry);
   }
@@ -53,6 +79,7 @@ export function buildMcpRollup(args: {
       // One failed attempt per connect budget is expected noise; the count is
       // what distinguishes "retried once and recovered" from "never came up".
       failed: entry.failed,
+      disconnected: entry.disconnected,
       toolsAdvertised: entry.tools,
     })),
     withheld: args.withheld,
