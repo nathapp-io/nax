@@ -3,7 +3,7 @@
   "feature": "bot-fix-bundle-1120",
   "branchName": "feat/bot-fix-bundle-1120",
   "createdAt": "2026-11-20T08:59:29.470Z",
-  "updatedAt": "2026-11-20T09:27:45.998Z",
+  "updatedAt": "2026-11-20T09:52:12.284Z",
   "userStories": [
     {
       "id": "US-001",
@@ -94,14 +94,17 @@
         "forge"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Isolated test writing is warranted because a single result crosses the formatter, typed graph patch and thread-posting seams, where tests must distinguish the applied workflow record from the record passed to the forge."
+        "reasoning": "Isolated test writing is warranted because a single result crosses the formatter, typed graph patch and thread-posting seams, where tests must distinguish the applied workflow record from the record passed to the forge.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/pr/body.ts",
@@ -133,7 +136,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "12084e39d20ff6d3ec6424fabb9ad646582e6658"
     },
     {
       "id": "US-003",
