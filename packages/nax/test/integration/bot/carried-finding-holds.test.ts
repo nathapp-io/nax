@@ -217,6 +217,12 @@ function summaryBody(): string {
   return body;
 }
 
+/** US-004: an incomplete review posts its own signal — `w-carry-incomplete:<head>:<review id>` — per review. */
+const signalsAt = (headSha: string): string[] =>
+  forgeState
+    .map((body) => parseNaxBotMarker(body)?.key ?? "")
+    .filter((key) => key.startsWith(`${carryWidenKey(headSha)}:`));
+
 describe("a summary-only blocking finding across two heads (B1)", () => {
   test("holds readiness at the head whose review could not re-report it", async () => {
     await reviewHead(headB, [openFinding]);
@@ -334,7 +340,7 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
       expect(summaryBody()).toContain(openFinding.issue);
       expect(advance).not.toHaveBeenCalled();
       expect(carryAtPublished()).toEqual(prior);
-      expect(forgeState.map(parseNaxBotMarker)).toContainEqual({ key: carryWidenKey(published) });
+      expect(signalsAt(published)).toHaveLength(1);
 
       // A different worker can only see the forge's state, not the first worker's artifact.
       loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
@@ -354,7 +360,7 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
     }));
     expect(await runBotReview({ ...reviewInput, full: true })).toMatchObject({ outcome: "posted", offLine: 1 });
     expect(advance).not.toHaveBeenCalled();
-    expect(forgeState.map(parseNaxBotMarker)).toContainEqual({ key: carryWidenKey(headB) });
+    expect(signalsAt(headB)).toHaveLength(1);
 
     // The index is still at the published head; only the forge's signal at headB says the carry is incomplete.
     loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
