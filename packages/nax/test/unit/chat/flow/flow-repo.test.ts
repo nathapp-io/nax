@@ -308,16 +308,24 @@ describe("isFlowTreeDirty — the production clean-tree check", () => {
     });
   });
 
+  test("counts an untracked root-level nax.lock before approval", async () => {
+    await withTempDir(async (dir) => {
+      expect(runGit(dir, ["init", "-q", "."])).toBe(0);
+      await Bun.write(join(dir, "nax.lock"), "project file");
+      expect(await isFlowTreeDirty(dir)).toBe(true);
+    });
+  });
+
   test("ignores only the untracked checkout lock and still counts other changes", async () => {
     await withTempDir(async (dir) => {
       expect(runGit(dir, ["init", "-q", "."])).toBe(0);
       await Bun.write(join(dir, "nax.lock"), "runtime lock");
-      expect(await isFlowTreeDirty(dir)).toBe(false);
+      expect(await isFlowTreeDirty(dir, true)).toBe(false);
       await Bun.write(join(dir, "nax.lock.example"), "project file");
-      expect(await isFlowTreeDirty(dir)).toBe(true);
+      expect(await isFlowTreeDirty(dir, true)).toBe(true);
       await unlink(join(dir, "nax.lock.example"));
       expect(runGit(dir, ["add", "-f", "--", "nax.lock"])).toBe(0);
-      expect(await isFlowTreeDirty(dir)).toBe(true);
+      expect(await isFlowTreeDirty(dir, true)).toBe(true);
     });
   });
 

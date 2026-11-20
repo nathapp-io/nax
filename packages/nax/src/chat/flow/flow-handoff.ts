@@ -49,6 +49,7 @@ import {
   cardedRepoLine,
   cardText,
   DECLINED_MESSAGE,
+  type FlowAllowRequest,
   type FlowProviderOptions,
   failure,
   flowLink,
@@ -394,11 +395,12 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
     const beforePush = () => handoffMarkGuard(input, collected, options);
-    const allow = {
+    const allow: FlowAllowRequest = {
       state,
       specPaths: [],
       body: createBody(state, input, collected.record),
       signal,
+      checkoutLockHeld: true,
       beforePush,
       atPush: () => stoppedChainRefusal(call, options),
     };
@@ -421,11 +423,11 @@ async function sendApprovedHandoff(call: SendCall, options: FlowProviderOptions)
     if (result !== undefined) return result;
     // Run setup holds the same lock through local --publish-only. Neither process can pass its
     // final mark check while the other holds it. Do not hold the lock while waiting for approval.
-    const lock = await _flowHandoffDeps.acquireLock(options.repoRoot);
+    const lock = await _flowHandoffDeps.acquireLock(options.repoRoot, { reclaim: false });
     if (!lock.acquired) {
       result =
         cancellationRefusal(call.signal) ??
-        failure("[chat] another nax operation holds the checkout lock; nothing was pushed");
+        failure("[chat] cannot reserve the checkout: nax.lock already exists; nothing was pushed");
       return result;
     }
     try {

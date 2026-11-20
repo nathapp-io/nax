@@ -14,7 +14,7 @@ import type {
   WorkflowStoryRecord,
 } from "./types";
 
-export const _resultDeps = { mkdir, readdir, rename, stat };
+export const _resultDeps = { mkdir, readdir: (path: string) => readdir(path, { withFileTypes: true }), rename, stat };
 
 const RESULT_FILE = "result.json";
 
@@ -135,24 +135,30 @@ export async function loadPriorStory(
   return null;
 }
 
-/** Run dirs of a feature that hold a result.json, newest result.json first. */
-export async function runDirsNewestFirst(featureDir: string): Promise<string[]> {
-  let entries: string[];
-  try {
-    entries = await _resultDeps.readdir(featureDir);
-  } catch {
+function isMissing(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+/** Run dirs that hold a result.json, newest first. Publication guards use strict I/O. */
+export async function runDirsNewestFirst(
+  featureDir: string,
+  mode: "best-effort" | "strict" = "best-effort",
+): Promise<string[]> {
+  const entries = await _resultDeps.readdir(featureDir).catch((error: unknown) => {
+    if (mode === "strict" && !isMissing(error)) throw error;
     return [];
-  }
+  });
   const dated: { runDir: string; mtimeMs: number }[] = [];
-  for (const name of entries) {
-    const runDir = join(featureDir, name);
+  for (const entry of entries) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    const runDir = join(featureDir, entry.name);
     try {
       dated.push({ runDir, mtimeMs: (await _resultDeps.stat(join(runDir, RESULT_FILE))).mtimeMs });
-    } catch {
-      // not a run dir, or no result.json yet
+    } catch (error) {
+      if (mode === "strict" && !isMissing(error)) throw error;
     }
   }
-  return [...dated].sort((a, b) => b.mtimeMs - a.mtimeMs).map((d) => d.runDir);
+  return dated.sort((a, b) => b.mtimeMs - a.mtimeMs).map((d) => d.runDir);
 }
 
 /**

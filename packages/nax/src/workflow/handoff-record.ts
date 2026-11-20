@@ -63,11 +63,21 @@ const RECORD_CHUNK_BYTES = 65536;
  */
 const RECORD_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 
-/** A run directory that has a result.json, with the stat mtime the ordering uses. */
+/** A verified regular file and the integer mtime we send to koda. */
+interface OpenRecordFile {
+  readonly handle: FileHandle;
+  readonly mtimeMs: number;
+}
+
+/** A run and its result, both pinned from inspection through collection. */
 interface RunDir {
   readonly runId: string;
   readonly directory: FileHandle;
-  readonly mtimeMs: number;
+  readonly result: OpenRecordFile;
+}
+
+async function closeRun(run: RunDir): Promise<void> {
+  await Promise.all([run.result.handle.close(), run.directory.close()]);
 }
 
 /** One record file as its own verified handle reported it. */
@@ -165,14 +175,8 @@ async function inspectRun(directory: FileHandle, runId: string): Promise<RunDir 
   try {
     const result = await openPlainFile(run, RESULT_FILE);
     if ("ok" in result) return result.absent ? undefined : notPlainFileReason(runId, RESULT_FILE);
-    try {
-      const stats = await result.stat();
-      if (!stats.isFile()) return notPlainFileReason(runId, RESULT_FILE);
-      keep = true;
-      return { runId, directory: run, mtimeMs: stats.mtimeMs };
-    } finally {
-      await result.close();
-    }
+    keep = true;
+    return { runId, directory: run, result };
   } finally {
     if (!keep) await run.close();
   }
@@ -181,13 +185,13 @@ async function inspectRun(directory: FileHandle, runId: string): Promise<RunDir 
 type FileRefusal = Extract<FileRead, { ok: false }>;
 
 /**
- * The file's handle, or why it cannot be read: no such file, or a link that `O_NOFOLLOW` refused.
- * The open is non-blocking, so a FIFO in the file's place answers here instead of waiting for a writer;
- * the handle's own `stat` then refuses it, because it is not a regular file.
+ * Pin a regular file and capture its mtime. No link is followed and the non-blocking open lets
+ * the descriptor's own stat refuse a special file (such as a FIFO) without waiting for a writer.
  */
-async function openPlainFile(directory: FileHandle, file: string): Promise<FileHandle | FileRefusal> {
+async function openPlainFile(directory: FileHandle, file: string): Promise<OpenRecordFile | FileRefusal> {
+  let handle: FileHandle;
   try {
-    return await openHandoffChild(directory, file, RECORD_FILE_FLAGS);
+    handle = await openHandoffChild(directory, file, RECORD_FILE_FLAGS);
   } catch (err) {
     const code = errnoCode(err);
     if (code === "ENOENT") return { ok: false, absent: true };
@@ -196,6 +200,15 @@ async function openPlainFile(directory: FileHandle, file: string): Promise<FileH
     // ENXIO: a socket, which has no bytes of its own to read.
     if (code === "ENXIO") return { ok: false, absent: false };
     throw err;
+  }
+  let keep = false;
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) return { ok: false, absent: false };
+    keep = true;
+    return { handle, mtimeMs: Math.trunc(stats.mtimeMs) };
+  } finally {
+    if (!keep) await handle.close();
   }
 }
 
@@ -238,15 +251,14 @@ async function readChunks(handle: FileHandle, mtimeMs: number, budget: number): 
  * One record file, read through the handle its metadata came from: no link is followed, a directory or
  * special file is refused, and only the bytes `budget` still allows are kept.
  */
-async function readRecordFile(directory: FileHandle, file: string, budget: number): Promise<FileRead> {
-  const opened = await openPlainFile(directory, file);
+async function readRecordFile(run: RunDir, file: HandoffRecordFile["file"], budget: number): Promise<FileRead> {
+  if (file === RESULT_FILE) return await readChunks(run.result.handle, run.result.mtimeMs, budget);
+  const opened = await openPlainFile(run.directory, file);
   if ("ok" in opened) return opened;
   try {
-    const stats = await opened.stat();
-    if (!stats.isFile()) return { ok: false, absent: false };
-    return await readChunks(opened, Math.trunc(stats.mtimeMs), budget);
+    return await readChunks(opened.handle, opened.mtimeMs, budget);
   } finally {
-    await opened.close();
+    await opened.handle.close();
   }
 }
 
@@ -260,7 +272,7 @@ async function buildRecord(runs: readonly RunDir[]): Promise<RecordBuild> {
   let bytes = 0;
   for (const run of runs) {
     for (const file of RECORD_FILES) {
-      const read = await _handoffRecordDeps.readRecordFile(run.directory, file, HANDOFF_RECORD_MAX_BYTES - bytes);
+      const read = await _handoffRecordDeps.readRecordFile(run, file, HANDOFF_RECORD_MAX_BYTES - bytes);
       if (!read.ok) {
         // A missing file is not part of the record; a link or a special file is refused, never read.
         if (read.absent) continue;
@@ -280,12 +292,6 @@ async function buildRecord(runs: readonly RunDir[]): Promise<RecordBuild> {
   return { ok: true, record, bytes };
 }
 
-/** koda orders runs by the truncated integer mtime, so two runs sharing the newest one cannot be ordered. */
-function newestTie(runs: readonly RunDir[]): boolean {
-  const newest = Math.trunc(runs[0].mtimeMs);
-  return runs.filter((run) => Math.trunc(run.mtimeMs) === newest).length > 1;
-}
-
 async function collectRuns(directory: FileHandle): Promise<HandoffRecordRead> {
   const runs: RunDir[] = [];
   let count = 0;
@@ -298,14 +304,15 @@ async function collectRuns(directory: FileHandle): Promise<HandoffRecordRead> {
       count++;
       // Count all runs for the diagnostic, but never retain more descriptors than can be handed off.
       if (count <= HANDOFF_MAX_RUNS) runs.push(run);
-      else await run.directory.close();
+      else await closeRun(run);
     }
     if (count === 0) return refusal(NO_FINISHED_RUN);
     if (count > HANDOFF_MAX_RUNS) {
       return refusal(`the feature has ${count} workflow runs; koda accepts at most ${HANDOFF_MAX_RUNS}`);
     }
-    runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    if (newestTie(runs)) return refusal(NEWEST_TIE);
+    runs.sort((a, b) => b.result.mtimeMs - a.result.mtimeMs);
+    // Compare the same integer mtimes koda receives.
+    if (runs[0].result.mtimeMs === runs[1]?.result.mtimeMs) return refusal(NEWEST_TIE);
     const built = await buildRecord(runs);
     if (!built.ok) return refusal(built.reason);
     if (built.bytes > HANDOFF_RECORD_MAX_BYTES) {
@@ -313,7 +320,7 @@ async function collectRuns(directory: FileHandle): Promise<HandoffRecordRead> {
     }
     return { ok: true, record: built.record, newestRunId: runs[0].runId };
   } finally {
-    await Promise.all(runs.map((run) => run.directory.close()));
+    await Promise.all(runs.map(closeRun));
   }
 }
 
@@ -398,19 +405,36 @@ function pendingReason(pending: readonly string[]): string {
   return `${pending.length} ${pending.length === 1 ? "story is" : "stories are"} still pending: ${pending.join(", ")}`;
 }
 
+function parseResultText(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Validate the fields publish-only reads when it builds the feature's story summaries. */
+function isSummarisableStory(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { state, reason, round, unreviewed, flagged } = value;
+  return (
+    (state === undefined ||
+      state === "complete" ||
+      state === "complete-with-rulings" ||
+      state === "complete-gate-open") &&
+    (reason === undefined || typeof reason === "string") &&
+    typeof round === "number" &&
+    typeof unreviewed === "boolean" &&
+    (flagged === undefined || typeof flagged === "number")
+  );
+}
+
 /**
  * The reason the newest `result.json` is not a finished no-PR record at `head`, or undefined when it is.
  * The checks are the Failure Handling table's order: the record's own shape, then the step it stopped at,
  * then the publication, then HEAD — so a run that already published is diagnosed before a moved HEAD.
  */
-function unfinishedRecordReason(resultText: string, head: string): string | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(resultText);
-  } catch {
-    // A record that does not parse cannot say what the run did.
-    return NOT_A_FINISHED_RECORD;
-  }
+function unfinishedRecordReason(parsed: unknown, head: string): string | undefined {
   if (!isWorkflowResult(parsed) || !isFeatureRecord(parsed.featureWorkflow)) {
     return NOT_A_FINISHED_RECORD;
   }
@@ -458,16 +482,31 @@ async function committedPrdReason(input: HandoffRecordInput): Promise<string | u
   return pending.length > 0 ? pendingReason(pending) : undefined;
 }
 
-/** The newest run's `result.json` entry, or undefined when the record holds none (it always does). */
-function newestResultEntry(read: Extract<HandoffRecordRead, { ok: true }>): HandoffRecordFile | undefined {
-  return read.record.find((entry) => entry.runId === read.newestRunId && entry.file === RESULT_FILE);
+/** Publish-only takes the newest feature state but can gather story records from any uploaded run. */
+function publishRecordReason(read: Extract<HandoffRecordRead, { ok: true }>, head: string): string | undefined {
+  for (const entry of read.record) {
+    if (entry.file !== RESULT_FILE) continue;
+    const parsed = parseResultText(entry.content);
+    if (entry.runId === read.newestRunId) {
+      const unfinished = unfinishedRecordReason(parsed, head);
+      if (unfinished !== undefined) return unfinished;
+    }
+    // The receiving reader skips an unparseable or unrecognized older result envelope.
+    if (
+      isWorkflowResult(parsed) &&
+      (!isRecord(parsed.stories) || !Object.values(parsed.stories).every(isSummarisableStory))
+    ) {
+      return `result.json of run ${entry.runId} contains invalid story records for publish-only`;
+    }
+  }
+  return undefined;
 }
 
 /**
  * `readHandoffRecordFiles`, then the newest feature record and the PRD at `head` checked against koda's
  * rules (US-003): a record-file refusal is returned unchanged, and the two preflights stop at the first
- * failing check. The newest record only — an older one describes code this handoff would not send — and
- * an accepted read is the record itself, so what is sent is exactly what was checked.
+ * failing check. Only the newest feature state is relevant, but publish-only can read story records
+ * from older runs as well. An accepted read is the record itself, so what is sent is what was checked.
  *
  * The link check walks from the repository root, which is the one directory this module can trust, so a
  * `.nax`, `features` or feature directory that became a link is refused like a linked run.
@@ -475,9 +514,7 @@ function newestResultEntry(read: Extract<HandoffRecordRead, { ok: true }>): Hand
 export async function collectHandoffRecord(input: HandoffRecordInput): Promise<HandoffRecordRead> {
   const read = await readHandoffRecordFiles(workflowFeatureDir(input.repoRoot, input.feature), input.repoRoot);
   if (!read.ok) return read;
-  const newest = newestResultEntry(read);
-  const recordReason =
-    newest === undefined ? NOT_A_FINISHED_RECORD : unfinishedRecordReason(newest.content, input.head);
+  const recordReason = publishRecordReason(read, input.head);
   if (recordReason !== undefined) return refusal(recordReason);
   const prdReason = await committedPrdReason(input);
   if (prdReason !== undefined) return refusal(prdReason);

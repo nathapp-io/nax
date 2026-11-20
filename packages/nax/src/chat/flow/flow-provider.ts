@@ -119,7 +119,8 @@ export const FLOW_SEND_INPUT_SCHEMA = {
       properties: {
         feature: {
           type: "string",
-          description: "The feature's name: matches ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$, with a finished workflow run.",
+          description:
+            "The feature's name: matches ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$, with no consecutive dots and a finished workflow run.",
         },
       },
     },

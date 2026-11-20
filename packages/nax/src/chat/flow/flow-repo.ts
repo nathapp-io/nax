@@ -63,7 +63,7 @@ export type FlowGit = (args: string[], workdir: string) => Promise<FlowGitResult
  */
 export const _flowRepoDeps: {
   git: FlowGit;
-  isDirty: (repoRoot: string) => Promise<boolean>;
+  isDirty: typeof isFlowTreeDirty;
   headSha: (repoRoot: string) => Promise<string | null>;
 } = { git: gitWithTimeout, isDirty: isFlowTreeDirty, headSha };
 
@@ -88,10 +88,11 @@ const STATUS_ARGV = ["status", "--porcelain", "--untracked-files=normal"];
  * which cannot make that guarantee without changing every other caller of it.
  *
  * @param repoRoot - The repository to read
+ * @param checkoutLockHeld - Set only while holding the lock created by this handoff
  * @returns True when anything is uncommitted
  * @throws NaxError `FLOW_REPO_STATUS_FAILED` when git cannot read the tree
  */
-export async function isFlowTreeDirty(repoRoot: string): Promise<boolean> {
+export async function isFlowTreeDirty(repoRoot: string, checkoutLockHeld?: true): Promise<boolean> {
   const status = await _flowRepoDeps.git(STATUS_ARGV, repoRoot);
   if (status.exitCode !== 0) {
     throw new NaxError(
@@ -100,9 +101,10 @@ export async function isFlowTreeDirty(repoRoot: string): Promise<boolean> {
       { stage: "chat-flow", repoRoot },
     );
   }
-  // A chat handoff holds this lock during verification, even in repos that do not gitignore it.
-  // Ignore only the untracked, root-level lock; tracked edits and other untracked files still count.
-  return status.stdout.split(/\r?\n/).some((line) => line.trim() !== "" && line !== `?? ${CHECKOUT_LOCK_FILE}`);
+  // Only the handoff's own reservation is exempt. Tracked edits and other untracked files still count.
+  return status.stdout
+    .split(/\r?\n/)
+    .some((line) => line.trim() !== "" && !(checkoutLockHeld && line === `?? ${CHECKOUT_LOCK_FILE}`));
 }
 
 /** The repository state a flow send may push from. */
@@ -172,9 +174,9 @@ function branchMessage(branch: string): string {
 }
 
 /** The failure message for a working tree, or `undefined` when it is clean and readable. */
-async function treeFailure(repoRoot: string): Promise<string | undefined> {
+async function treeFailure(repoRoot: string, checkoutLockHeld?: true): Promise<string | undefined> {
   try {
-    return (await _flowRepoDeps.isDirty(repoRoot)) ? DIRTY_MESSAGE : undefined;
+    return (await _flowRepoDeps.isDirty(repoRoot, checkoutLockHeld)) ? DIRTY_MESSAGE : undefined;
   } catch (error) {
     return `${UNREADABLE_STATE_PREFIX}${errorMessage(error)}`;
   }
@@ -219,15 +221,20 @@ async function specFailure(repoRoot: string, sha: string, specPaths: readonly st
  *
  * @param repoRoot - The chat's repository root
  * @param specPaths - Every spec path the request names, checked at the sha the result carries
+ * @param checkoutLockHeld - Set only while holding the lock created by this handoff
  * @returns The branch, sha and normalised remote, or a `[chat]` message
  */
-export async function readFlowRepoState(repoRoot: string, specPaths: readonly string[]): Promise<FlowRepoState> {
+export async function readFlowRepoState(
+  repoRoot: string,
+  specPaths: readonly string[],
+  checkoutLockHeld?: true,
+): Promise<FlowRepoState> {
   const branch = await gitAnswer(["symbolic-ref", "--short", "HEAD"], repoRoot);
   if (branch === null) return { ok: false, message: DETACHED_MESSAGE };
   const name = branch.stdout.trim();
   if (!isPublishableBranch(name)) return { ok: false, message: branchMessage(name) };
 
-  const tree = await treeFailure(repoRoot);
+  const tree = await treeFailure(repoRoot, checkoutLockHeld);
   if (tree !== undefined) return { ok: false, message: tree };
 
   const sha = await _flowRepoDeps.headSha(repoRoot);

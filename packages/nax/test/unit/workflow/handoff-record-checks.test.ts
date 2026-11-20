@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { loadPriorFeature, newFeatureRecord } from "@/workflow/feature-record";
@@ -133,6 +133,33 @@ describe("collectHandoffRecord (US-003)", () => {
       expect(await loadPriorFeature(workflowDir, "new-run")).toEqual(FINISHED);
       expectOk(read);
       expect(read).toEqual(await readHandoffRecordFiles(workflowDir));
+    });
+  });
+
+  test("refuses a finished feature record with a null story entry before it can be transferred", async () => {
+    await withTempDir(async (dir) => {
+      await writeRun(dir, JSON.stringify({ schemaVersion: 1, featureWorkflow: FINISHED, stories: { "US-001": null } }));
+      stubGit({ stdout: prdText() });
+
+      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toContain("invalid story records");
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  test("refuses a malformed story in an older result that publish-only would also read", async () => {
+    await withTempDir(async (dir) => {
+      await writeRun(dir, resultJson(FINISHED));
+      const older = join(workflowFeatureDir(dir, FEATURE), "older");
+      await mkdir(older);
+      const path = join(older, "result.json");
+      await Bun.write(path, JSON.stringify({ schemaVersion: 1, stories: { "US-001": { state: [] } } }));
+      await utimes(path, 1, 1);
+      stubGit({ stdout: prdText() });
+
+      expect(expectRefusal(await collectHandoffRecord(handoffInput(dir)))).toContain(
+        "run older contains invalid story",
+      );
+      expect(calls).toHaveLength(0);
     });
   });
 

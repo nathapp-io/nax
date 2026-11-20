@@ -134,7 +134,7 @@ export async function readRunMark(runDir: string): Promise<FoundHandoffMark | nu
  * later run wrote its own record, which is what lets a fresh `nax run` publish the feature again.
  */
 export async function readNewestHandoffMark(featureWorkflowDir: string): Promise<FoundHandoffMark | null> {
-  const [newest] = await runDirsNewestFirst(featureWorkflowDir);
+  const [newest] = await runDirsNewestFirst(featureWorkflowDir, "strict");
   return newest === undefined ? null : await readRunMark(newest);
 }
 

@@ -16,9 +16,9 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import { type FeatureEnv, runFeatureMachine } from "@/workflow/feature-machine";
-import { newFeatureRecord } from "@/workflow/feature-record";
+import { loadPriorFeature, newFeatureRecord } from "@/workflow/feature-record";
 import { writeHandoffMark } from "@/workflow/handoff-mark";
-import { newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
+import { _resultDeps, newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { toolErrorClaimsHeld, withToolErrorOutcome } from "@/workflow/tool-error-outcome";
 
@@ -453,6 +453,28 @@ describe("runWorkflowFeature", () => {
     });
     expect(envs).toHaveLength(0);
   });
+
+  test.each(["readdir", "stat"] as const)(
+    "publishOnly stops on a transient %s error before loading the marked run",
+    async (lookupName) => {
+      const { input, envs, featureDir } = setup();
+      await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+      await writeHandoffMark(join(featureDir, "r-old"), { schemaVersion: 1, at: "T", flowId: "fl1" });
+      const lookup = spyOn(_resultDeps, lookupName).mockRejectedValueOnce(
+        Object.assign(new Error("transient result lookup failure"), { code: "EIO" }),
+      );
+      try {
+        await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+          code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+          message: expect.stringContaining("transient result lookup failure"),
+        });
+        expect(envs).toHaveLength(0);
+        expect(await loadPriorFeature(featureDir, input.runId)).toMatchObject({ outcome: "local-only" });
+      } finally {
+        lookup.mockRestore();
+      }
+    },
+  );
 
   test("publishOnly refuses when the newest handoff mark cannot be read", async () => {
     const { input, envs, featureDir } = setup();

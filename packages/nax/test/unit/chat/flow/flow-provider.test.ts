@@ -176,6 +176,9 @@ describe("createFlowProvider", () => {
     expect(handoff.required).toEqual(["feature"]);
     expect(handoff.additionalProperties).toBe(false);
     expect(handoff.properties.feature.type).toBe("string");
+    expect(handoff.properties.feature.description).toContain("{0,63}");
+    expect(handoff.properties.feature.description).toContain("no consecutive dots");
+    expect(FLOW_SEND_INPUT_SCHEMA.properties.features.items.properties.feature.description).toContain("{0,127}");
     expect(handoff.description).toContain("handoff");
   });
 

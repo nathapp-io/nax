@@ -307,8 +307,21 @@ async function discardObservedLock(
  * - Removes stale lock if process is dead
  * - Re-acquires lock after removal
  */
-export async function acquireLock(workdir: string): Promise<LockAcquisitionResult> {
-  return serializeLockOperation(workdir, () => acquireLockExclusive(workdir));
+export async function acquireLock(
+  workdir: string,
+  options: { readonly reclaim?: false } = {},
+): Promise<LockAcquisitionResult> {
+  return serializeLockOperation(workdir, async () => {
+    if (options.reclaim !== false) return await acquireLockExclusive(workdir);
+    // A handoff must not reclaim a path the user may have created while the card was open.
+    // Do not even read it: a non-lock at this path might not be a regular file.
+    const created = await tryExclusiveCreate(path.join(workdir, CHECKOUT_LOCK_FILE), newLockContent());
+    return created ? { acquired: true } : holderRefusal(null);
+  });
+}
+
+function newLockContent(): string {
+  return JSON.stringify({ pid: process.pid, host: _lockDeps.host(), timestamp: Date.now() });
 }
 
 async function acquireLockExclusive(workdir: string): Promise<LockAcquisitionResult> {
@@ -362,12 +375,7 @@ async function acquireLockExclusive(workdir: string): Promise<LockAcquisitionRes
 
     // Create lock file atomically: complete content is published in one
     // step, so no racer can ever observe an empty or half-written record.
-    const lockData = {
-      pid: process.pid,
-      host: _lockDeps.host(),
-      timestamp: Date.now(),
-    };
-    await publishFileAtomically(lockPath, JSON.stringify(lockData));
+    await publishFileAtomically(lockPath, newLockContent());
     return { acquired: true };
   } catch (error) {
     // EEXIST means another process won the race — re-read the lock file so

@@ -93,6 +93,8 @@ export interface FlowAllowRequest {
   readonly body: FlowCreateBody | FlowHandoffCreateBody;
   /** The turn's cancellation. */
   readonly signal?: AbortSignal;
+  /** Only the approved handoff holding its checkout reservation may exempt it from the tree check. */
+  readonly checkoutLockHeld?: true;
   /**
    * A form's own last check, run at the push boundary inside everything that already serializes the
    * push: the handoff re-reads its mark here, so a send that finished during the checks above is seen
@@ -162,9 +164,9 @@ export function turnCancelled(signal: AbortSignal | undefined): boolean {
 }
 
 /** Whether the branch no longer holds the commit the card described, or gained changes since. */
-async function branchMoved(state: FlowRepoReady, repoRoot: string): Promise<boolean> {
-  if ((await _flowProviderDeps.headSha(repoRoot)) !== state.sha) return true;
-  return await _flowProviderDeps.isDirty(repoRoot);
+async function branchMoved(request: FlowAllowRequest, repoRoot: string): Promise<boolean> {
+  if ((await _flowProviderDeps.headSha(repoRoot)) !== request.state.sha) return true;
+  return await _flowProviderDeps.isDirty(repoRoot, request.checkoutLockHeld);
 }
 
 /**
@@ -177,17 +179,13 @@ async function branchMoved(state: FlowRepoReady, repoRoot: string): Promise<bool
  * checkout moved to another branch holding the same commit, or a remote repointed
  * while the card was open, fails with nothing pushed.
  *
- * @param state - The repository state the card was built from
- * @param specPaths - The specs to resolve at that commit; empty when the form sends none
+ * @param request - The carded state, the specs to re-check and any held checkout reservation
  * @param repoRoot - The repository to read
  * @returns The `[chat]` result to stop with, or `undefined` when the target is still the carded one
  */
-async function pushTargetFailure(
-  state: FlowRepoReady,
-  specPaths: readonly string[],
-  repoRoot: string,
-): Promise<ToolResult | undefined> {
-  const now = await _flowProviderDeps.readFlowRepoState(repoRoot, specPaths);
+async function pushTargetFailure(request: FlowAllowRequest, repoRoot: string): Promise<ToolResult | undefined> {
+  const { state, specPaths, checkoutLockHeld } = request;
+  const now = await _flowProviderDeps.readFlowRepoState(repoRoot, specPaths, checkoutLockHeld);
   if (!now.ok) return failure(now.message);
   const unchanged = now.branch === state.branch && now.sha === state.sha && now.remoteUrl === state.remoteUrl;
   return unchanged ? undefined : failure(PUSH_TARGET_MOVED_MESSAGE);
@@ -347,8 +345,8 @@ async function createFlow(request: FlowAllowRequest, target: FlowSendTarget): Pr
 async function verifyPush(request: FlowAllowRequest, repoRoot: string): Promise<PushDestination> {
   const { state, signal } = request;
   try {
-    if (await branchMoved(state, repoRoot)) return { ok: false, result: failure(BRANCH_CHANGED_MESSAGE) };
-    const moved = await pushTargetFailure(state, request.specPaths, repoRoot);
+    if (await branchMoved(request, repoRoot)) return { ok: false, result: failure(BRANCH_CHANGED_MESSAGE) };
+    const moved = await pushTargetFailure(request, repoRoot);
     if (moved !== undefined) return { ok: false, result: moved };
     const destination = await pushDestination(state, repoRoot);
     if (!destination.ok || turnCancelled(signal)) return destination;

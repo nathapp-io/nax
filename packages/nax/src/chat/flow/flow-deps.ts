@@ -23,7 +23,7 @@ export const _flowProviderDeps: {
   readFlowRepoState: typeof readFlowRepoState;
   readFlowPushUrl: typeof readFlowPushUrl;
   headSha: (repoRoot: string) => Promise<string | null>;
-  isDirty: (repoRoot: string) => Promise<boolean>;
+  isDirty: typeof isFlowTreeDirty;
   commitAndPush: typeof commitAndPush;
   createKodaFlow: typeof createKodaFlow;
 } = {

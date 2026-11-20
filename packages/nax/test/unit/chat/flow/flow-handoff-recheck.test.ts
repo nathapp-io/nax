@@ -13,6 +13,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertDefined, withDepsRestore, withTempDir } from "@test/helpers";
 import type { HostApprovalCard } from "@/chat/ask-controller";
@@ -270,6 +271,28 @@ describe("nax-flow__send — the mark is read again at the push boundary", () =>
     return code === 0;
   }
 
+  test("preserves an unrecognized untracked nax.lock created while the approval card is open", async () => {
+    await withTempDir(async (repoRoot) => {
+      options = { ...options, repoRoot };
+      _flowHandoffDeps.acquireLock = acquireLock;
+      _flowHandoffDeps.releaseLock = releaseLock;
+      const path = join(repoRoot, "nax.lock");
+      const original = new Uint8Array([0, 255, 10]);
+      reply = async () => {
+        await Bun.write(path, original);
+        return "allow";
+      };
+
+      const result = await send(handoffInput);
+
+      expect(await Bun.file(path).bytes()).toEqual(original);
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("nax.lock");
+      expect(pushCalls).toHaveLength(0);
+      expect(kodaCalls).toHaveLength(0);
+    });
+  });
+
   test("reserves the checkout until the create and handoff mark finish", async () => {
     await withTempDir(async (repoRoot) => {
       options = { ...options, repoRoot };
@@ -303,7 +326,7 @@ describe("nax-flow__send — the mark is read again at the push boundary", () =>
         // This send reached the reservation boundary while the first still held the lock.
         expect(await send(handoffInput)).toEqual({
           isError: true,
-          content: "[chat] another nax operation holds the checkout lock; nothing was pushed",
+          content: "[chat] cannot reserve the checkout: nax.lock already exists; nothing was pushed",
         });
         finishCreate.resolve();
         await atMark.promise;

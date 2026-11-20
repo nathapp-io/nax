@@ -375,6 +375,32 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test("uses the inspected result file and its mtime even if the file is replaced inside the run", async () => {
+    await withTempDir(async (dir) => {
+      const newest = await makeRun(dir, "newest", { result: "original newest result", resultMtimeMs: 2000 });
+      await makeRun(dir, "older", { result: "older result", resultMtimeMs: 1000 });
+      const readFile = _handoffRecordDeps.readRecordFile;
+      let replaced = false;
+      _handoffRecordDeps.readRecordFile = async (...args) => {
+        if (!replaced) {
+          replaced = true;
+          const replacement = join(newest, "replacement.json");
+          await writeFile(replacement, "replacement result", 500);
+          await rename(replacement, join(newest, "result.json"));
+        }
+        return await readFile(...args);
+      };
+
+      const read = expectOk(await readHandoffRecordFiles(dir));
+      expect(replaced).toBe(true);
+      expect(read.newestRunId).toBe("newest");
+      expect(read.record).toEqual([
+        { runId: "newest", file: "result.json", mtimeMs: 2000, content: "original newest result" },
+        { runId: "older", file: "result.json", mtimeMs: 1000, content: "older result" },
+      ]);
+    });
+  });
+
   test("a run whose result.json is a link is refused, not skipped", async () => {
     await withTempDir(async (dir) => {
       await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
