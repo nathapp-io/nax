@@ -41,7 +41,10 @@ const posted = {
   offLine: 0,
   failed: 0,
 };
-let runtime: ReturnType<typeof makeTestRuntime>;
+/** Every runtime this file made; each is closed in the teardown, whichever run used it. */
+const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
+/** How often each runtime was closed, so the teardown can prove it closed every one it made. */
+const closes = new WeakMap<ReturnType<typeof makeTestRuntime>, number>();
 let info: PrInfo;
 let outcome: RecordRulingsOutcome;
 /** Whether the forge classifies the PR as trusted. */
@@ -66,7 +69,14 @@ const advance = mock<typeof advanceReviewedHead>(async () => {
 
 /** A fresh runtime and the review dependencies over it; every review run closes the runtime it used. */
 function installDeps(): void {
-  runtime = makeTestRuntime({ config });
+  const runtime = makeTestRuntime({ config });
+  // Each run replaces the runtime the previous one used, so every runtime is kept for the teardown.
+  runtimes.push(runtime);
+  const close = runtime.close.bind(runtime);
+  runtime.close = async () => {
+    closes.set(runtime, (closes.get(runtime) ?? 0) + 1);
+    await close();
+  };
   Object.assign(_botReviewDeps, {
     isAncestor: ancestor,
     ...makeBotReviewDeps({ config, runtime, info: () => info }),
@@ -134,8 +144,13 @@ afterEach(async () => {
   Object.assign(_botReviewDeps, original);
   Object.assign(_workflowDeps, workflow);
   Object.assign(_reviewStepDeps, step);
-  await runtime.close();
+  // A run closes the runtime it used; this closes every runtime the file made, so none is left behind.
+  const closedBefore = runtimes.map((created) => closes.get(created) ?? 0);
+  await Promise.allSettled(runtimes.map((created) => created.close()));
+  const missed = runtimes.filter((created, index) => (closes.get(created) ?? 0) === closedBefore[index]);
+  runtimes.length = 0;
   resetLogger();
+  expect(missed).toHaveLength(0);
 });
 
 /** Run the review and report how often the advance was called. */
