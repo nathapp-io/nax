@@ -209,7 +209,7 @@ describe("chat shell", () => {
     expect(ui.lastFrame()).toContain("Hello");
   });
   test.each([
-    ["AC-6", false, "Read 1 lines"],
+    ["AC-6", false, "Read 1 line"],
     ["AC-7", true, "ignored preview"],
   ] as const)("%s correlates tool results", (_ac, isError, summary) => {
     const ui = mount();

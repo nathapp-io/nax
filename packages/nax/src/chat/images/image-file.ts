@@ -63,15 +63,28 @@ export function imageSizeLabel(bytes: number): string {
   return `${bytes} B`;
 }
 
+/** What `describeImageParts` needs: a mime type, an optional pixel size, and a decoded byte count. */
+export interface ImageFacts {
+  readonly mimeType: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly bytes: number;
+}
+
 /** The parts that describe an image without numbering it: `"png · 1280×720 · 342 KB"`. */
+export function describeImageParts(facts: ImageFacts): string {
+  const { width, height } = facts;
+  const pixels = width === undefined || height === undefined ? [] : [`${width}${PIXEL_SEPARATOR}${height}`];
+  return [imageFormatOf(facts.mimeType), ...pixels, imageSizeLabel(facts.bytes)].join(DESCRIPTION_SEPARATOR);
+}
+
+/** The parts that describe an attached image without numbering it: `"png · 1280×720 · 342 KB"`. */
 export function imageDescription(image: ImageAttachment): string {
-  const pixels = pixelSize(image);
-  const parts = [
-    imageFormatOf(image.mimeType),
-    ...(pixels === undefined ? [] : [pixels]),
-    imageSizeLabel(imageRawBytes(image)),
-  ];
-  return parts.join(DESCRIPTION_SEPARATOR);
+  return describeImageParts({
+    mimeType: image.mimeType,
+    ...(image.width !== undefined && image.height !== undefined ? { width: image.width, height: image.height } : {}),
+    bytes: imageRawBytes(image),
+  });
 }
 
 /** A numbered attachment label, with the image's origin appended when it carries one. */
@@ -94,9 +107,4 @@ function toAttachment(bytes: Uint8Array, source: string, sniffed: SniffedImage):
 function base64Padding(data: string): number {
   if (data.endsWith("==")) return 2;
   return data.endsWith("=") ? 1 : 0;
-}
-
-function pixelSize(image: ImageAttachment): string | undefined {
-  const { width, height } = image;
-  return width === undefined || height === undefined ? undefined : `${width}${PIXEL_SEPARATOR}${height}`;
 }

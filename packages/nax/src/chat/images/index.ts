@@ -1,5 +1,7 @@
 export { type ImageFormat, type SniffedImage, sniffImage } from "@nathapp/nax-agent";
 export {
+  describeImageParts,
+  type ImageFacts,
   imageDescription,
   imageFormatOf,
   imageFromBytes,

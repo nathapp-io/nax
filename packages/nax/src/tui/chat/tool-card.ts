@@ -8,6 +8,7 @@
  */
 import { TOOL_RESULT_PREVIEW_BYTES } from "@nathapp/nax-agent";
 import { GENERAL_AGENT_NAME } from "@/chat";
+import { describeImageParts } from "@/chat/images";
 import { formatDuration } from "./duration";
 import type { ToolChild, TranscriptEntry } from "./transcript-model";
 
@@ -257,14 +258,34 @@ function writeSummary(entry: ToolEntry): Capped<CardLine> {
   const path = stringField(entry.input, "path");
   const content = stringField(entry.input, "content");
   if (path === undefined || content === undefined) return textSummary(entry);
-  return { shown: [muted(`Wrote ${lineCount(content)} lines to ${path}`)], hidden: 0 };
+  return { shown: [muted(`Wrote ${linesLabel(lineCount(content))} to ${path}`)], hidden: 0 };
+}
+
+/** `1 line`, `2 lines`; `suffix` marks a floor count (`40+ lines`). */
+function linesLabel(count: number, suffix = ""): string {
+  return `${count}${suffix} ${count === 1 ? "line" : "lines"}`;
+}
+
+/** The text result `imageLabel` (nax-agent `read-image.ts`) gives an image Read: mime, optional WxH, byte count. */
+const IMAGE_LABEL = /^\[image: (image\/[\w.+-]+)(?: (\d+)x(\d+))?, (\d+) bytes\]$/;
+
+/** The image summary of a Read whose whole result is an `imageLabel`, or `undefined` for any other text. */
+function imageReadSummary(preview: string): string | undefined {
+  const match = IMAGE_LABEL.exec(preview.trim());
+  if (match === null) return undefined;
+  const [, mimeType, width, height, bytes] = match;
+  if (mimeType === undefined || bytes === undefined) return undefined;
+  const pixels = width === undefined || height === undefined ? {} : { width: Number(width), height: Number(height) };
+  return `image · ${describeImageParts({ mimeType, ...pixels, bytes: Number(bytes) })}`;
 }
 
 /** `+` marks a preview that filled the byte cap nax-agent applies, so its count is a floor. */
 function readSummary(entry: ToolEntry): Capped<CardLine> {
   const preview = previewText(entry);
+  const image = imageReadSummary(preview);
+  if (image !== undefined) return { shown: [muted(`Read ${image}`)], hidden: 0 };
   const filledCap = Buffer.byteLength(preview, "utf8") >= TOOL_RESULT_PREVIEW_BYTES;
-  return { shown: [muted(`Read ${lineCount(preview)}${filledCap ? "+" : ""} lines`)], hidden: 0 };
+  return { shown: [muted(`Read ${linesLabel(lineCount(preview), filledCap ? "+" : "")}`)], hidden: 0 };
 }
 
 function bashSummary(entry: ToolEntry, expanded: boolean): Capped<CardLine> {
