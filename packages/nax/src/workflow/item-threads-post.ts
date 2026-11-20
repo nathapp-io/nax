@@ -73,6 +73,8 @@ interface PostingContext {
 type MaintenanceContext = IndexContext & ReopenContext;
 
 const STAGE = "item-threads";
+/** The finish-approval hold has no ledger decision, so an unread ledger cannot vouch for it. */
+const APPROVAL_ITEM_ID = "_run:approval";
 const BUDGET_SPENT = "[item-threads] Pacing budget spent; skipping remaining threads";
 
 function warn(identity: string | { feature: string }, message: string, error?: unknown): void {
@@ -185,7 +187,9 @@ async function readContext(input: ItemThreadsInput, deps: ForgeDeps) {
  */
 function indexedAdvisorKeys(read: ReadItemThreads): readonly string[] {
   const indexed = new Set(read.index?.keys ?? []);
-  return read.items.filter((item) => item.kind === "advisor" && indexed.has(item.key)).map((item) => item.key);
+  return read.items
+    .filter((item) => item.kind === "advisor" && item.itemId !== APPROVAL_ITEM_ID && indexed.has(item.key))
+    .map((item) => item.key);
 }
 
 export async function postItemThreads(
@@ -222,12 +226,6 @@ export async function postItemThreads(
   }
   const keys = items.map(itemKey);
   const maintenance: MaintenanceContext = { ...snapshot, deps, cwd: input.projectDir, pacer };
-  const reopen = await reopenReraisedItems(input, keys, maintenance);
-  outcome.failed += reopen.failed;
-  // B2: an unread ledger cannot retire an advisor item, so the keys the PR index already lists stay
-  // in this publish's index — and a key the index keeps is a thread `maintainItemIndex` leaves open.
-  // A read that answered states the whole list, so nothing is carried here and an advisor item it no
-  // longer flags leaves the index and is closed, as before.
   const retained = input.advisorLedgerUnread === true ? indexedAdvisorKeys(snapshot.read) : [];
   if (retained.length > 0) {
     getLogger()?.info(STAGE, "[item-threads] Keeping indexed advisor items: their ledger could not be read", {
@@ -236,6 +234,8 @@ export async function postItemThreads(
     });
   }
   const indexKeys = [...new Set([...keys, ...retained])];
+  const reopen = await reopenReraisedItems(input, keys, maintenance, indexKeys);
+  outcome.failed += reopen.failed;
   const settled = new Set(
     snapshot.read.items
       .filter((item) => item.ruling && item.replies.length === 0 && !reopen.reopened.has(item.key))

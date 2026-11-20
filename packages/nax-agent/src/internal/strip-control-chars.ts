@@ -32,26 +32,59 @@ const C0_CONTROL_CHARS_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
 // what is left here is a stray C1 byte (NEL 0x85, HTS 0x88, a bare introducer).
 const C1_CONTROL_CHARS_RE = /[\x80-\x9F]/g;
 
+/** Index just past the OSC body's terminator (BEL, ESC \\ or C1 ST), or -1 when there is none. */
+function oscEnd(input: string, from: number): number {
+  for (let i = from; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    if (c === 0x07 || c === 0x9c) return i + 1;
+    if (c === 0x1b && input.charCodeAt(i + 1) === 0x5c) return i + 2;
+  }
+  return -1;
+}
+
+/** Index just past a CSI sequence whose parameters start at `from`, or -1 when malformed. */
+function csiEnd(input: string, from: number): number {
+  let i = from;
+  while (i < input.length && input.charCodeAt(i) >= 0x30 && input.charCodeAt(i) <= 0x3f) i++;
+  while (i < input.length && input.charCodeAt(i) >= 0x20 && input.charCodeAt(i) <= 0x2f) i++;
+  const c = input.charCodeAt(i);
+  return c >= 0x40 && c <= 0x7e ? i + 1 : -1;
+}
+
 /**
- * Removes ESC-initiated and 8-bit (C1) sequences — CSI, OSC and the other ANSI
- * escape forms — and every remaining control character, while leaving normal
- * whitespace (tab, newline, carriage return) untouched.
+ * Removes ESC-initiated and 8-bit (C1) sequences — CSI (any parameter byte, incl. ':'), OSC (BEL,
+ * ESC \\ or C1 ST terminated, either introducer) and short escapes — and every remaining control
+ * character, leaving tab, newline and carriage return. Single pass: each byte is scanned a bounded
+ * number of times, and once an OSC finds no terminator no later one is searched for.
  */
 export function stripControlChars(input: string): string {
   if (!input) return input;
-  // ESC-initiated sequences: OSC "\x1b]...BEL-or-ST", CSI "\x1b[...<final-byte>",
-  // and any other "\x1b" + single byte (short escapes like \x1bc, \x1b=).
-  // The C1 spellings of the same two sequences follow, one ST/BEL-terminated
-  // OSC and one CSI, then the strays.
-  const withoutEscapes = input
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching a real ESC/BEL/ST sequence to strip
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // OSC ... BEL | OSC ... ST
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching a real ESC (CSI) sequence to strip
-    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "") // CSI ... final byte
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching a real ESC sequence to strip
-    .replace(/\x1b[ -~]/g, "") // other short two-byte escapes (ESC + one printable byte, e.g. ESC c, ESC =, ESC 7)
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: matching a real C1 (8-bit) OSC sequence to strip
-    .replace(/\x9d[^\x07\x9c]*(?:\x07|\x9c)/g, "") // 8-bit OSC ... BEL | ST
-    .replace(/\x9b[0-9;?]*[ -/]*[@-~]/g, ""); // 8-bit CSI ... final byte
-  return withoutEscapes.replace(C0_CONTROL_CHARS_RE, "").replace(C1_CONTROL_CHARS_RE, "");
+  const scan = { oscOpen: true };
+  let out = "";
+  let i = 0;
+  while (i < input.length) {
+    const end = sequenceEnd(input, i, scan);
+    if (end >= 0) {
+      i = end;
+      continue;
+    }
+    out += input[i];
+    i++;
+  }
+  return out.replace(C0_CONTROL_CHARS_RE, "").replace(C1_CONTROL_CHARS_RE, "");
+}
+
+/** End of the escape sequence starting at `i`, or -1 when none starts there. */
+function sequenceEnd(input: string, i: number, scan: { oscOpen: boolean }): number {
+  const c = input.charCodeAt(i);
+  const next = input.charCodeAt(i + 1);
+  const esc = c === 0x1b;
+  if ((esc && next === 0x5d) || c === 0x9d) {
+    if (!scan.oscOpen) return -1;
+    const end = oscEnd(input, i + (esc ? 2 : 1));
+    if (end < 0) scan.oscOpen = false;
+    return end;
+  }
+  if ((esc && next === 0x5b) || c === 0x9b) return csiEnd(input, i + (esc ? 2 : 1));
+  return esc && next >= 0x20 && next <= 0x7e ? i + 2 : -1;
 }
