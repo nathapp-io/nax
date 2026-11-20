@@ -253,6 +253,15 @@ describe("runBotReview advances the reviewed head after a complete review", () =
     expect(await advanceCalls()).toBe(0);
   });
 
+  test("B1 a post whose carried-findings record did not land does not advance", async () => {
+    expect(await advanceCalls()).toBe(1);
+    post.mockImplementation(async () => {
+      order.push("post");
+      return { ...posted, carriedRecordFailed: true as const };
+    });
+    expect(await advanceCalls()).toBe(0);
+  });
+
   test("AC-12 a failed advance still posts the same result", async () => {
     const failed = await reviewWith({ kind: "failed" });
     expect(advance).toHaveBeenCalledTimes(1);
@@ -285,7 +294,11 @@ describe("runBotReview carries an earlier review's summary-only findings (B1)", 
   test("AC-14 an incremental review since the reviewed head reads that head's artifact", async () => {
     load.mockImplementation(async () => earlier);
     await runBotReview(input);
-    expect(load).toHaveBeenCalledWith(expect.any(String), 7, reviewedHead, { codeOnly: true });
+    // B4: the loader is handed the whole reference, so a shared output directory cannot hand it another
+    // repository's review of the same number and head.
+    expect(load).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ number: 7 }), reviewedHead, {
+      codeOnly: true,
+    });
     expect(post.mock.calls[0]?.[0].carriedFindings).toEqual(earlier.agreed.filter((item) => item.kind === "finding"));
   });
 

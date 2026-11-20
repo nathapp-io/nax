@@ -403,7 +403,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       agentName: resolveDefaultAgent(config),
       pr: { forge: ref.forge, number: ref.number, base: checkout.mergeBase, head: info.headSha },
     });
-    const review = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha);
+    const review = await deps.loadLatestReview(runtime.outputDir, ref, info.headSha);
     if (!review)
       return finishFix(
         {
@@ -413,7 +413,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         log,
       );
     // A conversation-only review reads no code; the head's readiness findings live in its code review.
-    const codeReview = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha, { codeOnly: true });
+    const codeReview = await deps.loadLatestReview(runtime.outputDir, ref, info.headSha, { codeOnly: true });
     if (!input.readyOnly) {
       const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
       if (!access.ok)

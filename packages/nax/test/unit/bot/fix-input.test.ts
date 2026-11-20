@@ -5,6 +5,8 @@ import { getLogger } from "@/logger";
 import { buildUntrustedRequestIssue } from "@/prompts";
 
 const original = bot._fixInputDeps ? { ...bot._fixInputDeps } : undefined;
+/** The reference the loader matches against every artifact it selects (B4). */
+const REF = { forge: "github", host: "github.test", repo: "o/r", number: 42 } as const;
 afterEach(() => {
   if (original) Object.assign(bot._fixInputDeps, original);
 });
@@ -62,12 +64,12 @@ test("push access timeout is diagnostic, not an empty refusal", async () => {
 });
 test("a vanished artifact mtime does not hide another review", async () => {
   bot._fixInputDeps.glob = async () => ["vanished", "present"];
-  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 1, headSha: "h" });
+  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 1, headSha: "h", pr: REF });
   bot._fixInputDeps.mtimeMs = async (path) => {
     if (path === "vanished") throw new Error("ENOENT");
     return 1;
   };
-  expect(await bot.loadLatestReview("/o", 42, "h")).toMatchObject({ headSha: "h" });
+  expect(await bot.loadLatestReview("/o", REF, "h")).toMatchObject({ headSha: "h" });
 });
 
 test.each([
@@ -78,9 +80,9 @@ test.each([
   { source: "invented", gates: [], preRun: [] },
 ])("rejects malformed saved checks %j", async (checks) => {
   bot._fixInputDeps.glob = async () => ["review"];
-  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", checks });
+  bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", pr: REF, checks });
   bot._fixInputDeps.mtimeMs = async () => 1;
-  expect(await bot.loadLatestReview("/o", 42, "h")).toBeNull();
+  expect(await bot.loadLatestReview("/o", REF, "h")).toBeNull();
 });
 
 describe("loadLatestReview code-only selection (US-001)", () => {
@@ -103,11 +105,11 @@ describe("loadLatestReview code-only selection (US-001)", () => {
   }
   test("AC-10 reads past a conversation-only artifact of the same head", async () => {
     oneHead();
-    expect(await bot.loadLatestReview("/o", 42, "h", { codeOnly: true })).toEqual(code);
+    expect(await bot.loadLatestReview("/o", REF, "h", { codeOnly: true })).toEqual(code);
   });
   test("AC-11 without the option the newest artifact wins", async () => {
     oneHead();
-    expect(await bot.loadLatestReview("/o", 42, "h")).toEqual(conversation);
+    expect(await bot.loadLatestReview("/o", REF, "h")).toEqual(conversation);
   });
 });
 
@@ -118,12 +120,17 @@ describe("loadLatestReview writer-checked artifact versions", () => {
     bot._fixInputDeps.glob = async () => ["review-path"];
     bot._fixInputDeps.readText = async () => JSON.stringify(value);
     bot._fixInputDeps.mtimeMs = async () => 1;
-    return bot.loadLatestReview("/output", 42, "h");
+    return bot.loadLatestReview("/output", REF, "h");
   }
   test.each([1, 2])("AC-10/11/18/19 version %s drops unchecked human items with exact warning", async (version) => {
     const warn = spyOn(getLogger(), "warn");
     try {
-      expect(await read({ version, headSha: "h", agreed })).toEqual({ version, headSha: "h", agreed: [finding] });
+      expect(await read({ version, headSha: "h", pr: REF, agreed })).toEqual({
+        version,
+        headSha: "h",
+        pr: REF,
+        agreed: [finding],
+      });
       expect(warn).toHaveBeenCalledWith(
         "bot-fix",
         "Dropped unchecked thread and comment items from an older review; re-run nax bot review",
@@ -133,18 +140,18 @@ describe("loadLatestReview writer-checked artifact versions", () => {
       warn.mockRestore();
     }
   });
-  test.each([undefined, null, "not-an-array"])(
-    "AC-12 leaves missing/non-array agreed unchanged: %j",
-    async (agreed) => {
-      const value = { version: 1, headSha: "h", ...(agreed === undefined ? {} : { agreed }) };
-      expect(await read(value)).toEqual(value);
-    },
-  );
+  test("AC-12 a version 1 artifact with no agreed list still loads", async () => {
+    const value = { version: 1, headSha: "h", pr: REF };
+    expect(await read(value)).toEqual(value);
+  });
+  test.each([null, "not-an-array"])("B3 skips an artifact whose agreed list is not a list: %j", async (bad) => {
+    expect(await read({ version: 1, headSha: "h", pr: REF, agreed: bad })).toBeNull();
+  });
   test("AC-13 version 3 preserves human items", async () => {
-    const value = { version: 3, headSha: "h", agreed };
+    const value = { version: 3, headSha: "h", pr: REF, agreed };
     expect(await read(value)).toEqual(value);
   });
   test("AC-14 version 4 is ignored", async () => {
-    expect(await read({ version: 4, headSha: "h", agreed })).toBeNull();
+    expect(await read({ version: 4, headSha: "h", pr: REF, agreed })).toBeNull();
   });
 });

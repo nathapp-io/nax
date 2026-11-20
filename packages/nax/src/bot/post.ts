@@ -21,6 +21,7 @@ import type { CallerRulingsReport } from "./caller-rulings";
 import { type CarriedFinding, carriedOpen } from "./carried-findings";
 import type { BotChecks } from "./checks";
 import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
+import { postCarriedRecord } from "./post-carried";
 import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import type { BotPushEntry, FindingLineage } from "./push-ledger";
 import { commentKey, findingKey, threadKey } from "./render";
@@ -165,6 +166,11 @@ export interface PostReviewInput {
    * release a finding nothing has fixed.
    */
   readonly carriedFindings?: readonly CarriedFinding[];
+  /**
+   * B1: the recorded bot pushes made *after* the review that raised a carried finding. Only these can
+   * claim to have fixed one: a push at or before that review cannot have fixed a finding it raised.
+   */
+  readonly carriedFixPushes?: readonly BotPushEntry[];
   readonly stateDir: string;
   readonly deps: ForgeDeps;
   readonly cwd: string;
@@ -177,12 +183,17 @@ export interface PostReviewOutcome {
   readonly offLine: number;
   readonly failed: number;
   /**
-   * B2: the coverage record for this head could not be written or cleared, so the PR may still name
-   * files an earlier review of the same head did not read. Not part of the posted result —
-   * `executeReview` drops it — but the reviewed head must not advance on it: the next default review
-   * would be conversation-only and could never replace the stale record.
+   * B2: the coverage record for this head did not land, so the PR may still name files an earlier review
+   * of the same head did not read. Dropped from the posted result, but the reviewed head must not advance
+   * on it: the next default review would be conversation-only and could never replace the record.
    */
   readonly coverageRecordFailed?: true;
+  /**
+   * B1: the carried-findings record did not land whole, so a finding this review could not re-report may
+   * have no durable record. The reviewed head must not advance on it: the next review would skip the only
+   * changes that could re-raise it.
+   */
+  readonly carriedRecordFailed?: true;
 }
 
 export const BOT_REVIEW_FILENAME = "bot-review.json";
@@ -568,6 +579,8 @@ async function postCoverageRecord(input: PostReviewInput): Promise<boolean> {
 export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
   await persistArtifact(input);
   const findings = await postFindings(input);
+  // B1: the durable record lands before the post returns, so an advance after it can never outrun it.
+  const carriedRecorded = await postCarriedRecord(input, findings.offLine);
   const threads = await postThreads(input);
   const earlier = await postEarlier(input);
   const failed = threads.failed + earlier.failed;
@@ -581,5 +594,6 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
     commentsAnswered: input.verdict.comments.length,
     offLine: findings.offLine.length,
     ...(coverageRecorded ? {} : { coverageRecordFailed: true as const }),
+    ...(carriedRecorded ? {} : { carriedRecordFailed: true as const }),
   };
 }

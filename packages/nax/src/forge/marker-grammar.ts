@@ -11,9 +11,14 @@ export const TOP_LEVEL_MARKER_KEYS = [
 /** The canonical key of one bot push record: the prefix and the push's full 40-hex sha, nothing else. */
 const PUSH_RECORD_KEY = /^push-[0-9a-f]{40}$/;
 
-/** A key whose comment is a top-level one: a fixed key, or one push's own record (US-004). */
+/** The key of one reviewed head's carried-findings record, for the same reason: it names its head. */
+const CARRIED_RECORD_KEY = /^w-carry:[0-9a-f]{40}$/;
+
+/** A key whose comment is a top-level one: a fixed key, or one record's own key. */
 export function isTopLevelMarkerKey(key: string): boolean {
-  return TOP_LEVEL_MARKER_KEYS.some((known) => known === key) || PUSH_RECORD_KEY.test(key);
+  return (
+    TOP_LEVEL_MARKER_KEYS.some((known) => known === key) || PUSH_RECORD_KEY.test(key) || CARRIED_RECORD_KEY.test(key)
+  );
 }
 
 const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";

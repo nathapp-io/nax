@@ -15,7 +15,6 @@ import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
 import type { CallerRulingsFile, CallerRulingsReport } from "./caller-rulings";
-import { earlierCarriedFindings } from "./carried-findings";
 import { initBotInteractionChain } from "./chat-asks";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
@@ -30,9 +29,11 @@ import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
 import { lineageTargets } from "./post-earlier";
 import type { BotPushEntry } from "./push-ledger";
+import { advanceAfterReview } from "./review-advance";
+import { reviewCarry } from "./review-carry";
 import { type ReviewHistoryInput, reviewConvergence, reviewHistory } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
-import { type BotReviewScope, readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
+import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
 import { hasNonWriterAuthor } from "./writers";
@@ -102,12 +103,12 @@ interface ReviewEnv extends ReviewPreparation {
 /** US-005: the push facts each half of the review environment needs, or nothing to add. */
 interface ReviewPushFacts {
   readonly prompt: { readonly botPushes?: readonly BotPushEntry[] };
-  readonly post: { readonly botPushes?: readonly BotPushEntry[]; readonly worktree?: string };
-}
-
-/** Only an incremental review has an earlier range whose pushes its prompt must describe. */
-function incrementalBase(scope: BotReviewScope, range: { readonly rangeBase: string }): string | undefined {
-  return scope === "incremental" ? range.rangeBase : undefined;
+  readonly post: {
+    readonly botPushes?: readonly BotPushEntry[];
+    readonly worktree?: string;
+    /** B1: only a push after the reviewed head can have fixed a finding raised at it. */
+    readonly carriedFixPushes?: readonly BotPushEntry[];
+  };
 }
 
 async function reviewPushFacts(input: Omit<ReviewHistoryInput, "isAncestor">): Promise<ReviewPushFacts> {
@@ -115,7 +116,10 @@ async function reviewPushFacts(input: Omit<ReviewHistoryInput, "isAncestor">): P
   const inRange = history.inRange ?? [];
   return {
     prompt: inRange.length > 0 ? { botPushes: inRange } : {},
-    post: history.botPushes.length > 0 ? { botPushes: history.botPushes, worktree: input.worktree } : {},
+    post:
+      history.botPushes.length > 0
+        ? { botPushes: history.botPushes, worktree: input.worktree, carriedFixPushes: inRange }
+        : {},
   };
 }
 
@@ -367,26 +371,26 @@ async function reviewEnvironment(
         setupFailed: preparation.preRunFailed ?? preparation.buildFailed,
         ciFiles: await listCiConfigFiles(checkout.worktree),
       });
-  // One chosen range feeds the review, the summary and the artifact, so no two can disagree.
-  const range =
-    input.full === true
-      ? { rangeBase: checkout.mergeBase }
-      : await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor);
-  const scope = reviewScopeOf({ ...range, mergeBase: checkout.mergeBase });
-  const carried = await earlierCarriedFindings({
+  // One chosen range feeds the review, the summary and the artifact; a carry record this head cannot
+  // read widens it back to the merge base (B3).
+  const { range, scope, carried } = await reviewCarry({
     outputDir: context.outputDir,
-    pr: ref.number,
+    ref,
+    own: items.own,
     index: reviewedIndex,
-    scope,
-    rangeBase: range.rangeBase,
+    full: input.full === true,
+    checkout,
+    head: info.headSha,
     load: _botReviewDeps.loadLatestReview,
+    isAncestor: _botReviewDeps.isAncestor,
   });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
     own: items.own,
     worktree: checkout.worktree,
     head: info.headSha,
-    rangeBase: incrementalBase(scope, range),
+    // Only an incremental review has an earlier range whose pushes its prompt must describe.
+    rangeBase: scope === "incremental" ? range.rangeBase : undefined,
   });
   return {
     ...preparation,
@@ -449,27 +453,21 @@ async function reviewEnvironment(
   };
 }
 
-/** US-002: only a complete review advances the head — and B2 holds it too when this head's coverage
- * record did not land, since the next default review of an advanced head writes none. */
-async function advanceIfComplete(env: ReviewEnv, state: ReviewState, coverageFailed: boolean): Promise<void> {
-  if (state.posted === undefined || state.posted.failed > 0) return;
-  if ((state.unreadFiles?.length ?? 0) > 0) return;
-  if (env.reviewedIndex === undefined) return;
-  if (env.post.scope === "conversation-only") return;
-  if (coverageFailed) {
-    getLogger().warn("bot", "Reviewed head held: coverage record did not land", { pr: env.post.ref.number });
-    return;
-  }
-  const outcome = await _botReviewDeps.advanceReviewedHead({
+/** US-002: only a complete review advances the head; `review-advance.ts` holds the whole rule. */
+async function advance(env: ReviewEnv, state: ReviewState): Promise<void> {
+  await advanceAfterReview({
+    posted: state.posted,
+    unreadFiles: state.unreadFiles,
+    reviewedIndex: env.reviewedIndex,
+    scope: env.post.scope,
     ref: env.post.ref,
     login: env.login,
-    expectedHead: env.reviewedIndex.reviewedHead,
     head: env.post.info.headSha,
-    base: env.review.mergeBase,
+    mergeBase: env.review.mergeBase,
     deps: _botReviewDeps.forge,
     cwd: env.post.cwd,
+    advance: _botReviewDeps.advanceReviewedHead,
   });
-  getLogger().info("bot", "Reviewed head advance", { pr: env.post.ref.number, outcome: outcome.kind });
 }
 
 async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRuntime>): Promise<BotReviewResult> {
@@ -495,8 +493,8 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     intent: state.verdict.intent,
     quality,
   });
-  const { coverageRecordFailed, ...posted } = state.posted;
-  await advanceIfComplete(env, state, coverageRecordFailed === true);
+  const { coverageRecordFailed, carriedRecordFailed, ...posted } = state.posted;
+  await advance(env, state);
   return {
     outcome: "posted",
     spentUsd: env.cost.spentUsd(),

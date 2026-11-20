@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
+import type { PrRef } from "@/forge";
 import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
@@ -46,6 +47,13 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
       return null;
     }
     const review = value as BotReviewArtifact;
+    // B3: an artifact whose agreed list is not a list cannot be read as "it found nothing"; skip it whole.
+    if (review.agreed !== undefined && !Array.isArray(review.agreed)) {
+      getLogger()?.warn("bot-fix", "Ignoring review artifact with an unreadable agreed list; re-run nax bot review", {
+        path,
+      });
+      return null;
+    }
     if (review.version < 3 && Array.isArray(review.agreed)) {
       const agreed = review.agreed.filter((item: AgreedItem) => item?.kind === "finding");
       const dropped = review.agreed.length - agreed.length;
@@ -66,20 +74,25 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
 }
 
 /**
- * Select only exact-head reviews; persisted trust is diagnostic, never authorization.
+ * Select only exact-head reviews of *this* PR; persisted trust is diagnostic, never authorization.
+ *
+ * B4: the run directory is keyed by the PR number alone, so two repositories sharing one output directory
+ * collide on `pr-<n>`. The artifact's own `pr` is therefore matched against the whole reference — forge,
+ * host, repository and number — before it can be selected; an artifact that records none is skipped,
+ * because nothing proves it is this PR's.
  *
  * `codeOnly` skips a conversation-only artifact (US-001): that review read no code because the head was
  * already reviewed, so the head's open findings live in the earlier code review, not in it.
  */
 export async function loadLatestReview(
   outputDir: string,
-  prNumber: number,
+  ref: PrRef,
   headSha: string,
   options: { readonly codeOnly?: boolean } = {},
 ): Promise<BotReviewArtifact | null> {
   let paths: string[];
   try {
-    paths = await _fixInputDeps.glob(join("bot", `pr-${prNumber}`, "*", BOT_REVIEW_FILENAME), outputDir);
+    paths = await _fixInputDeps.glob(join("bot", `pr-${ref.number}`, "*", BOT_REVIEW_FILENAME), outputDir);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return null;
     throw cause;
@@ -89,6 +102,7 @@ export async function loadLatestReview(
   for (const path of paths) {
     const review = await readReview(path);
     if (review?.headSha !== headSha) continue;
+    if (!samePr(review.pr, ref)) continue;
     if (options.codeOnly === true && review.scope === "conversation-only") continue;
     let mtime: number;
     try {
@@ -103,6 +117,17 @@ export async function loadLatestReview(
     }
   }
   return latest;
+}
+
+/** B4: every part of the reference must agree; an artifact that names none is not this PR's. */
+function samePr(recorded: PrRef | undefined, wanted: PrRef): boolean {
+  if (recorded === undefined || recorded === null) return false;
+  return (
+    recorded.forge === wanted.forge &&
+    recorded.host === wanted.host &&
+    recorded.repo === wanted.repo &&
+    recorded.number === wanted.number
+  );
 }
 
 export function toFixFindings(items: readonly AgreedItem[]): WorkflowFinding[] {

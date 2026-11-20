@@ -17,6 +17,7 @@ import {
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
+import { CARRIED_RECORD_PREFIX, carriedRecordKey, parseCarriedRecord } from "@/bot/carried-record";
 import { loadLatestReview } from "@/bot/fix-input";
 import { _fixReportDeps, readyStep } from "@/bot/fix-report";
 import { BOT_REVIEW_FILENAME, type BotReviewArtifact, type PostReviewInput, postPrReview } from "@/bot/post";
@@ -31,7 +32,9 @@ import {
   NAX_WORKFLOW_PR_MARKER,
   type OwnComment,
   type PrInfo,
+  type PrRef,
   parseNaxBotMarker,
+  withNaxBotMarker,
 } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict } from "@/operations";
@@ -75,21 +78,26 @@ let verdict: PrReviewVerdict;
 let outcome: RecordRulingsOutcome;
 let calls: string[][];
 let refuse: (argv: string[]) => boolean;
+/** The top-level comments the forge holds, every write appended in order: the bot's own state. */
+let forgeState: string[];
 
 const review = mock<typeof runPrReview>(async () => ({ ran: true, verdict }));
 const record = mock<typeof recordPrRulings>(async () => outcome);
 const ancestor = mock(async (_dir: string, _ancestor: string, _head: string) => true);
 const advance = mock(async () => ({ kind: "unchanged" as const }));
+/** B4: the whole reference, as the review and the loader now pass it. */
+const prRef: PrRef = { forge: "github", host: "test", repo: "o/r", number: PR };
 /** The review artifact is the point of the two-head case, so the temporary output dir is the store. */
-const loadEarlier = mock(async (outputDir: string, pr: number, head: string, options?: { codeOnly?: boolean }) =>
-  loadLatestReview(outputDir, pr, head, options ?? {}),
+const loadEarlier = mock(async (outputDir: string, ref: PrRef, head: string, options?: { codeOnly?: boolean }) =>
+  loadLatestReview(outputDir, ref, head, options ?? {}),
 );
 const forge: ForgeDeps = {
   async run(argv): Promise<ForgeRunResult> {
     calls.push(argv);
-    return refuse(argv)
-      ? { exitCode: 1, stdout: "", stderr: "forge refused the write" }
-      : { exitCode: 0, stdout: '{"id":99}', stderr: "" };
+    if (refuse(argv)) return { exitCode: 1, stdout: "", stderr: "forge refused the write" };
+    const body = bodyOf(argv);
+    if (body !== "") forgeState.push(body);
+    return { exitCode: 0, stdout: '{"id":99}', stderr: "" };
   },
   readText: async () => null,
 };
@@ -117,6 +125,7 @@ beforeEach(() => {
   verdict = emptyVerdict;
   outcome = { ...emptyOutcome, index: { reviewedHead: published, reviewedBase: publishedBase, keys: [] } };
   calls = [];
+  forgeState = [];
   refuse = () => false;
   for (const fn of [review, record, ancestor, advance, loadEarlier, post]) fn.mockClear();
   review.mockImplementation(async () => ({ ran: true, verdict }));
@@ -140,7 +149,15 @@ function install(headSha: string): void {
   runtimes.push(runtime);
   Object.assign(_botReviewDeps, {
     ...makeBotReviewDeps({ config, runtime, info: () => info }),
-    listPrComments: async () => [],
+    // The forge keeps what the bot posted, so a second review reads the first one's own comments.
+    listPrComments: async () =>
+      forgeState.map((body, index) => ({
+        id: String(index + 1),
+        kind: "comment" as const,
+        author: BOT,
+        body,
+        createdAt: "",
+      })),
     isAncestor: ancestor,
     recordPrRulings: record,
     runPrReview: review,
@@ -165,7 +182,7 @@ async function reviewHead(headSha: string, findings: readonly PrFinding[], index
 
 /** The artifact written for one head, as readiness loads it. */
 async function artifactFor(headSha: string): Promise<BotReviewArtifact> {
-  const artifact = await loadLatestReview(tempDir, PR, headSha);
+  const artifact = await loadLatestReview(tempDir, prRef, headSha);
   if (artifact === null) throw new Error(`no review artifact was written for ${headSha}`);
   return artifact;
 }
@@ -220,11 +237,47 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
     expect((await artifactFor(headD)).agreed.map((item) => item.key)).toContain(openKey);
   });
 
-  test("carries nothing when the earlier review's artifact is not on this machine", async () => {
+  test("carries the finding on another machine, from the record on the PR (B1)", async () => {
+    // No artifact of head B on this machine at all: the review of C runs on another worker.
     loadEarlier.mockImplementation(async () => null);
     await reviewHead(headB, [openFinding]);
+    expect(forgeState.map(parseNaxBotMarker).map((marker) => marker?.key)).toContain(carriedRecordKey(headB));
+    await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+    expect((await artifactFor(headC)).agreed.map((item) => item.key)).toContain(openKey);
+  });
+
+  test("carries nothing at all when neither the PR nor this machine holds a record", async () => {
+    loadEarlier.mockImplementation(async () => null);
+    await reviewHead(headB, [openFinding]);
+    // A PR whose record comment was deleted: nothing claims this head's findings, so nothing is carried.
+    forgeState = forgeState.filter((body) => parseNaxBotMarker(body)?.key !== carriedRecordKey(headB));
     await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
     expect((await artifactFor(headC)).agreed).toEqual([]);
+  });
+
+  test("widens a review whose carry record does not parse (B3)", async () => {
+    await reviewHead(headB, [openFinding]);
+    // The record a damaged edit or a foreign writer left: a heading with no usable payload.
+    forgeState = forgeState.map((body) =>
+      parseNaxBotMarker(body)?.key === carriedRecordKey(headB)
+        ? withNaxBotMarker("Carried blocking findings", carriedRecordKey(headB))
+        : body,
+    );
+    await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+    // The review re-read the whole range instead of skipping the part that reported the finding.
+    expect(post.mock.calls[0]?.[0].scope).toBe("full");
+    expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
+  });
+
+  test("holds the reviewed head when the record it needed cannot be written (B1)", async () => {
+    await reviewHead(headB, [openFinding], { reviewedHead: published, reviewedBase: publishedBase, keys: [] });
+    // The premise: the review whose record landed advances the index.
+    expect(advance).toHaveBeenCalledTimes(1);
+    advance.mockClear();
+    refuse = (argv) => bodyOf(argv).includes(`nax-bot:v1 key=${carriedRecordKey(headC)}`);
+    // Head C carries B's finding and cannot write the record that keeps it: nothing may advance.
+    await reviewHead(headC, [], { reviewedHead: headB, reviewedBase: published, keys: [] });
+    expect(advance).not.toHaveBeenCalled();
   });
 });
 
@@ -292,13 +345,83 @@ describe("what ends a carry", () => {
     expect(await agreedKeys(carriedInput(stateDir, { settledKeys: new Set([openKey]) }))).toEqual([]);
   });
 
-  test("a recorded bot push that claims the key ends the carry", async () => {
+  test("a bot push recorded after the reviewed head that claims the key ends the carry", async () => {
     const entry: BotPushEntry = {
       base: published,
       sha: headB,
       at: "",
       items: [{ key: openKey, generation: 1, issue: openFinding.issue }],
     };
-    expect(await agreedKeys(carriedInput(stateDir, { botPushes: [entry] }))).toEqual([]);
+    expect(await agreedKeys(carriedInput(stateDir, { carriedFixPushes: [entry] }))).toEqual([]);
+  });
+
+  test("a push at or before the review that raised the finding cannot end the carry (B1)", async () => {
+    // The ledger's whole history reaches back before head B, so a key it holds says nothing about a
+    // finding B reported after that push: only `carriedFixPushes` — the pushes after B — may clear one.
+    const entry: BotPushEntry = {
+      base: published,
+      sha: headB,
+      at: "",
+      items: [{ key: openKey, generation: 1, issue: openFinding.issue }],
+    };
+    expect(await agreedKeys(carriedInput(stateDir, { botPushes: [entry] }))).toEqual([openKey]);
+  });
+});
+
+describe("the carried findings record the post leaves on the PR (B1)", () => {
+  let stateDir: string;
+  /** The record bodies this post wrote, in write order. */
+  function records(): string[] {
+    return forgeState.filter((body) => parseNaxBotMarker(body)?.key?.startsWith(CARRIED_RECORD_PREFIX));
+  }
+  beforeEach(() => {
+    stateDir = makeTempDir("bot-carried-record-");
+    forgeState = [];
+    refuse = () => false;
+  });
+  afterEach(() => {
+    cleanupTempDir(stateDir);
+  });
+
+  test("records the blocking finding it could not anchor, keyed by the finding", async () => {
+    const input = carriedInput(stateDir, {
+      carriedFindings: [],
+      verdict: { ...emptyVerdict, findings: [openFinding] },
+    });
+    const outcome = await postPrReview(input);
+    const record = parseCarriedRecord(records()[0] ?? "");
+    expect(record?.headSha).toBe(headC);
+    expect(record?.findings.map(({ key }) => key)).toEqual([openKey]);
+    expect(outcome.carriedRecordFailed).toBeUndefined();
+  });
+
+  test("records the carry it kept, so a third review still sees it", async () => {
+    await postPrReview(carriedInput(stateDir));
+    const record = parseCarriedRecord(records()[0] ?? "");
+    expect(record?.findings.map(({ key }) => key)).toEqual([openKey]);
+  });
+
+  test("holds the reviewed head when the record did not land and there was something to carry", async () => {
+    refuse = (argv) => bodyOf(argv).includes(`nax-bot:v1 key=${carriedRecordKey(headC)}`);
+    const outcome = await postPrReview(carriedInput(stateDir));
+    expect(outcome.carriedRecordFailed).toBe(true);
+  });
+
+  test("does not hold the reviewed head when it had nothing to carry", async () => {
+    refuse = (argv) => bodyOf(argv).includes(`nax-bot:v1 key=${carriedRecordKey(headC)}`);
+    const outcome = await postPrReview(carriedInput(stateDir, { carriedFindings: [] }));
+    expect(outcome.carriedRecordFailed).toBeUndefined();
+  });
+
+  test("keys the record by the head it speaks for, so a later head writes beside it", async () => {
+    await postPrReview(carriedInput(stateDir, { info: { ...info, headSha: headB } }));
+    await postPrReview(carriedInput(stateDir, { info: { ...info, headSha: headC } }));
+    const keys = records().map((body) => parseNaxBotMarker(body)?.key);
+    expect(keys).toEqual([carriedRecordKey(headB), carriedRecordKey(headC)]);
+  });
+
+  test("a conversation-only review writes no record: it read no range to carry across", async () => {
+    await postPrReview(carriedInput(stateDir, { scope: "conversation-only" }));
+    expect(records()).toEqual([]);
   });
 });
