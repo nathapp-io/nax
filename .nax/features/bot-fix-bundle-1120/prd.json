@@ -3,7 +3,7 @@
   "feature": "bot-fix-bundle-1120",
   "branchName": "feat/bot-fix-bundle-1120",
   "createdAt": "2026-11-20T08:59:29.470Z",
-  "updatedAt": "2026-11-20T09:52:12.284Z",
+  "updatedAt": "2026-11-20T10:03:59.891Z",
   "userStories": [
     {
       "id": "US-001",
@@ -167,14 +167,17 @@
         "models"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A canonical resolver wrapper and two early guards reuse established config, checkout, and error paths."
+        "reasoning": "A canonical resolver wrapper and two early guards reuse established config, checkout, and error paths.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/models.ts",
@@ -190,7 +193,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6015dbfa13a13cf3444ff5b0a509eb647bb7c1d7"
     },
     {
       "id": "US-004",
