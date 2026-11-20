@@ -118,6 +118,32 @@ describe("persistSavedFix", () => {
       expect(save.mock.calls[0]).toEqual([location, expect.objectContaining({ sha, headSha, outcome })]);
     },
   );
+  test.each([false, true])(
+    "resaving a rejected retry preserves its original provenance (previously recorded: %s)",
+    async (recorded) => {
+      const reusedFindingProvenance = recorded ? [{ key: "a", raisedBy: "original-review" }] : undefined;
+      const env = makeBotFixEnv([
+        { kind: "finding", key: "a", severity: "important", issue: "Leak", raisedBy: "new-review" },
+      ]);
+      const save = mock<typeof saveFix>(async () => {});
+      _savedFixDeps.runGit = async () => ({ exitCode: 0, stdout: sha, stderr: "" });
+      await persistSavedFix({
+        env,
+        state: {
+          step: "done",
+          timings: {},
+          outcome: "push-rejected",
+          fixSha: sha,
+          reusedFix: sha,
+          ...(reusedFindingProvenance === undefined ? {} : { reusedFindingProvenance }),
+        },
+        outputDir: "/output",
+        savedFix: { save, clear: async () => {} },
+      });
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save.mock.calls[0]?.[1].findingProvenance).toEqual(reusedFindingProvenance);
+    },
+  );
   test("swallows an injected save rejection", async () => {
     const env = makeBotFixEnv();
     _savedFixDeps.runGit = async () => ({ exitCode: 0, stdout: sha, stderr: "" });

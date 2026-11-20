@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { cleanupTempDir, makeBotFixDeps, makeBotFixEnv, makeTempDir, makeTestRuntime } from "@test/helpers";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps } from "@/bot/fix-steps";
-import { _savedFixDeps, clearSavedFix, readSavedFix, saveFix } from "@/bot/saved-fix";
+import { pushEntry } from "@/bot/fix-summary-body";
+import { _savedFixDeps, clearSavedFix, persistSavedFix, readSavedFix, saveFix } from "@/bot/saved-fix";
 import { getLogger } from "@/logger";
 import { gitWithTimeout } from "@/utils/git";
 
@@ -72,7 +73,7 @@ async function fixture() {
   const run = (fresh = false) => runBotFix({ dir: root, pr: 42, profiles: [], interactive: false, fresh });
   const refExists = async () =>
     (await gitWithTimeout(["show-ref", "--verify", "refs/nax-bot/pr-42/fix"], root)).exitCode === 0;
-  return { root, worktree, path, entry, sha, headSha, run, runBranchFix, check, refExists };
+  return { root, worktree, path, entry, sha, headSha, env, location, run, runBranchFix, check, refExists };
 }
 
 describe("runBotFix saved fix reuse", () => {
@@ -91,6 +92,47 @@ describe("runBotFix saved fix reuse", () => {
     expect(gates).toHaveBeenCalledTimes(1);
     expect(f.runBranchFix).not.toHaveBeenCalled();
   });
+  test.each(["saved provenance", "legacy save"] as const)(
+    "a same-head rereview does not relabel a resumed push (%s)",
+    async (source) => {
+      const f = await fixture();
+      if (source === "saved provenance") {
+        const review = {
+          ...f.env.review,
+          agreed: f.env.review.agreed.map((item) =>
+            item.key === "z" ? { ...item, raisedBy: "original-review" } : item,
+          ),
+        };
+        await persistSavedFix({
+          env: { ...f.env, review },
+          outputDir: f.location.outputDir,
+          savedFix: { save: saveFix, clear: clearSavedFix },
+          state: { step: "done", timings: {}, outcome: "push-rejected", fixSha: f.sha },
+        });
+      }
+      _botFixDeps.loadLatestReview = async () => ({
+        ...f.env.review,
+        agreed: f.env.review.agreed.map((item) => ({ ...item, raisedBy: "new-review" })),
+      });
+      _botFixDeps.checkStep = async () => ({ patch: { changed: ["a"] }, exit: "changed" });
+      _botFixDeps.gatesStep = async () => ({ patch: {}, exit: "passed" });
+      _botFixDeps.pushStep = async () => ({ patch: { outcome: "pushed", pushedSha: f.sha }, exit: "pushed" });
+      _botFixDeps.replyStep = async () => ({ patch: {}, exit: "ready" });
+      _botFixDeps.readyStep = async () => ({ patch: {}, exit: "report" });
+      const report = mock(pushEntry);
+      _botFixDeps.reportStep = async (env, state) => {
+        const entry = report(env, state);
+        expect(entry?.items.map(({ key, raisedBy }) => [key, raisedBy])).toEqual([
+          ["z", source === "saved provenance" ? "original-review" : undefined],
+          ["a", undefined],
+        ]);
+        return { patch: {}, exit: "done" };
+      };
+      expect(await f.run()).toMatchObject({ outcome: "pushed", reusedFix: f.sha });
+      expect(report).toHaveBeenCalledTimes(1);
+      expect(f.runBranchFix).not.toHaveBeenCalled();
+    },
+  );
   test("AC-4 different agreed keys run the fix session without clearing", async () => {
     const f = await fixture();
     await Bun.write(f.path, JSON.stringify({ ...f.entry, agreedKeys: ["different"] }));
