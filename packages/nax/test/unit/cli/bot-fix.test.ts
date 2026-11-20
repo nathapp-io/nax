@@ -306,6 +306,30 @@ describe("B1: the printed cause is redacted and cleaned before it is capped", ()
     expect(stderr).toEqual(["fix-failed: red failure"]);
   });
 
+  // B1: colour codes go *before* the redactor runs. A key the codes split is a key no token pattern
+  // matches (each fragment is shorter than the pattern's minimum), and stripping them afterwards
+  // would join the fragments back into the cleartext key this line exists to keep off the terminal.
+  test("masks a credential that colour codes split, because the codes are stripped first", async () => {
+    const key = "sk-pro\u001b[31m-jABCDEFGHIJKLMNOP\u001b[0m";
+    result = { outcome: "fix-failed", fixFailure: `curl failed: ${key}`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: curl failed: [REDACTED]"]);
+    expect(stderr.join()).not.toContain("jABCDEFGHIJKLMNOP");
+  });
+
+  // B1: the C1 block is the other spelling of the same escapes — 0x9B is CSI and 0x9D is OSC to a
+  // terminal in 8-bit mode — so a cause may not carry either to stdout.
+  test("drops the C1 controls, sequence bytes included", async () => {
+    result = {
+      outcome: "fix-failed",
+      fixFailure: "line one\u009b31m\u009d0;evil\u0007\nline two",
+      step: "done",
+      timings: {},
+    };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+
   test("redacts the whole failure before taking its first line, so a multi-line secret is masked", async () => {
     // A PEM block is a *multi-line* secret: taking the first line before redaction leaves the
     // `-----BEGIN ...` header on the terminal, which is the half of a credential no redactor

@@ -43,6 +43,13 @@ export interface FlaggedDecisionsCarried {
   readonly patch?: Partial<WorkflowFeatureRecord>;
   /** The record `postItemThreadsAfterPublish` derives the open items — and their keys — from. */
   readonly record: WorkflowFeatureRecord;
+  /**
+   * B2: the read was unavailable, so this record is *not* evidence that nothing is flagged. A record
+   * an earlier run wrote still carries its own ids; a fresh one carries none, and the item threads
+   * then have to keep whatever the PR index already lists. `postItemThreadsAfterPublish` needs the
+   * difference, and cannot read it off the record — an empty list and no list look the same there.
+   */
+  readonly ledgerUnread: boolean;
 }
 
 /**
@@ -53,10 +60,11 @@ export function carryFlaggedDecisions(
   rec: WorkflowFeatureRecord,
   decisions: readonly FlaggedDecision[] | undefined,
 ): FlaggedDecisionsCarried {
-  if (decisions === undefined) return { record: rec };
+  if (decisions === undefined) return { record: rec, ledgerUnread: true };
   const ids = decisions.map((d) => d.id);
   const summaries = Object.fromEntries(decisions.map((d) => [d.id, d.summary]));
   return {
+    ledgerUnread: false,
     patch: {
       ...(ids.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: ids } : {}),
       // US-002: the map is this read's fact, so it is stated unconditionally — a re-publish that

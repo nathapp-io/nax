@@ -41,7 +41,18 @@ async function noteItemThreads(env: FeatureEnv, feature: string, outcome: ItemTh
 }
 
 /**
- * Four arguments intentionally mirror the publish seam specified by the workflow contract.
+ * B2: what the post needs to know about the publish's advisor ledger read. `advisorLedgerUnread`
+ * says the read failed, so the record is not evidence that nothing is flagged — a fresh record holds
+ * no advisor ids at all, and the PR's own index is then the only record of the items an earlier
+ * publish posted.
+ */
+export interface ItemThreadsPostOptions {
+  readonly advisorLedgerUnread?: boolean;
+}
+
+/**
+ * Four arguments intentionally mirror the publish seam specified by the workflow contract; `options`
+ * is this module's own addition (B2) and reads nothing the seam already holds.
  *
  * US-003: the step's outcome is returned, because only it says whether this publish left the PR with
  * an item index. `undefined` — the answer for every publish that posted nothing, and for a step that
@@ -52,6 +63,7 @@ export async function postItemThreadsAfterPublish(
   rec: WorkflowFeatureRecord,
   out: PublishOutcome,
   head: string | undefined,
+  options: ItemThreadsPostOptions = {},
 ): Promise<ItemThreadsOutcome | undefined> {
   const post = env.steps.postItemThreads;
   if (!post || !out.url || (out.outcome !== "draft" && out.outcome !== "ready")) return;
@@ -81,6 +93,7 @@ export async function postItemThreadsAfterPublish(
       url: out.url,
       head,
       changedFiles: await changedFiles(env, rec.seed),
+      ...(options.advisorLedgerUnread === true ? { advisorLedgerUnread: true } : {}),
     });
   } catch (error) {
     getLogger()?.warn("item-threads", "[item-threads] Publish item-thread step failed", {

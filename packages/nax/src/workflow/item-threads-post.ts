@@ -35,6 +35,14 @@ export interface ItemThreadsInput {
   readonly changedFiles: readonly string[];
   /** US-002: the publish's pacing; absent reads as `WORKFLOW_ITEM_PUBLISH_DEFAULTS`. */
   readonly pacing?: ItemPublishConfig;
+  /**
+   * B2: the publish's advisor ledger could not be read, so this record's advisor items are not the
+   * whole story. A record an earlier run wrote still carries its own ids, but a *fresh* one carries
+   * none, and the advisor items that publish posted live only in the PR index — which is where the
+   * keys below are read from. Absent (or `false`) means the read answered, so the record is the
+   * whole story and an advisor item it no longer lists is one whose thread this publish retires.
+   */
+  readonly advisorLedgerUnread?: boolean;
 }
 
 export interface ItemThreadsOutcome {
@@ -168,6 +176,18 @@ async function readContext(input: ItemThreadsInput, deps: ForgeDeps) {
   }
 }
 
+/**
+ * B2: the advisor keys this publish cannot vouch for. An advisor item's key hashes its issue text,
+ * which names the decision's summary out of the ledger that could not be read, so nothing but the PR
+ * itself can say which advisor items exist — and the index is the PR's own record of them. Only keys
+ * the index *lists* are kept: an advisor thread outside it is an unindexed item, and closing it is
+ * the behaviour it already had.
+ */
+function indexedAdvisorKeys(read: ReadItemThreads): readonly string[] {
+  const indexed = new Set(read.index?.keys ?? []);
+  return read.items.filter((item) => item.kind === "advisor" && indexed.has(item.key)).map((item) => item.key);
+}
+
 export async function postItemThreads(
   input: ItemThreadsInput,
   deps: ForgeDeps = _featureDeps.forge,
@@ -204,15 +224,27 @@ export async function postItemThreads(
   const maintenance: MaintenanceContext = { ...snapshot, deps, cwd: input.projectDir, pacer };
   const reopen = await reopenReraisedItems(input, keys, maintenance);
   outcome.failed += reopen.failed;
+  // B2: an unread ledger cannot retire an advisor item, so the keys the PR index already lists stay
+  // in this publish's index — and a key the index keeps is a thread `maintainItemIndex` leaves open.
+  // A read that answered states the whole list, so nothing is carried here and an advisor item it no
+  // longer flags leaves the index and is closed, as before.
+  const retained = input.advisorLedgerUnread === true ? indexedAdvisorKeys(snapshot.read) : [];
+  if (retained.length > 0) {
+    getLogger()?.info(STAGE, "[item-threads] Keeping indexed advisor items: their ledger could not be read", {
+      feature: input.feature,
+      kept: retained.length,
+    });
+  }
+  const indexKeys = [...new Set([...keys, ...retained])];
   const settled = new Set(
     snapshot.read.items
       .filter((item) => item.ruling && item.replies.length === 0 && !reopen.reopened.has(item.key))
       .map((item) => item.key),
   );
-  const index = await maintainItemIndex(input, keys, maintenance, {
+  const index = await maintainItemIndex(input, indexKeys, maintenance, {
     keepReviewed: reopen.failed > 0,
     pendingReopens: reopen.pendingReopens,
-    settled: keys.filter((key) => settled.has(key)).length,
+    settled: indexKeys.filter((key) => settled.has(key)).length,
   });
   const indexMissing = await indexIsMissing({
     feature: input.feature,

@@ -484,7 +484,9 @@ export async function publishStep(
   // push and this local HEAD *is* the pushed head. Threads and CI reads cite it as it is.
   const head = await readHeadSoft(env);
   const flagged = await carryFlaggedDecisions(rec, await readFlaggedDecisions(env.steps));
-  const threads = await postItemThreadsAfterPublish(env, flagged.record, out, head);
+  const threads = await postItemThreadsAfterPublish(env, flagged.record, out, head, {
+    advisorLedgerUnread: flagged.ledgerUnread,
+  });
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);

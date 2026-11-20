@@ -11,7 +11,14 @@ import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { _itemPublishPacerDeps, createItemPublishPacer } from "@/workflow/item-publish-pacer";
 import { readItemThreads } from "@/workflow/item-thread-state";
-import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+import {
+  closedKey,
+  itemKey,
+  parseItemIndex,
+  renderItemIndex,
+  renderItemOpener,
+  renderRulingEcho,
+} from "@/workflow/item-threads";
 import { type IndexContext, writeItemIndex } from "@/workflow/item-threads-index";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
 import { buildOpenItems } from "@/workflow/open-items";
@@ -41,6 +48,8 @@ interface HarnessOptions {
   indexAuthor?: string;
   threads?: boolean;
   closedAuthor?: string;
+  /** A second, advisor item thread the PR carries — the shape a fresh record cannot recompute. */
+  advisor?: boolean;
   fail?: string;
   /** A write matching this substring is rejected once with a retryable rejection, then succeeds. */
   retry?: string;
@@ -51,24 +60,35 @@ const comment = (body: string, author: string, id: number) => ({
   body,
   createdAt: "t",
 });
+/**
+ * B2: an advisor item of an earlier publish. Its key hashes the issue text, and that text names the
+ * decision's summary from a ledger this run cannot read, so a fresh record can never rederive it.
+ */
+const advisorItem = { id: "D-1", kind: "advisor", issue: "advisor decision D-1 needs a human: Keep the lock" } as const;
+const advisorKey = itemKey(advisorItem);
+const advisorThread = {
+  id: "A",
+  isResolved: false,
+  isOutdated: false,
+  path: "a.ts",
+  line: 1,
+  comments: { nodes: [comment(marked(renderItemOpener(advisorItem), advisorKey), "bot", 20)] },
+};
 function threadSnapshot(options: HarnessOptions) {
-  const nodes = options.threads
-    ? [
-        {
-          id: "T",
-          isResolved: false,
-          isOutdated: false,
-          path: "a.ts",
-          line: 1,
-          comments: {
-            nodes: [
-              comment(marked(renderItemOpener(oldItem), oldKey), "bot", 10),
-              ...(options.closedAuthor ? [comment(marked("closed", `wc-${oldKey}`), options.closedAuthor, 11)] : []),
-            ],
-          },
-        },
-      ]
-    : [];
+  const findingThread = {
+    id: "T",
+    isResolved: false,
+    isOutdated: false,
+    path: "a.ts",
+    line: 1,
+    comments: {
+      nodes: [
+        comment(marked(renderItemOpener(oldItem), oldKey), "bot", 10),
+        ...(options.closedAuthor ? [comment(marked("closed", `wc-${oldKey}`), options.closedAuthor, 11)] : []),
+      ],
+    },
+  };
+  const nodes = [...(options.threads ? [findingThread] : []), ...(options.advisor ? [advisorThread] : [])];
   return { data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } } };
 }
 function indexSnapshot(options: HarnessOptions) {
@@ -426,4 +446,46 @@ describe("postItemThreads index and closing", () => {
       expect(h.writes).toHaveLength(fail === "key=w-index" ? 1 : 3);
     },
   );
+});
+
+/**
+ * B2: an advisor item's key hashes its issue text, and that text names the decision's summary from
+ * the advisor ledger. A fresh record therefore cannot rederive the advisor items an earlier publish
+ * posted — the PR index is the only record of them. When the ledger cannot be read, the index has to
+ * keep those keys, and their threads have to stay open, until a read that succeeded says which ones
+ * are gone.
+ */
+describe("postItemThreads with an unread advisor ledger (B2)", () => {
+  const advisorIndex = marked(renderItemIndex({ keys: [advisorKey] }));
+  const advisorClosedKey = closedKey(advisorKey);
+  /** Any write that would retire the advisor item: its closed marker, or a resolve of its thread. */
+  const retiresAdvisor = (writes: readonly string[][]) =>
+    writes.some((cmd) => cmd.some((arg) => arg.includes(advisorClosedKey) || arg === "id=A"));
+
+  test("B2 the indexed advisor key survives and its thread is not closed", async () => {
+    const h = harness({ index: advisorIndex, advisor: true });
+    const out = await postItemThreads({ ...input(), advisorLedgerUnread: true }, h.deps);
+    expect(out).toMatchObject({ closed: 0, failed: 0, indexWritten: true });
+    expect(h.index()?.keys).toEqual([advisorKey]);
+    expect(retiresAdvisor(h.writes)).toBe(false);
+  });
+
+  // The control: the same PR, same record, and a ledger read that answered. Nothing flags D-1 now, so
+  // the key leaves the index and its thread is closed — the retention above is the flag's work.
+  test("B2 a readable ledger still retires what it no longer flags", async () => {
+    const h = harness({ index: advisorIndex, advisor: true });
+    const closedBody = marked("No longer open in the run at aaaaaaa.", advisorClosedKey);
+    const out = await postItemThreads(input(), h.deps);
+    expect(out).toMatchObject({ closed: 1 });
+    expect(h.index()?.keys).toEqual([]);
+    expect(h.writes.some((cmd) => cmd.some((arg) => arg.includes(`body=${closedBody}`)))).toBe(true);
+  });
+
+  test("B2 nothing is retained when the PR index does not list the advisor key", async () => {
+    const h = harness({ advisor: true });
+    const out = await postItemThreads({ ...input(), advisorLedgerUnread: true }, h.deps);
+    // An advisor thread outside the index is an unindexed item: it is still closed, as before.
+    expect(out).toMatchObject({ closed: 1 });
+    expect(h.index()?.keys).toEqual([]);
+  });
 });

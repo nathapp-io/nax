@@ -218,17 +218,20 @@ const LINE_BREAK = /\r\n|\r|\n/;
  * `MAX_FIX_FAILURE_STDERR_CHARS` characters: a session failure is often a whole stack trace, and the
  * full text is a JSON field in `bot.jsonl`.
  *
- * This is the one place a raw session error reaches a terminal, so it gets the logger's own
- * treatment first (branch fix B1): the whole failure is redacted, because a multi-line secret such as
- * a PEM block is only recognised with its end marker in hand; control and ANSI sequences are
- * stripped, so an escape cannot rewrite the line and a carriage return cannot drive the cursor back
- * over it; and only then is the first line taken and capped, so the cap can never cut a delimiter
+ * This is the one place a raw session error reaches a terminal, so it is treated in the order the
+ * terminal would read it (branch fix B1): terminal controls go first, so an escape cannot rewrite the
+ * line and a carriage return cannot drive the cursor back over it — and, because the redactor then
+ * sees the string a terminal would see, a credential that colour codes split apart is one token
+ * again when it is matched. If the codes came out afterwards, each fragment would be too short for
+ * the token patterns and the strip would paste a cleartext key back together. Redaction runs on the
+ * whole failure, because a multi-line secret such as a PEM block is only recognised with its end
+ * marker in hand; only then is the first line taken and capped, so the cap can never cut a delimiter
  * that made a secret recognisable.
  */
 function failureReason(result: BotFixResult): string {
   if ("reason" in result) return result.reason;
   if (result.outcome !== "fix-failed" || result.fixFailure === undefined) return result.outcome;
-  const [first = ""] = stripControlChars(redactSecrets(result.fixFailure)).split(LINE_BREAK);
+  const [first = ""] = redactSecrets(stripControlChars(result.fixFailure)).split(LINE_BREAK);
   return `fix-failed: ${first.slice(0, MAX_FIX_FAILURE_STDERR_CHARS)}`;
 }
 

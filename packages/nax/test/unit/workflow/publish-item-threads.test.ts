@@ -399,6 +399,25 @@ test("B2: a failed ledger read leaves the posted record's flagged decisions as t
   expect(out.patch).not.toHaveProperty("flaggedDecisionSummaries");
 });
 
+// Branch fix B2: those ids only exist on a record that already carries them. A *fresh* record has
+// none — an earlier publish's advisor items live only in the PR's index — so the post has to be told
+// that the ledger failed to answer, and keep the advisor keys the index lists until a read succeeds.
+test("B2: a failed ledger read is passed to the item-thread post", async () => {
+  const h = harness({ ...published, reasons: ["flagged advisor decision"] });
+  h.env.steps.flaggedDecisions = async () => {
+    throw new Error("ledger unreadable");
+  };
+  await publishStep(h.env, h.env.record);
+  expect(h.inputs[0]?.advisorLedgerUnread).toBe(true);
+});
+
+test("B2: a ledger read that answered says nothing of the kind", async () => {
+  const h = harness({ ...published, reasons: ["flagged advisor decision"] });
+  h.env.steps.flaggedDecisions = async () => [];
+  await publishStep(h.env, h.env.record);
+  expect(h.inputs[0]).not.toHaveProperty("advisorLedgerUnread");
+});
+
 test("publish preserves item-thread failure counts in its ledger", async () => {
   const h = harness();
   const lines: string[] = [];
