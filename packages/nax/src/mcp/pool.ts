@@ -7,10 +7,15 @@
  * answer every worktree's queries against the wrong tree — a silent wrong
  * answer, not a crash. Cost: one subprocess per active worktree per server.
  *
- * Requests are serialized per connection by construction: the turn loop
- * dispatches tool calls in a sequential `for` loop
- * (`packages/nax-agent/src/native/session/turn-loop.ts`), awaiting each before the next,
- * so one hop never has two calls in flight against one server.
+ * The turn loop dispatches a hop's tool calls sequentially
+ * (`packages/nax-agent/src/native/session/turn-loop.ts`), awaiting each before
+ * the next, but concurrency on one key is still possible: several hops and chat
+ * share the run-scoped connection, so two callers can have calls in flight
+ * against one server at once. Nothing here serializes them, so an exit can cut
+ * off more than one call. Each such call is retried once through `entry()`,
+ * whose memoized open promise hands every caller the same single replacement
+ * connection — the exit is counted once, because the shared layer reports it
+ * once.
  */
 
 import type { McpServerConfig } from "@/config";
@@ -134,6 +139,58 @@ interface PidRegistryLike {
 interface Entry {
   connection: McpConnection;
   tools: readonly McpToolDescriptor[];
+}
+
+/** One dispatch's outcome: a rejected `callTool` is handed back, never thrown. */
+type Attempt = { readonly ok: true; readonly result: McpCallResult } | { readonly ok: false; readonly error: unknown };
+
+interface AttemptRequest {
+  readonly serverId: string;
+  readonly tool: string;
+  readonly input: Record<string, unknown>;
+  readonly callOpts: { timeoutMs: number; maxBytes: number };
+  readonly connection: McpConnection;
+}
+
+/** The per-hop failure a call answers when no live connection could take it (spec R8). */
+function unavailableForHop(serverId: string): McpCallResult {
+  const content = `MCP server "${serverId}" is unavailable; its tools cannot be called for this hop.`;
+  return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
+}
+
+/** Error AS DATA for a call a connection rejected (ADR-029 section 5, spec US-006). */
+function rejectionResult(serverId: string, error: unknown, server: McpServerConfig | undefined): McpCallResult {
+  const detail = server === undefined ? String(error) : redactMcpReason(String(error), server);
+  const content = `MCP server "${serverId}" is unavailable: ${detail}`;
+  return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
+}
+
+/**
+ * Send one call under its OWN deadline, reporting a rejection instead of
+ * throwing it: the caller decides whether it is retryable. The deadline lives
+ * here so each retry gets a fresh one, and so the `finally` clears
+ * `cancellableDelay`'s timer whichever side of the race wins (MEM-5).
+ */
+async function attemptOf(request: AttemptRequest): Promise<Attempt> {
+  // Belt and braces: the SDK honours `timeout` per request, but a transport
+  // wedged below the protocol layer (a child that accepted the write and never
+  // answers) would otherwise hold the hop open.
+  const deadlineController = new AbortController();
+  const deadline = cancellableDelay(request.callOpts.timeoutMs, deadlineController.signal).catch(() => {});
+  try {
+    const timedOut = (): McpCallResult => ({
+      content: `MCP call ${request.serverId}__${request.tool} exceeded ${request.callOpts.timeoutMs}ms`,
+      isError: true,
+      bytesPreTruncation: 0,
+    });
+    // A deadline is a RESULT, not a rejection: it is never retried.
+    const sent = request.connection.callTool(request.tool, request.input, request.callOpts);
+    return { ok: true, result: await Promise.race([sent, deadline.then(timedOut)]) };
+  } catch (error) {
+    return { ok: false, error };
+  } finally {
+    deadlineController.abort();
+  }
 }
 
 /**
@@ -348,46 +405,40 @@ export function createMcpPool(opts: {
     },
 
     async call(serverId, workdir, tool, input, callOpts) {
+      const request = (connection: McpConnection): AttemptRequest => ({
+        serverId,
+        tool,
+        input,
+        callOpts,
+        connection,
+      });
+      // Error AS DATA, never a throw into the turn loop, which would end the hop.
       const resolved = await entry(serverId, workdir);
-      if (resolved === undefined) {
-        // Error AS DATA (ADR-029 section 5, spec US-006): a dead server must not
-        // throw into the turn loop, which would end the hop.
-        const content = `MCP server "${serverId}" is unavailable; its tools cannot be called for this hop.`;
-        return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
+      if (resolved === undefined) return unavailableForHop(serverId);
+      const first = await attemptOf(request(resolved.connection));
+      if (first.ok) return first.result;
+      // Only a rejection on a connection that REPORTED a close is retryable: a
+      // deadline is a result, and a transport error on an open connection keeps
+      // today's answer with no eviction and no retry.
+      if (!reportedClose.has(resolved.connection)) {
+        return rejectionResult(serverId, first.error, opts.servers[serverId]);
       }
-      try {
-        // Belt and braces: the SDK honours `timeout` per request, but a
-        // transport wedged below the protocol layer (a child that accepted the
-        // write and never answers) would otherwise hold the hop open. The
-        // ceiling lives here so it is enforced whatever the transport does.
-        //
-        // MEM-5: own the deadline through an AbortController so the `finally`
-        // clears cancellableDelay's internal setTimeout whichever side of the
-        // race wins. The prior inline `setTimeout(...).unref?.()` discarded the
-        // handle, so every call — instant returns included — left the timer
-        // armed for the full timeoutMs. Same fix shape as trackedSpawn (PERF-1).
-        const deadlineController = new AbortController();
-        const deadline = cancellableDelay(callOpts.timeoutMs, deadlineController.signal).catch(() => {});
-        try {
-          return await Promise.race([
-            resolved.connection.callTool(tool, input, callOpts),
-            deadline.then(
-              (): McpCallResult => ({
-                content: `MCP call ${serverId}__${tool} exceeded ${callOpts.timeoutMs}ms`,
-                isError: true,
-                bytesPreTruncation: 0,
-              }),
-            ),
-          ]);
-        } finally {
-          deadlineController.abort();
-        }
-      } catch (error) {
-        const server = opts.servers[serverId];
-        const detail = server === undefined ? String(error) : redactMcpReason(String(error), server);
-        const content = `MCP server "${serverId}" is unavailable: ${detail}`;
-        return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
-      }
+      getSafeLogger()?.debug("mcp", `[pool] ${serverId} retrying an interrupted call`, {
+        storyId: opts.storyId,
+        serverId,
+        workdir,
+        tool,
+      });
+      // Re-dispatch through `entry()`, exactly as a later call would: it
+      // reconnects, or reads the pinned-unavailable state the budget left. This
+      // is pool-internal re-dispatch, not an agent dispatch-tier retry.
+      const replacement = await entry(serverId, workdir);
+      if (replacement === undefined) return unavailableForHop(serverId);
+      // Retried once and only once: whatever this attempt returns is the answer,
+      // so a second exit cannot buy a third dispatch.
+      const retried = await attemptOf(request(replacement.connection));
+      if (retried.ok) return retried.result;
+      return rejectionResult(serverId, retried.error, opts.servers[serverId]);
     },
 
     events() {
