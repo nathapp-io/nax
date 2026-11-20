@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import {
+  assertDefined,
+  makeBotFixDeps,
+  makeBotFixDraftEnv,
+  makeBotFixEnv,
+  makeNaxConfig,
+  makeTestRuntime,
+} from "@test/helpers";
 import { _fixReportDeps, type AgreedItem, BOT_FIX_GRAPH, type BotFixEnv, readyStep, reportStep } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixState, BotFixStep } from "@/bot/fix-steps";
@@ -327,7 +334,9 @@ describe("US-005 a failed fix session", () => {
     expect(await runBotFix(input)).toMatchObject({ outcome: "fix-failed", fixFailure: "boom" });
     // The run above only reaches the report node because the check node declares the exit:
     // `runStepGraph` refuses an exit its node does not list (STEP_GRAPH_UNDECLARED_EXIT).
-    expect(BOT_FIX_GRAPH.nodes.check.exits).toContain("fix-failed");
+    const check = BOT_FIX_GRAPH.nodes.check;
+    assertDefined(check, "check node");
+    expect(check.exits).toContain("fix-failed");
   });
 
   test("AC-6: a failed session that changed nothing never reaches the gates", async () => {
