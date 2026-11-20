@@ -185,7 +185,7 @@ None. No existing test asserts the result of a call in flight at an exit.
 ### US-002
 
 1. [unit] `MCP_MAX_RECONNECTS` imported from `@/mcp/pool` equals 3.
-2. [unit] On one key, the fourth exit (each exit followed by a `pool.call` that reconnects) records `disconnected` with `reconnect: false`.
+2. [unit] On one key, after each of the first three exits is followed by a pool.call that reconnects, the fourth exit records a disconnected event with reconnect: false.
 3. [unit] After that fourth exit, `pool.call` on the key returns `isError` true with content `MCP server "memory" is unavailable; its tools cannot be called for this hop.`
 4. [unit] After that fourth exit, two further `pool.call`s on the key leave the total `_mcpClientDeps.connect` count at 4.
 5. [unit] After (`memory`, `/a`) is pinned unavailable by its fourth exit, an exit on (`memory`, `/b`) is followed by a `pool.call("memory", "/b", ...)` that returns the result of a new `/b` connection with `isError` false.
