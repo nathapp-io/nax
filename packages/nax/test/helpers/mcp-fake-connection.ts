@@ -8,7 +8,9 @@
  * captured `onClose` listeners synchronously, and only then reject every held
  * call with `MCP call <name> failed: the connection is closed` — the message the
  * shared `call()` produces once `life.exited` is set
- * (`packages/nax-agent/src/mcp/connect.ts`).
+ * (`packages/nax-agent/src/mcp/connect.ts`). A listener registered AFTER an
+ * exit is told the recorded reason once, as that layer's `life.exitReason`
+ * replay does, so a case can exit the server before the pool listens.
  */
 import {
   McpCallError,
@@ -60,6 +62,7 @@ export function makeFakeMcpConnection(options: FakeMcpConnectionOptions = {}): F
   const listeners: ((reason: string) => void)[] = [];
   const held: HeldCall[] = [];
   let exited = false;
+  let exitReason: string | undefined;
   let released = false;
   let closeCount = 0;
 
@@ -75,6 +78,7 @@ export function makeFakeMcpConnection(options: FakeMcpConnectionOptions = {}): F
   /** Everything an exit changes, in the SDK's order: state, listeners, then pending calls. */
   const reportExit = (reason: string): void => {
     exited = true;
+    exitReason = reason;
     for (const listener of listeners) listener(reason);
     for (const call of held.splice(0)) call.reject(closedError(call.name));
   };
@@ -95,9 +99,15 @@ export function makeFakeMcpConnection(options: FakeMcpConnectionOptions = {}): F
       return new Promise<McpCallResult>((settle, reject) => held.push({ name, settle, reject }));
     },
     onClose(listener: (reason: string) => void): void {
+      // An exit that happened before anyone listened is reported to the first
+      // listener registered after it, once — and the late listener is not kept,
+      // exactly as the shared layer's `life.exitReason` replay does it.
+      if (exitReason !== undefined) {
+        listener(exitReason);
+        return;
+      }
       listeners.push(listener);
-      // An exit that happened before anyone listened is reported from inside
-      // onClose, once (the shared layer's `life.exitReason` check).
+      // A pre-configured exit, for a case whose premise is "already exited at connect".
       if (options.exitOnListen !== undefined) reportExit(options.exitOnListen);
     },
     async close(): Promise<void> {

@@ -139,6 +139,13 @@ interface PidRegistryLike {
 interface Entry {
   connection: McpConnection;
   tools: readonly McpToolDescriptor[];
+  /**
+   * The pid this connection's process had, kept for lifecycle cleanup. Read from
+   * the retained spawn report, not the live getter: a server that exits while
+   * the pid registration is still pending makes `connection.pid` read null, and
+   * the registration would then never be undone (B1).
+   */
+  pid: number | null;
 }
 
 /** One dispatch's outcome: a rejected `callTool` is handed back, never thrown. */
@@ -293,6 +300,52 @@ export function createMcpPool(opts: {
     if (args.pid !== null) void opts.pidRegistry?.unregister(args.pid).catch(() => {});
   }
 
+  /** What one connect attempt left behind when it failed, for `reportConnectFailure`. */
+  interface FailedAttempt {
+    readonly serverId: string;
+    readonly workdir: string;
+    readonly server: McpServerConfig;
+    readonly attempt: number;
+    readonly error: unknown;
+    /** The connection the attempt produced, when the handshake got that far. */
+    readonly connection: McpConnection | undefined;
+    /** The in-flight pid registration, awaited so the registry settles in order. */
+    readonly registration: Promise<void> | undefined;
+    readonly spawnedPid: number | undefined;
+  }
+
+  /**
+   * A connect attempt failed: reap whatever it started, tell the pid registry
+   * the spawn is gone, and record why. Kept out of `open()` so its retry loop
+   * stays under the complexity ratchet; the order and the fields are unchanged.
+   */
+  async function reportConnectFailure(failed: FailedAttempt): Promise<void> {
+    // client.ts has already closed a half-open transport; a connection it DID
+    // hand back must be reaped here or its subprocess outlives the pool.
+    if (failed.connection !== undefined) await failed.connection.close().catch(() => {});
+    await failed.registration;
+    if (failed.spawnedPid !== undefined) await opts.pidRegistry?.unregister(failed.spawnedPid).catch(() => {});
+    const reason = redactMcpReason(
+      failed.error instanceof Error ? failed.error.message : String(failed.error),
+      failed.server,
+    );
+    record({
+      kind: "connect-failed",
+      serverId: failed.serverId,
+      workdir: failed.workdir,
+      at: new Date().toISOString(),
+      reason,
+      attempt: failed.attempt,
+    });
+    getSafeLogger()?.warn("mcp", `[pool] ${failed.serverId} connect failed`, {
+      storyId: opts.storyId,
+      serverId: failed.serverId,
+      workdir: failed.workdir,
+      attempt: failed.attempt,
+      error: reason,
+    });
+  }
+
   async function open(serverId: string, workdir: string, token: number): Promise<Entry | undefined> {
     const server = opts.servers[serverId];
     if (server === undefined || !server.enabled) return undefined;
@@ -333,7 +386,12 @@ export function createMcpPool(opts: {
         connection = connected;
         signal.throwIfAborted();
         await registration;
-        const pid = connected.pid;
+        // The pid the process actually had: the retained spawn report first,
+        // then the connection's own at connect time. Reading the live getter
+        // alone loses the pid when the server exits during `await registration`
+        // — the registration stands, and the replay below would evict without
+        // unregistering it (B1).
+        const pid = spawnedPid ?? connected.pid;
         const tools = await connected.listTools();
         record({ kind: "connected", serverId, workdir, at: new Date().toISOString(), pid, toolCount: tools.length });
         getSafeLogger()?.info("mcp", `[pool] ${serverId} connected`, {
@@ -352,21 +410,9 @@ export function createMcpPool(opts: {
         // Nothing writes the entry back after this point: a listener that fired
         // synchronously above already evicted the key, and reinstalling it here
         // would resurrect the dead connection.
-        return { connection: connected, tools };
+        return { connection: connected, tools, pid };
       } catch (error) {
-        if (connection !== undefined) await connection.close().catch(() => {});
-        // connect has rejected (and reaped its half-open transport) before removal.
-        await registration;
-        if (spawnedPid !== undefined) await opts.pidRegistry?.unregister(spawnedPid).catch(() => {});
-        const reason = redactMcpReason(error instanceof Error ? error.message : String(error), server);
-        record({ kind: "connect-failed", serverId, workdir, at: new Date().toISOString(), reason, attempt });
-        getSafeLogger()?.warn("mcp", `[pool] ${serverId} connect failed`, {
-          storyId: opts.storyId,
-          serverId,
-          workdir,
-          attempt,
-          error: reason,
-        });
+        await reportConnectFailure({ serverId, workdir, server, attempt, error, connection, registration, spawnedPid });
         if (attempt < retry.maxAttempts && retry.baseDelayMs > 0 && !signal.aborted) {
           await cancellableDelay(retry.baseDelayMs * attempt, signal).catch(() => {});
         }
@@ -455,8 +501,10 @@ export function createMcpPool(opts: {
       await Promise.allSettled(
         settled.map(async (result) => {
           if (result.status !== "fulfilled" || result.value === undefined) return;
-          const { connection } = result.value;
-          const pid = connection.pid;
+          // The connect-time pid, not the live getter: a connection that exited
+          // while this close was settling would read null and leak its
+          // registration (B1).
+          const { connection, pid } = result.value;
           await connection.close();
           if (pid !== null) await opts.pidRegistry?.unregister(pid).catch(() => {});
           record({

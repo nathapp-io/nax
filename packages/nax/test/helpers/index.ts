@@ -124,6 +124,20 @@ export {
   transcriptMessage,
 } from "./loop-handlers";
 export { type FakeMcpConnection, type FakeMcpConnectionOptions, makeFakeMcpConnection } from "./mcp-fake-connection";
+export {
+  connectionAt,
+  disconnectedEvents,
+  fakeMcpConnect,
+  liveConnectionFor,
+  MCP_CALL_OPTS,
+  MCP_EXIT_REASON,
+  MCP_TEST_SERVERS,
+  type McpConnectHarness,
+  type McpConnectHarnessOptions,
+  type McpDispatch,
+  restoreMcpConnectSeam,
+  type StdioConfig,
+} from "./mcp-pool-harness";
 // The stubs `nax memory link` is driven through, shared by the two files that cover it.
 export {
   answerProbe,
