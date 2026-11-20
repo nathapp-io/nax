@@ -59,4 +59,21 @@ describe("stripControlChars (SEC-09)", () => {
   test("handles empty string", () => {
     expect(stripControlChars("")).toBe("");
   });
+
+  test("removes colon-parameter CSI so a split credential is contiguous", () => {
+    expect(stripControlChars("sk-ab\x1b[38:2:1:2:3mcdef")).toBe("sk-abcdef");
+  });
+
+  test.each([
+    ["7-bit introducer, C1 terminator", "sk-ab\x1b]0;t\u009ccdef"],
+    ["C1 introducer, ESC \\ terminator", "sk-ab\u009d0;t\x1b\\cdef"],
+  ])("removes an OSC with %s", (_name, text) => {
+    expect(stripControlChars(text)).toBe("sk-abcdef");
+  });
+
+  test("many unterminated OSC introducers are scanned in linear time", () => {
+    const start = performance.now();
+    stripControlChars("\x1b]0;x".repeat(50_000));
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
 });

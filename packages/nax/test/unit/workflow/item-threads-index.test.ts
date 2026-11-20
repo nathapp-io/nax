@@ -50,6 +50,8 @@ interface HarnessOptions {
   closedAuthor?: string;
   /** A second, advisor item thread the PR carries — the shape a fresh record cannot recompute. */
   advisor?: boolean;
+  /** A prior finish-approval hold thread (no ledger decision behind it). */
+  approval?: boolean;
   fail?: string;
   /** A write matching this substring is rejected once with a retryable rejection, then succeeds. */
   retry?: string;
@@ -74,6 +76,16 @@ const advisorThread = {
   line: 1,
   comments: { nodes: [comment(marked(renderItemOpener(advisorItem), advisorKey), "bot", 20)] },
 };
+const approvalItem = { id: "_run:approval", kind: "advisor", issue: "finish approval held" } as const;
+const approvalKey = itemKey(approvalItem);
+const approvalThread = {
+  id: "H",
+  isResolved: false,
+  isOutdated: false,
+  path: "a.ts",
+  line: 1,
+  comments: { nodes: [comment(marked(renderItemOpener(approvalItem), approvalKey), "bot", 30)] },
+};
 function threadSnapshot(options: HarnessOptions) {
   const findingThread = {
     id: "T",
@@ -88,7 +100,11 @@ function threadSnapshot(options: HarnessOptions) {
       ],
     },
   };
-  const nodes = [...(options.threads ? [findingThread] : []), ...(options.advisor ? [advisorThread] : [])];
+  const nodes = [
+    ...(options.threads ? [findingThread] : []),
+    ...(options.advisor ? [advisorThread] : []),
+    ...(options.approval ? [approvalThread] : []),
+  ];
   return { data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } } };
 }
 function indexSnapshot(options: HarnessOptions) {
@@ -487,5 +503,15 @@ describe("postItemThreads with an unread advisor ledger (B2)", () => {
     // An advisor thread outside the index is an unindexed item: it is still closed, as before.
     expect(out).toMatchObject({ closed: 1 });
     expect(h.index()?.keys).toEqual([]);
+  });
+
+  test("B5 a retired finish-approval hold is not retained when the ledger is unread", async () => {
+    const h = harness({
+      index: marked(renderItemIndex({ keys: [approvalKey, advisorKey] })),
+      advisor: true,
+      approval: true,
+    });
+    await postItemThreads({ ...input(), advisorLedgerUnread: true }, h.deps);
+    expect(h.index()?.keys).toEqual([advisorKey]);
   });
 });
