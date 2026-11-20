@@ -562,9 +562,11 @@ export async function publishStep(
         out.pushFailed !== true &&
         featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
       ...(flaggedIds.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flaggedIds } : {}),
-      // US-002: the map is written only when there are ids, so an empty ledger leaves no empty key
-      // behind — and a record written before this field existed keeps the old issue text.
-      ...(flaggedIds.length > 0 ? { flaggedDecisionSummaries: flaggedSummaries } : {}),
+      // US-002: the map is this read's fact, so it is stated unconditionally — a re-publish that
+      // flags nothing *clears* what an earlier one recorded (the runner deletes a key stated as
+      // `undefined`) instead of leaving a stale summary beside `flaggedDecisions: []`. A record
+      // written before this field existed reads no key at all, which is the same answer.
+      flaggedDecisionSummaries: flaggedIds.length > 0 ? flaggedSummaries : undefined,
       // US-003/B1: only an outcome says whether this publish left the PR without an index, and only
       // a settled outcome says so either way. No outcome (no step, nothing posted, the step threw),
       // and an outcome that could not confirm the index, put no key here, so an earlier `true`

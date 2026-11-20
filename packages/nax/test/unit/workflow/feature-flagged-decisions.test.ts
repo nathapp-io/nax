@@ -364,10 +364,18 @@ describe("runFeatureMachine — publish records the decision summaries (US-002)"
   });
 
   test("AC-11: an empty list leaves no summaries key on the record", async () => {
-    // An earlier publish had flagged D-9; this one flags nothing. `Object.fromEntries([])` is `{}`,
-    // so a patch that wrote the map unconditionally would leave an empty key behind — that is what
-    // this pins, beside the ids being cleared as they already were.
-    const h = harness({ flagged: async () => [], record: { ...atPublish(), flaggedDecisions: ["D-9"] } });
+    // An earlier publish had flagged D-9 and recorded its summary; this one flags nothing. The map
+    // must be *cleared*, not merely omitted from the patch — a key the patch leaves out keeps what
+    // the earlier publish recorded — and it must not turn into the empty `{}` that
+    // `Object.fromEntries([])` would give a patch that wrote it unconditionally.
+    const h = harness({
+      flagged: async () => [],
+      record: {
+        ...atPublish(),
+        flaggedDecisions: ["D-9"],
+        flaggedDecisionSummaries: { "D-9": "old summary" },
+      },
+    });
     const final = await runFeatureMachine(h.env);
     expect(final.flaggedDecisions).toEqual([]);
     expect("flaggedDecisionSummaries" in final).toBe(false);
