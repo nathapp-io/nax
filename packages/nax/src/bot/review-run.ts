@@ -10,6 +10,7 @@ import type { createRuntime } from "@/runtime";
 import { defineStepGraph, type GraphState, runStepGraph, type StepGraph } from "@/step-graph";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { CiWaitResult } from "../workflow/ci-wait";
+import type { ItemIndex } from "../workflow/item-threads";
 import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
@@ -91,6 +92,10 @@ interface ReviewEnv extends ReviewPreparation {
   readonly ctx: PrStepContext;
   readonly review: PrReviewInput;
   readonly post: Omit<PostReviewInput, "verdict">;
+  /** The index this review read at preparation; absent when the PR carries none. */
+  readonly reviewedIndex?: ItemIndex;
+  /** The bot's own login, as the forge reports it. */
+  readonly login: string;
 }
 
 /** US-005: the push facts each half of the review environment needs, or nothing to add. */
@@ -372,6 +377,8 @@ async function reviewEnvironment(
     ...preparation,
     cost: context.cost,
     ctx,
+    reviewedIndex,
+    login: items.login,
     review: {
       mergeBase: checkout.mergeBase,
       ...range,
@@ -426,6 +433,27 @@ async function reviewEnvironment(
   };
 }
 
+/**
+ * US-002: the reviewed head advances only when the review covered everything it read and nothing was
+ * left unwritten. A partial review leaves the index where it was, so the next review widens its range.
+ */
+async function advanceReviewedHeadIfComplete(env: ReviewEnv, state: ReviewState): Promise<void> {
+  if (state.posted === undefined || state.posted.failed > 0) return;
+  if ((state.unreadFiles?.length ?? 0) > 0) return;
+  if (env.reviewedIndex === undefined) return;
+  if (env.post.scope === "conversation-only") return;
+  const outcome = await _botReviewDeps.advanceReviewedHead({
+    ref: env.post.ref,
+    login: env.login,
+    expectedHead: env.reviewedIndex.reviewedHead,
+    head: env.post.info.headSha,
+    base: env.review.mergeBase,
+    deps: _botReviewDeps.forge,
+    cwd: env.post.cwd,
+  });
+  getLogger().info("bot", "Reviewed head advance", { pr: env.post.ref.number, outcome: outcome.kind });
+}
+
 async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRuntime>): Promise<BotReviewResult> {
   const state = await runStepGraph(
     BOT_REVIEW_GRAPH,
@@ -449,6 +477,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     intent: state.verdict.intent,
     quality,
   });
+  await advanceReviewedHeadIfComplete(env, state);
   return {
     outcome: "posted",
     spentUsd: env.cost.spentUsd(),

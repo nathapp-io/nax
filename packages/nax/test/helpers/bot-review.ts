@@ -59,6 +59,7 @@ export function makeBotReviewDeps(input: {
     listPrComments: async () => [],
     readLinkedIssues: async () => [],
     readHeadCi: async () => ({ outcome: "green", detail: "ok" }),
+    advanceReviewedHead: async () => ({ kind: "unchanged" }),
     writeJson: async () => {},
   };
 }
