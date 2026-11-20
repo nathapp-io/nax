@@ -31,9 +31,8 @@ import type { ItemIndex } from "../workflow/item-threads";
 import {
   type CarriedEntry,
   carriedRecordComment,
-  carryWidenComment,
-  carryWidenPending,
   parseCarriedRecord,
+  pendingCarryWidenComments,
   readCarriedEntry,
 } from "./carried-record";
 import type { AgreedItem, PostReviewInput } from "./post";
@@ -146,7 +145,7 @@ export async function earlierCarriedFindings(input: EarlierCarriedInput): Promis
   const reviewedHead = input.index?.reviewedHead;
   if (reviewedHead === undefined) return NO_CARRY;
   if (input.scope === "full" || input.rangeBase !== reviewedHead) return NO_CARRY;
-  if (carryWidenPending(carryWidenComment(input.own, reviewedHead))) return { findings: [], widen: true };
+  if (pendingCarryWidenComments(input.own).length > 0) return { findings: [], widen: true };
   if (input.scope !== "incremental") return NO_CARRY;
   const record = readRecord(input.own, reviewedHead);
   if (record.kind === "usable") return { findings: record.findings, widen: false };

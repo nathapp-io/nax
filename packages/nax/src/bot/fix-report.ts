@@ -27,6 +27,7 @@ import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
+import { carriedReadiness } from "./carried-hold";
 import {
   type CiWaiverReady,
   FIX_SUMMARY_KEY,
@@ -387,7 +388,11 @@ async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readon
  */
 async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   const review = readinessReview(env);
-  const keys = await openKeys(env, blockingKeys(review, reviewBlockingTriggers(env)));
+  const blocking = reviewBlockingTriggers(env);
+  const carried = carriedReadiness(env.own, review.headSha, blocking);
+  if (carried.kind === "held") return carried.reason;
+  const reviewed = blockingKeys(review, blocking);
+  const keys = await openKeys(env, [...reviewed, ...carried.keys.filter((key) => !reviewed.includes(key))]);
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");

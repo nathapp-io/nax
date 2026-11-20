@@ -29,9 +29,11 @@ export function carriedRecordKey(headSha: string): string {
   return `${CARRIED_RECORD_PREFIX}${headSha}`;
 }
 
+const CARRY_WIDEN_PREFIX = "w-carry-incomplete:";
+
 /** Incomplete reviews leave this signal alongside, not in place of, the last complete record. */
 export function carryWidenKey(headSha: string): string {
-  return `w-carry-incomplete:${headSha}`;
+  return `${CARRY_WIDEN_PREFIX}${headSha}`;
 }
 
 export const CARRY_WIDEN_CLEARED = "A complete full review restored carried finding coverage.";
@@ -42,6 +44,18 @@ export function carryWidenComment(own: readonly OwnComment[], headSha: string): 
 
 export function carryWidenPending(comment: OwnComment | undefined): boolean {
   return comment !== undefined && !comment.comment.body.split(/\r?\n/).includes(CARRY_WIDEN_CLEARED);
+}
+
+/**
+ * Every signal still pending, whichever head it names. An incomplete review is often of a head the index
+ * never reached (it held the index), so a reader that checked only the indexed head would miss it, and
+ * only a complete full review — which re-reads the whole range — supersedes them all.
+ */
+export function pendingCarryWidenComments(own: readonly OwnComment[]): readonly OwnComment[] {
+  return own.filter(
+    (candidate) =>
+      candidate.threadId === undefined && candidate.key.startsWith(CARRY_WIDEN_PREFIX) && carryWidenPending(candidate),
+  );
 }
 
 /** One finding as the record holds it: the identity a later review matches, and what it says. */

@@ -16,7 +16,7 @@
  * review then starts before this head and re-reads its changes rather than skipping them.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { editComment, postPrComment, withNaxBotMarker } from "@/forge";
+import { editComment, type OwnComment, postPrComment, withNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrFinding } from "@/operations/bot-types";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding } from "@/workflow/blocking-findings";
@@ -30,6 +30,7 @@ import {
   carryWidenComment,
   carryWidenKey,
   carryWidenPending,
+  pendingCarryWidenComments,
 } from "./carried-record";
 import { recordsCodeReview } from "./coverage-record";
 import type { PostReviewInput } from "./post";
@@ -85,19 +86,36 @@ export async function postCarriedRecord(
     if (hasNewBlocker) await writeCarryWiden(input, true);
     return false;
   }
-  // Only a full verdict can supersede a signal left by a possibly wider review of this head.
-  return input.scope !== "full" || writeCarryWiden(input, false);
+  // Only a full verdict re-reads the whole range, so it supersedes every pending signal, whichever head
+  // the incomplete review that left it was of.
+  return input.scope !== "full" || clearCarryWidens(input);
+}
+
+async function clearCarryWidens(input: PostReviewInput): Promise<boolean> {
+  let cleared = true;
+  for (const own of pendingCarryWidenComments(input.own)) {
+    if (!(await writeCarryWidenComment(input, { key: own.key, own, pending: false }))) cleared = false;
+  }
+  return cleared;
 }
 
 async function writeCarryWiden(input: PostReviewInput, pending: boolean): Promise<boolean> {
-  const head = input.info.headSha;
-  const own = carryWidenComment(input.own, head);
+  const key = carryWidenKey(input.info.headSha);
+  const own = carryWidenComment(input.own, input.info.headSha);
   if (pending === carryWidenPending(own)) return true;
+  return writeCarryWidenComment(input, { key, own, pending });
+}
+
+async function writeCarryWidenComment(
+  input: PostReviewInput,
+  signal: { readonly key: string; readonly own: OwnComment | undefined; readonly pending: boolean },
+): Promise<boolean> {
+  const { key, own, pending } = signal;
   const text = pending
     ? "Carried finding coverage is incomplete. Review the full range before relying on this head."
     : CARRY_WIDEN_CLEARED;
   try {
-    const body = withNaxBotMarker(text, carryWidenKey(head));
+    const body = withNaxBotMarker(text, key);
     if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
     else await postPrComment(input.ref, body, input.deps, input.cwd);
     return true;
