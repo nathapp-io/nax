@@ -3,7 +3,7 @@
   "feature": "bot-fix-bundle-1120",
   "branchName": "feat/bot-fix-bundle-1120",
   "createdAt": "2026-11-20T08:59:29.470Z",
-  "updatedAt": "2026-11-20T10:03:59.891Z",
+  "updatedAt": "2026-11-20T10:28:44.316Z",
   "userStories": [
     {
       "id": "US-001",
@@ -228,14 +228,17 @@
         "concurrency"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module forge classification and persisted signals must remain compatible while the overlapping-review race is closed. The existing review UUID is a record identifier, not an auth token."
+        "reasoning": "Cross-module forge classification and persisted signals must remain compatible while the overlapping-review race is closed. The existing review UUID is a record identifier, not an auth token.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/carried-record.ts",
@@ -261,7 +264,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6af2361c156a4d6ade486e354735456b41f70e60"
     },
     {
       "id": "US-005",
