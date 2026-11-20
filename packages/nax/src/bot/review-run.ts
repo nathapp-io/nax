@@ -15,6 +15,7 @@ import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
 import type { CallerRulingsFile, CallerRulingsReport } from "./caller-rulings";
+import { earlierCarriedFindings } from "./carried-findings";
 import { initBotInteractionChain } from "./chat-asks";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
@@ -291,7 +292,13 @@ function setupCommands(preparation: ReviewPreparation): string[] {
 async function reviewEnvironment(
   input: BotReviewInput,
   prepared: PreparedReview,
-  context: { ctx: PrStepContext; stateDir: string; cost: BotCostEnv; checks: Omit<ReviewPreparation, "ci"> },
+  context: {
+    ctx: PrStepContext;
+    stateDir: string;
+    cost: BotCostEnv;
+    checks: Omit<ReviewPreparation, "ci">;
+    outputDir: string;
+  },
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
@@ -366,6 +373,14 @@ async function reviewEnvironment(
       ? { rangeBase: checkout.mergeBase }
       : await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor);
   const scope = reviewScopeOf({ ...range, mergeBase: checkout.mergeBase });
+  const carried = await earlierCarriedFindings({
+    outputDir: context.outputDir,
+    pr: ref.number,
+    index: reviewedIndex,
+    scope,
+    rangeBase: range.rangeBase,
+    load: _botReviewDeps.loadLatestReview,
+  });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
     own: items.own,
@@ -424,6 +439,7 @@ async function reviewEnvironment(
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
+      carriedFindings: carried,
       stateDir,
       deps: _botReviewDeps.forge,
       cwd: repoRoot,
@@ -433,15 +449,17 @@ async function reviewEnvironment(
   };
 }
 
-/**
- * US-002: the reviewed head advances only when the review covered everything it read and nothing was
- * left unwritten. A partial review leaves the index where it was, so the next review widens its range.
- */
-async function advanceReviewedHeadIfComplete(env: ReviewEnv, state: ReviewState): Promise<void> {
+/** US-002: only a complete review advances the head — and B2 holds it too when this head's coverage
+ * record did not land, since the next default review of an advanced head writes none. */
+async function advanceIfComplete(env: ReviewEnv, state: ReviewState, coverageFailed: boolean): Promise<void> {
   if (state.posted === undefined || state.posted.failed > 0) return;
   if ((state.unreadFiles?.length ?? 0) > 0) return;
   if (env.reviewedIndex === undefined) return;
   if (env.post.scope === "conversation-only") return;
+  if (coverageFailed) {
+    getLogger().warn("bot", "Reviewed head held: coverage record did not land", { pr: env.post.ref.number });
+    return;
+  }
   const outcome = await _botReviewDeps.advanceReviewedHead({
     ref: env.post.ref,
     login: env.login,
@@ -477,12 +495,13 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     intent: state.verdict.intent,
     quality,
   });
-  await advanceReviewedHeadIfComplete(env, state);
+  const { coverageRecordFailed, ...posted } = state.posted;
+  await advanceIfComplete(env, state, coverageRecordFailed === true);
   return {
     outcome: "posted",
     spentUsd: env.cost.spentUsd(),
     limitUsd: env.cost.limitUsd,
-    ...state.posted,
+    ...posted,
     intent: state.verdict.intent,
     quality,
     staticMode: env.review.staticMode,
@@ -535,6 +554,7 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
       checks,
       ctx: context.ctx,
       stateDir,
+      outputDir: runtime.outputDir,
       cost: botCostEnv(config, runtime, input.costLimitUsd),
     });
     const result = await executeReview(env, runtime);

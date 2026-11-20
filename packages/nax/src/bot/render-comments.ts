@@ -1,6 +1,6 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
 import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
-import type { WorkflowFindingDraft } from "@/operations/workflow-types";
+import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
@@ -36,6 +36,12 @@ export interface ReviewSummaryInput {
   readonly minor?: readonly WorkflowFindingDraft[];
   /** US-003: critical or important findings outside the blocking set, which get no inline thread. */
   readonly residual?: readonly FindingWithTrigger[];
+  /**
+   * B1: blocking findings an earlier review of the already-reviewed head could only post in its
+   * summary. They are still open — nothing has fixed or settled them — and this review cannot re-report
+   * them because its range skips their lines.
+   */
+  readonly carried?: readonly CarriedSummary[];
   /** US-003: the effective blocking set, and where it came from. */
   readonly blockingTriggers?: readonly FindingTrigger[];
   readonly blockingSource?: EffectiveBlockingTriggers["source"];
@@ -68,7 +74,7 @@ export interface ReviewSummaryInput {
   readonly failed: number;
 }
 
-function severityLabel(finding: WorkflowFindingDraft): string {
+function severityLabel(finding: { readonly severity: WorkflowSeverity }): string {
   return finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
 }
 
@@ -134,10 +140,23 @@ interface ListSection {
 }
 
 /**
+ * What a summary list needs to describe a finding: a carried finding has no workflow `kind`, so it is
+ * described by the facts it does have.
+ */
+export interface CarriedSummary {
+  readonly severity: WorkflowSeverity;
+  readonly issue: string;
+  readonly file?: string;
+  readonly line?: number;
+  readonly trigger?: FindingTrigger;
+  readonly triggerEvidence?: string;
+}
+
+/**
  * US-003: a finding that does not block gets no inline thread, so the summary is the only place it appears —
  * with the class of condition it needs, which is why it did not block.
  */
-function residualItem(finding: FindingWithTrigger): string {
+function residualItem(finding: CarriedSummary): string {
   const code = finding.file === undefined ? "" : `\`${safeCode(finding.file)}\``;
   const at = finding.line === undefined ? code : `${code}:${finding.line}`;
   const location = at === "" ? "" : `${at}: `;
@@ -175,6 +194,10 @@ function policyLines(input: ReviewSummaryInput): string[] {
 function summarySections(input: ReviewSummaryInput): ListSection[] {
   return [
     { heading: "### Sensitive paths changed", items: input.sensitive.map((path) => `- \`${safeCode(path)}\``) },
+    {
+      heading: "### Still open from an earlier review",
+      items: (input.carried ?? []).map(residualItem),
+    },
     { heading: "### Findings not on a changed line", items: input.offLine.map(offLineItem) },
     { heading: "### Residual findings (not blocking)", items: (input.residual ?? []).map(residualItem) },
     { heading: "### Minor findings", items: (input.minor ?? []).map(offLineItem) },

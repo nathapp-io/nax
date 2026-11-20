@@ -60,6 +60,7 @@ export function makeBotReviewDeps(input: {
     readLinkedIssues: async () => [],
     readHeadCi: async () => ({ outcome: "green", detail: "ok" }),
     advanceReviewedHead: async () => ({ kind: "unchanged" }),
+    loadLatestReview: async () => null,
     writeJson: async () => {},
   };
 }

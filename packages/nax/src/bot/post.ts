@@ -18,6 +18,7 @@ import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/block
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
+import { type CarriedFinding, carriedOpen } from "./carried-findings";
 import type { BotChecks } from "./checks";
 import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
 import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
@@ -69,6 +70,13 @@ export interface BotReviewEvent {
   /** Unverified forge logins; consumers must check artifact trust and commenter permissions. */
   readonly disagreedBy: readonly string[];
 }
+
+/**
+ * B1: a finding an earlier review of the already-reviewed head recorded but could not anchor — the
+ * reviewer gave it no line, or the inline write failed — so it has no thread for `mergeEarlier` to carry.
+ * The earlier artifact is its only durable record.
+ */
+export type { CarriedFinding } from "./carried-findings";
 
 export interface BotReviewArtifact {
   readonly version: 1 | 2 | 3;
@@ -150,6 +158,13 @@ export interface PostReviewInput {
     readonly unknown: ReadonlySet<string>;
     readonly unreachable: number;
   };
+  /**
+   * B1: the findings an earlier review of the already-reviewed head recorded, read back from that
+   * review's artifact. Its own review covered only what changed since, so its verdict says nothing about
+   * them; a blocking one is carried into `agreed` and the summary, or readiness at this head would
+   * release a finding nothing has fixed.
+   */
+  readonly carriedFindings?: readonly CarriedFinding[];
   readonly stateDir: string;
   readonly deps: ForgeDeps;
   readonly cwd: string;
@@ -161,6 +176,13 @@ export interface PostReviewOutcome {
   readonly commentsAnswered: number;
   readonly offLine: number;
   readonly failed: number;
+  /**
+   * B2: the coverage record for this head could not be written or cleared, so the PR may still name
+   * files an earlier review of the same head did not read. Not part of the posted result —
+   * `executeReview` drops it — but the reviewed head must not advance on it: the next default review
+   * would be conversation-only and could never replace the stale record.
+   */
+  readonly coverageRecordFailed?: true;
 }
 
 export const BOT_REVIEW_FILENAME = "bot-review.json";
@@ -240,6 +262,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
     if (!comment || !input.writers?.has(comment.author)) continue;
     items.push({ key: commentKey(comment.id), kind: "comment", issue: comment.body, reason: verdict.reason });
   }
+  items.push(...carriedOpen(input));
   return mergeEarlier(input, items);
 }
 
@@ -484,6 +507,7 @@ async function postSummary(
     ...(input.buildFailed === undefined ? {} : { buildFailed: input.buildFailed }),
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
+    carried: carriedOpen(input),
     ...threads,
     ...(input.blockingTriggers === undefined ? {} : { blockingTriggers: input.blockingTriggers }),
     ...(input.blockingSource === undefined ? {} : { blockingSource: input.blockingSource }),
@@ -516,10 +540,12 @@ function recordsCoverage(input: PostReviewInput): boolean {
  * required files it did not read. The summary lists the same files, so the two can never disagree.
  *
  * Best-effort: the record is a claim *about* the review. A forge that refuses the write must not turn a
- * completed review into a failed one, so the failure is logged and the outcome left alone.
+ * completed review into a failed one, so the failure is logged and the outcome left alone. It is
+ * reported separately (B2), because the reviewed head must not advance on a record this head never
+ * replaced: the next default review of an advanced head is conversation-only and could never write it.
  */
-async function postCoverageRecord(input: PostReviewInput): Promise<void> {
-  if (!recordsCoverage(input)) return;
+async function postCoverageRecord(input: PostReviewInput): Promise<boolean> {
+  if (!recordsCoverage(input)) return true;
   try {
     const body = withNaxBotMarker(
       renderCoverageRecord({ headSha: input.info.headSha, uncovered: input.unreadFiles ?? [] }),
@@ -528,11 +554,13 @@ async function postCoverageRecord(input: PostReviewInput): Promise<void> {
     const own = input.own.find(({ key }) => key === COVERAGE_RECORD_KEY);
     if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
     else await postPrComment(input.ref, body, input.deps, input.cwd);
+    return true;
   } catch (cause) {
     getLogger()?.warn("bot-post", "Could not write the review coverage record", {
       pr: input.ref.number,
       error: errorMessage(cause),
     });
+    return false;
   }
 }
 
@@ -544,7 +572,7 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
   const earlier = await postEarlier(input);
   const failed = threads.failed + earlier.failed;
   await postSummary(input, findings, { ...threads, failed });
-  await postCoverageRecord(input);
+  const coverageRecorded = await postCoverageRecord(input);
   return {
     inlineFindings: findings.inlineFindings,
     ...threads,
@@ -552,5 +580,6 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
     failed,
     commentsAnswered: input.verdict.comments.length,
     offLine: findings.offLine.length,
+    ...(coverageRecorded ? {} : { coverageRecordFailed: true as const }),
   };
 }

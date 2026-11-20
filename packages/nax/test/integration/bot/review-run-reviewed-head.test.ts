@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotReviewDeps, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import type { loadLatestReview } from "@/bot/fix-input";
+import type { BotReviewArtifact } from "@/bot/post";
 import { _botReviewDeps, type BotReviewInput, type BotReviewResult, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, type runPrReview } from "@/bot/review-step";
 import type { AdvanceReviewedHeadOutcome, advanceReviewedHead } from "@/bot/reviewed-head";
@@ -66,6 +68,7 @@ const advance = mock<typeof advanceReviewedHead>(async () => {
   order.push("advance");
   return { kind: "unchanged" };
 });
+const load = mock<typeof loadLatestReview>(async () => null);
 
 /** A fresh runtime and the review dependencies over it; every review run closes the runtime it used. */
 function installDeps(): void {
@@ -84,6 +87,7 @@ function installDeps(): void {
     runPrReview: review,
     postPrReview: post,
     advanceReviewedHead: advance,
+    loadLatestReview: load,
     writeJson: async () => {},
   });
   _botReviewDeps.classifyPrTrust = async () => ({
@@ -138,6 +142,8 @@ beforeEach(() => {
     order.push("advance");
     return { kind: "unchanged" };
   });
+  load.mockClear();
+  load.mockImplementation(async () => null);
   installDeps();
 });
 afterEach(async () => {
@@ -262,5 +268,48 @@ describe("runBotReview advances the reviewed head after a complete review", () =
     const advanced = await reviewWith({ kind: "advanced" });
     expect(skipped.outcome).toBe("posted");
     expect(skipped).toEqual({ ...advanced, artifactPath: expect.any(String) });
+  });
+});
+
+describe("runBotReview carries an earlier review's summary-only findings (B1)", () => {
+  const earlier: BotReviewArtifact = {
+    version: 3,
+    pr: { forge: "github", host: "test", repo: "o/r", number: 7 },
+    headSha: reviewedHead,
+    trusted: true,
+    intent: "pass",
+    quality: "changes",
+    agreed: [{ kind: "finding", key: "f-carried", severity: "critical", issue: "Leak" }],
+  };
+
+  test("AC-14 an incremental review since the reviewed head reads that head's artifact", async () => {
+    load.mockImplementation(async () => earlier);
+    await runBotReview(input);
+    expect(load).toHaveBeenCalledWith(expect.any(String), 7, reviewedHead, { codeOnly: true });
+    expect(post.mock.calls[0]?.[0].carriedFindings).toEqual(earlier.agreed.filter((item) => item.kind === "finding"));
+  });
+
+  test("AC-15 a full review re-reads the range itself, so it carries nothing", async () => {
+    load.mockImplementation(async () => earlier);
+    await runBotReview({ ...input, full: true });
+    expect(load).not.toHaveBeenCalled();
+    expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
+  });
+
+  test("AC-16 an index with no reviewed head has no earlier review to carry from", async () => {
+    load.mockImplementation(async () => earlier);
+    outcome = { ...outcome, index: { reviewedBase, keys: [] } };
+    await runBotReview(input);
+    expect(load).not.toHaveBeenCalled();
+    expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
+  });
+
+  test("AC-17 an earlier artifact with no finding items carries nothing", async () => {
+    load.mockImplementation(async () => ({
+      ...earlier,
+      agreed: [{ kind: "comment", key: "c-1", issue: "rename", reason: "clearer" }],
+    }));
+    await runBotReview(input);
+    expect(post.mock.calls[0]?.[0].carriedFindings).toEqual([]);
   });
 });
