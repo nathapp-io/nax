@@ -24,7 +24,7 @@ import type { BotDecision } from "./decisions";
 import { featureIntentPaths } from "./intent";
 import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
-import { botModel } from "./models";
+import { botModel, checkBotModelOverride } from "./models";
 import { sensitivePaths } from "./path-policy";
 import {
   BOT_REVIEW_FILENAME,
@@ -510,6 +510,10 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   const deps = _botReviewDeps;
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const loaded = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
+  // US-003 (#2999): checked against the config as loaded, before `reviewConfig` rewrites it and
+  // before the runtime, the run log and every install/build step exist.
+  const modelRefusal = checkBotModelOverride(loaded, input.model);
+  if (modelRefusal !== undefined) return { outcome: "refused", reason: modelRefusal };
   const config = reviewConfig(loaded, staticMode);
   const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
