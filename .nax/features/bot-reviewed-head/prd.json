@@ -3,7 +3,7 @@
   "feature": "bot-reviewed-head",
   "branchName": "feat/bot-reviewed-head",
   "createdAt": "2026-11-20T03:05:50.513Z",
-  "updatedAt": "2026-11-20T03:05:50.513Z",
+  "updatedAt": "2026-11-20T03:29:00.161Z",
   "userStories": [
     {
       "id": "US-001",
@@ -36,14 +36,17 @@
         "forge"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small additive helper and parser change using existing forge adapters; strict isolation applies because author ownership controls which remote comment the helper may edit."
+        "reasoning": "Small additive helper and parser change using existing forge adapters; strict isolation applies because author ownership controls which remote comment the helper may edit.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads.ts",
@@ -56,7 +59,11 @@
         "packages/nax/test/unit/bot/reviewed-head.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6bd66f1cd8f9aec3732ea9373258c807313339a7"
     },
     {
       "id": "US-002",
@@ -111,7 +118,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Goal (#2996): after a complete posted bot review of a workflow PR, use that review's head rather than the publish head as the starting point for the next eligible incremental review. This reduces repeated review of earlier fix pushes; it does not solve fix-chain provenance or guarantee convergence. This is a TypeScript/Bun enhancement contained in packages/nax. The graph navigation tool was unavailable, so the baseline was verified with direct source reads and text search.\n\nExisting range and provenance: packages/nax/src/bot/review-rulings.ts:122 obtains reviewedIndex from the ruling recorder only for a trusted, workflow-marked PR; absent or failed reads leave it undefined. packages/nax/src/bot/review-rulings.ts:192 classifies full, incremental, and conversation-only; packages/nax/src/bot/review-rulings.ts:203 checks the stored head against the current head and the stored base against the current checkout merge base. Valid same-head provenance yields conversation-only; invalid or unverifiable provenance falls back to the merge base. A successful advance is used by this existing reader on the next run, so neither its algorithm nor the CLI needs changing. The stored base must be the actual checkout merge base, not the PR base SHA or the incremental starting head.\n\nUS-001 source impact: add the helper and unit tests, and add a settled-count export to the existing packages/nax/src/workflow/item-threads.ts:260 (the spec's Modifies list refers to existing test assertions; the existing source file must still be edited). ItemIndex at packages/nax/src/workflow/item-threads.ts:21 does not contain the count; packages/nax/src/workflow/item-threads.ts:248 renders it separately. packages/nax/src/workflow/item-threads.ts:101 normalizes raw and marked comment bodies and handles CRLF. The new reader must agree with the entire existing parser, including count consistency and pending-reopen validation, not just recognize a header. Do not change ItemIndex or parseItemIndex behavior. packages/nax/src/workflow/item-thread-state.ts:65 distinguishes the selected comment from its parse result; it takes the last matching own comment in forge order and does not fall back to an older valid body. packages/nax/src/forge/marker.ts:27 matches exact author login and parses the marker, preserving input order. Reuse those ownership semantics; a marker alone never confers ownership. The forge barrel exposes the list, marker, and edit adapters at packages/nax/src/forge/index.ts:23, packages/nax/src/forge/index.ts:56, and packages/nax/src/forge/index.ts:77. packages/nax/src/forge/threads.ts:300 supplies forge comments in endpoint/page order; packages/nax/src/forge/comments.ts:271 edits the supplied comment on GitHub or GitLab and may reject. Validate exactly 40 hexadecimal characters before calling the forge; packages/nax/src/workflow/item-threads.ts:244 demonstrates full-match validation that rejects a trailing newline. Compare exact head values before the unchanged check: an observed change wins even if it already landed the desired pair; if the head did not move, a base-only change can be corrected. Render from the fresh index and settled count, not a preparation snapshot. The write is best-effort, introduces one fresh read and at most one edit per qualifying run, and has no forge-side compare-and-swap. Changes to keys, pending reopens, or settled count already present at re-read time are retained; a writer landing after the re-read may still be overwritten. A skip or failure does not update the marker through this attempt, so the next review uses whatever valid provenance remains and may review a wider range.\n\nUS-001 downstream and regression surface: packages/nax/src/bot/rulings.ts:234 re-renders its current index for the settled count without changing reviewed provenance. Workflow publishing uses packages/nax/src/workflow/item-threads-index.ts:26 and packages/nax/src/workflow/item-threads-index.ts:96; workflow live status and promotion use the same item-thread reader at packages/nax/src/workflow/live-status.ts:78 and packages/nax/src/workflow/promote-rulings.ts:83. Keep these consumers unchanged. Existing bun:test coverage includes modern/legacy parsing, marked bodies, pending reopens, and count validation at packages/nax/test/unit/workflow/item-threads.test.ts:154 and packages/nax/test/unit/workflow/item-threads.test.ts:209; publish provenance and preservation at packages/nax/test/unit/workflow/item-threads-reopen.test.ts:275; and marked ruling fixtures and settled-count updates at packages/nax/test/unit/bot/rulings.test.ts:65 and packages/nax/test/unit/bot/rulings.test.ts:292. Stub and restore the new helper's forge dependencies in the unit suite. Use separate valid fixtures for the two-key/pending-reopen edit and the three-key `(2 settled)` preservation case.\n\nUS-002 source impact: extend the existing injection object at packages/nax/src/bot/review-deps.ts:32 (re-exported at packages/nax/src/bot/review-run.ts:38), and the private ReviewEnv at packages/nax/src/bot/review-run.ts:89. Preparation already has the triaged bot login and reviewed index at packages/nax/src/bot/review-run.ts:291 and packages/nax/src/bot/review-run.ts:323; it computes range and scope at packages/nax/src/bot/review-run.ts:358 and supplies post cwd from repoRoot. The graph at packages/nax/src/bot/review-run.ts:132 records unreadFiles and only enters the post step when reviewRan is true; the post node awaits posting before producing state.posted. Put the single awaited advance after successful graph completion and the existing not-reviewed guard in executeReview (packages/nax/src/bot/review-run.ts:429), not inside preparation, the graph's review node, or postPrReview. Undefined and empty unreadFiles both mean no unread files. packages/nax/src/bot/post.ts:541 computes failed from thread and earlier-reply failures; offLine is tracked separately. Do not treat offLine findings, intent, or quality as extra gates, and do not change how postPrReview handles its existing artifact, summary, or coverage record. The existing preparation provenance is the trust gate for this new mutation; no new trust classifier or credential handling is needed. The helper contains forge failures, so its return value is not merged into the result or persisted. Preserve BotReviewResult, including existing log path and metrics behavior. The CLI at packages/nax/src/cli/bot.ts:126 and the fix cycle's actual re-review at packages/nax/src/bot/fix-cycle.ts:54 share the service; a qualifying posted re-review can advance through the same hook, but the fix/readiness path adds no writer of its own.\n\nUS-002 tests: packages/nax/test/integration/bot/review-run-incremental.test.ts:49 provides the dependency setup and restore pattern; packages/nax/test/integration/bot/review-run-incremental.test.ts:96 provides unmarked/fork fallbacks. Use distinct reviewed head, reviewed base, PR head, and checkout merge-base SHA fixtures for provenance assertions; packages/nax/test/helpers/bot-review.ts:29 currently uses the placeholder `merge`, so override the checkout locally if needed. Override the shared no-op advance stub with the per-test spy after spreading makeBotReviewDeps. Add that shared no-op at packages/nax/test/helpers/bot-review.ts:8 so incremental, scope, lineage, coverage-record and finding-rulings tests do not call the real forge. Representative consumers are packages/nax/test/integration/bot/review-run-scope.test.ts:78, packages/nax/test/integration/bot/review-run-lineage.test.ts:176, packages/nax/test/integration/bot/review-run-coverage-record.test.ts:86, and packages/nax/test/integration/bot/review-run-finding-rulings.test.ts:103. No existing assertions or graph transitions need replacement.\n\nCompatibility and rollout: land US-001 first (no runtime caller), then US-002. No data migration, backfill, config, cross-package dependency, or CLI flag is needed. Existing parseable indexes can be advanced in place after the next qualifying post; legacy first lines remain readable and are normalized to the modern format with zero settled only on an actual edit. PRs with no usable preparation index are not given a new index by this feature. Workflow republish and ruling refresh retain their existing behavior.",
