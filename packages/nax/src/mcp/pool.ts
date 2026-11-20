@@ -26,6 +26,14 @@ export const MCP_CONNECT_TIMEOUT_MS = 15_000;
 /** Mirrors `agent.native.transportRetry` (src/config/schemas-infra.ts) rather than inventing a shape. */
 export const MCP_DEFAULT_RETRY = { maxAttempts: 3, baseDelayMs: 2000 } as const;
 
+/**
+ * Replacements a (serverId, workdir) key may buy in one run: it connects at most
+ * `1 + MCP_MAX_RECONNECTS` times. One extra exit past that pins the key to the
+ * cached-unavailable state a failed connect leaves (spec R8), so a server that
+ * flaps on every hop costs four subprocesses per run rather than one per hop.
+ */
+export const MCP_MAX_RECONNECTS = 3;
+
 export type McpServerEvent = { readonly serverId: string; readonly workdir: string; readonly at: string } & (
   | { readonly kind: "connected"; readonly pid: number | null; readonly toolCount: number }
   | { readonly kind: "connect-failed"; readonly reason: string; readonly attempt: number }
@@ -128,6 +136,13 @@ interface Entry {
   tools: readonly McpToolDescriptor[];
 }
 
+/**
+ * The cached-undefined entry a failed connect leaves (spec R8), shared by every
+ * key pinned by the reconnect budget: `entry()` hands it back, so the next call
+ * answers error-as-data without opening anything.
+ */
+const PINNED_UNAVAILABLE: Promise<undefined> = Promise.resolve(undefined);
+
 export function createMcpPool(opts: {
   servers: Readonly<Record<string, McpServerConfig>>;
   pidRegistry?: PidRegistryLike;
@@ -149,8 +164,9 @@ export function createMcpPool(opts: {
   const openTokens = new Map<string, number>();
   let nextOpenToken = 0;
   /**
-   * Disconnects per key. Uncounted against here: US-001 reconnects after every
-   * exit, and the cap that reads this map arrives with US-002.
+   * Disconnects per key, counted once per exit that reaches the key (a repeat
+   * report from an already-replaced connection is ignored before this). Past
+   * `MCP_MAX_RECONNECTS` the key is pinned unavailable instead of evicted.
    */
   const disconnects = new Map<string, number>();
   /**
@@ -184,9 +200,18 @@ export function createMcpPool(opts: {
   }): void {
     reportedClose.add(args.connection);
     if (closed || openTokens.get(args.key) !== args.token) return;
-    disconnects.set(args.key, (disconnects.get(args.key) ?? 0) + 1);
-    entries.delete(args.key);
+    const counted = (disconnects.get(args.key) ?? 0) + 1;
+    disconnects.set(args.key, counted);
+    // Cleared before the split below: a repeated exit report from this
+    // connection is ignored whether the key reconnects or is pinned.
     openTokens.delete(args.key);
+    // Budget arithmetic: a key connects 1 + MCP_MAX_RECONNECTS times. The exit
+    // that exhausts it does not evict — it pins the key to the cached-undefined
+    // state a failed connect leaves (spec R8), so later calls answer
+    // error-as-data without spawning anything.
+    const reconnect = counted <= MCP_MAX_RECONNECTS;
+    if (reconnect) entries.delete(args.key);
+    else entries.set(args.key, PINNED_UNAVAILABLE);
     const server = opts.servers[args.serverId];
     const reason = server === undefined ? args.reason : redactMcpReason(args.reason, server);
     record({
@@ -195,13 +220,14 @@ export function createMcpPool(opts: {
       workdir: args.workdir,
       at: new Date().toISOString(),
       reason,
-      reconnect: true,
+      reconnect,
     });
     getSafeLogger()?.warn("mcp", `[pool] ${args.serverId} disconnected`, {
       storyId: opts.storyId,
       serverId: args.serverId,
       workdir: args.workdir,
       reason,
+      reconnect,
     });
     // Asynchronously reap the dead transport and its pid, exactly as the
     // connect-failure path does. Both rejections are swallowed: the key is
