@@ -34,6 +34,8 @@ interface Options {
   resolved?: boolean;
   indexBody?: string;
   noIndex?: boolean;
+  /** An indexed advisor thread kept because its ledger is unread; carries a pending marker. */
+  advisor?: boolean;
   author?: string;
   permission?: "write" | "read" | "reject";
   fail?: "reply" | "unresolve" | "index";
@@ -56,12 +58,17 @@ function permissionReply(permission: Options["permission"]): { permission: strin
   return { permission: permission ?? "read" };
 }
 
+const advisorItem = { id: "D-1", kind: "advisor", issue: "advisor decision D-1 needs a human: Keep" } as const;
+const advisorKey = itemKey(advisorItem);
+const ADVISOR_COMMENT = 40;
+
 function indexCommentBody(options: Options): string {
   return (
     options.indexBody ??
     marked(
       renderItemIndex({
-        keys: [key],
+        keys: options.advisor ? [key, advisorKey] : [key],
+        ...(options.advisor ? { pendingReopens: [{ key: advisorKey, commentId: String(ADVISOR_COMMENT) }] } : {}),
         reviewedHead: options.previous === null ? undefined : (options.previous ?? OLD),
         reviewedBase: OLD,
       }),
@@ -117,6 +124,18 @@ function harness(options: Options = {}) {
         pullRequest: {
           reviewThreads: {
             nodes: [
+              ...(options.advisor
+                ? [
+                    {
+                      id: "A",
+                      isResolved: false,
+                      isOutdated: false,
+                      comments: {
+                        nodes: [comment(marked(renderItemOpener(advisorItem), advisorKey), "bot", ADVISOR_COMMENT)],
+                      },
+                    },
+                  ]
+                : []),
               {
                 id: "T",
                 isResolved: options.resolved ?? !options.notice,
@@ -379,6 +398,25 @@ describe("postItemThreads re-raised rulings", () => {
       expect(h.writes.at(-1)?.join(" ")).toContain("key=w-index");
     },
   );
+});
+
+describe("postItemThreads retained advisor keys while reopening", () => {
+  test("B2/B4 every index write keeps the retained key and its pending marker", async () => {
+    const h = harness({ advisor: true });
+    await postItemThreads({ ...h.input, advisorLedgerUnread: true }, h.deps);
+    const bodies = h.writes
+      .flat()
+      .filter((arg) => arg.startsWith("body=") && arg.includes("key=w-index"))
+      .map((arg) => parseItemIndex(arg.slice(5)));
+    expect(bodies.length).toBeGreaterThanOrEqual(2);
+    for (const index of bodies) {
+      expect(index?.keys).toContain(advisorKey);
+      expect(index?.pendingReopens?.some((p) => p.key === advisorKey && p.commentId === String(ADVISOR_COMMENT))).toBe(
+        true,
+      );
+    }
+    expect(h.replies()).toHaveLength(1);
+  });
 });
 
 describe("postItemThreads settled index counts", () => {

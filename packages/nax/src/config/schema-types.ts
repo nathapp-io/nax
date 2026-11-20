@@ -184,6 +184,21 @@ export interface TierMembership {
   viaDefaultAgentFallback: boolean;
 }
 
+/**
+ * The tier entry `agent` declares for `tier`, read as an **own** property only.
+ *
+ * `models[agent]?.[tier]` walks the object prototype, so a tier name that happens to exist there —
+ * `constructor`, `toString`, `valueOf`, `__proto__` — answered with an inherited member instead of
+ * `undefined`, and resolution treated that function as a model definition (branch fix B3). A name no
+ * config declares must miss, so a preflight that accepts it and the dispatch it guards cannot
+ * disagree.
+ */
+function declaredTier(models: ModelsConfig, agent: string, tier: string): ModelEntry | undefined {
+  const map = Object.hasOwn(models, agent) ? models[agent] : undefined;
+  if (map === undefined || !Object.hasOwn(map, tier)) return undefined;
+  return map[tier];
+}
+
 /** Is `name` a tier for `agent`? Fallback-inclusive: mirrors resolveModelForAgent's two-step lookup. */
 export function resolveTierMembership(
   models: ModelsConfig,
@@ -191,8 +206,8 @@ export function resolveTierMembership(
   name: string,
   defaultAgent: string,
 ): TierMembership {
-  if (models[agent]?.[name] !== undefined) return { isTier: true, viaDefaultAgentFallback: false };
-  if (models[defaultAgent]?.[name] !== undefined) return { isTier: true, viaDefaultAgentFallback: true };
+  if (declaredTier(models, agent, name) !== undefined) return { isTier: true, viaDefaultAgentFallback: false };
+  if (declaredTier(models, defaultAgent, name) !== undefined) return { isTier: true, viaDefaultAgentFallback: true };
   return { isTier: false, viaDefaultAgentFallback: false };
 }
 
@@ -342,12 +357,12 @@ export function resolveModelForAgent(
   tier: ModelTier,
   defaultAgent: string,
 ): ModelDef {
-  const agentEntry = models[agent]?.[tier];
+  const agentEntry = declaredTier(models, agent, tier);
   if (agentEntry !== undefined) {
     return resolveModel(agentEntry);
   }
 
-  const defaultEntry = models[defaultAgent]?.[tier];
+  const defaultEntry = declaredTier(models, defaultAgent, tier);
   if (defaultEntry !== undefined) {
     return resolveModel(defaultEntry);
   }

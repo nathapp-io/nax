@@ -1,14 +1,23 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
-import { _fixReportDeps, BOT_FIX_GRAPH, type BotFixEnv, readyStep, reportStep } from "@/bot";
+import {
+  assertDefined,
+  makeBotFixDeps,
+  makeBotFixDraftEnv,
+  makeBotFixEnv,
+  makeNaxConfig,
+  makeTestRuntime,
+} from "@test/helpers";
+import { _fixReportDeps, type AgreedItem, BOT_FIX_GRAPH, type BotFixEnv, readyStep, reportStep } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixState, BotFixStep } from "@/bot/fix-steps";
+import { _fixStepsDeps } from "@/bot/fix-steps";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 import { runStepGraph } from "@/step-graph";
 import { botRunDir } from "@/workflow/paths";
 
 const original = { ..._botFixDeps };
+const stepsOriginal = { ..._fixStepsDeps };
 const input = { dir: "/repo", pr: 42, profiles: [], interactive: false };
 let runtime: ReturnType<typeof makeTestRuntime>;
 let calls: BotFixStep[];
@@ -63,6 +72,7 @@ beforeEach(() => {
 afterEach(async () => {
   mock.restore();
   Object.assign(_botFixDeps, original);
+  Object.assign(_fixStepsDeps, stepsOriginal);
   await runtime.close();
 });
 
@@ -260,5 +270,102 @@ describe("BOT_FIX_GRAPH ready node", () => {
     expect(wait).not.toHaveBeenCalled();
     expect(state.markedReady).toBe(false);
     expect(state.readyHeld).toBe("no nax item index on this PR");
+  });
+});
+
+/**
+ * #2999: a fix session that failed and left the tree untouched is a failure, not a no-op. These run
+ * `runBotFix` with the production `fixStep`, `checkStep` and `gatesStep`, so the classification under
+ * test is the real one — only the session boundary and the gates' own command runner are stubbed.
+ */
+describe("US-005 a failed fix session", () => {
+  const FINDING: AgreedItem = {
+    kind: "finding",
+    key: "f-1",
+    severity: "important",
+    issue: "Leak",
+    file: "src/a.ts",
+    trigger: "normal",
+  };
+
+  /**
+   * A run whose session reports `failure: "boom"` and leaves `changed` behind. No gate repair rounds,
+   * so a red gate reports instead of routing back through `repair`.
+   */
+  function failedSession(changed: readonly string[], gatesPass = true): { gates: string[] } {
+    const env = {
+      ...makeBotFixEnv([FINDING]),
+      config: makeNaxConfig({ bot: { gateRepairRounds: 0 } }),
+      checks: { source: "config" as const, gates: [{ name: "test", command: "test-command" }], preRun: [] },
+    };
+    // The real steps, each recorded, so the sequence under test is the production one.
+    _botFixDeps.fixStep = (env, state) => {
+      calls.push("fix");
+      return original.fixStep(env, state);
+    };
+    _botFixDeps.checkStep = (env, state) => {
+      calls.push("check");
+      return original.checkStep(env, state);
+    };
+    _botFixDeps.gatesStep = (env, state) => {
+      calls.push("gates");
+      return original.gatesStep(env, state);
+    };
+    _botFixDeps.loadLatestReview = async () => env.review;
+    _botFixDeps.loadBotConfig = async () => env.config;
+    _botFixDeps.resolveBotChecks = async () => env.checks;
+    _botFixDeps.preparePrCheckout = async () => env.checkout;
+    _fixStepsDeps.runBranchFix = async () => ({ dirty: false, autoCommitted: false, failure: "boom" });
+    _fixStepsDeps.readHead = async () => "fixed";
+    _fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+    _fixStepsDeps.changedPaths = async () => [...changed];
+    _fixStepsDeps.failingOnHead = async () => [];
+    _fixStepsDeps.readHeadCi = async () => ({ outcome: "green", detail: "" });
+    const gates: string[] = [];
+    _fixStepsDeps.runQualityGates = async (_root, commands) => {
+      gates.push(...commands.map(({ name }) => name));
+      return { passed: gatesPass, failing: gatesPass ? [] : ["test"], ran: ["test"], output: "" };
+    };
+    return { gates };
+  }
+
+  test("AC-5: a failed session that changed nothing ends fix-failed with its cause", async () => {
+    failedSession([]);
+    expect(await runBotFix(input)).toMatchObject({ outcome: "fix-failed", fixFailure: "boom" });
+    // The run above only reaches the report node because the check node declares the exit:
+    // `runStepGraph` refuses an exit its node does not list (STEP_GRAPH_UNDECLARED_EXIT).
+    const check = BOT_FIX_GRAPH.nodes.check;
+    assertDefined(check, "check node");
+    expect(check.exits).toContain("fix-failed");
+  });
+
+  test("AC-6: a failed session that changed nothing never reaches the gates", async () => {
+    failedSession([]);
+    await runBotFix(input);
+    expect(calls).toEqual(["fix", "check", "report"]);
+  });
+
+  test("AC-14: a failed session that left changes still runs the configured gates", async () => {
+    const { gates } = failedSession(["src/a.ts"], false);
+    expect(await runBotFix(input)).toMatchObject({ outcome: "gates-failed" });
+    expect(calls.slice(0, 3)).toEqual(["fix", "check", "gates"]);
+    expect(gates).toEqual(["test"]);
+  });
+
+  test("AC-15: that run keeps the session failure in its fix state", async () => {
+    failedSession(["src/a.ts"], false);
+    expect(await runBotFix(input)).toMatchObject({ outcome: "gates-failed", fixFailure: "boom" });
+  });
+
+  test("AC-16: its fix summary still reports the session failure", async () => {
+    failedSession(["src/a.ts"], false);
+    _botFixDeps.reportStep = (env, state) => {
+      calls.push("report");
+      return original.reportStep(env, state);
+    };
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
+    await runBotFix(input);
+    const bodies = post.mock.calls.map(([, body]) => body);
+    expect(bodies.some((body) => body.includes("Fix session: boom"))).toBe(true);
   });
 });

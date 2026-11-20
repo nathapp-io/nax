@@ -1,0 +1,343 @@
+{
+  "project": "nax-monorepo",
+  "feature": "bot-fix-bundle-1120",
+  "branchName": "feat/bot-fix-bundle-1120",
+  "createdAt": "2026-11-20T08:59:29.470Z",
+  "updatedAt": "2026-11-20T10:48:09.819Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Show one lineage line per finding and one item list per push",
+      "description": "**Goal** — Give the fixer one `Lineage:` line per finding and list multi-parent lineage items once per earlier push.\n\n**Motivation** — On v0.92.9, a fix push that closed 8 advisor items (D-1..D-8) gave the next fix prompt 32 `Lineage:` lines for 4 findings.\n\n**Approach** — `findingFactLines` (`packages/nax/src/bot/fix-facts.ts`): exactly one `Lineage:` line per finding that has lineage, `Lineage: generation N, on lines added by nax bot fix <sha7> for <p1>, <p2>, ...` (parents in `lineage.parents` order, joined by `, `). The ` (<issue>)` suffix is appended only when `lineage.parents` has exactly one entry and `parentIssue` finds its issue.\n\nNew export `lineagePushFacts(agreed, entries)` in `packages/nax/src/bot/fix-facts.ts`. It returns `readonly LineagePushFact[]`, where `LineagePushFact = { readonly sha: string; readonly items: readonly { readonly key: string; readonly issue?: string }[] }` and `sha` is the 7-character short SHA. Rules:\n- There is one entry per distinct `pushSha` named by the lineage of an agreed `finding` item whose `lineage.parents` has two or more entries, in the order the agreed items first name it.\n- Its `items` are the union of the parents of the multi-parent lineages that name that push, deduplicated, in first-seen order. A single-parent lineage naming the same push adds nothing, because its parent's issue is already on its own `Lineage:` line. Each item carries `issue` when `parentIssue(pushSha, key, entries)` returns one.\n- A push the ledger no longer holds still gets its entry, with keys only and no `issue`.\n- A push named only by single-parent lineages gets no entry, because its issue is already on the `Lineage:` line.\n\n`fixPromptFacts` (`packages/nax/src/bot/fix-steps.ts`): also returns `lineagePushes`, the result of `lineagePushFacts(env.review.agreed, entries)` over the same `entries` (`ownLedgerEntries(env.own)`), when non-empty.\n\n`BotPrFixPromptInput` (`packages/nax/src/prompts/builders/bot-pr-fix-builder.ts`). It gains an optional `lineagePushes?: readonly { readonly sha: string; readonly items: readonly { readonly key: string; readonly issue?: string }[] }[]`. `factsSection` renders each entry after the per-finding blocks and before the growth line:\n- the line `Earlier nax bot fix push <sha> was for:`;\n- then one line per item, `<FACT_INDENT>- <key>: <issue>`, or `<FACT_INDENT>- <key>` when there is no issue.\nThe section is rendered when any of the three parts is present.\n\n**Scope** — In: per-finding and per-push facts in the fix prompt, based on the recorded push ledger, and unit and fixStep prompt regression tests. Out: advisor summary sourcing (US-002), model validation and fix outcome handling (US-003/005), and carry signals (US-004). Do not narrow lineage to a single parent, alter inline-comment lineage, migrate posted push ledgers, or add finding provenance or fix-induced chain routing (#2987).\n\n**Interface** — `lineagePushFacts(agreed, entries)` returns `readonly LineagePushFact[]`; `LineagePushFact = { readonly sha: string; readonly items: readonly { readonly key: string; readonly issue?: string }[] }`; optional prompt input `lineagePushes?: readonly { readonly sha: string; readonly items: readonly { readonly key: string; readonly issue?: string }[] }[]`. Read `BotPushEntry { base; sha; at; items: BotPushItem[] }`, `BotPushItem { key; generation; issue; raisedBy? }`, `FindingLineage { generation; parents: readonly string[]; pushSha }`, and `parentIssue(pushSha, parent, entries): string | undefined` from `packages/nax/src/bot/push-ledger.ts`. The inline-comment `lineageLine(lineage)` in `packages/nax/src/bot/render-comments.ts` is unchanged.",
+      "acceptanceCriteria": [
+        "When findingFactLines receives a finding with lineage { generation: 3, parents: [\"f-a\", \"f-b\"], pushSha }, then its Lineage: lines are exactly [\"Lineage: generation 3, on lines added by nax bot fix <sha7> for f-a, f-b\"].",
+        "When findingFactLines receives a generation-2 lineage with the single parent f-a and the named push records that parent's issue as lock leaks, then it returns the line `Lineage: generation 2, on lines added by nax bot fix <sha7> for f-a (lock leaks)`.",
+        "When findingFactLines receives a generation-2 lineage with the single parent f-a and the ledger no longer holds the named push, then it returns `Lineage: generation 2, on lines added by nax bot fix <sha7> for f-a` with no issue suffix.",
+        "When two agreed findings name push P with parent lists [\"f-a\", \"f-b\"] and [\"f-b\", \"f-c\"], then the lineagePushFacts output projected to SHA and keys is exactly one entry for P's first seven characters with keys [\"f-a\", \"f-b\", \"f-c\"] in that order.",
+        "When those two agreed findings name P and the ledger has issues for all three keys on P, then each lineagePushFacts item carries the issue recorded for its key on P.",
+        "When an included parent key is missing from push P's ledger entry, then its lineagePushFacts item has no issue field.",
+        "When every agreed finding's lineage has exactly one parent, then lineagePushFacts returns an empty list.",
+        "When two multi-parent lineages name different pushes, then lineagePushFacts returns exactly one entry per distinct push, in the order the agreed items first name them.",
+        "When lineagePushFacts receives agreed items whose kind is not finding, then those items do not contribute to its output.",
+        "When a multi-parent lineage [\"f-a\", \"f-b\"] and a single-parent lineage [\"f-c\"] both name P, then the lineagePushFacts output for P consists of one entry whose item keys are [\"f-a\", \"f-b\"].",
+        "When a two-parent lineage names a push the ledger no longer holds, then lineagePushFacts returns one entry for that push with the two item keys and no issue fields.",
+        "When buildBotPrFixPrompt receives lineagePushes [{ sha: \"9a87207\", items: [{ key: \"w-D-1\", issue: \"add a lock\" }, { key: \"w-D-2\" }] }] and no finding facts, then the `## Facts about these findings` section contains the line `Earlier nax bot fix push 9a87207 was for:`.",
+        "When buildBotPrFixPrompt renders the 9a87207 push with items [{ key: \"w-D-1\", issue: \"add a lock\" }, { key: \"w-D-2\" }], then the lines immediately after the push heading in the facts section are exactly [\"  - w-D-1: add a lock\", \"  - w-D-2\"], each with the builder's fact indent.",
+        "When buildBotPrFixPrompt receives finding facts, lineagePushes, and outside growth, then it renders the push lines after every finding block and before the outside-growth line.",
+        "When buildBotPrFixPrompt receives an empty lineagePushes list, no finding facts and no outside growth, then it renders no `## Facts about these findings` section.",
+        "When fixStep receives a review artifact in env.review with two agreed findings (at least one blocking), each with a two-parent lineage on the same recorded push whose item issues are in the ledger, then the prompt passed to runBranchFix contains `Earlier nax bot fix push <sha7> was for:` exactly once.",
+        "When fixStep receives env.review with two agreed findings (at least one blocking), each with a two-parent lineage on the same recorded push whose item issues are in the ledger, then the facts section of the prompt passed to runBranchFix contains exactly two lines starting with `Lineage:` after the fact indent, one in each finding's fact block."
+      ],
+      "tags": [
+        "bot",
+        "prompts",
+        "lineage"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Deterministic aggregation and rendering through three existing modules with no storage change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-facts.ts",
+        "packages/nax/src/bot/push-ledger.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/prompts/builders/bot-pr-fix-builder.ts",
+        "packages/nax/test/unit/bot/fix-facts.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/fix-facts.test.ts",
+          "reason": "test \"AC-4: two parents yield one Lineage line each\" asserts two `Lineage:` lines, one per parent, each with its issue. Under the new rule a two-parent lineage yields exactly one line, `Lineage: generation 3, on lines added by nax bot fix <sha7> for f-a, f-b`, with no issue suffix. The issues move to `lineagePushFacts`. Rewrite that test's expectation to the single line."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ac9bb8a1efc1db98f154df33ba189c2b12ae04b5"
+    },
+    {
+      "id": "US-002",
+      "title": "Name advisor decisions in open item text",
+      "description": "**Goal** — Carry each flagged decision's one-line summary through publish so advisor open items say what needs a human decision.\n\n**Motivation** — The fixer could not tell what any of its earlier changes was for, which is the fact #2987 relies on to stop fix-induced chains.\n\n**Approach** — New export `advisorDecisionSummary(d: AdviceDecision): string` in `packages/nax/src/finish/pr/body.ts`. It returns `flat(d.rulingTitle)` when that result is a non-empty string after trimming. Otherwise (no `rulingTitle`, or one that is empty after `flat`) it returns the same text `buildAdvisorSection` already uses for the decision's detail (`carry → <stories> — <instruction>`, `answer — <text>`, or `<action type> — <rationale>`), extracted into one function both callers use. Both forms are one line. `buildAdvisorSection`'s output is unchanged. `advisorDecisionSummary` is re-exported from `src/finish/pr/index.ts` and `src/finish/index.ts`, and `feature-env.ts` imports it from `@/finish`.\n\n`FeatureSteps.flaggedDecisions` (`packages/nax/src/workflow/feature-machine.ts`): `flaggedDecisions?(): Promise<readonly FlaggedDecision[]>`, with `FlaggedDecision = { readonly id: string; readonly summary: string }` exported from `packages/nax/src/workflow/types.ts`. `buildFeatureEnv` (`feature-env.ts`) maps each trusted decision with `needsHumanConfirm === true` to `{ id: d.id, summary: advisorDecisionSummary(d) }`.\n\n`WorkflowFeatureRecord` (`packages/nax/src/workflow/types.ts`): `flaggedDecisions` is unchanged (ids, ledger order). The record gains `flaggedDecisionSummaries?: Readonly<Record<string, string>>` (decision id to summary).\n- `collectFlaggedDecisions` (`feature-steps.ts`) returns `readonly FlaggedDecision[]` (empty on a missing step or a thrown read, as today). `publishStep` splits that one list in one place into `ids` and `summaries` (`Object.fromEntries` of id to summary). It uses both in the two places that carry the record today: the record passed to `postItemThreadsAfterPublish` (`{ ...rec, flaggedDecisions: ids, flaggedDecisionSummaries: summaries }`), and the publish patch. The patch writes a `flaggedDecisionSummaries` map only when `ids` is non-empty, and `flaggedDecisions` under its existing rule.\n- The `publish` node in `FEATURE_GRAPH` (`packages/nax/src/workflow/feature-graph.ts`) adds `\"flaggedDecisionSummaries\"` to its `produces`. `runStepGraph` refuses a patch key the node does not declare (`STEP_GRAPH_UNDECLARED_OUTPUT`, `src/step-graph/run.ts`).\n- `feature-steps.ts` is at 572 of its 600-line limit. If the split pushes it over, move `collectFlaggedDecisions` and the split into a new `packages/nax/src/workflow/flagged-decisions.ts`.\n\n`advisorItems` (`packages/nax/src/workflow/open-items.ts`): when `rec.flaggedDecisionSummaries?.[id]` is a non-empty string, the issue is `advisor decision ${id} needs a human: ${summary}`. Otherwise it keeps the baseline text, so records written before this feature are unchanged. The held finish-approval item is unchanged. The baseline issue is `advisor decision ${id} needs a human: see nax advisor list`.\n\nOn re-publish, each flagged advisor item's issue text changes, so `itemKey` (which hashes kind and issue) changes once. The thread step posts a new thread under the new key and the index lists only new keys, as it already does for any item whose text changed. The old thread stays on the PR outside the index, and a ruling on it does not carry to the new thread. A decision's ledger entry is immutable, so later re-publishes keep the same key.\n\n**Scope** — In: extracting the shared action-detail formatter, formatting summaries from trusted decisions, propagating them to the feature record and publish-thread path, rendering open-item issue text, and regressions for the formatter and publish workflow. Out: fix-prompt rendering (US-001), model and fix outcome behavior (US-003/005), and carry signals (US-004). Do not change the `## Advisor decisions` section output or migrate existing advisor threads, rulings, or push ledgers.\n\n**Interface** — `advisorDecisionSummary(d: AdviceDecision): string`; `flaggedDecisions?(): Promise<readonly FlaggedDecision[]>`; `FlaggedDecision = { readonly id: string; readonly summary: string }`; record fields `flaggedDecisions?: readonly string[]` and `flaggedDecisionSummaries?: Readonly<Record<string, string>>`. Uses trusted `AdviceDecision` (`id`, `rulingTitle?`, `action`, `rationale`, `needsHumanConfirm`) and `readTrustedDecisions(repoRoot, feature, outputDir): Promise<AdviceDecision[]>`.",
+      "acceptanceCriteria": [
+        "When a decision's rulingTitle is `Keep the lock in deploy.sh`, then advisorDecisionSummary returns `Keep the lock in deploy.sh`.",
+        "When a decision has no rulingTitle and action { type: \"answer\", text: \"use the queue\" }, then advisorDecisionSummary returns `answer — use the queue`.",
+        "When a decision has no rulingTitle and a carry action to US-002 with instruction `add the check`, then advisorDecisionSummary returns `carry → US-002 — add the check`.",
+        "When a decision's rulingTitle has a newline, then advisorDecisionSummary returns a single line with no newline.",
+        "When a decision has a whitespace-only rulingTitle and action { type: \"answer\", text: \"use the queue\" }, then advisorDecisionSummary returns `answer — use the queue`.",
+        "When buildAdvisorSection renders a fixture containing an answer, a carry and a supersede decision, then its output matches the same fixed expected text as before this story.",
+        "When buildFeatureEnv's flaggedDecisions step reads a ledger with a trusted D-1 decision with needsHumanConfirm true and rulingTitle `Keep the lock`, then it returns [{ id: \"D-1\", summary: \"Keep the lock\" }].",
+        "When buildFeatureEnv's flaggedDecisions step reads a trusted decision with needsHumanConfirm false, then it omits that decision from its result.",
+        "When publishStep receives [{ id: \"D-1\", summary: \"Keep the lock\" }] from flaggedDecisions and its patch is applied, then the feature record has flaggedDecisions [\"D-1\"].",
+        "When publishStep receives [{ id: \"D-1\", summary: \"Keep the lock\" }] from flaggedDecisions and its patch is applied, then the feature record has flaggedDecisionSummaries { \"D-1\": \"Keep the lock\" }.",
+        "When flaggedDecisions returns an empty list and the publishStep patch is applied, then the resulting feature record has no flaggedDecisionSummaries key.",
+        "When buildOpenItems receives flaggedDecisions [\"D-3\"] and flaggedDecisionSummaries { \"D-3\": \"Keep the lock\" }, then the D-3 advisor item's issue is `advisor decision D-3 needs a human: Keep the lock`.",
+        "When buildOpenItems receives an older record with flaggedDecisions [\"D-3\"] and no flaggedDecisionSummaries, then the D-3 advisor item's issue remains `advisor decision D-3 needs a human: see nax advisor list`.",
+        "When buildOpenItems receives a record whose flaggedDecisionSummaries maps flagged id D-3 to an empty string, then the D-3 advisor item's issue is `advisor decision D-3 needs a human: see nax advisor list`.",
+        "When the feature graph runs the publish node with flaggedDecisions returning [{ id: \"D-1\", summary: \"Keep the lock\" }], then that node completes without a STEP_GRAPH_UNDECLARED_OUTPUT refusal.",
+        "When publishStep takes the item-thread path with flaggedDecisions returning [{ id: \"D-1\", summary: \"Keep the lock\" }], then the record passed to postItemThreads carries flaggedDecisionSummaries { \"D-1\": \"Keep the lock\" }."
+      ],
+      "tags": [
+        "workflow",
+        "advisor",
+        "forge"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Isolated test writing is warranted because a single result crosses the formatter, typed graph patch and thread-posting seams, where tests must distinguish the applied workflow record from the record passed to the forge.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/pr/body.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/test/unit/workflow/feature-flagged-decisions.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-flagged-decisions.test.ts",
+          "reason": "every `flaggedDecisions` step stub and helper type in the file (the `flagged` option type, `flaggedStepOf`, and the stubs returning `readonly string[]`) returns ids. The step now returns `readonly FlaggedDecision[]`, so they return `{ id, summary }` objects, and the assertion that `buildFeatureEnv`'s step yields `[trusted.id]` becomes `[{ id: trusted.id, summary: <its summary> }]`. Assertions on `final.flaggedDecisions` (ids) stay as they are."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/publish-item-threads.test.ts",
+          "reason": "`h.env.steps.flaggedDecisions = async () => [\"D1\"]` stubs the old return type. It becomes `async () => [{ id: \"D1\", summary: \"a summary\" }]`. The assertion that the posted record's `flaggedDecisions` equals `[\"D1\"]` stays."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "the test pinning the `publish` node's `produces` list exactly gains `\"flaggedDecisionSummaries\"` in its expected list; no other node's list changes."
+        },
+        {
+          "path": "packages/nax/test/helpers/workflow-trace.ts",
+          "reason": "the trace wrapper forwards `steps.flaggedDecisions` with the old `readonly string[]` type. Its signature follows the new `readonly FlaggedDecision[]` return type; no recorded trace changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "12084e39d20ff6d3ec6424fabb9ad646582e6658"
+    },
+    {
+      "id": "US-003",
+      "title": "Refuse unresolvable bot model overrides before runtime setup",
+      "description": "**Goal** — Refuse unresolvable explicit model overrides just after loading the base-snapshot config for fix, ready-only fix, and review.\n\n**Motivation** — `nax bot fix 2997 --model \"openai-codex/gpt-6.1-sol[high]\"` printed `no-change` and exited 2.\n\n**Approach** — New export `checkBotModelOverride(config: NaxConfig, model: ConfiguredModel | undefined): string | undefined` in `packages/nax/src/bot/models.ts`. It is exported from `src/bot/index.ts`. It returns `undefined` when `model` is `undefined` or `resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, resolveDefaultAgent(config), model, resolveDefaultAgent(config))` returns (the same models fallback the op dispatch prologue uses, `src/operations/call-dispatch-prologue.ts`). When that call throws, it returns a refusal reason, built in this order:\n1. `invalid --model \"<value>\": <error message>`, where `<value>` is a string model as given, or `agent:model` for an object;\n2. `; accepted forms: <tier> or <agent>:<model>`;\n3. `; configured tiers: <comma-separated keys of the effective models[defaultAgent]>`, or `; configured tiers: none` when that agent has no entry;\n4. only when the value is a string containing `/` and no `:`, `; a provider/model id needs its agent prefix, for example <defaultAgent>:<value>`.\n\n`runBotFix` / `fixCheckout` (`packages/nax/src/bot/fix-run.ts`) and `runBotReview` / `reviewCheckout` (`packages/nax/src/bot/review-run.ts`). Right after `deps.loadBotConfig(...)` resolves, and before `deps.createRuntime`, each calls `checkBotModelOverride(config, input.model)`. A defined reason returns `{ outcome: \"refused\", reason }` at once. Review checks the loaded config before `reviewConfig` rewrites it. The check runs for `nax bot fix --ready-only` too: a `--model` that cannot resolve is a usage error whether or not a session would use it.\n\n`resolveConfiguredModel` throws `NaxError` code `MODEL_NOT_FOUND` for a string selection that is no tier of the agent or the default agent. For an `{ agent, model }` selection that is not a tier, it only warns and dispatches the model as a literal. On refusal the CLI writes the reason to stderr; `bot fix` exits 2 and `bot review` keeps its existing refused exit code. There is no install or build, and no run log. The checkout is still created and disposed, because the model can only be checked against the config read from the checkout's base snapshot.\n\n**Scope** — In: pre-runtime validation of explicit `input.model`, reuse of fix, ready-only fix and review's existing CLI refusal reporting, and unit and runner integration tests. Out: `fix-failed` for sessions that start a run (US-005), prompt and advisor facts (US-001/002), and carry signals (US-004). Do not validate against repo-local config at CLI parse time before the checkout or reject explicit literal model IDs.\n\n**Interface** — `checkBotModelOverride(config: NaxConfig, model: ConfiguredModel | undefined): string | undefined`; read `resolveConfiguredModel(models, preferredAgent, selection, defaultAgent)` and `resolveDefaultAgent(config)`; return `{ outcome: \"refused\", reason }` from bot entry points on rejection.",
+      "acceptanceCriteria": [
+        "When checkBotModelOverride receives undefined as its override, then it returns undefined.",
+        "When config.models.native has the balanced tier for the default agent native and the model is `balanced`, then checkBotModelOverride returns undefined.",
+        "When checkBotModelOverride receives { agent: \"native\", model: \"openai-codex/gpt-6.1-sol[high]\" }, then it returns undefined, preserving literal dispatch for explicit agent:model selections that are not configured tiers.",
+        "When checkBotModelOverride receives { agent: \"native\", model: \"nax-unknown-model-id\" } and neither the native nor default tier map defines that name, then it returns undefined, preserving the resolver's existing warn-only treatment of unrecognized explicit literals.",
+        "When checkBotModelOverride receives `nope` with native as the default agent and configured tiers fast and balanced, then its reason starts with `invalid --model \"nope\": No model entry found`.",
+        "When checkBotModelOverride rejects `nope` under that config, then the reason contains `accepted forms: <tier> or <agent>:<model>`.",
+        "When checkBotModelOverride rejects `nope` under that config, then the reason contains `configured tiers: fast, balanced`.",
+        "When checkBotModelOverride rejects `nope` under that config, then the reason ends with `configured tiers: fast, balanced`, with no agent-prefix hint after it.",
+        "When checkBotModelOverride receives `openai-codex/gpt-6.1-sol[high]` as a string and native is the default agent, then the refusal reason contains `a provider/model id needs its agent prefix, for example native:openai-codex/gpt-6.1-sol[high]`.",
+        "When runBotFix receives model `nope` and the loaded config has no tier nope, then it returns a refused result whose reason starts with `invalid --model \"nope\"`.",
+        "When runBotFix refuses that model, then _botFixDeps.createRuntime is not called.",
+        "When runBotFix refuses that model, then _botFixDeps.runPreRunSteps is not called.",
+        "When runBotReview receives model `nope` and the loaded config has no tier nope, then it returns a refused result whose reason starts with `invalid --model \"nope\"`.",
+        "When runBotReview refuses that model, then _botReviewDeps.createRuntime is not called.",
+        "When checkBotModelOverride rejects `nope` for a config whose models map has no entry for the default agent, then the reason contains `configured tiers: none`.",
+        "When runBotFix receives readyOnly true and model `nope` with no such tier in the loaded config, then it returns a refused result whose reason starts with `invalid --model \"nope\"`."
+      ],
+      "tags": [
+        "bot",
+        "cli",
+        "models"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A canonical resolver wrapper and two early guards reuse established config, checkout, and error paths.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/models.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/config/schema-types.ts",
+        "packages/nax/test/helpers/bot-fix.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/bot/model-override.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6015dbfa13a13cf3444ff5b0a509eb647bb7c1d7"
+    },
+    {
+      "id": "US-004",
+      "title": "Post a distinct incomplete-carry signal for each review",
+      "description": "**Goal** — Key incomplete-carry signals by head and review id so a complete review clears only signals visible in its startup snapshot.\n\n**Motivation** — Run Y (complete) then clears that signal from its startup snapshot, and the next worker trusts a carry record that never held X's blocker.\n\n**Approach** — `carried-record.ts` (`packages/nax/src/bot/carried-record.ts`):\n- New export `carryWidenReviewKey(headSha: string, reviewId: string): string` returns `w-carry-incomplete:<headSha>:<reviewId>`.\n- `carryWidenKey` stays, and is still recognised as a legacy key.\n- `pendingCarryWidenComments` keeps its `startsWith(\"w-carry-incomplete:\")` rule, so legacy and per-review signals both count as pending.\n- `carryWidenComment` is deleted once nothing calls it (build gate).\n\n`CARRIED_RECORD_KEY` (`packages/nax/src/forge/marker-grammar.ts`): `/^w-carry(?:-incomplete:[0-9a-f]{40}(?::[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?|:[0-9a-f]{40})$/` (the review id is a lowercase `crypto.randomUUID()`). The carried record key (`w-carry:<sha>`) and the legacy signal key stay valid, and the per-review signal key becomes valid. A review-id suffix on `w-carry:<sha>` stays invalid. `isTopLevelMarkerKey` uses it, and `isRepliedTopLevelNote` (`src/forge/threads.ts`) uses that to keep a replied GitLab note top-level. A per-review key would fail the old rule, so a replied per-review signal would gain a `threadId`, and `pendingCarryWidenComments` (which requires `threadId === undefined`) would not see it. Marker keys match `[A-Za-z0-9._:-]{1,128}`. `w-carry-incomplete:` (19) + a 40-character SHA + `:` + a 36-character UUID is 96 characters.\n\n`writeCarryWiden` (`packages/nax/src/bot/post-carried.ts`): a pending write always posts a new comment keyed `carryWidenReviewKey(input.info.headSha, review.id)`, whatever signals already exist. `postCarriedRecord` passes `review.id` through. `clearCarryWidens` is unchanged: it edits only the pending comments in `input.own`, the snapshot read when the review started. `reviewId = crypto.randomUUID()`, passed to `postCarriedRecord` as `review.id`, already comes from `packages/nax/src/bot/post.ts`. `advance()` calls `clearCarryWidens(env.post)`. `env.post.own` is the bot's own comments as read when the review started.\n\nThe incomplete-review branch still posts a signal only when there is a new blocking finding; a failed complete carried-record write with a new blocker also posts one. If the incomplete-review signal post fails, it is logged at warn and `postCarriedRecord` returns `false`, as today; the head is held. A legacy `w-carry-incomplete:<sha>` signal is still read as pending, and still cleared by a complete full review that read it.\n\n**Scope** — In: signal key, write, and forge classification plus unit and overlap regression tests, preserving snapshot-scoped clearing and existing review/readiness consumers. Out: prompt facts and advisor text (US-001/002), model refusal and fix outcomes (US-003/005). Do not migrate or delete legacy signals, cap or delete per-review comments, or coordinate two overlapping complete reviews.\n\n**Interface** — `carryWidenReviewKey(headSha: string, reviewId: string): string` returns `w-carry-incomplete:<headSha>:<reviewId>`; `carryWidenKey(headSha)` retains `w-carry-incomplete:<headSha>` for legacy keys; `postCarriedRecord` continues taking `review: { readonly id: string; readonly complete: boolean }`.",
+      "acceptanceCriteria": [
+        "When carryWidenReviewKey receives a 40-hex sha and a UUID, then it returns `w-carry-incomplete:<sha>:<uuid>`.",
+        "When isNaxBotMarkerKey receives carryWidenReviewKey(<40-hex sha>, crypto.randomUUID()), then it returns true.",
+        "When isTopLevelMarkerKey receives carryWidenReviewKey(<40-hex sha>, <uuid>), then it returns true.",
+        "When isTopLevelMarkerKey receives `w-carry:<40-hex sha>:<uuid>`, then it returns false.",
+        "When a positionless GitLab discussion's first note is authored by the bot, carries a per-review signal marker and has one reply, then ownComments(await listPrComments(ref, deps, cwd), botLogin) includes that signal with no threadId.",
+        "When an own top-level comment is keyed by carryWidenReviewKey(sha, id) and its body is not the cleared text, then pendingCarryWidenComments includes it.",
+        "When an own top-level comment has the legacy carryWidenKey(sha) and its body is not the cleared text, then pendingCarryWidenComments still includes it.",
+        "When an own top-level per-review signal's body contains CARRY_WIDEN_CLEARED (the cleared text, alongside the marker in the posted body), then pendingCarryWidenComments omits it.",
+        "When postPrReview handles an incomplete review with a new blocking off-line finding at H and own already holds a pending carryWidenKey(H) signal, then it posts a new comment keyed by carryWidenReviewKey(H, that review's id).",
+        "When postPrReview handles an incomplete review with a new blocking off-line finding at H and own already holds a pending carryWidenKey(H) signal, then it does not edit the existing carryWidenKey(H) comment.",
+        "When postPrReview handles an incomplete review with a new blocker and own already holds one pending per-review signal from another review id at the same head H, then it posts one additional signal comment, leaving two pending signals for H.",
+        "When postPrReview handles an incomplete review with no new blocking finding, then it posts no signal comment.",
+        "When postPrReview handles a complete review at head H with a new blocking finding and the carried-record write fails, then it posts a signal keyed by carryWidenReviewKey(H, that review's id).",
+        "Given review Y starts with own holding pending S1, when incomplete review X posts S2 for a new blocker and Y then completes its full review with a successful index advance, then S1's body is the cleared text.",
+        "Given review Y starts with own holding pending S1, when incomplete review X posts S2 for a new blocker and Y then completes its full review with a successful index advance, then S2 stays pending.",
+        "When the next runBotReview reads S2 still pending after Y's successful index advance in that race, then it runs a full-scope review.",
+        "When S2 is still pending after Y's successful index advance in that race, then carriedReadiness in carried-hold.ts returns { kind: \"held\", reason: CARRY_INCOMPLETE_HOLD }, the incomplete-carry hold nax bot fix reports.",
+        "When posting the per-review signal throws, then postCarriedRecord returns false, preserving the reviewed-head hold.",
+        "When posting the per-review signal throws, then the logger receives a warn on stage bot-post.",
+        "When a complete full review successfully advances the index after reading a pending legacy `w-carry-incomplete:<sha>` signal in its startup snapshot, then it still edits that signal to CARRY_WIDEN_CLEARED."
+      ],
+      "tags": [
+        "bot",
+        "forge",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module forge classification and persisted signals must remain compatible while the overlapping-review race is closed. The existing review UUID is a record identifier, not an auth token.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/carried-record.ts",
+        "packages/nax/src/bot/post-carried.ts",
+        "packages/nax/src/bot/carried-hold.ts",
+        "packages/nax/src/forge/marker-grammar.ts",
+        "packages/nax/test/integration/bot/carried-finding-holds.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/bot/carry-widen-signals.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/carried-finding-holds.test.ts",
+          "reason": "two tests assert that the posted signal's marker key equals `carryWidenKey(head)` exactly (\"a partial full review ... still widens the next worker's review\" for `headB`, and the published-head case for `published`). An incomplete review now posts `carryWidenReviewKey(head, <reviewId>)`, with a random review id. Those two assertions change to \"some posted marker key starts with `carryWidenKey(head) + \":\"`\". Every assertion that a pending signal widens the next review stays."
+        },
+        {
+          "path": "packages/nax/src/forge/marker-grammar.ts",
+          "reason": "production change named here because `CARRIED_RECORD_KEY` is a shared forge grammar: it widens to accept `w-carry-incomplete:<sha>:<lowercase UUID>` as in Design. Existing keys keep their classification."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6af2361c156a4d6ade486e354735456b41f70e60"
+    },
+    {
+      "id": "US-005",
+      "title": "Report zero-edit fix session failures as fix-failed",
+      "description": "**Goal** — Distinguish a failed no-edit fix session from a clean no-op and expose the failure in the CLI and run log.\n\n**Motivation** — `no-change` normally means \"the fixer looked and had nothing to do\", so a script or agent cannot tell the two cases apart.\n\n**Approach** — `BotFixState.outcome` (`packages/nax/src/bot/fix-steps.ts`). It gains `\"fix-failed\"`. `checkStep`: when `changed.length === 0` and `state.fixFailure` is a non-empty string, it returns `{ patch: { changed, outcome: \"fix-failed\" }, exit: \"fix-failed\" }` and logs `getLogger()?.warn(\"bot-fix\", \"Fix session failed\", { storyId: \"_bot\", pr: env.info.number, failure: state.fixFailure })`. With `changed.length === 0` and no `fixFailure`, it still returns `no-change`. With changes, `fixFailure` does not alter the path.\n- `check` reads the failure of the latest session only. `repairStep` (`packages/nax/src/bot/repair-step.ts`) states `fixFailure: undefined` in its patch when its session reports no failure (the `repair` node already declares `fixFailure` in `produces`), so a first session's failure does not survive a repair session that ran cleanly.\n- The `check` node in `BOT_FIX_GRAPH` (`fix-run.ts`) lists `\"fix-failed\"` in `exits`. The node's default transition already routes it to `report`.\n\n`outcomeText` (`packages/nax/src/bot/fix-outcome-text.ts`) gains `case \"fix-failed\": return \"The fix session failed before changing anything; nothing pushed.\"`. The summary's existing `Fix session: <failure>` line (`fix-summary.ts`) carries the cause.\n\n`botFixCommand` (`packages/nax/src/cli/bot.ts`). For a non-success outcome it still returns exit code 2. For `outcome === \"fix-failed\"` with a `fixFailure`, `deps.logErr` receives `fix-failed: <first line of fixFailure>` instead of the bare outcome, the first line truncated to `MAX_FIX_FAILURE_STDERR_CHARS` (300) characters. The `bot.jsonl` warn carries the full text as a JSON field. When the fix result carries `logPath`, the command still writes `nax bot fix: log <path>` to stdout.\n\nWhen the fix session fails after editing files, the path is unchanged: `check` sees changes and the gates decide; `fixFailure` stays in the state and the summary.\n\n**Scope** — In: outcome, graph routing, latest-session failure state, fix summary and CLI/run-log reporting for a failed fix without edits, plus step, runner, summary and CLI regression tests. Out: early override refusal (US-003), prompt and advisor facts (US-001/002), and carried signals (US-004). Do not classify a failed session that left edits as `fix-failed` or change the `nax chat` bot tools' display of the new outcome.\n\n**Interface** — `BotFixState.outcome` gains `\"fix-failed\"`; check result `{ patch: { changed, outcome: \"fix-failed\" }, exit: \"fix-failed\" }`; repair patch `fixFailure: undefined` after a failure-free session; stderr format `fix-failed: <first line of fixFailure>`.",
+      "acceptanceCriteria": [
+        "When checkStep sees a safe tree, fixFailure `boom` and changedPaths returning [], then it returns `{ patch: { changed: [], outcome: \"fix-failed\" }, exit: \"fix-failed\" }`.",
+        "When checkStep classifies that failure, then the logger receives a warn on stage bot-fix with message `Fix session failed` and data containing failure `boom`.",
+        "When checkStep sees a safe tree, no fixFailure and changedPaths returning [], then it returns `{ patch: { changed: [], outcome: \"no-change\" }, exit: \"no-change\" }`.",
+        "When checkStep sees a safe tree, fixFailure `boom` and changedPaths returning [\"src/a.ts\"], then it returns exit `changed`.",
+        "When runBotFix's fix session returns failure `boom` and changes nothing, then its result has outcome `fix-failed` with fixFailure `boom`.",
+        "When runBotFix's fix session returns failure `boom` and changes nothing, then the gates step does not run.",
+        "When repairStep runs a session that reports no failure, then its patch explicitly states `fixFailure: undefined`.",
+        "When outcomeText receives a state with outcome `fix-failed`, then it returns `The fix session failed before changing anything; nothing pushed.`.",
+        "When deps.runBotFixCycle returns { fix: { outcome: \"fix-failed\", fixFailure: \"boom\" } }, then botFixCommand calls deps.logErr with `fix-failed: boom`.",
+        "When deps.runBotFixCycle returns { fix: { outcome: \"fix-failed\", fixFailure: \"boom\" } }, then botFixCommand returns exit code 2.",
+        "When deps.runBotFixCycle returns { fix: { outcome: \"fix-failed\", fixFailure: \"line one\\nline two\" } }, then botFixCommand calls deps.logErr with `fix-failed: line one`.",
+        "When deps.runBotFixCycle returns { fix: { outcome: \"no-change\" } }, then botFixCommand still calls deps.logErr with `no-change`.",
+        "When deps.runBotFixCycle returns { fix: { outcome: \"no-change\" } }, then botFixCommand still returns exit code 2.",
+        "When a fix session reports failure `boom` after changing an ordinary unprotected file in a safe tree, then the run proceeds to its configured gates as before.",
+        "When a fix session reports failure `boom` after changing an ordinary unprotected file in a safe tree, then the fix state retains fixFailure `boom`.",
+        "When that changed-tree path reports before a later session replaces the failure, then its fix summary still contains `Fix session: boom`."
+      ],
+      "tags": [
+        "bot",
+        "cli",
+        "logging"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A graph exit, latest-agent-result patch, and reporting update reuse existing mechanisms without changing session identity, security, or lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/repair-step.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/fix-outcome-text.ts",
+        "packages/nax/src/cli/bot.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/repair-step.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6f826e8b197eb71c6ef3df611a08002258679963"
+    }
+  ],
+  "analysis": "Goal: close #2998, #2999 and #3000 with five independently shippable code changes in the existing packages/nax TypeScript/Bun CLI. Done means fix prompts explain lineage without repeating the push's item list, advisor open items name actual decisions, both bot commands refuse bad explicit model overrides before starting a run, a failed no-edit fix is distinguishable from a clean no-change, and an overlapping complete review cannot clear an incomplete signal it never saw. No new cross-package interfaces, dependencies, or mandatory migrations. US-001 and US-005 share fix-steps.ts and fix-check-steps.test.ts; US-003 and US-005 share fix-run.ts; US-003 and US-004 both reference review-run.ts, but US-004 leaves its clear path unchanged. Keep these edits local so there is no story ordering requirement. The code graph tool was unavailable; findings below come from targeted source reads and text searches.\n\nUS-001 — packages/nax/src/bot/fix-facts.ts:44 expands every parent into a separate prompt line; packages/nax/src/bot/fix-facts.ts:62 is the existing finding-kind guard and composes lineage with Trigger and readiness facts. packages/nax/src/bot/fix-steps.ts:178 passes the facts to the prompt used by runBranchFix; packages/nax/src/bot/fix-steps.ts:214 reads ownLedgerEntries, which combines durable per-push entries with summary data (packages/nax/src/bot/push-record.ts:41). Reuse that same list for both fact views. packages/nax/src/bot/push-ledger.ts:179 resolves an issue only against the named full SHA and parent; the same parent key may recur in different pushes, so deduplicate pushes by full SHA and shorten only for display. Evicted entries and trimmed items are normal; never borrow an issue from a different push. The generic builder already filters empty blocks (packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:34) and orders the growth fact last (packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:60); its new input remains optional for all other callers such as repairStep (packages/nax/src/bot/repair-step.ts:24). Inline comments use a separate formatter (packages/nax/src/bot/render-comments.ts:90); no review artifact, ledger or comment schema migrates. Rewrite the old two-lines assertion at packages/nax/test/unit/bot/fix-facts.test.ts:54; extend the builder facts suite at packages/nax/test/unit/prompts/bot-pr-fix-builder.test.ts:184 and exercise the production prompt with factsSection and fakePromptFix at packages/nax/test/integration/bot/fix-check-steps.test.ts:111.\n\nUS-002 — packages/nax/src/finish/pr/body.ts:16 already strips HTML, folds whitespace, trims and caps output; the existing detail closure at packages/nax/src/finish/pr/body.ts:27 is the shared action formatter to extract. The published PR body still calls buildAdvisorSection (packages/nax/src/workflow/pr-body.ts:166); that renderer must use the action detail directly, not the title-preferred summary. Re-export through packages/nax/src/finish/pr/index.ts:7 and packages/nax/src/finish/index.ts:24. Change the step contract (packages/nax/src/workflow/feature-machine.ts:54; type in packages/nax/src/workflow/types.ts) and the environment's trusted ledger mapping (packages/nax/src/workflow/feature-env.ts:123). The best-effort collector warns and returns [] on read failure (packages/nax/src/workflow/feature-steps.ts:464). Split the list once so the thread path (packages/nax/src/workflow/feature-steps.ts:504, packages/nax/src/workflow/publish-item-threads.ts:50) and patch (packages/nax/src/workflow/feature-steps.ts:553) see the same ids and summaries. The file currently has 572 lines; keep it under 600, extracting the collect-and-split code only if necessary. Declare the new output next to flaggedDecisions in packages/nax/src/workflow/feature-graph.ts:122; packages/nax/src/step-graph/run.ts:75 rejects undeclared outputs. Do not replace the id array with objects in persisted state: packages/nax/src/workflow/status-block.ts:8 and packages/nax/src/workflow/run-summary.ts:102 depend on ids, and packages/nax/src/workflow/open-items.ts:50 uses them to avoid duplicating a held approval. On an empty list, the spec's record-level AC requires the applied record to have no summary key. Omit it from the patch when already absent; if a prior publish set it, clear it with an explicit undefined as supported by packages/nax/src/step-graph/run.ts:150. In both cases no summary map is written for an empty result. Existing records fall back without backfill. On re-publish the issue change changes the hash of kind and issue (packages/nax/src/workflow/item-threads.ts:72), so packages/nax/src/workflow/item-threads-post.ts:183 posts under the new key and rebuilds the current index at :203; the old thread stays on the PR outside the index, without transferring its ruling. With an immutable ledger decision the new key then stays stable. Cover the formatter in packages/nax/test/unit/finish/pr-body.test.ts:100 and :137, old/new issues in packages/nax/test/unit/workflow/open-items-kinds.test.ts:22, and wiring in packages/nax/test/unit/workflow/feature-flagged-decisions.test.ts:131, packages/nax/test/unit/workflow/publish-item-threads.test.ts:354 and packages/nax/test/unit/workflow/feature-graph.test.ts:91. Update the test helper types and stubs, including packages/nax/test/helpers/workflow-trace.ts:177, without changing the recorded trace shape.\n\nUS-003 — packages/nax/src/bot/models.ts:5 handles role defaults; :23 splits explicit agent:model on the first colon. Leave both behaviors unchanged. Resolve only the explicit override with the canonical resolver and the same effective models fallback used at packages/nax/src/operations/call-dispatch-prologue.ts:120. packages/nax/src/config/schema-types.ts:282 distinguishes string tier lookup from object tier/literal resolution and warns without rejecting unknown literals at :320; do not add a model catalog or a second validator. Export the helper via packages/nax/src/bot/index.ts:83. Insert the refusal at packages/nax/src/bot/fix-run.ts:388 and packages/nax/src/bot/review-run.ts:512, before reviewConfig and before runtime, log, or pre-run work. Checkout disposal is already guaranteed by packages/nax/src/bot/fix-run.ts:499 and packages/nax/src/bot/review-run.ts:576. packages/nax/src/cli/bot.ts:120, :177 and :229 already print refused reasons and return 2; no CLI parsing or existing configs migrate. Exercise valid/invalid selectors in packages/nax/test/unit/bot/models.test.ts:7 and :68. Use packages/nax/test/helpers/bot-fix.ts:72 and packages/nax/test/helpers/bot-review.ts:8 to drive the public run functions in the new integration suite; avoid extending the already long fix-run and review-run test files.\n\nUS-004 — packages/nax/src/bot/post.ts:542 already creates a review UUID and passes it to postCarriedRecord at :552. Only change signal writes (packages/nax/src/bot/post-carried.ts:74 and :103); both the incomplete path and the complete path with a failed record write must post a fresh per-review signal when there is a new blocker. Keep clearCarryWidens (packages/nax/src/bot/post-carried.ts:95) scoped to input.own, and preserve the full-scope confirmed-index gate (packages/nax/src/bot/review-run.ts:441). A re-list at clear time is not safe. packages/nax/src/bot/carried-record.ts:54 already accepts both signal shapes by prefix, excludes threaded comments and recognizes the cleared line. The general marker length limit at packages/nax/src/forge/marker-grammar.ts:24 already fits the 96-character new key, but top-level classification at :15 must also accept it or replied GitLab notes become invisible to the pending reader (packages/nax/src/forge/threads.ts:226). Classification does not change ownership. Pending signals of any head still widen the review (packages/nax/src/bot/carried-findings.ts:148) and hold fix readiness (packages/nax/src/bot/carried-hold.ts:32); legacy comments remain readable and editable to cleared text, never deleted or migrated. Use the harness pattern from packages/nax/test/integration/bot/carried-finding-holds.test.ts:164 and :193 for a deterministic interleaving in the new suite (Y's startup snapshot before X's post); update only its exact new-write key matches at :337 and :357, retaining legacy read/clear cases such as :768. Extend packages/nax/test/unit/bot/carried-record.test.ts:32 and packages/nax/test/unit/forge/threads-comments.test.ts:70. The build gate detects leftover callers of the deleted carryWidenComment; it is not an acceptance criterion.\n\nUS-005 — fixStep captures session failures in packages/nax/src/bot/fix-steps.ts:202. Keep the dirty/missing tree safety check first (packages/nax/src/bot/fix-steps.ts:277) and distinguish failure only in the zero-change branch. The check exit must be declared (packages/nax/src/step-graph/run.ts:103) before using the existing report fallback at packages/nax/src/bot/fix-run.ts:157. The graph already persists state and returns its outcome at packages/nax/src/bot/fix-run.ts:319. repairStep (packages/nax/src/bot/repair-step.ts:49) must explicitly clear fixFailure after a clean repair; packages/nax/src/step-graph/run.ts:150 deletes an undefined patch value but preserves an omitted key. Report through packages/nax/src/bot/fix-outcome-text.ts:83 and the existing sanitized summary line at packages/nax/src/bot/fix-summary.ts:87; keep the full failure field in the run warning. The CLI non-success branch is in fixCyclePass (packages/nax/src/cli/bot.ts:177), called by botFixCommand; existing log-path stdout and exit 2 stay stable. Scripts matching no-change should treat fix-failed as a distinct outcome; there is no on-disk migration or chat display change. Extend packages/nax/test/unit/bot/fix-steps.test.ts:21, packages/nax/test/integration/bot/fix-check-steps.test.ts:210, packages/nax/test/unit/bot/fix-summary.test.ts:47 and :167, and packages/nax/test/unit/cli/bot-fix.test.ts:51, plus a new repair-step unit fixture. Keep manual no-change summary fixtures that supply fixFailure; the renderer does not reinterpret their outcome.",
+  "outOfScope": [
+    "Narrowing a lineage to the one parent item whose lines a finding sits on. The push ledger records no per-item file list, and blame gives the push, not the item (#2998, part 3).",
+    "The inline-comment `Lineage:` line in `packages/nax/src/bot/render-comments.ts`. It is already one line with the parents joined, and its text is unchanged.",
+    "Migrating advisor item threads or push ledgers already posted on open PRs. A PR re-published after this change gets new advisor threads once (Failure Handling); carrying a ruling from the old thread to the new one is not done.",
+    "The `## Advisor decisions` section of the workflow PR body (`buildAdvisorSection`). Its output is unchanged.",
+    "Validating `--model` at command-line parse time, before the PR checkout. The tiers come from the config read from the checkout's base snapshot, so the check runs right after that config loads.",
+    "A `fix-failed` outcome when the failed fix session left edits behind. Gates still decide that case.",
+    "Migrating or deleting legacy `w-carry-incomplete:<sha>` comments. They stay readable and clearable.",
+    "Capping or deleting per-review signal comments. Each incomplete review posts one comment; a complete full review that read them edits each to the cleared text, and none is deleted.",
+    "Coordinating two overlapping complete reviews on one PR. Each clears only the signals it read at start.",
+    "Finding provenance for bot fix agents and routing fix-induced chains to the advisor (#2987).",
+    "US-005 only: the `nax chat` bot tools' display of the new `fix-failed` outcome. They report the outcome string they receive."
+  ],
+  "routingProfile": "native-codex-ds"
+}

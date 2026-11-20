@@ -40,15 +40,23 @@ function triggerLine(item: { readonly trigger?: FindingTrigger; readonly trigger
   ];
 }
 
-/** The push a fix wrote for one parent: its generation, the short sha, and the item's own issue. */
-function lineageLine(generation: number, parent: string, pushSha: string, entries: readonly BotPushEntry[]): string {
-  const issue = parentIssue(pushSha, parent, entries);
-  const written = `generation ${generation}, on lines added by nax bot fix ${pushSha.slice(0, SHORT_SHA_LENGTH)} for ${parent}`;
+/**
+ * The one `Lineage:` line a finding gets (#2998): the generation, the push whose lines it sits on, and
+ * every parent of that push it descends from — joined, so a finding with several parents states its
+ * lineage once instead of repeating the push for each. The `(<issue>)` suffix is only meaningful when
+ * the lineage names a single parent; a multi-parent finding's parents are listed, with their issues,
+ * once per push in `lineagePushFacts`.
+ */
+function lineageLine(lineage: FindingLineage, entries: readonly BotPushEntry[]): string {
+  const { generation, parents, pushSha } = lineage;
+  const only = parents.length === 1 ? parents[0] : undefined;
+  const written = `generation ${generation}, on lines added by nax bot fix ${pushSha.slice(0, SHORT_SHA_LENGTH)} for ${parents.join(", ")}`;
+  const issue = only === undefined ? undefined : parentIssue(pushSha, only, entries);
   return `Lineage: ${written}${issue === undefined ? "" : ` (${issue})`}`;
 }
 
 function lineageLines(lineage: FindingLineage, entries: readonly BotPushEntry[]): string[] {
-  return lineage.parents.map((parent) => lineageLine(lineage.generation, parent, lineage.pushSha, entries));
+  return lineage.parents.length === 0 ? [] : [lineageLine(lineage, entries)];
 }
 
 /**
@@ -70,6 +78,55 @@ export function findingFactLines(
     ...(item.lineage === undefined ? [] : lineageLines(item.lineage, entries)),
     ...(isBlockingFinding(item, blocking) ? [] : [NOT_BLOCKING_LINE]),
   ];
+}
+
+/** One parent of a push, with the issue that push recorded for it when the ledger still holds it. */
+export interface LineagePushItem {
+  readonly key: string;
+  readonly issue?: string;
+}
+
+/** A push multi-parent lineages name: its short sha and the items it fixed, in first-seen order. */
+export interface LineagePushFact {
+  readonly sha: string;
+  readonly items: readonly LineagePushItem[];
+}
+
+/** One push's item list while it is being read; `keys` keeps the dedupe O(1). */
+interface PushItems {
+  readonly keys: Set<string>;
+  readonly items: LineagePushItem[];
+}
+
+/**
+ * The items of each push that a multi-parent lineage names (#2998): one entry per distinct push, in the
+ * order the agreed items first name it, its keys deduplicated in first-seen order. A push several
+ * findings sit on is therefore listed once instead of once per finding per parent.
+ *
+ * A single-parent lineage naming the same push adds nothing: its parent's issue is already on that
+ * finding's own `Lineage:` line, and repeating it here is what made the prompt grow with the round.
+ * A push the ledger no longer holds still gets its entry, with keys only — the same rule `Lineage:`
+ * follows, so an evicted entry never lends its keys another push's issues.
+ */
+export function lineagePushFacts(
+  agreed: readonly AgreedItem[],
+  entries: readonly BotPushEntry[],
+): readonly LineagePushFact[] {
+  const pushes = new Map<string, PushItems>();
+  for (const item of agreed) {
+    if (item.kind !== "finding" || item.lineage === undefined) continue;
+    const { parents, pushSha } = item.lineage;
+    if (parents.length < 2) continue;
+    const push = pushes.get(pushSha) ?? { keys: new Set<string>(), items: [] };
+    pushes.set(pushSha, push);
+    for (const parent of parents) {
+      if (push.keys.has(parent)) continue;
+      push.keys.add(parent);
+      const issue = parentIssue(pushSha, parent, entries);
+      push.items.push(issue === undefined ? { key: parent } : { key: parent, issue });
+    }
+  }
+  return [...pushes].map(([pushSha, push]) => ({ sha: pushSha.slice(0, SHORT_SHA_LENGTH), items: push.items }));
 }
 
 /** One file's added lines, summed over every recorded push. */

@@ -31,6 +31,7 @@ import {
 import { botGit } from "./git";
 import { ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
+import { checkBotModelOverride } from "./models";
 import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
@@ -154,7 +155,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     check: {
       kind: "git",
       produces: ["changed", "protectedFiles", "outcome", "recoveryPath"],
-      exits: ["no-change", "protected", "changed", "dirty"],
+      exits: ["no-change", "fix-failed", "protected", "changed", "dirty"],
       transitions: [{ on: "changed", to: "gates" }, { to: "report" }],
       run: (env, state) => _botFixDeps.checkStep(env, state),
     },
@@ -386,6 +387,10 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
   const deps = _botFixDeps;
   const { repoRoot, ref, info, checkout } = prepared;
   const config = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
+  // US-003 (#2999): the tiers live in the config read from the base snapshot, so the override is
+  // checked here — before the runtime, the run log and every install/build step exist.
+  const modelRefusal = checkBotModelOverride(config, input.model);
+  if (modelRefusal !== undefined) return { outcome: "refused", reason: modelRefusal };
   const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
   let interactionChain: InteractionChain | null = null;

@@ -242,6 +242,109 @@ describe("US-001 ready-only CLI pass", () => {
   });
 });
 
+describe("US-005 fix-failed reporting", () => {
+  test("AC-9 prints fix-failed with the session's failure, not the bare outcome", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: boom"]);
+  });
+  test("AC-10 keeps exit code two for a failed fix session", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {} };
+    await run(["42"]);
+    expect(exits).toEqual([2]);
+  });
+  test("AC-11 prints only the first line of a multi-line failure", async () => {
+    result = { outcome: "fix-failed", fixFailure: "line one\nline two", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+  test("AC-12 still reports a bare no-change outcome", async () => {
+    result = { outcome: "no-change", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["no-change"]);
+  });
+  test("AC-13 still exits two for no-change", async () => {
+    result = { outcome: "no-change", step: "done", timings: {} };
+    await run(["42"]);
+    expect(exits).toEqual([2]);
+  });
+  test("caps the printed cause at 300 characters", async () => {
+    result = { outcome: "fix-failed", fixFailure: "x".repeat(400), step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual([`fix-failed: ${"x".repeat(300)}`]);
+  });
+  test("still prints the log path, where the full failure lives", async () => {
+    result = { outcome: "fix-failed", fixFailure: "boom", step: "done", timings: {}, logPath: "/x/bot.jsonl" };
+    await run(["42"]);
+    expect(stdout.at(-1)).toBe("nax bot fix: log /x/bot.jsonl");
+  });
+});
+
+/**
+ * Branch fix B1: this line is the one place a raw session error reaches a terminal. It has to pass
+ * the logger's own redactor and lose its terminal control characters first, or a credential in a
+ * session's stderr is printed intact and a CR drives the cursor back over the line.
+ */
+describe("B1: the printed cause is redacted and cleaned before it is capped", () => {
+  test("masks a credential the shared redactor knows", async () => {
+    const token = `ghp_${"A1b2C3d4".repeat(5)}`;
+    result = { outcome: "fix-failed", fixFailure: `git push failed: ${token}`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: git push failed: [REDACTED]"]);
+    expect(stderr.join()).not.toContain(token);
+  });
+
+  test("prints one line and no carriage return for a CRLF cause", async () => {
+    result = { outcome: "fix-failed", fixFailure: "line one\r\nline two", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+
+  test("drops an ANSI escape from the cause", async () => {
+    result = { outcome: "fix-failed", fixFailure: "\u001b[31mred failure\u001b[0m", step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: red failure"]);
+  });
+
+  // B1: colour codes go *before* the redactor runs. A key the codes split is a key no token pattern
+  // matches (each fragment is shorter than the pattern's minimum), and stripping them afterwards
+  // would join the fragments back into the cleartext key this line exists to keep off the terminal.
+  test("masks a credential that colour codes split, because the codes are stripped first", async () => {
+    const key = "sk-pro\u001b[31m-jABCDEFGHIJKLMNOP\u001b[0m";
+    result = { outcome: "fix-failed", fixFailure: `curl failed: ${key}`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: curl failed: [REDACTED]"]);
+    expect(stderr.join()).not.toContain("jABCDEFGHIJKLMNOP");
+  });
+
+  // B1: the C1 block is the other spelling of the same escapes — 0x9B is CSI and 0x9D is OSC to a
+  // terminal in 8-bit mode — so a cause may not carry either to stdout.
+  test("drops the C1 controls, sequence bytes included", async () => {
+    result = {
+      outcome: "fix-failed",
+      fixFailure: "line one\u009b31m\u009d0;evil\u0007\nline two",
+      step: "done",
+      timings: {},
+    };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: line one"]);
+  });
+
+  test("redacts the whole failure before taking its first line, so a multi-line secret is masked", async () => {
+    // A PEM block is a *multi-line* secret: taking the first line before redaction leaves the
+    // `-----BEGIN ...` header on the terminal, which is the half of a credential no redactor
+    // downstream can recover.
+    const pem = [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu",
+      "-----END RSA PRIVATE KEY-----",
+    ].join("\n");
+    result = { outcome: "fix-failed", fixFailure: `${pem}\nagent exited 1`, step: "done", timings: {} };
+    await run(["42"]);
+    expect(stderr).toEqual(["fix-failed: [REDACTED]"]);
+  });
+});
+
 describe("US-016 fix CLI log", () => {
   test("AC-21 prints log path last on success", async () => {
     result = { outcome: "nothing", step: "done", timings: {}, logPath: "/x/bot.jsonl" };

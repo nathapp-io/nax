@@ -89,6 +89,8 @@ const expectedProduces: Record<NodeId, string[]> = {
     "passed",
     "pushFailed",
     "flaggedDecisions",
+    // US-002: the id-to-summary map the flagged ids are named by.
+    "flaggedDecisionSummaries",
     "ciRepairFindings",
     // US-005: the checks the decided repair targets.
     "ciRepairTargets",

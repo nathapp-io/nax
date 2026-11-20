@@ -21,6 +21,7 @@ export {
 } from "./gates/quality";
 export type { LedgerEntry, LedgerState } from "./ledger";
 export {
+  advisorDecisionSummary,
   buildAdvisorSection,
   escapeInline,
   escapeTableCell,

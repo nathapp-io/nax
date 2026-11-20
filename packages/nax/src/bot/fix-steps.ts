@@ -17,7 +17,7 @@ import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
-import { findingFactLines, outsideDeclaredGrowth } from "./fix-facts";
+import { findingFactLines, type LineagePushFact, lineagePushFacts, outsideDeclaredGrowth } from "./fix-facts";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
@@ -54,6 +54,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "pushed"
     | "nothing"
     | "no-change"
+    | "fix-failed"
     | "protected"
     | "no-gates"
     | "gates-failed"
@@ -210,18 +211,23 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
  * readiness, and the lines earlier bot pushes added outside the feature's declared files. The facts
  * come from the review artifact that decided this fix and from the bot's own ledger; nothing here
  * decides anything, and a fact that cannot be read is simply absent.
+ *
+ * #2998: a push several findings sit on is named once, beside the per-finding lines, instead of once
+ * per parent on every finding's `Lineage:` line.
  */
 async function fixPromptFacts(
   env: BotFixEnv,
   prdPath: string | undefined,
 ): Promise<{
   readonly findingFacts: readonly { readonly id: string; readonly lines: readonly string[] }[];
+  readonly lineagePushes?: readonly LineagePushFact[];
   readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
 }> {
   // US-004/B1: the bot's recorded pushes — the summary's block plus the append-only copy each push
   // posts, so a summary rewrite that dropped an entry cannot change what the fixer is told.
   const entries = ownLedgerEntries(env.own);
   const blocking = reviewBlockingTriggers(env);
+  const lineagePushes = lineagePushFacts(env.review.agreed, entries);
   const growth = await outsideDeclaredGrowth({
     ...(prdPath === undefined ? {} : { prdPath }),
     worktree: env.checkout.worktree,
@@ -232,6 +238,7 @@ async function fixPromptFacts(
       id: item.key,
       lines: findingFactLines(item, entries, blocking),
     })),
+    ...(lineagePushes.length === 0 ? {} : { lineagePushes }),
     ...(growth === undefined ? {} : { outsideGrowth: growth }),
   };
 }
@@ -274,17 +281,31 @@ async function unsafeTree(env: BotFixEnv, state: BotFixState): Promise<StepResul
   };
 }
 
-export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
-  const unsafe = await unsafeTree(env, _state);
+export async function checkStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
+  const unsafe = await unsafeTree(env, state);
   if (unsafe) return unsafe;
   // changedPaths uses --no-renames: a move out of a protected directory is still a protected edit.
   const changed = await _fixStepsDeps.changedPaths(env.checkout.worktree, env.checkout.startHead ?? env.info.headSha);
-  if (changed.length === 0) return { patch: { changed, outcome: "no-change" }, exit: "no-change" };
+  if (changed.length === 0) return noChanges(env, state, changed);
   const protectedFiles = fixProtectedPaths(changed);
   if (protectedFiles.length > 0) {
     return { patch: { changed, protectedFiles, outcome: "protected" }, exit: "protected" };
   }
   return { patch: { changed }, exit: "changed" };
+}
+
+/**
+ * #2999: a session that failed and changed nothing is a failure, not a no-op — `no-change` says the
+ * fixer looked and had nothing to do, and the two are the same result otherwise. A failed session that
+ * did change files is untouched by this: the gates decide, and the summary still names the failure.
+ */
+function noChanges(env: BotFixEnv, state: BotFixState, changed: readonly string[]): StepResult<BotFixState> {
+  const failure = state.fixFailure;
+  if (failure === undefined || failure === "") {
+    return { patch: { changed, outcome: "no-change" }, exit: "no-change" };
+  }
+  getLogger()?.warn("bot-fix", "Fix session failed", { storyId: "_bot", pr: env.info.number, failure });
+  return { patch: { changed, outcome: "fix-failed" }, exit: "fix-failed" };
 }
 
 export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {

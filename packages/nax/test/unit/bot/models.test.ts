@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { botModel, parseModelOption } from "@/bot";
-import { NaxConfigSchema } from "@/config";
+import { botModel, checkBotModelOverride, parseModelOption } from "@/bot";
+import { type NaxConfig, NaxConfigSchema } from "@/config";
 import { NaxError } from "@/errors";
 
 describe("botModel", () => {
@@ -89,5 +89,70 @@ describe("parseModelOption", () => {
   ])("%s: rejects invalid model option %j with BOT_MODEL_INVALID", (_ac, value) => {
     expect(() => parseModelOption(value)).toThrow(NaxError);
     expect(() => parseModelOption(value)).toThrow(expect.objectContaining({ code: "BOT_MODEL_INVALID" }));
+  });
+});
+
+describe("checkBotModelOverride", () => {
+  /** Default agent `native`, and its tier map holds exactly `tiers` (insertion order preserved). */
+  function nativeTiers(tiers: Record<string, string>): NaxConfig {
+    return { ...makeNaxConfig(), models: { native: tiers } };
+  }
+  const tiers = { fast: "anthropic/claude-haiku-4-5", balanced: "anthropic/claude-sonnet-5" };
+
+  test("US-003 AC-1: an absent override is never checked", () => {
+    expect(checkBotModelOverride(makeNaxConfig(), undefined)).toBeUndefined();
+  });
+
+  test("US-003 AC-2: a tier the default agent configures resolves", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "balanced")).toBeUndefined();
+  });
+
+  test("US-003 AC-3: an explicit agent:model selection still dispatches as a literal", () => {
+    expect(
+      checkBotModelOverride(nativeTiers(tiers), { agent: "native", model: "openai-codex/gpt-6.1-sol[high]" }),
+    ).toBeUndefined();
+  });
+
+  test("US-003 AC-4: an unrecognized explicit literal keeps its warn-only treatment", () => {
+    expect(
+      checkBotModelOverride(nativeTiers(tiers), { agent: "native", model: "nax-unknown-model-id" }),
+    ).toBeUndefined();
+  });
+
+  test("US-003 AC-5: an unresolvable tier is refused with the resolver's own reason", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "nope")).toStartWith(
+      'invalid --model "nope": No model entry found',
+    );
+  });
+
+  test("US-003 AC-6: the refusal names the accepted forms", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "nope")).toContain("accepted forms: <tier> or <agent>:<model>");
+  });
+
+  test("US-003 AC-7: the refusal lists the default agent's configured tiers", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "nope")).toContain("configured tiers: fast, balanced");
+  });
+
+  test("US-003 AC-8: the tier list ends the refusal, with no agent-prefix hint after it", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "nope")?.endsWith("configured tiers: fast, balanced")).toBe(true);
+  });
+
+  test("US-003 AC-9: a provider/model id is told to name its agent", () => {
+    expect(checkBotModelOverride(nativeTiers(tiers), "openai-codex/gpt-6.1-sol[high]")).toContain(
+      "a provider/model id needs its agent prefix, for example native:openai-codex/gpt-6.1-sol[high]",
+    );
+  });
+
+  test("US-003 AC-15: no entry for the default agent reports no tiers", () => {
+    expect(checkBotModelOverride({ ...makeNaxConfig(), models: { claude: tiers } }, "nope")).toContain(
+      "configured tiers: none",
+    );
+  });
+
+  // Branch fix B3: `models[agent]?.[tier]` reads through Object.prototype, so a name such as
+  // `constructor` answered with an inherited function and passed this preflight — the fix session
+  // then started runtime setup and failed somewhere no reason reached the user.
+  test.each(["constructor", "toString", "valueOf", "__proto__"])("B3: an inherited name is refused: %s", (name) => {
+    expect(checkBotModelOverride(nativeTiers(tiers), name)).toStartWith(`invalid --model "${name}": No model entry`);
   });
 });

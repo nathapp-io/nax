@@ -120,6 +120,9 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "passed",
         "pushFailed",
         "flaggedDecisions",
+        // US-002: the id-to-summary map the flagged ids are named by. The step writes it only when
+        // there are ids, and the runner refuses any key a node does not declare.
+        "flaggedDecisionSummaries",
         "ciRepairFindings",
         // US-005: the checks a decided repair targets.
         "ciRepairTargets",

@@ -12,7 +12,8 @@ export const TOP_LEVEL_MARKER_KEYS = [
 const PUSH_RECORD_KEY = /^push-[0-9a-f]{40}$/;
 
 /** The key of one reviewed head's carried-findings record, for the same reason: it names its head. */
-const CARRIED_RECORD_KEY = /^w-carry(?:-incomplete)?:[0-9a-f]{40}$/;
+const CARRIED_RECORD_KEY =
+  /^w-carry(?:-incomplete:[0-9a-f]{40}(?::[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?|:[0-9a-f]{40})$/;
 
 /** A key whose comment is a top-level one: a fixed key, or one record's own key. */
 export function isTopLevelMarkerKey(key: string): boolean {

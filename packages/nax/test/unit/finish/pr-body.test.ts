@@ -13,7 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision } from "@test/helpers";
 import type { AdviceAction, AdviceDecision } from "@/advisor";
-import { buildAdvisorSection } from "@/finish";
+import { advisorDecisionSummary, buildAdvisorSection } from "@/finish";
 
 /** One line of the rendered section, so an assertion cannot match the wrong decision. */
 function lineOf(section: string, id: string): string {
@@ -173,5 +173,66 @@ describe("buildAdvisorSection — supersedes are repeated as amendments to apply
   test("no amendment block when no decision supersedes anything", () => {
     const section = buildAdvisorSection([decide("D-1", { type: "approve" })]) ?? "";
     expect(section).not.toContain("Spec amendments to apply");
+  });
+});
+
+/**
+ * US-002: the one-line summary an open item names its decision by. It is the ruling's title when
+ * the advisor wrote one, and otherwise exactly the detail `buildAdvisorSection` already renders —
+ * both callers read one formatter, so the item and the PR body cannot describe a decision twice.
+ */
+describe("advisorDecisionSummary — names a decision in one line (US-002)", () => {
+  test("AC-1: a rulingTitle is the summary", () => {
+    const decision = decide("D-1", { type: "fix", instruction: "x" }, { rulingTitle: "Keep the lock in deploy.sh" });
+    expect(advisorDecisionSummary(decision)).toBe("Keep the lock in deploy.sh");
+  });
+
+  test("AC-2: no rulingTitle, an answer — its text", () => {
+    expect(advisorDecisionSummary(decide("D-1", { type: "answer", text: "use the queue" }))).toBe(
+      "answer — use the queue",
+    );
+  });
+
+  test("AC-3: no rulingTitle, a carry — its target stories and instruction", () => {
+    const decision = decide("D-1", { type: "carry", instruction: "add the check", toStories: ["US-002"] });
+    expect(advisorDecisionSummary(decision)).toBe("carry → US-002 — add the check");
+  });
+
+  test("AC-4: a rulingTitle with a newline is flattened to one line", () => {
+    const summary = advisorDecisionSummary(
+      decide("D-1", { type: "approve" }, { rulingTitle: "Keep the lock\nin deploy.sh" }),
+    );
+    expect(summary).toBe("Keep the lock in deploy.sh");
+    expect(summary).not.toContain("\n");
+  });
+
+  test("AC-5: a whitespace-only rulingTitle falls back to the action detail", () => {
+    expect(
+      advisorDecisionSummary(decide("D-1", { type: "answer", text: "use the queue" }, { rulingTitle: " \n\t " })),
+    ).toBe("answer — use the queue");
+  });
+});
+
+describe("buildAdvisorSection — unchanged by the shared formatter (US-002)", () => {
+  test("AC-6: an answer, a carry and a supersede render exactly as before", () => {
+    const section = buildAdvisorSection([
+      decide("D-1", { type: "answer", text: "use the queue" }, { needsHumanConfirm: true }),
+      decide("D-2", { type: "carry", instruction: "add the check", toStories: ["US-2"] }),
+      decide(
+        "D-3",
+        { type: "supersede", target: { kind: "ac", storyId: "US-2", acId: "AC-3" }, newText: "returns 0" },
+        { rationale: "the new text is settled" },
+      ),
+    ]);
+    expect(section).toBe(
+      [
+        "- **D-1** (needs confirmation) US-2 · answer — use the queue",
+        "- **D-2** US-2 · carry → US-2 — add the check",
+        "- **D-3** US-2 · supersede — the new text is settled",
+        "",
+        "### Spec amendments to apply",
+        "- US-2 AC-3: returns 0 (D-3)",
+      ].join("\n"),
+    );
   });
 });

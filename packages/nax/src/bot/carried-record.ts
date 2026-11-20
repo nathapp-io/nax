@@ -36,11 +36,19 @@ export function carryWidenKey(headSha: string): string {
   return `${CARRY_WIDEN_PREFIX}${headSha}`;
 }
 
-export const CARRY_WIDEN_CLEARED = "A complete full review restored carried finding coverage.";
-
-export function carryWidenComment(own: readonly OwnComment[], headSha: string): OwnComment | undefined {
-  return own.find((candidate) => candidate.key === carryWidenKey(headSha) && candidate.threadId === undefined);
+/**
+ * The signal one incomplete review posts, keyed by the head it reviewed and the review that posted it.
+ *
+ * One signal per head could not say which review raised it, so a complete review of that head cleared the
+ * single comment — including one another review posted after the complete review read its starting snapshot,
+ * which then released a blocker nothing had recorded. Keying by the review keeps each signal distinct: a
+ * complete full review edits only the signals it read at start, and the rest stay pending.
+ */
+export function carryWidenReviewKey(headSha: string, reviewId: string): string {
+  return `${CARRY_WIDEN_PREFIX}${headSha}:${reviewId}`;
 }
+
+export const CARRY_WIDEN_CLEARED = "A complete full review restored carried finding coverage.";
 
 export function carryWidenPending(comment: OwnComment | undefined): boolean {
   return comment !== undefined && !comment.comment.body.split(/\r?\n/).includes(CARRY_WIDEN_CLEARED);

@@ -1,7 +1,8 @@
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, stripControlChars } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
 import type {
   BotFixCycleResult,
+  BotFixResult,
   BotFixState,
   loadBotDecisions,
   loadCallerRulings,
@@ -11,7 +12,7 @@ import type {
 } from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
-import { initLogger } from "@/logger";
+import { initLogger, redactSecrets } from "@/logger";
 import { parseChatAsksFlag, readChatAskSecret } from "./run-chat-asks";
 
 export interface BotCliDeps {
@@ -183,7 +184,7 @@ async function fixCyclePass(input: BotInput, options: BotFixOptions, deps: BotCl
   });
   const result = cycle.fix;
   if (result.outcome !== "pushed" && result.outcome !== "nothing") {
-    deps.logErr("reason" in result ? result.reason : result.outcome);
+    deps.logErr(failureReason(result));
     if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
     return 2;
   }
@@ -203,6 +204,35 @@ async function fixCyclePass(input: BotInput, options: BotFixOptions, deps: BotCl
 function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
   if (outcome === "pushed") return `pushed ${sha?.slice(0, SHORT_SHA_LENGTH)}`;
   return sha ? `nothing to fix; pushed advisor ledger ${sha.slice(0, SHORT_SHA_LENGTH)}` : "nothing to fix";
+}
+
+/** How much of a failed fix session's cause reaches the terminal; the bot log holds all of it. */
+const MAX_FIX_FAILURE_STDERR_CHARS = 300;
+
+/** Every line terminator a session's stderr may use, so no carriage return survives the split. */
+const LINE_BREAK = /\r\n|\r|\n/;
+
+/**
+ * #2999: a `fix-failed` outcome is not self-explanatory — a script cannot tell it from a clean no-op
+ * otherwise — so stderr names the cause. Only its first line, and only its first
+ * `MAX_FIX_FAILURE_STDERR_CHARS` characters: a session failure is often a whole stack trace, and the
+ * full text is a JSON field in `bot.jsonl`.
+ *
+ * This is the one place a raw session error reaches a terminal, so it is treated in the order the
+ * terminal would read it (branch fix B1): terminal controls go first, so an escape cannot rewrite the
+ * line and a carriage return cannot drive the cursor back over it — and, because the redactor then
+ * sees the string a terminal would see, a credential that colour codes split apart is one token
+ * again when it is matched. If the codes came out afterwards, each fragment would be too short for
+ * the token patterns and the strip would paste a cleartext key back together. Redaction runs on the
+ * whole failure, because a multi-line secret such as a PEM block is only recognised with its end
+ * marker in hand; only then is the first line taken and capped, so the cap can never cut a delimiter
+ * that made a secret recognisable.
+ */
+function failureReason(result: BotFixResult): string {
+  if ("reason" in result) return result.reason;
+  if (result.outcome !== "fix-failed" || result.fixFailure === undefined) return result.outcome;
+  const [first = ""] = redactSecrets(stripControlChars(result.fixFailure)).split(LINE_BREAK);
+  return `fix-failed: ${first.slice(0, MAX_FIX_FAILURE_STDERR_CHARS)}`;
 }
 
 /** How the ready pass reads to a human: waived, readied, held for a reason, or not a draft at all. */

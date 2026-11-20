@@ -51,6 +51,8 @@ export async function reopenReraisedItems(
   input: ItemThreadsInput,
   keys: readonly string[],
   context: ReopenContext,
+  /** Index membership for every write; wider than `keys` when retained items stay indexed. */
+  indexKeys: readonly string[] = keys,
 ): Promise<{
   reopened: ReadonlySet<string>;
   failed: number;
@@ -59,7 +61,7 @@ export async function reopenReraisedItems(
   const reopened = new Set<string>();
   const pendingReopens = (context.read.index?.pendingReopens ?? []).filter(
     ({ key, commentId }) =>
-      keys.includes(key) &&
+      indexKeys.includes(key) &&
       context.read.items.some(
         (item) => item.key === key && ownComments(item.thread.comments, context.login).at(-1)?.comment.id === commentId,
       ),
@@ -83,7 +85,7 @@ export async function reopenReraisedItems(
       if (action === "notice") {
         if (last && !pending) pendingReopens.push({ key: item.key, commentId: last.id });
         // Persist invalidation before any boundary-changing notice. Failure stops the notice write.
-        const indexed = await writeItemIndex({ ...read.index, keys, pendingReopens }, context);
+        const indexed = await writeItemIndex({ ...read.index, keys: indexKeys, pendingReopens }, context);
         if (!indexed.written) {
           failed++;
           continue;

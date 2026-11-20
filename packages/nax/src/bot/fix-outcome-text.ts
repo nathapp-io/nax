@@ -98,6 +98,8 @@ export function outcomeText(state: BotFixState, repoRoot: string | undefined): s
         : "Nothing to fix: the latest review agreed with no item.";
     case "no-change":
       return "The fix session changed nothing; nothing pushed.";
+    case "fix-failed":
+      return "The fix session failed before changing anything; nothing pushed.";
     case "protected":
       return protectedText(state.protectedFiles ?? []);
     case "no-gates":

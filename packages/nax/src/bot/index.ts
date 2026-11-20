@@ -80,7 +80,7 @@ export { BOT_GIT_HOOKS_OFF, botGit, NAX_BOT_CREDENTIAL_HELPER } from "./git";
 export { featureIntentPaths } from "./intent";
 export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
-export { botModel, parseModelOption } from "./models";
+export { botModel, checkBotModelOverride, parseModelOption } from "./models";
 export { BASE_PINNED_NAMES, BASE_PINNED_PATHS, fixProtectedPaths, isPinnedPath, sensitivePaths } from "./path-policy";
 export {
   _postDeps,

@@ -27,6 +27,14 @@ export interface BotPrFixPromptInput {
   readonly findingFacts?: readonly { readonly id: string; readonly lines: readonly string[] }[];
   /** US-006: lines earlier bot fix pushes added outside the feature's declared files. */
   readonly outsideGrowth?: readonly { readonly path: string; readonly added: number }[];
+  /**
+   * #2998: the items of each earlier bot push a finding's lineage names, listed once per push instead
+   * of once per parent on every finding's `Lineage:` line.
+   */
+  readonly lineagePushes?: readonly {
+    readonly sha: string;
+    readonly items: readonly { readonly key: string; readonly issue?: string }[];
+  }[];
 }
 
 /** The section reports facts about at most this many files; the rest are counted, not listed. */
@@ -38,6 +46,24 @@ function factBlocks(facts: readonly { readonly id: string; readonly lines: reado
   return facts
     .filter(({ lines }) => lines.length > 0)
     .map(({ id, lines }) => [`- ${id}:`, ...lines.map((line) => `${FACT_INDENT}${line}`)].join("\n"));
+}
+
+/**
+ * One earlier push's items, each at the fact indent. The heading carries no indent so it reads as a
+ * separate fact rather than as a finding's own line.
+ */
+function pushBlocks(
+  pushes: readonly {
+    readonly sha: string;
+    readonly items: readonly { readonly key: string; readonly issue?: string }[];
+  }[],
+): string[] {
+  return pushes.map(({ sha, items }) =>
+    [
+      `Earlier nax bot fix push ${sha} was for:`,
+      ...items.map(({ key, issue }) => `${FACT_INDENT}- ${key}${issue === undefined ? "" : `: ${issue}`}`),
+    ].join("\n"),
+  );
 }
 
 /** The growth fact: the largest file first, at most `MAX_OUTSIDE_GROWTH_PATHS` named. */
@@ -56,13 +82,17 @@ function outsideGrowthLine(growth: readonly { readonly path: string; readonly ad
 /**
  * The facts section, or nothing at all when there is no fact to state. A fact never carries an
  * instruction: the caller's items say what to do, and what is known about them says only what is known.
+ * Per-finding facts come first, then each earlier push's items (#2998), then the growth line.
  */
 function factsSection(input: BotPrFixPromptInput): string {
-  const blocks = factBlocks(input.findingFacts ?? []);
   const growth = outsideGrowthLine(input.outsideGrowth ?? []);
-  if (blocks.length === 0 && growth === undefined) return "";
-  const body = [...blocks, ...(growth === undefined ? [] : [growth])].join("\n");
-  return `\n## Facts about these findings\n${body}\n`;
+  const parts = [
+    ...factBlocks(input.findingFacts ?? []),
+    ...pushBlocks(input.lineagePushes ?? []),
+    ...(growth === undefined ? [] : [growth]),
+  ];
+  if (parts.length === 0) return "";
+  return `\n## Facts about these findings\n${parts.join("\n")}\n`;
 }
 
 function intent(input: BotPrFixPromptInput): string {

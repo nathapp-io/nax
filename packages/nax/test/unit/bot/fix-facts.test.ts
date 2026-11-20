@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { makePRD, makeStory, withTempDir } from "@test/helpers";
 import type { AgreedItem } from "@/bot";
-import { findingFactLines, type OutsideGrowthDeps, outsideDeclaredGrowth } from "@/bot/fix-facts";
+import { findingFactLines, lineagePushFacts, type OutsideGrowthDeps, outsideDeclaredGrowth } from "@/bot/fix-facts";
 import { botGit } from "@/bot/git";
 import type { BotPushEntry, BotPushItem } from "@/bot/push-ledger";
 import { DEFAULT_BLOCKING_TRIGGERS } from "@/workflow/blocking-findings";
@@ -51,16 +51,38 @@ describe("findingFactLines", () => {
     );
   });
 
-  test("AC-4: two parents yield one Lineage line each", () => {
+  // #2998: one Lineage line per finding. A two-parent lineage names both parents on that one line;
+  // their issues belong to the push's own item list (`lineagePushFacts`), not to each finding.
+  test("AC-1: a two-parent lineage yields exactly one Lineage line naming both parents", () => {
     const lines = findingFactLines(
       finding({ lineage: { generation: 3, parents: ["f-a", "f-b"], pushSha: PUSH_SHA } }),
       ledger,
       DEFAULT_BLOCKING_TRIGGERS,
     );
-    const lineage = lines.filter((line) => line.startsWith("Lineage:"));
-    expect(lineage).toEqual([
-      `Lineage: generation 3, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-a (lock leaks)`,
-      `Lineage: generation 3, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-b (claim files leak)`,
+    expect(lines.filter((line) => line.startsWith("Lineage:"))).toEqual([
+      `Lineage: generation 3, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-a, f-b`,
+    ]);
+  });
+
+  test("AC-2: a single-parent lineage keeps the parent's issue as a suffix", () => {
+    const lines = findingFactLines(
+      finding({ lineage: { generation: 2, parents: ["f-a"], pushSha: PUSH_SHA } }),
+      ledger,
+      DEFAULT_BLOCKING_TRIGGERS,
+    );
+    expect(lines.filter((line) => line.startsWith("Lineage:"))).toEqual([
+      `Lineage: generation 2, on lines added by nax bot fix ${SHORT_PUSH_SHA} for f-a (lock leaks)`,
+    ]);
+  });
+
+  test("AC-3: a single parent whose push the ledger dropped carries no issue suffix", () => {
+    const lines = findingFactLines(
+      finding({ lineage: { generation: 2, parents: ["f-a"], pushSha: "2".repeat(40) } }),
+      ledger,
+      DEFAULT_BLOCKING_TRIGGERS,
+    );
+    expect(lines.filter((line) => line.startsWith("Lineage:"))).toEqual([
+      "Lineage: generation 2, on lines added by nax bot fix 2222222 for f-a",
     ]);
   });
 
@@ -124,6 +146,96 @@ describe("findingFactLines", () => {
   test("AC-7: a comment item yields no lines", () => {
     const comment: AgreedItem = { kind: "comment", key: "c-1", issue: "Consider this", reason: "Agrees" };
     expect(findingFactLines(comment, ledger, DEFAULT_BLOCKING_TRIGGERS)).toEqual([]);
+  });
+});
+
+/**
+ * #2998: the items of a push that a multi-parent lineage names are listed once, per push, instead of
+ * once for every parent of every finding. A push named only by single-parent lineages contributes
+ * nothing — its parent's issue is already on that finding's own `Lineage:` line.
+ */
+describe("lineagePushFacts", () => {
+  /** A sha sorting before `PUSH_SHA`, so a sorted result is distinguishable from the input order. */
+  const EARLIER_SHA = "0f".repeat(20);
+  const SHORT_EARLIER_SHA = EARLIER_SHA.slice(0, 7);
+  const EVICTED_SHA = "2".repeat(40);
+
+  const thread: AgreedItem = {
+    kind: "thread",
+    key: "t-1",
+    issue: "Rename it",
+    reason: "Clearer",
+    threadId: "T1",
+    replyTo: "1",
+    file: "src/a.ts",
+    line: 4,
+  };
+  const comment: AgreedItem = { kind: "comment", key: "c-1", issue: "Consider this", reason: "Agrees" };
+
+  const multi = (key: string, parents: readonly string[], pushSha = PUSH_SHA): AgreedItem =>
+    finding({ key, lineage: { generation: 3, parents, pushSha } });
+
+  /** The output reduced to what AC-4 and AC-8 pin: each push's sha and its keys, in order. */
+  function shaAndKeys(agreed: readonly AgreedItem[], entries: readonly BotPushEntry[]) {
+    return lineagePushFacts(agreed, entries).map(({ sha, items }) => ({ sha, keys: items.map(({ key }) => key) }));
+  }
+
+  const threeItems: readonly BotPushItem[] = [
+    { key: "f-a", generation: 0, issue: "lock leaks" },
+    { key: "f-b", generation: 1, issue: "claim files leak" },
+    { key: "f-c", generation: 1, issue: "dirty index" },
+  ];
+
+  test("AC-4: two multi-parent lineages on one push list its keys once, in first-seen order", () => {
+    expect(shaAndKeys([multi("f-1", ["f-a", "f-b"]), multi("f-2", ["f-b", "f-c"])], [entry(threeItems)])).toEqual([
+      { sha: SHORT_PUSH_SHA, keys: ["f-a", "f-b", "f-c"] },
+    ]);
+  });
+
+  test("AC-5: each item carries the issue the ledger recorded for its key on that push", () => {
+    const facts = lineagePushFacts([multi("f-1", ["f-a", "f-b"]), multi("f-2", ["f-b", "f-c"])], [entry(threeItems)]);
+    expect(facts[0]?.items).toEqual([
+      { key: "f-a", issue: "lock leaks" },
+      { key: "f-b", issue: "claim files leak" },
+      { key: "f-c", issue: "dirty index" },
+    ]);
+  });
+
+  test("AC-6: a key the push's entry does not hold carries no issue field", () => {
+    const facts = lineagePushFacts([multi("f-1", ["f-a", "f-c"])], ledger);
+    const missing = facts[0]?.items.find(({ key }) => key === "f-c");
+    expect(missing).toEqual({ key: "f-c" });
+    expect(Object.keys(missing ?? {})).toEqual(["key"]);
+  });
+
+  test("AC-7: single-parent lineages alone list no push", () => {
+    expect(lineagePushFacts([multi("f-1", ["f-a"]), multi("f-2", ["f-b"])], ledger)).toEqual([]);
+  });
+
+  test("AC-8: one entry per distinct push, in the order the items first name them", () => {
+    expect(shaAndKeys([multi("f-1", ["f-a", "f-b"]), multi("f-2", ["f-c", "f-d"], EARLIER_SHA)], ledger)).toEqual([
+      { sha: SHORT_PUSH_SHA, keys: ["f-a", "f-b"] },
+      { sha: SHORT_EARLIER_SHA, keys: ["f-c", "f-d"] },
+    ]);
+  });
+
+  test("AC-9: items that are not findings add no entry and change nothing beside a finding", () => {
+    expect(lineagePushFacts([thread, comment], ledger)).toEqual([]);
+    expect(shaAndKeys([thread, multi("f-1", ["f-a", "f-b"]), comment], ledger)).toEqual([
+      { sha: SHORT_PUSH_SHA, keys: ["f-a", "f-b"] },
+    ]);
+  });
+
+  test("AC-10: a single-parent lineage naming the same push adds none of its own keys", () => {
+    expect(shaAndKeys([multi("f-1", ["f-a", "f-b"]), multi("f-2", ["f-c"])], [entry(threeItems)])).toEqual([
+      { sha: SHORT_PUSH_SHA, keys: ["f-a", "f-b"] },
+    ]);
+  });
+
+  test("AC-11: a push the ledger no longer holds is listed with keys and no issues", () => {
+    expect(lineagePushFacts([multi("f-1", ["f-a", "f-b"], EVICTED_SHA)], ledger)).toEqual([
+      { sha: "2222222", items: [{ key: "f-a" }, { key: "f-b" }] },
+    ]);
   });
 });
 

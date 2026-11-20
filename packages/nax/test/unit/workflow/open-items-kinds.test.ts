@@ -45,6 +45,37 @@ describe("buildOpenItems: advisor items (US-002)", () => {
     ]);
     expect(items[1]?.issue).toStartWith("advisor decision D-3 needs a human");
   });
+
+  // US-002: the decision's own summary names it, so a human reading the open item knows what they
+  // are being asked about instead of being sent to `nax advisor list`.
+  test("AC-12: a summary on the record is the flagged item's issue", () => {
+    const items = buildOpenItems(
+      rec({ flaggedDecisions: ["D-3"], flaggedDecisionSummaries: { "D-3": "Keep the lock" } }),
+    );
+    expect(items).toContainEqual({
+      id: "D-3",
+      kind: "advisor",
+      issue: "advisor decision D-3 needs a human: Keep the lock",
+    });
+  });
+
+  test("AC-13: a record written before summaries existed keeps the baseline issue", () => {
+    const items = buildOpenItems(rec({ flaggedDecisions: ["D-3"] }));
+    expect(items).toContainEqual({
+      id: "D-3",
+      kind: "advisor",
+      issue: "advisor decision D-3 needs a human: see nax advisor list",
+    });
+  });
+
+  test("AC-14: an empty summary keeps the baseline issue", () => {
+    const items = buildOpenItems(rec({ flaggedDecisions: ["D-3"], flaggedDecisionSummaries: { "D-3": "" } }));
+    expect(items).toContainEqual({
+      id: "D-3",
+      kind: "advisor",
+      issue: "advisor decision D-3 needs a human: see nax advisor list",
+    });
+  });
 });
 
 describe("buildOpenItems: story items (US-002)", () => {

@@ -21,20 +21,32 @@ function flat(text: string): string {
   return one.length > ADVISOR_TEXT_CAP ? `${one.slice(0, ADVISOR_TEXT_CAP)}…` : one;
 }
 
+/** A1: one decision's detail — what its action asks for, in the words both readers share. */
+function decisionDetail(d: AdviceDecision): string {
+  if (d.action.type === "carry")
+    return `carry → ${flat(d.action.toStories.join(", "))} — ${flat(d.action.instruction)}`;
+  if (d.action.type === "answer") return `answer — ${flat(d.action.text)}`;
+  return `${d.action.type} — ${flat(d.rationale)}`;
+}
+
+/**
+ * US-002: the one line that names a decision — its ruling title when the advisor wrote one, and
+ * otherwise the detail the `## Advisor decisions` section already renders for it. `flat` removes
+ * newlines and caps the length, so both forms stay one line whatever the advisor wrote.
+ */
+export function advisorDecisionSummary(d: AdviceDecision): string {
+  const title = d.rulingTitle === undefined ? "" : flat(d.rulingTitle);
+  return title === "" ? decisionDetail(d) : title;
+}
+
 /** A1: flagged decisions first, then the rest, then every supersede as an amendment to apply. Null when none. */
 export function buildAdvisorSection(decisions: AdviceDecision[] | undefined): string | null {
   if (!decisions || decisions.length === 0) return null;
-  const detail = (d: AdviceDecision): string => {
-    if (d.action.type === "carry")
-      return `carry → ${flat(d.action.toStories.join(", "))} — ${flat(d.action.instruction)}`;
-    if (d.action.type === "answer") return `answer — ${flat(d.action.text)}`;
-    return `${d.action.type} — ${flat(d.rationale)}`;
-  };
   const line = (d: AdviceDecision): string => {
     const acs = d.acceptanceChanges?.length
       ? ` — acceptance tests changed: ${flat(d.acceptanceChanges.join(", "))}`
       : "";
-    return `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${detail(d)}${acs}`;
+    return `- **${flat(d.id)}**${d.needsHumanConfirm ? " (needs confirmation)" : ""} ${flat(d.storyId ?? "feature")} · ${decisionDetail(d)}${acs}`;
   };
   const ordered = [...decisions.filter((d) => d.needsHumanConfirm), ...decisions.filter((d) => !d.needsHumanConfirm)];
   const amendments = decisions.flatMap((d) =>

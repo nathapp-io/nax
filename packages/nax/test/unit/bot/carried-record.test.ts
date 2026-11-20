@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CARRY_WIDEN_CLEARED,
   type CarriedEntry,
   type CarriedRecord,
   carriedRecordBody,
   carriedRecordKey,
+  carryWidenKey,
+  carryWidenReviewKey,
   MAX_CARRIED_CHARS,
   MAX_CARRIED_ENTRIES,
   parseCarriedRecord,
+  pendingCarryWidenComments,
 } from "@/bot/carried-record";
-import { withNaxBotMarker } from "@/forge";
+import { type OwnComment, withNaxBotMarker } from "@/forge";
 
 const head = "a".repeat(40);
 const leak: CarriedEntry = {
@@ -20,6 +24,17 @@ const leak: CarriedEntry = {
   suggestion: "Key the cache by user",
 };
 const rename: CarriedEntry = { key: "f-5678", severity: "important", issue: "Rename the collector" };
+/** The review a signal speaks for: `crypto.randomUUID()` is lowercase. */
+const reviewId = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+const pendingText = "Carried finding coverage is incomplete. Review the full range before relying on this head.";
+
+/** One of the bot's own top-level comments, as the carry reader sees it. */
+function ownSignal(key: string, text: string): OwnComment {
+  return {
+    key,
+    comment: { id: key, kind: "comment", author: "bot", body: withNaxBotMarker(text, key), createdAt: "" },
+  };
+}
 
 /** The record's payload as the block decoder sees it, so a case can rewrite it. */
 function withPayload(body: string, encode: (payload: unknown) => string): string {
@@ -99,5 +114,26 @@ describe("the carried findings record", () => {
     expect(body.length).toBeLessThanOrEqual(MAX_CARRIED_CHARS);
     expect(dropped).toBeGreaterThan(0);
     expect(parseCarriedRecord(body)?.findings).toHaveLength(30 - dropped);
+  });
+});
+
+describe("the incomplete-review signal", () => {
+  test("AC-1: keys one review's signal by the head and the review that posted it", () => {
+    expect(carryWidenReviewKey(head, reviewId)).toBe(`w-carry-incomplete:${head}:${reviewId}`);
+  });
+
+  test("AC-6: a per-review signal no complete review has cleared is pending", () => {
+    const signal = ownSignal(carryWidenReviewKey(head, reviewId), pendingText);
+    expect(pendingCarryWidenComments([signal])).toEqual([signal]);
+  });
+
+  test("AC-7: the head-only signal an earlier nax left is still pending", () => {
+    const signal = ownSignal(carryWidenKey(head), pendingText);
+    expect(pendingCarryWidenComments([signal])).toEqual([signal]);
+  });
+
+  test("AC-8: a per-review signal a complete review cleared is not pending", () => {
+    const signal = ownSignal(carryWidenReviewKey(head, reviewId), CARRY_WIDEN_CLEARED);
+    expect(pendingCarryWidenComments([signal])).toEqual([]);
   });
 });

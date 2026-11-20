@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { carryWidenReviewKey } from "@/bot/carried-record";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, ForgeRunResult, PrRef } from "@/forge";
 import * as forge from "@/forge";
+import { isTopLevelMarkerKey } from "@/forge/marker-grammar";
 import type { GitlabDiscussion } from "@/forge/threads";
 
 const github: PrRef = { forge: "github", host: "github.example.com", repo: "acme/widgets", number: 5 };
@@ -139,6 +141,31 @@ describe("replied GitLab top-level notes", () => {
     const threads = await forge.listReviewThreads(gitlab, harness([[replied("w-B1.12345678")]]).deps, "/repo");
     expect(threads).toHaveLength(1);
     expect(threads[0]?.comments.map((c) => c.id)).toEqual(["91", "92"]);
+  });
+});
+
+describe("a carry signal keyed by head and review", () => {
+  const sha = "a".repeat(40);
+  const reviewId = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
+  test("AC-2 treats the per-review signal key as a valid bot marker key", () => {
+    expect(forge.isNaxBotMarkerKey(carryWidenReviewKey(sha, crypto.randomUUID()))).toBe(true);
+  });
+
+  test("AC-3 treats the per-review signal key as a top-level key", () => {
+    expect(isTopLevelMarkerKey(carryWidenReviewKey(sha, reviewId))).toBe(true);
+  });
+
+  test("AC-4 does not treat a review-id suffix on the carried record key as a top-level key", () => {
+    expect(isTopLevelMarkerKey(`w-carry:${sha}:${reviewId}`)).toBe(false);
+  });
+
+  test("AC-5 keeps a replied per-review signal an own comment with no thread id", async () => {
+    const key = carryWidenReviewKey(sha, reviewId);
+    const listed = await forge.listPrComments(gitlab, harness([[replied(key)]]).deps, "/repo");
+    const own = forge.ownComments(listed, "bot");
+    expect(own.map((comment) => comment.key)).toEqual([key]);
+    expect(own[0]).not.toHaveProperty("threadId");
   });
 });
 

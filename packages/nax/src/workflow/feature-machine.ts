@@ -16,6 +16,7 @@ import type { ReviewOutcome } from "./story-review";
 import type {
   BranchReviewVerdict,
   FeatureStep,
+  FlaggedDecision,
   ReReviewVerdict,
   StorySummary,
   WorkflowFeatureRecord,
@@ -48,10 +49,12 @@ export interface FeatureSteps {
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "branch-review" | "branch-fix" | "branch-rereview"): StepModel | undefined;
   /**
-   * US-005: the ids of the trusted ledger decisions flagged for a human, in ledger order.
+   * US-005: the trusted ledger decisions flagged for a human, in ledger order.
    * Optional: absent means the run collects nothing and the record keeps no ids.
+   * US-002: each entry names the decision as well as identifying it, so the open item a human
+   * reads says what the decision was about.
    */
-  flaggedDecisions?(): Promise<readonly string[]>;
+  flaggedDecisions?(): Promise<readonly FlaggedDecision[]>;
   /**
    * US-006: the failed checks of the published PR's CI, for the CI repair decision. Optional:
    * absent means the run cannot read CI logs, so it repairs no CI.

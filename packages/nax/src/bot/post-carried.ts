@@ -27,9 +27,7 @@ import {
   carriedRecordBody,
   carriedRecordComment,
   carriedRecordKey,
-  carryWidenComment,
-  carryWidenKey,
-  carryWidenPending,
+  carryWidenReviewKey,
   pendingCarryWidenComments,
 } from "./carried-record";
 import { recordsCodeReview } from "./coverage-record";
@@ -79,11 +77,11 @@ export async function postCarriedRecord(
   if (!recordsCodeReview(input)) return true;
   const blocking = input.blockingTriggers ?? DEFAULT_BLOCKING_TRIGGERS;
   const hasNewBlocker = offLine.some((finding) => isBlockingFinding(finding, blocking));
-  if (!review.complete) return !hasNewBlocker || writeCarryWiden(input, true);
+  if (!review.complete) return !hasNewBlocker || writeCarryWiden(input, review.id);
 
   const findings = carriedForRecord(input, offLine, review.id);
   if (!(await replaceCarriedRecord(input, findings))) {
-    if (hasNewBlocker) await writeCarryWiden(input, true);
+    if (hasNewBlocker) await writeCarryWiden(input, review.id);
     return false;
   }
   // Signals stay pending until the index points at this replacement record. Otherwise a failed index
@@ -100,11 +98,19 @@ export async function clearCarryWidens(input: Omit<PostReviewInput, "verdict">):
   return cleared;
 }
 
-async function writeCarryWiden(input: PostReviewInput, pending: boolean): Promise<boolean> {
-  const key = carryWidenKey(input.info.headSha);
-  const own = carryWidenComment(input.own, input.info.headSha);
-  if (pending === carryWidenPending(own)) return true;
-  return writeCarryWidenComment(input, { key, own, pending });
+/**
+ * Post this review's own signal, leaving every earlier signal at the head alone.
+ *
+ * A pending write always posts a new comment: matching an existing signal and editing it would let one
+ * review's signal stand for another's blocker, and a complete review reading its starting snapshot would
+ * then clear a blocker it never saw.
+ */
+async function writeCarryWiden(input: PostReviewInput, reviewId: string): Promise<boolean> {
+  return writeCarryWidenComment(input, {
+    key: carryWidenReviewKey(input.info.headSha, reviewId),
+    own: undefined,
+    pending: true,
+  });
 }
 
 async function writeCarryWidenComment(
