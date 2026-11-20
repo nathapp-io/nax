@@ -103,6 +103,14 @@ describe("replied GitLab top-level notes", () => {
     expect(await forge.listPrComments(gitlab, harness([[d]]).deps, "/repo")).toEqual([]);
     expect(await forge.listReviewThreads(gitlab, harness([[d]]).deps, "/repo")).toHaveLength(1);
   });
+  test("a replied incomplete-carry note stays top-level, not a review thread", async () => {
+    const key = `w-carry-incomplete:${"a".repeat(40)}`;
+    const pages = [[replied(key)]];
+    const comments = await forge.listPrComments(gitlab, harness(pages).deps, "/repo");
+    expect(comments.map((comment) => comment.id)).toEqual(["91", "92"]);
+    expect(forge.parseNaxBotMarker(comments[0]?.body ?? "")).toEqual({ key });
+    expect(await forge.listReviewThreads(gitlab, harness(pages).deps, "/repo")).toEqual([]);
+  });
   test("D-6 flattens a replied push record keyed by a full sha", async () => {
     const key = `push-${"a".repeat(40)}`;
     expect((await forge.listPrComments(gitlab, harness([[replied(key)]]).deps, "/repo")).map((c) => c.id)).toEqual([

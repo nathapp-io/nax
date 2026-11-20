@@ -33,6 +33,7 @@ import {
   type PostReviewOutcome,
   reviewQuality,
 } from "./post";
+import { clearCarryWidens } from "./post-carried";
 import { lineageTargets } from "./post-earlier";
 import { advanceAfterReview } from "./review-advance";
 import { reviewCarry } from "./review-carry";
@@ -438,7 +439,7 @@ async function reviewEnvironment(
 
 /** US-002: only a complete review advances the head; `review-advance.ts` holds the whole rule. */
 async function advance(env: ReviewEnv, state: ReviewState): Promise<void> {
-  await advanceAfterReview({
+  const referenced = await advanceAfterReview({
     posted: state.posted,
     unreadFiles: state.unreadFiles,
     reviewedIndex: env.reviewedIndex,
@@ -451,6 +452,7 @@ async function advance(env: ReviewEnv, state: ReviewState): Promise<void> {
     cwd: env.post.cwd,
     advance: _botReviewDeps.advanceReviewedHead,
   });
+  if (referenced && env.post.scope === "full") await clearCarryWidens(env.post);
 }
 
 async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRuntime>): Promise<BotReviewResult> {

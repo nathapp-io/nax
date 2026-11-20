@@ -247,6 +247,8 @@ async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<Ci
     // Rulings and index membership can change without a push while CI runs.
     const { info, user, comments, outcome } = await readReadyRulings(env);
     if (info.headSha !== expectedSha) return { held: "PR head changed since this execution" };
+    const findings = await openFindingHold({ ...env, own: ownComments(comments, user.login) });
+    if (findings) return { held: findings };
     const ready = workflowPrReadiness({
       outcome,
       ci,
@@ -413,6 +415,15 @@ async function plainReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWai
     return { held: `CI ${ci.outcome}: ${ci.detail}` };
   const held = await readyHeadHold(env, state);
   if (held !== undefined) return { held };
+  try {
+    const comments = await _fixReportDeps.listPrComments(env.ref, env.forge, env.repoRoot);
+    const findings = await openFindingHold({ ...env, own: ownComments(comments, env.user.login) });
+    if (findings) return { held: findings };
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not re-read carried findings after CI", { error: errorMessage(error) });
+    return { held: "carried findings could not be re-read after CI" };
+  }
   const waiver = await recordCiWaiver({ env, state, ci, post: _fixReportDeps.postPrComment });
   if (waiver.held !== undefined || waiver.ciWaived === undefined) return waiver;
   const moved = await readyHeadHold(env, state);

@@ -59,6 +59,7 @@ const settled: RecordRulingsOutcome = {
 const botFixOriginal = { ..._botFixDeps };
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 beforeEach(() => {
+  spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
   spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
 });
 afterEach(async () => {

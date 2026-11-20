@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
+  makeBotFixDeps,
   makeBotFixDraftEnv,
   makeBotReviewDeps,
   makeNaxConfig,
@@ -28,8 +29,11 @@ import {
 import { COVERAGE_RECORD_KEY, parseCoverageRecord } from "@/bot/coverage-record";
 import { _fixInputDeps, loadLatestCarry, loadLatestReview } from "@/bot/fix-input";
 import { _fixReportDeps, readyStep } from "@/bot/fix-report";
+import { _botFixDeps, runBotFix } from "@/bot/fix-run";
+import { _fixStepsDeps } from "@/bot/fix-steps";
 import { pushEntry } from "@/bot/fix-summary-body";
 import { BOT_REVIEW_FILENAME, type BotReviewArtifact, type PostReviewInput, postPrReview } from "@/bot/post";
+import { clearCarryWidens } from "@/bot/post-carried";
 import { type BotPushEntry, pushRecordBody } from "@/bot/push-ledger";
 import { findingKey } from "@/bot/render";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
@@ -80,6 +84,8 @@ const emptyOutcome: RecordRulingsOutcome = { recorded: [], settled: [], open: []
 const original = { ..._botReviewDeps };
 const fixInputOriginal = { ..._fixInputDeps };
 const reportOriginal = { ..._fixReportDeps };
+const fixOriginal = { ..._botFixDeps };
+const stepsOriginal = { ..._fixStepsDeps };
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 let tempDir: string;
 let config: ReturnType<typeof makeNaxConfig>;
@@ -145,6 +151,8 @@ beforeEach(() => {
 afterEach(async () => {
   Object.assign(_botReviewDeps, original);
   Object.assign(_fixReportDeps, reportOriginal);
+  Object.assign(_botFixDeps, fixOriginal);
+  Object.assign(_fixStepsDeps, stepsOriginal);
   Object.assign(_fixInputDeps, fixInputOriginal);
   mock.restore();
   resetLogger();
@@ -159,6 +167,7 @@ function install(headSha: string): void {
   runtimes.push(runtime);
   Object.assign(_botReviewDeps, {
     ...makeBotReviewDeps({ config, runtime, info: () => info }),
+    forge,
     // The forge keeps what the bot posted, so a second review reads the first one's own comments.
     listPrComments: async () =>
       forgeState.map((body, index) => ({
@@ -260,6 +269,22 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
       const result = await readyStep(env, { step: "ready", timings: {}, outcome: "ready-pass", readyOnly: true });
       expect(result.patch.markedReady).toBe(false);
       expect(result.patch.readyHeld).toContain(withSignal ? "carried finding coverage is incomplete" : openKey);
+
+      // The preserved blocker must be actionable too, not just an indefinite readiness hold.
+      const runtime = makeTestRuntime({ config });
+      runtimes.push(runtime);
+      Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+        listPrComments: async () => own.map(({ comment }) => comment),
+        checkStep: async () => ({ patch: { outcome: "no-change" }, exit: "no-change" }),
+        reportStep: async () => ({ patch: {}, exit: "done" }),
+      });
+      const fixer = mock<typeof _fixStepsDeps.runBranchFix>(async () => ({ autoCommitted: false, dirty: false }));
+      _fixStepsDeps.runBranchFix = fixer;
+      _fixStepsDeps.readHead = async () => headB;
+      expect(await runBotFix({ ...reviewInput, trust: true })).toMatchObject({ outcome: "no-change" });
+      expect(fixer.mock.calls[0]?.[1].findings).toContainEqual(
+        expect.objectContaining({ id: openKey, issue: openFinding.issue }),
+      );
     },
   );
 
@@ -336,6 +361,30 @@ describe("a summary-only blocking finding across two heads (B1)", () => {
     await reviewHead(headC, [], index);
     expect(post.mock.lastCall?.[0]?.scope).toBe("full");
   });
+
+  test.each(["advanced", "unchanged", "failed", "skipped"] as const)(
+    "a full review clears widening only after the index references its carry: %s",
+    async (kind) => {
+      const index = { reviewedHead: published, reviewedBase: publishedBase, keys: [] };
+      forgeState.push(withNaxBotMarker("Incomplete", carryWidenKey(published)));
+      outcome = { ...emptyOutcome, index };
+      install(headB);
+      _botReviewDeps.advanceReviewedHead = async () => {
+        expect(forgeState.some((body) => parseNaxBotMarker(body)?.key === carriedRecordKey(headB))).toBe(true);
+        expect(forgeState).not.toContain(withNaxBotMarker(CARRY_WIDEN_CLEARED, carryWidenKey(published)));
+        return kind === "skipped" ? { kind, reason: "moved" } : { kind };
+      };
+      verdict = { ...emptyVerdict, findings: [openFinding] };
+      expect(await runBotReview({ ...reviewInput, full: true })).toMatchObject({ outcome: "posted" });
+      const confirmed = kind === "advanced" || kind === "unchanged";
+      expect(forgeState.includes(withNaxBotMarker(CARRY_WIDEN_CLEARED, carryWidenKey(published)))).toBe(confirmed);
+      if (confirmed) forgeState = forgeState.filter((body) => !body.includes("Incomplete"));
+      loadEarlier.mockImplementation(async () => ({ findings: [], widen: false }));
+      await reviewHead(headC, [], confirmed ? { ...index, reviewedHead: headB } : index);
+      expect(post.mock.lastCall?.[0]?.scope).toBe(confirmed ? "incremental" : "full");
+      if (confirmed) expect((await artifactFor(headC)).agreed.map(({ key }) => key)).toContain(openKey);
+    },
+  );
 
   test("a failed finding reopen in a workflow review keeps the index from advancing", async () => {
     const finding = { ...openFinding, file: "file.ts", line: 1 };
@@ -702,7 +751,7 @@ describe("the carried findings record the post leaves on the PR (B1)", () => {
       refuse = (argv) =>
         refused && argv.includes("PATCH") && parseNaxBotMarker(bodyOf(argv))?.key === carriedRecordKey(headC);
       const outcome = await postPrReview(carriedInput(stateDir, { own, scope: "full", carriedFindings: [] }));
-      expect(forgeState.includes(withNaxBotMarker(CARRY_WIDEN_CLEARED, signalKey))).toBe(!refused);
+      expect(forgeState).not.toContain(withNaxBotMarker(CARRY_WIDEN_CLEARED, signalKey));
       if (refused) {
         expect(outcome.carriedRecordFailed).toBe(true);
         expect(records()).toEqual([prior]);
@@ -725,6 +774,9 @@ describe("the carried findings record the post leaves on the PR (B1)", () => {
     ];
     const outcome = await postPrReview(carriedInput(stateDir, { own, scope: "full", carriedFindings: [] }));
     expect(outcome.carriedRecordFailed).toBeUndefined();
+    expect(forgeState).not.toContain(withNaxBotMarker(CARRY_WIDEN_CLEARED, signalKey));
+    // The caller has confirmed the index references the new carry before clearing signals.
+    expect(await clearCarryWidens(carriedInput(stateDir, { own }))).toBe(true);
     expect(forgeState).toContain(withNaxBotMarker(CARRY_WIDEN_CLEARED, signalKey));
   });
 

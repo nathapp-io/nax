@@ -291,6 +291,9 @@ describe("replyStep", () => {
 });
 
 describe("readyStep", () => {
+  beforeEach(() => {
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+  });
   test.each(["matching", "changed", "unreadable", "reviewed"] as const)(
     "US-008 AC-1/3/5–8: post-green head %s",
     async (mode) => {

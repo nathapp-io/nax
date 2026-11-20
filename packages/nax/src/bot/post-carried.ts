@@ -86,12 +86,13 @@ export async function postCarriedRecord(
     if (hasNewBlocker) await writeCarryWiden(input, true);
     return false;
   }
-  // Only a full verdict re-reads the whole range, so it supersedes every pending signal, whichever head
-  // the incomplete review that left it was of.
-  return input.scope !== "full" || clearCarryWidens(input);
+  // Signals stay pending until the index points at this replacement record. Otherwise a failed index
+  // write leaves the next worker reading the old head's carry without knowing it must widen.
+  return true;
 }
 
-async function clearCarryWidens(input: PostReviewInput): Promise<boolean> {
+/** Called only after a complete full review confirms the index references its replacement carry. */
+export async function clearCarryWidens(input: Omit<PostReviewInput, "verdict">): Promise<boolean> {
   let cleared = true;
   for (const own of pendingCarryWidenComments(input.own)) {
     if (!(await writeCarryWidenComment(input, { key: own.key, own, pending: false }))) cleared = false;
@@ -107,7 +108,7 @@ async function writeCarryWiden(input: PostReviewInput, pending: boolean): Promis
 }
 
 async function writeCarryWidenComment(
-  input: PostReviewInput,
+  input: Omit<PostReviewInput, "verdict">,
   signal: { readonly key: string; readonly own: OwnComment | undefined; readonly pending: boolean },
 ): Promise<boolean> {
   const { key, own, pending } = signal;

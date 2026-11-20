@@ -8,8 +8,8 @@
  * never replace a stale one, and the carried-findings record, because the next review would skip the only
  * changes that could re-raise a finding this one could not re-report.
  *
- * The outcome is logged and never returned: a held or failed advance must not change what the review
- * reports, and the next review then falls back to the wider range.
+ * The outcome is logged; the boolean confirms the index now references this review's carry record.
+ * A held or failed advance must not change what the review reports.
  */
 
 import type { ForgeDeps, PrRef } from "@/forge";
@@ -52,12 +52,12 @@ function mayAdvance(input: AdvanceAfterReviewInput): input is AdvanceAfterReview
   return input.scope !== "conversation-only";
 }
 
-export async function advanceAfterReview(input: AdvanceAfterReviewInput): Promise<void> {
-  if (!mayAdvance(input)) return;
+export async function advanceAfterReview(input: AdvanceAfterReviewInput): Promise<boolean> {
+  if (!mayAdvance(input)) return false;
   const held = heldBy(input.posted);
   if (held !== undefined) {
     getLogger().warn("bot", `Reviewed head held: ${held} did not land`, { pr: input.ref.number });
-    return;
+    return false;
   }
   const outcome = await input.advance({
     ref: input.ref,
@@ -69,4 +69,5 @@ export async function advanceAfterReview(input: AdvanceAfterReviewInput): Promis
     cwd: input.cwd,
   });
   getLogger().info("bot", "Reviewed head advance", { pr: input.ref.number, outcome: outcome.kind });
+  return outcome.kind === "advanced" || outcome.kind === "unchanged";
 }

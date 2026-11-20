@@ -14,6 +14,7 @@ function envWithBotGates(names: readonly string[], body = ""): BotFixEnv {
 }
 
 beforeEach(() => {
+  spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
   spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
   spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
   spyOn(_fixReportDeps, "readPrInfo").mockImplementation(async (_ref, _forge, _root) => {
