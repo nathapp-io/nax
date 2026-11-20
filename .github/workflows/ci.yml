@@ -272,7 +272,7 @@ jobs:
         run: bun run test:coverage
 
   nax-agent-glob-floor:
-    name: "nax-agent: glob (Node 22.19.0, ${{ matrix.os }})"
+    name: "nax-agent: glob (Node 24.22.3, ${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
@@ -283,27 +283,20 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.19.0"
+          node-version: "24.22.3"
       - run: node --version
       # Built-ins and type-stripped local source only; no install/preload needed.
-      - run: node packages/nax-agent/test/node/glob-floor.mjs 22.19.0
+      - run: node packages/nax-agent/test/node/glob-floor.mjs 24.22.3
 
-  # S2-8: the Node contract suite (spec §7.3). vitest's bin has an
-  # `#!/usr/bin/env node` shebang, so `bun run` executes it under the matrix
-  # Node; the suite also asserts `process.versions.bun` is undefined.
-  # Matrix ruling 2026-10-03: Ubuntu × [22, 24]; the exact 22.19.0 floor stays
-  # covered by nax-agent-glob-floor.
-  nax-agent-node:
-    name: "nax-agent: node ${{ matrix.node }}"
+  # Run all three package suites on Node 24 and 26 with one install per version.
+  node-compat:
+    name: "Node ${{ matrix.node }} compatibility"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        node: ["22", "24"]
-    defaults:
-      run:
-        working-directory: packages/nax-agent
+        node: ["24", "26"]
     steps:
       - uses: actions/checkout@v5
 
@@ -344,9 +337,23 @@ jobs:
             sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
           fi
 
-      - run: node --version
+      - name: Show Node version
+        id: ready
+        run: node --version
 
-      - name: Node contract suite
+      - name: nax-ai tests
+        working-directory: packages/nax-ai
+        run: bun x vitest --run
+
+      # Report each package result even when an earlier suite fails.
+      - name: nax-agent Node contracts
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        working-directory: packages/nax-agent
+        run: bun run test:node
+
+      - name: nax-agent-acp Node contracts
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        working-directory: packages/nax-agent-acp
         run: bun run test:node
 
   # S4-1: the ACP backend package. Same gates as nax-agent, without the OS
@@ -400,47 +407,6 @@ jobs:
       - name: Coverage floor
         run: bun run test:coverage
 
-  # S4-6: the contract suite now includes the packed smoke (two builds, two packs,
-  # an npm install), so it needs more than the unit job's time.
-  nax-agent-acp-node:
-    name: "nax-agent-acp: node ${{ matrix.node }}"
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["22", "24"]
-    defaults:
-      run:
-        working-directory: packages/nax-agent-acp
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.4.4"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        working-directory: .
-
-      - run: node --version
-
-      - name: Node contract suite
-        run: bun run test:node
-
   tooling:
     name: tooling
     runs-on: ubuntu-latest
@@ -484,10 +450,6 @@ jobs:
         run: bun run check:all
         working-directory: packages/test-kit
 
-  # The four jobs below are nax-ai's former standalone ci.yml, moved into the
-  # monorepo unchanged apart from the job ids/names, a package-scoped
-  # working-directory default, and workspace installs at the repo root.
-
   # Gates that are runtime-independent. Split from the matrix so a lint or type
   # failure reports once rather than twice.
   nax-ai-static:
@@ -507,32 +469,6 @@ jobs:
       # Vitest transpiles via esbuild and does not type-check, so this is the
       # only step that proves the package compiles.
       - run: bun run typecheck
-
-  # The declared compatibility target. This is the leg that catches Bun-only
-  # code and imports Node cannot resolve, so it must run the real suite rather
-  # than a smoke check.
-  nax-ai-test-node:
-    name: "nax-ai: test (node ${{ matrix.node }})"
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["22", "24"]
-    defaults:
-      run:
-        working-directory: packages/nax-ai
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-      - run: bun install --frozen-lockfile
-        working-directory: .
-      - run: node --version
-      - run: bun x vitest --run
 
   # The primary consumer's runtime. Builds, then imports the built artifact the
   # way an installed consumer would — this is what would catch a broken exports
@@ -599,7 +535,7 @@ jobs:
           bun-version: 1.4.4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "26"
       - run: bun install --frozen-lockfile
         working-directory: .
       - run: bun run build
