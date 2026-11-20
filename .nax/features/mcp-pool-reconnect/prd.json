@@ -3,7 +3,7 @@
   "feature": "mcp-pool-reconnect",
   "branchName": "feat/mcp-pool-reconnect",
   "createdAt": "2026-11-20T13:10:47.064Z",
-  "updatedAt": "2026-11-20T13:40:23.808Z",
+  "updatedAt": "2026-11-20T13:52:25.771Z",
   "userStories": [
     {
       "id": "US-001",
@@ -156,14 +156,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The required upstream stories already provide close-state tracking, eviction and memoized reconnects; this story adds a bounded two-attempt call flow and fresh deadlines within the existing pool, with shared-fake concurrency regression tests and no new authentication or credential-handling behavior."
+        "reasoning": "The required upstream stories already provide close-state tracking, eviction and memoized reconnects; this story adds a bounded two-attempt call flow and fresh deadlines within the existing pool, with shared-fake concurrency regression tests and no new authentication or credential-handling behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/mcp/pool.ts",
@@ -183,7 +186,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c0532712b00a0e4657f1728a02af0cb432d0b0c4"
     },
     {
       "id": "US-004",
