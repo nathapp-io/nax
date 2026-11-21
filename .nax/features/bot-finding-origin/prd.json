@@ -3,7 +3,7 @@
   "feature": "bot-finding-origin",
   "branchName": "feat/bot-finding-origin",
   "createdAt": "2026-11-21T02:42:01.531Z",
-  "updatedAt": "2026-11-21T03:10:46.412Z",
+  "updatedAt": "2026-11-21T03:28:43.782Z",
   "userStories": [
     {
       "id": "US-001",
@@ -184,14 +184,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A deterministic map/set check in one new helper and a settle-first wrapper plus optional field copies in post.ts reuse existing lineage, posting and runBotReview fixtures; no new I/O or orchestration abstraction warrants heavier isolation."
+        "reasoning": "A deterministic map/set check in one new helper and a settle-first wrapper plus optional field copies in post.ts reuse existing lineage, posting and runBotReview fixtures; no new I/O or orchestration abstraction warrants heavier isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -215,7 +218,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "88f1986786bb5091eea532f09e63d67a145a9f29"
     },
     {
       "id": "US-004",
