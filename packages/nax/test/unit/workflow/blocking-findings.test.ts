@@ -1,16 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import type { PrComment, PrCommentKind } from "@/forge";
 import type { WorkflowSeverity } from "@/operations";
-import type { FindingTrigger } from "@/workflow/blocking-findings";
+import type { FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 import {
   configuredBlockingTriggers,
   configuredChainNoticeGeneration,
   DEFAULT_BLOCKING_TRIGGERS,
   DEFAULT_CHAIN_NOTICE_GENERATION,
   effectiveBlockingTriggers,
+  FINDING_ORIGINS,
   FINDING_TRIGGERS,
   firstIssueLine,
   isBlockingFinding,
+  parseFindingOrigin,
   parseFindingTrigger,
   readFindingThreadFacts,
 } from "@/workflow/blocking-findings";
@@ -57,6 +59,28 @@ describe("parseFindingTrigger", () => {
   });
 });
 
+describe("FINDING_ORIGINS", () => {
+  test("US-001 AC-1 lists the three origins in order", () => {
+    expect(FINDING_ORIGINS).toEqual(["pr", "fix-regression", "fix-gap"]);
+  });
+});
+
+describe("parseFindingOrigin", () => {
+  test.each([...FINDING_ORIGINS])("returns %s unchanged", (origin) => {
+    const parsed: FindingOrigin | undefined = parseFindingOrigin(origin);
+    expect(parsed).toBe(origin);
+  });
+  test("US-001 AC-2 returns fix-gap for a fix-gap claim", () => {
+    expect(parseFindingOrigin("fix-gap")).toBe("fix-gap");
+  });
+  test("US-001 AC-3 returns undefined for an absent origin", () => {
+    expect(parseFindingOrigin(undefined)).toBeUndefined();
+  });
+  test("US-001 AC-4 returns undefined for an unknown origin", () => {
+    expect(parseFindingOrigin("regression")).toBeUndefined();
+  });
+});
+
 describe("DEFAULT_BLOCKING_TRIGGERS", () => {
   test("US-002 AC-1 holds normal and own-concurrency", () => {
     expect(DEFAULT_BLOCKING_TRIGGERS).toEqual(["normal", "own-concurrency"]);
@@ -84,18 +108,59 @@ describe("isBlockingFinding", () => {
   test("does not block an absent trigger when normal is not in the set", () => {
     expect(isBlockingFinding({ severity: "critical" }, ["manual"])).toBe(false);
   });
+  test("US-001 AC-5 does not block an important normal fix-gap finding", () => {
+    expect(
+      isBlockingFinding({ severity: "important", trigger: "normal", origin: "fix-gap" }, ["normal", "own-concurrency"]),
+    ).toBe(false);
+  });
+  test("US-001 AC-6 blocks an important normal fix-regression finding", () => {
+    expect(
+      isBlockingFinding({ severity: "important", trigger: "normal", origin: "fix-regression" }, [
+        "normal",
+        "own-concurrency",
+      ]),
+    ).toBe(true);
+  });
+  test("US-001 AC-7 blocks an important normal finding with no origin", () => {
+    expect(isBlockingFinding({ severity: "important", trigger: "normal" }, ["normal", "own-concurrency"])).toBe(true);
+  });
+  test("US-001 AC-8 does not block a minor fix-regression finding", () => {
+    expect(
+      isBlockingFinding({ severity: "minor", trigger: "normal", origin: "fix-regression" }, [
+        "normal",
+        "own-concurrency",
+      ]),
+    ).toBe(false);
+  });
+  test("US-001 AC-9 does not block an important adversarial pr finding", () => {
+    expect(
+      isBlockingFinding({ severity: "important", trigger: "adversarial", origin: "pr" }, ["normal", "own-concurrency"]),
+    ).toBe(false);
+  });
 });
 
 describe("readFindingThreadFacts", () => {
   test("US-002 AC-10 reads the severity label and the trigger line", () => {
     const body = "**Critical** (quality): x\n\nTrigger: adversarial - y";
-    expect(readFindingThreadFacts(body)).toEqual({ severity: "critical", trigger: "adversarial" });
+    expect(readFindingThreadFacts(body)).toEqual({ severity: "critical", trigger: "adversarial", origin: "pr" });
   });
   test("US-002 AC-11 reads an unlabelled body as important with a normal trigger", () => {
     expect(readFindingThreadFacts("the lock is not released when the claim file is stale")).toEqual({
       severity: "important",
       trigger: "normal",
+      origin: "pr",
     });
+  });
+  test("US-001 AC-10 reads the origin line beside the severity and the trigger", () => {
+    const body =
+      "**Important** (quality): Lock leaks\n\nTrigger: normal - two writers\nOrigin: fix-gap - added by push 1";
+    expect(readFindingThreadFacts(body)).toEqual({ severity: "important", trigger: "normal", origin: "fix-gap" });
+  });
+  test("US-001 AC-11 reads a body with no origin line as pr", () => {
+    expect(readFindingThreadFacts("**Important** (quality): Lock leaks\n\nTrigger: normal").origin).toBe("pr");
+  });
+  test("US-001 AC-12 reads an unknown origin as pr", () => {
+    expect(readFindingThreadFacts("**Important** (quality): Lock leaks\n\nOrigin: later - x").origin).toBe("pr");
   });
   test.each<[string, WorkflowSeverity]>([
     ["**Critical** (quality): x", "critical"],
@@ -122,6 +187,9 @@ describe("firstIssueLine", () => {
   });
   test("US-002 AC-13 returns a plain issue unchanged", () => {
     expect(firstIssueLine("plain issue")).toBe("plain issue");
+  });
+  test("US-001 AC-13 drops an origin line", () => {
+    expect(firstIssueLine("Origin: fix-gap - x\nLock leaks")).toBe("Lock leaks");
   });
   test("returns the first non-empty line when the issue opens with a blank line", () => {
     expect(firstIssueLine("\n\n  second line  \n")).toBe("second line");
