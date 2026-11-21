@@ -181,25 +181,18 @@ function jsonErrorStub(status: number, headers: Readonly<Record<string, string>>
 }
 
 /**
- * An SSE response whose only event is a terminal `response.failed`, delivered
- * one chunk per macrotask — a string body is consumed before the adapter has
- * subscribed, which turns the control into a truncation test instead.
+ * A 200 SSE response delivering `chunks` one per macrotask — a string body is
+ * consumed before the adapter has subscribed, which would turn these controls
+ * into truncation tests instead.
  */
-function failedStreamStub(errorCode: string): typeof globalThis.fetch {
+function sse200Stub(chunks: readonly string[]): typeof globalThis.fetch {
   return async () => {
     const encoder = new TextEncoder();
-    const events = [
-      ["response.created", '{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}'],
-      [
-        "response.failed",
-        `{"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"${errorCode}","message":"slow down"}}}`,
-      ],
-    ] as const;
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
-        for (const [name, data] of events) {
+        for (const chunk of chunks) {
           await new Promise((resolve) => setTimeout(resolve, 0));
-          controller.enqueue(encoder.encode(`event: ${name}\ndata: ${data}\n\n`));
+          controller.enqueue(encoder.encode(chunk));
         }
         controller.close();
       },
@@ -209,6 +202,16 @@ function failedStreamStub(errorCode: string): typeof globalThis.fetch {
       headers: { "content-type": "text/event-stream", "retry-after": "41" },
     });
   };
+}
+
+/**
+ * A 200 SSE response whose ONLY event is a terminal `response.failed`. Exactly
+ * one chunk is emitted, so the rejection AC-11 asserts on can only have come
+ * from that event.
+ */
+function failedStreamStub(errorCode: string): typeof globalThis.fetch {
+  const payload = `{"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"${errorCode}","message":"slow down"}}}`;
+  return sse200Stub([`event: response.failed\ndata: ${payload}\n\n`]);
 }
 
 describe("createClient HTTP error status and Retry-After", () => {
@@ -245,6 +248,20 @@ describe("createClient HTTP error status and Retry-After", () => {
 
     expect(error.kind).toBe("rate-limit");
     expect(error.retryAfter).toBe(41);
+    // The stream carries that ONE event and nothing else, so this message can
+    // only have come from the `response.failed` payload: it is what proves the
+    // rejection was produced by the event, not by the 200 alone.
+    expect(error.message).toContain("rate_limit: slow down");
+  });
+
+  it("a 200 SSE stream with no events rejects as a truncation, not as rate-limit", async () => {
+    // Fixture sensitivity for AC-11: the single event is load-bearing, so an
+    // eventless stream must fail a different way. Without this, AC-11 would
+    // pass against an adapter that classified every 200 as a rate limit.
+    const error = protocolErrorOf(await completionFailure(sse200Stub([])));
+
+    expect(error.kind).toBe("transport");
+    expect(error.message).toContain("ended before a terminal response event");
   });
 
   it("AC-12 rejects a 429 with a non-numeric Retry-After with status 429 and no retryAfter", async () => {
