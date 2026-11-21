@@ -3,7 +3,7 @@
   "feature": "review-0b834-workflow-verification",
   "branchName": "feat/review-0b834-workflow-verification",
   "createdAt": "2026-11-21T12:16:35.719Z",
-  "updatedAt": "2026-11-21T12:29:48.017Z",
+  "updatedAt": "2026-11-21T12:37:18.818Z",
   "userStories": [
     {
       "id": "US-001",
@@ -76,14 +76,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard optional-signal forwarding and sequential abort guards across two existing modules, using the lifecycle contract from US-001; includes a real-shell seam regression."
+        "reasoning": "Standard optional-signal forwarding and sequential abort guards across two existing modules, using the lifecycle contract from US-001; includes a real-shell seam regression.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/gates/quality.ts",
@@ -99,7 +102,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6b474cbe116b7c31fc4a6ff60057c58a4d9a0cd2"
     },
     {
       "id": "US-003",
