@@ -25,10 +25,12 @@ function fail(path: string, message: string, alias?: string): never {
 
 /** Own-property lookup, matching keys as trimmed (as `ModelAliasesSchema` does). */
 function lookupAlias(aliases: Readonly<Record<string, string>>, name: string): unknown {
+  let found: unknown;
   for (const key of Object.keys(aliases)) {
-    if (key.trim() === name) return aliases[key];
+    // Last key wins, like ModelAliasesSchema's normalized-key record.
+    if (key.trim() === name) found = aliases[key];
   }
-  return undefined;
+  return found;
 }
 
 function checkLiteralValue(value: unknown, name: string, path: string): string {

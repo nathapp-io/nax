@@ -42,6 +42,11 @@ describe("expandModelAliasRef", () => {
     expect(expandModelAliasRef("@m[high]", { m: "provider/org/model[low]" }, "p")).toBe("provider/org/model[high]");
   });
 
+  test("AC-5 colliding trimmed keys resolve to the last, as the schema does", () => {
+    const aliases = { sol: "a/old", " sol ": "a/new" };
+    expect(expandModelAliasRef("@sol", aliases, "p")).toBe("a/new");
+  });
+
   test("AC-5 matches keys as trimmed", () => {
     expect(expandModelAliasRef("@sol", { " sol ": "a/b" }, "p")).toBe("a/b");
   });
