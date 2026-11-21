@@ -13,15 +13,23 @@ import type { StoredCredential } from "../../src/types.ts";
  * so the acquisition call is slowed here. `io.delayMs` is 0 (its default) for
  * every other test in the file, which then drives the real proper-lockfile.
  */
-const io = vi.hoisted(() => ({ delayMs: 0 }));
+const io = vi.hoisted(() => ({
+  delayMs: 0,
+  lockCalls: 0,
+  /** When set, lock() hands out this release function instead of taking the real lock. */
+  gate: undefined as Promise<() => Promise<void>> | undefined,
+}));
 
 vi.mock("proper-lockfile", async (importOriginal) => {
   const actual = await importOriginal<typeof import("proper-lockfile")>();
   return {
     default: {
       lock: async (file: string, options?: LockOptions) => {
+        io.lockCalls += 1;
         const delay = io.delayMs;
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        const gate = io.gate;
+        if (gate !== undefined) return await gate;
         return actual.lock(file, options);
       },
       unlock: actual.unlock,
@@ -57,6 +65,20 @@ function barrier(): { promise: Promise<void>; resolve: () => void } {
     release = resolve;
   });
   return { promise, resolve: release };
+}
+
+/** A promise the test settles by hand, standing in for lock() answering. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/** Yields to the real event loop for one turn. */
+function tick(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 /** Resolves after `ms`, so a release can be scheduled without awaiting it. */
@@ -162,6 +184,70 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
     await expect(createFileCredentialStore({ path, lockTimeoutMs: 1000 }).modify("c", async () => B)).resolves.toEqual(
       B,
     );
+    expect(await createFileCredentialStore({ path }).read("b")).toBeUndefined();
+  });
+
+  it("rejects at the deadline instead of waiting for cleanup of a lock acquired past it", async () => {
+    // The post-acquisition check runs when lock() answers past the deadline
+    // while the deadline timer is still unrun — an event-loop stall delays the
+    // timer but not the promise callback. Releasing the lock there used to be
+    // awaited, so a slow cleanup held the rejection back for its duration (a
+    // 200 ms release turned a 20 ms budget into 254 ms) and a rejecting one
+    // replaced the timeout error outright.
+    const path = tempPath();
+    const store = createFileCredentialStore({ path, lockTimeoutMs: 20 });
+    const handed = deferred<() => Promise<void>>();
+    let releaseCalled = false;
+    let cleanupDone = false;
+    let callbackRan = false;
+    let outcome: Outcome | undefined;
+    io.lockCalls = 0;
+    io.gate = handed.promise;
+    try {
+      // Only the clock and the deadline timer are faked: the store's real fs
+      // I/O still needs the event loop, so that is left alone.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      void settle(
+        store.modify("b", async () => {
+          callbackRan = true;
+          return B;
+        }),
+      ).then((settled) => {
+        outcome = settled;
+      });
+      for (let turns = 0; io.lockCalls === 0 && turns < 100; turns += 1) await tick();
+      expect(io.lockCalls).toBe(1);
+
+      // The stall: past the deadline with its timer unrun, so lock() answering
+      // now is seen by the post-acquisition check, not by the timer.
+      vi.setSystemTime(Date.now() + 45);
+      handed.resolve(() => {
+        releaseCalled = true;
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            cleanupDone = true;
+            resolve();
+          }, 200);
+        });
+      });
+      for (let turns = 0; turns < 5; turns += 1) await tick();
+
+      // Answered at once rather than whenever the cleanup happens to finish.
+      expect(outcome?.status).toBe("rejected");
+      expect(rejectionOf(outcome)).toContain(TIMED_OUT);
+      expect(callbackRan).toBe(false);
+      // Started all the same: a lock taken past the deadline and never
+      // released would block every writer until it went stale.
+      expect(releaseCalled).toBe(true);
+      expect(cleanupDone).toBe(false);
+
+      vi.advanceTimersByTime(200);
+      for (let turns = 0; turns < 5; turns += 1) await tick();
+      expect(cleanupDone).toBe(true);
+    } finally {
+      io.gate = undefined;
+      vi.useRealTimers();
+    }
     expect(await createFileCredentialStore({ path }).read("b")).toBeUndefined();
   });
 

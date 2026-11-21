@@ -141,6 +141,16 @@ async function writeShape(path: string, shape: FileShape, createOnly = false): P
   }
 }
 
+/**
+ * Releases a lock nobody was handed, without letting the cleanup decide what
+ * the caller sees. The caller has already been answered — with a timeout — so
+ * a slow release must not delay that answer and a failing one must not replace
+ * it with an error about a lock the caller never held.
+ */
+function releaseQuietly(release: () => Promise<void>): void {
+  release().catch(() => {});
+}
+
 export function createFileCredentialStore(options: FileCredentialStoreOptions): CredentialStore {
   const { path } = options;
   const lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
@@ -174,12 +184,7 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
     const pending = lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
     return new Promise<Attempt>((resolve) => {
       const timer = setTimeout(() => {
-        pending.then(
-          (release) => {
-            release().catch(() => {});
-          },
-          () => {},
-        );
+        pending.then(releaseQuietly, () => {});
         resolve({ kind: "deadline" });
       }, remainingMs);
 
@@ -223,9 +228,11 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
         // A lock that arrives after the deadline is not one this caller asked
         // to wait for, and the caller's callback must not run under it. It is
         // released rather than kept, so a late acquisition does not leave the
-        // file locked for everyone else.
+        // file locked for everyone else. The release is not awaited for the
+        // same reason the abandoned attempt's is not: it is cleanup, and the
+        // caller's answer is already overdue.
         if (Date.now() < deadline) return attempt.release;
-        await attempt.release();
+        releaseQuietly(attempt.release);
         throw lockTimeout(lastError);
       }
 
