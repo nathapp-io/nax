@@ -3,7 +3,7 @@
   "feature": "review-0b834-provider-credentials",
   "branchName": "feat/review-0b834-provider-credentials",
   "createdAt": "2026-11-21T14:05:52.494Z",
-  "updatedAt": "2026-11-21T14:18:43.053Z",
+  "updatedAt": "2026-11-21T14:34:28.042Z",
   "userStories": [
     {
       "id": "US-001",
@@ -92,14 +92,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The change is bounded buffering and exit-path flushing in one existing protocol module using thinkingBlockAt, not a new cross-module abstraction; replay of opaque encrypted/signed reasoning retains the security-override three-session isolation despite medium complexity."
+        "reasoning": "The change is bounded buffering and exit-path flushing in one existing protocol module using thinkingBlockAt, not a new cross-module abstraction; replay of opaque encrypted/signed reasoning retains the security-override three-session isolation despite medium complexity.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/pi-client.ts",
@@ -115,7 +118,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "06a5c1cad3debb64324bcaf3754597caf8023b3b"
     },
     {
       "id": "US-003",
