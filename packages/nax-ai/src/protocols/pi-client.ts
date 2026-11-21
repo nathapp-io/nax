@@ -47,6 +47,7 @@ import type {
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
+import { observeErrorResponses } from "./error-response-fetch.ts";
 import {
   classifyProviderError,
   classifyThrown,
@@ -1254,6 +1255,15 @@ export function createPiDeps(
         // provider that actually needs one.
         ...(mergedHeaders !== undefined ? { headers: mergedHeaders } : {}),
         onResponse: (response) => onResponse({ status: response.status, headers: response.headers }),
+        // pi-ai calls the hook above only for a response it went on to consume,
+        // so an HTTP error never reached it: the failure arrived as a message
+        // with the status embedded and no headers at all, and finding 8's
+        // `Retry-After: 41` was dropped. Watching fetch is the only place the
+        // error response is visible, and reporting it through the same callback
+        // means the existing `error` case needs no second source to consult.
+        // pi-ai's own retry, when it succeeds, still overwrites what a failed
+        // attempt recorded — its response is the later, real one.
+        fetch: observeErrorResponses(onResponse),
       });
     },
   };
