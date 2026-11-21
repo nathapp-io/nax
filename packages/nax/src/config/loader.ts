@@ -29,6 +29,7 @@ import { loadGlobalConfigRaw } from "./global-files";
 import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
+import { expandConfigModelAliases } from "./model-alias-expand";
 import { packageConfigCache } from "./package-config-cache";
 import { preparePackageLayer, resolveEnvVarsWarnOnFailure, validatePackageConfig } from "./package-layer";
 import { loadPackageProfileLayers } from "./package-profile";
@@ -219,7 +220,9 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // both read from the same resolved config.
   warnScopedTestCommand(stripped, defaultConfigWarn);
 
-  const result = NaxConfigSchema.safeParse(stripped);
+  // Expand `@alias` model references on the final merged config so a profile or
+  // CLI override that repoints an alias reaches every reference.
+  const result = NaxConfigSchema.safeParse(expandConfigModelAliases(stripped));
   if (!result.success) {
     const errors = result.error.issues.map((err) => {
       const path = String(err.path.join("."));
