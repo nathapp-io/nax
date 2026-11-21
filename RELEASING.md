@@ -34,6 +34,12 @@ bun run release --dry-run tag
 bun run release tag
 ```
 
+The command then reads `origin` once: it refuses when `origin` already holds
+`vX.Y.Z`, and it refuses unless `origin/main` is the commit it is about to tag, so
+a local commit that was never pushed cannot be released. If the tag push itself
+fails, rerunning `bun run release tag` on the same clean `main` pushes the
+existing local tag instead of refusing it.
+
 `.github/workflows/release.yml` then runs:
 
 1. `resolve`: validates the tag and runs `check-lockstep.ts --expect=<version>`.

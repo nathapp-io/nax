@@ -111,7 +111,13 @@ describe("release command", () => {
       withFixture((f) => {
         if (condition === "dirty") writeFileSync(join(f.dir, "untracked"), "changes");
         if (condition === "non-main") f.git("checkout", "-b", "feature");
-        if (condition === "existing-tag") f.git("tag", "v0.84.0");
+        if (condition === "existing-tag") {
+          // A tag at HEAD is the retry case (it is pushed, not refused), so move HEAD on.
+          f.git("tag", "v0.84.0");
+          f.write("packages/nax/README.md", "next\n");
+          f.git("add", "-A");
+          f.git("commit", "-m", "next");
+        }
         const result = f.run(["tag"], "y\n");
         expect(result.status).not.toBe(0);
         expect(result.calls.some((call) => /^git (push|tag v)/.test(call))).toBe(false);

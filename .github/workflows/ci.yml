@@ -10,6 +10,8 @@ on:
       - 'bun.lock'
       - 'biome.json'
       - '.github/workflows/**'
+      - '.github/actions/**'
+      - 'patches/**'
       - '.nax/**'
   pull_request:
     branches: [main]
@@ -20,6 +22,8 @@ on:
       - 'bun.lock'
       - 'biome.json'
       - '.github/workflows/**'
+      - '.github/actions/**'
+      - 'patches/**'
       - '.nax/**'
 
 jobs:

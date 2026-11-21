@@ -43,7 +43,11 @@ export interface ReleaseCliFixture {
   ) => { status: number | null; output: string; calls: string[] };
 }
 
-/** A temp git repo holding the four lockstep packages and a copy of the release command, with git/bun/gh stubbed. */
+/**
+ * A temp git repo holding the four lockstep packages and a copy of the release command, with git/bun/gh
+ * stubbed. A bare `origin.git` inside the temp dir is seeded from `main` with the real git binary, so
+ * an un-stubbed (real git) run has a remote whose main equals the local HEAD and holds no tags.
+ */
 export function makeReleaseCliFixture(): ReleaseCliFixture {
   const dir = makeTempDir("release-cli-");
   const tooling = join(dir, "packages/repo-tooling");
@@ -79,6 +83,12 @@ export function makeReleaseCliFixture(): ReleaseCliFixture {
   git("config", "user.email", "release@example.invalid");
   git("add", ".");
   git("commit", "-m", "fixture");
+  // A real remote for the post-confirmation checks: seeded here through the real
+  // binary (never the stub below), so origin/main starts equal to the local HEAD.
+  const origin = join(dir, "origin.git");
+  git("init", "--bare", origin);
+  git("remote", "add", "origin", origin);
+  git("push", "--quiet", "origin", "main");
   const bin = join(dir, "ignored-bin");
   mkdirSync(bin);
   for (const [name, body] of Object.entries(STUBS)) {
@@ -86,8 +96,8 @@ export function makeReleaseCliFixture(): ReleaseCliFixture {
     writeFileSync(path, `#!/bin/sh\necho "${name} $*" >> "$CALL_LOG"\n${body}\n`);
     chmodSync(path, 0o755);
   }
-  // Runtime logs must not make the fixture repository dirty.
-  writeFileSync(join(dir, ".git/info/exclude"), "/ignored-bin/\n/calls\n/pr-body\n");
+  // Runtime logs and the bare origin must not make the fixture repository dirty.
+  writeFileSync(join(dir, ".git/info/exclude"), "/ignored-bin/\n/calls\n/pr-body\n/origin.git/\n");
   return {
     dir,
     git,
