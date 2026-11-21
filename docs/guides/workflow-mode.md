@@ -110,7 +110,7 @@ its recorded step.
 | Value | Behaviour |
 |:------|:----------|
 | `"pr"` (default) | Commit the ledger, push, open or find a draft PR/MR, wait for CI, ask the advisor for approval only when no deterministic reason keeps the PR a draft, then promote the draft or leave it as a draft |
-| `"push"` | Commit the ledger, push, wait for CI, stop. nax opens no PR |
+| `"push"` | Commit the ledger, push, wait for CI, stop. nax opens no PR. On GitHub, when the branch has no pull request, the wait reads the check runs of the pushed commit |
 | `"none"` | Touches nothing |
 
 The feature ends with one outcome: `ready`, `draft`, `local-only` or `pushed`. A non-feature branch, a dry

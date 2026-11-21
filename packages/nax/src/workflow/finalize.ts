@@ -419,8 +419,14 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
  * unreadable HEAD only warns: `readinessReasons` decides what a missing binding means, not the wait.
  * US-003: `prUrl` (only `pr` mode has one) opts the wait into re-running a check that passed on
  * another pipeline for the same commit; with no URL or no HEAD there is nothing to re-run.
+ * US-005: `commitChecks` (push mode, which opens no PR) makes the wait read the pushed commit's runs.
  */
-async function waitForCi(fc: FeatureContext, forge: ForgeKind, prUrl?: string): Promise<CiWaitResult> {
+async function waitForCi(
+  fc: FeatureContext,
+  forge: ForgeKind,
+  opts: { readonly prUrl?: string; readonly commitChecks?: boolean } = {},
+): Promise<CiWaitResult> {
+  const { prUrl, commitChecks } = opts;
   let expectedSha: string | undefined;
   try {
     expectedSha = (await readHead(fc.projectDir)) || undefined;
@@ -439,6 +445,7 @@ async function waitForCi(fc: FeatureContext, forge: ForgeKind, prUrl?: string): 
     // US-003: a check whose job never got a runner is re-run (boundedly) rather than repaired. The
     // re-run is opt-in per caller: `nax workflow promote` is a one-poll check and passes nothing.
     rerunStarved: true,
+    ...(commitChecks === true ? { commitChecks: true } : {}),
     ...(prUrl !== undefined && expectedSha !== undefined
       ? { sameHeadRerun: sameHeadRerunFor(fc, prUrl, expectedSha) }
       : {}),
@@ -470,7 +477,7 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
       reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed],
     };
   }
-  const ci = await waitForCi(plan.fc, plan.forge);
+  const ci = await waitForCi(plan.fc, plan.forge, { commitChecks: true });
   if (plan.fc.runSignal?.aborted) throw abortedError();
   const reasons = [
     ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
@@ -527,7 +534,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   );
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
-  const ci = await waitForCi(fc, plan.forge, draft?.url);
+  const ci = await waitForCi(fc, plan.forge, { ...(draft?.url ? { prUrl: draft.url } : {}) });
   // An aborted wait reports `pending`, which blocks readiness (US-003): stop before promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other.

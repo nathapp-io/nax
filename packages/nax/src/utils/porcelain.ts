@@ -145,7 +145,7 @@ export function parsePorcelainForNaxPaths(porcelain: string): NaxProtectedPath[]
  * would otherwise corrupt a multi-byte UTF-8 sequence into several invalid
  * code points.
  */
-function unquotePorcelainPath(p: string): string {
+export function unquotePorcelainPath(p: string): string {
   if (p.length < 2 || p[0] !== '"' || p[p.length - 1] !== '"') return p;
   const inner = p.slice(1, -1);
   const bytes: number[] = [];

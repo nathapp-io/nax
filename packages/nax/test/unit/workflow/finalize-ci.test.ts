@@ -248,6 +248,72 @@ test("AC-12: an unreadable HEAD passes no same-head option, even with a draft UR
   expect(read.waits[0]).toHaveProperty("sameHeadRerun");
 });
 
+/** The push-mode context: the same facts, publishing depth `push`. */
+function pushContext() {
+  const base = makeFeatureContext({ branch: "feat/demo" });
+  return { ...base, workflow: { ...base.workflow, publish: "push" as const } };
+}
+
+// US-005: push mode opens no PR, so the checks have no PR to hang on; it asks the wait to read the
+// push's own commit instead.
+test("AC-1: push mode asks the CI wait for the commit's check runs", async () => {
+  const observed = wire("aaa", null);
+  const result = await publish(pushContext(), observed.input);
+  expect(result.outcome).toBe("pushed");
+  expect(observed.waits).toHaveLength(1);
+  expect(observed.waits[0]).toMatchObject({ commitChecks: true });
+});
+
+// US-005 (control): the commit path is push mode's alone — a pr-mode publish, with or without a
+// draft URL, passes no `commitChecks` key at all, so its wait keeps reading the PR.
+test("AC-2: pr mode passes no commitChecks key", async () => {
+  const withUrl = wire("aaa", { url: GH_URL });
+  await publish(makeFeatureContext(), withUrl.input);
+  expect(withUrl.waits).toHaveLength(1);
+  expect(withUrl.waits[0]).not.toHaveProperty("commitChecks");
+  // A draft the forge returned no URL for is still a PR: no URL is not a request for the commit path.
+  const noUrl = wire("aaa", null);
+  await publish(makeFeatureContext(), noUrl.input);
+  expect(noUrl.waits).toHaveLength(1);
+  expect(noUrl.waits[0]).not.toHaveProperty("commitChecks");
+  // Control: the same publish in push mode does carry it, so the absence is the mode's doing.
+  const pushed = wire("aaa", null);
+  await publish(pushContext(), pushed.input);
+  expect(pushed.waits[0]).toHaveProperty("commitChecks", true);
+});
+
+// US-005: the wiring reaches the real wait, not only a stub. A branch with no pull request answers
+// `gh pr checks` with GitHub's "no pull requests found", and the wait then reads the check runs of
+// the commit push mode just pushed — whose green is the publish's CI verdict.
+const SHA = "c".repeat(40);
+const CHECK_RUNS = JSON.stringify({
+  total_count: 1,
+  check_runs: [{ name: "ci", status: "completed", conclusion: "success" }],
+});
+
+test("AC-3: a push-mode publish falls back to the pushed commit's check runs and reports green", async () => {
+  const observed = wire(SHA, null);
+  const argvs: string[][] = [];
+  // The wait's own clock, faked: a green first poll settles it, and an unwired wait reaches the
+  // deadline without a real 20-minute sleep.
+  let clock = 0;
+  _ciWaitDeps.now = () => clock;
+  _ciWaitDeps.schedule = () => () => {};
+  _ciWaitDeps.sleep = async (ms) => {
+    clock += ms;
+  };
+  _ciWaitDeps.run = async (cmd) => {
+    argvs.push(cmd);
+    return cmd[1] === "api"
+      ? { exitCode: 0, stdout: CHECK_RUNS, stderr: "" }
+      : { exitCode: 1, stdout: "", stderr: "no pull requests found for branch feat/demo" };
+  };
+  _featureDeps.waitForChecks = waitForChecks;
+  const result = await publish(pushContext(), observed.input);
+  expect(result).toMatchObject({ outcome: "pushed", ci: "green" });
+  expect(argvs).toContainEqual(["gh", "api", `repos/{owner}/{repo}/commits/${SHA}/check-runs?per_page=100`]);
+});
+
 // US-003: what the wait re-ran is this publish's fact, so it reaches the outcome the step records.
 test("AC-13: a wait that re-ran a check reports it as the publish outcome's ciReruns", async () => {
   const observed = wire();

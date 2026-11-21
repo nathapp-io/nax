@@ -19,6 +19,8 @@ import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
 import { cancellableDelay } from "@/utils/bun-deps";
 import { EMPTY_STARVED_LEDGER, type StarvedLedger, starvedAtDeadline } from "./ci-starved";
+import { classifyChecks, cliError, GH_OK, isRecord, parseJson } from "./ci-wait-checks";
+import { commitChecksPoll, isNoPullRequest } from "./ci-wait-commit";
 import {
   EMPTY_SAME_HEAD_RERUN_STATE,
   type SameHeadRerun,
@@ -100,26 +102,8 @@ export type Poll =
     }
   | { readonly state: "error" | "conflicting" | "unavailable"; readonly detail: string };
 
-const GH_FAILED = new Set(["fail", "cancel"]);
-const GH_OK = new Set(["pass", "skipping"]);
 const GL_FAILED = new Set(["failed", "canceled"]);
 const NO_CHECKS = /no checks reported/i;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function parseJson(stdout: string): { ok: true; value: unknown } | { ok: false } {
-  try {
-    return { ok: true, value: JSON.parse(stdout) };
-  } catch {
-    return { ok: false };
-  }
-}
-
-function cliError(r: ForgeRunResult): Poll {
-  return { state: "error", detail: r.stderr.trim() || `exit ${r.exitCode}` };
-}
 
 export interface GhCheck {
   readonly name: string;
@@ -145,16 +129,6 @@ function ghChecks(value: readonly unknown[]): GhCheck[] {
   return value.map(ghCheck);
 }
 
-/** `3/15 passed, 12 pending`, plus the failing names — `passed` is the set `classifyGh` calls green. */
-function ghSummary(checks: readonly GhCheck[]): string {
-  const passed = checks.filter((c) => GH_OK.has(c.bucket)).length;
-  const failed = checks.filter((c) => GH_FAILED.has(c.bucket));
-  const pending = checks.length - passed - failed.length;
-  const names = failed.map((c) => c.name).filter((n) => n !== "");
-  const failing = names.length > 0 ? `, failing: ${names.join(", ")}` : "";
-  return `${passed}/${checks.length} passed, ${pending} pending${failing}`;
-}
-
 function classifyGh(r: ForgeRunResult): Poll {
   const out = r.stdout.trim();
   if (out === "") return NO_CHECKS.test(r.stderr) ? { state: "waiting" } : cliError(r);
@@ -162,25 +136,7 @@ function classifyGh(r: ForgeRunResult): Poll {
   if (!parsed.ok || !Array.isArray(parsed.value)) {
     return { state: "error", detail: `unparseable gh output: ${out.slice(0, 200)}` };
   }
-  const checks = ghChecks(parsed.value);
-  if (checks.length === 0) return { state: "waiting" };
-  const summary = `CI checks: ${ghSummary(checks)}`;
-  const listed = checks.map((c) => `${c.name} (${c.bucket})`).join(", ");
-  const failed = checks.filter((c) => GH_FAILED.has(c.bucket));
-  if (failed.length > 0) {
-    const pending = checks.filter((c) => !GH_FAILED.has(c.bucket) && !GH_OK.has(c.bucket)).length;
-    return {
-      state: "failed",
-      summary,
-      checks: listed,
-      ghChecks: checks,
-      pending,
-      failureDetail: `CI failed: ${failed.map((c) => c.name).join(", ")}; ${pending} still pending`,
-    };
-  }
-  return checks.every((c) => GH_OK.has(c.bucket))
-    ? { state: "green", summary, checks: listed, ghChecks: checks }
-    : { state: "waiting", summary, checks: listed, ghChecks: checks };
+  return classifyChecks(ghChecks(parsed.value));
 }
 
 /** GitLab can expose the commit on either pipeline object. */
@@ -257,9 +213,12 @@ function checksArgv(forge: ForgeKind, prRef: string): string[] {
     : ["glab", "mr", "view", prRef, "--output", "json"];
 }
 
-async function pollOnce(forge: ForgeKind, prRef: string, cwd: string): Promise<Poll> {
+async function pollOnce(forge: ForgeKind, prRef: string, cwd: string, commitSha?: string): Promise<Poll> {
   try {
     const r = await _ciWaitDeps.run(checksArgv(forge, prRef), { cwd });
+    if (forge === "github" && commitSha !== undefined && isNoPullRequest(r)) {
+      return await commitChecksPoll(_ciWaitDeps.run, commitSha, cwd);
+    }
     return forge === "github" ? await githubWaiting(classifyGh(r), prRef, cwd) : classifyGlab(r);
   } catch (err) {
     return { state: "error", detail: errorMessage(err) };
@@ -334,9 +293,10 @@ async function waitWithHeartbeat(
   }
 }
 
-/** Only a would-be green poll is held back; absent SHAs preserve the auxiliary read's fail-open contract. */
+/** Green *and* failed polls for another commit wait: a stale red must not end the wait (US-003); no SHA fails open. */
 function bindToHead(poll: Poll, expectedSha?: string): Poll {
-  if (poll.state !== "green" || !expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
+  if (poll.state !== "green" && poll.state !== "failed") return poll;
+  if (!expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
   return { ...poll, state: "waiting", mismatch: headMismatchDetail(poll.sha, expectedSha) };
 }
 
@@ -469,6 +429,8 @@ export async function waitForChecks(
     readonly pollMs: number;
     readonly signal?: AbortSignal;
     readonly expectedSha?: string;
+    /** On GitHub with an `expectedSha`, read the commit's check runs when the branch has no PR. */
+    readonly commitChecks?: boolean;
     /** Re-run starved jobs, at most `CI_STARVED_RERUN_LIMIT` rounds; absent means do not. */
     readonly rerunStarved?: boolean;
     /** How the wait reads and re-runs the failed checks of the head commit; absent means never (US-002). */
@@ -508,7 +470,10 @@ export async function waitForChecks(
   try {
     for (;;) {
       if (opts.signal?.aborted) return end({ outcome: "pending", detail: "aborted" });
-      const poll = bindToHead(await pollOnce(forge, prRef, opts.cwd), opts.expectedSha);
+      const poll = bindToHead(
+        await pollOnce(forge, prRef, opts.cwd, opts.commitChecks === true ? opts.expectedSha : undefined),
+        opts.expectedSha,
+      );
       history.note(poll);
       if ("summary" in poll) progress.note(poll.summary);
       const terminal = terminalPoll(poll) ?? history.onErrorLimit(errors.note(poll));
