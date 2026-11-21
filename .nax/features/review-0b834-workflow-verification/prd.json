@@ -3,7 +3,7 @@
   "feature": "review-0b834-workflow-verification",
   "branchName": "feat/review-0b834-workflow-verification",
   "createdAt": "2026-11-21T12:16:35.719Z",
-  "updatedAt": "2026-11-21T12:52:46.512Z",
+  "updatedAt": "2026-11-21T13:03:23.715Z",
   "userStories": [
     {
       "id": "US-001",
@@ -235,14 +235,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "The runtime change is additive push-only option wiring inside finalize.ts plus one guide sentence; existing publish fixtures exercise the real wait seam without adding new orchestration or dependencies."
+        "reasoning": "The runtime change is additive push-only option wiring inside finalize.ts plus one guide sentence; existing publish fixtures exercise the real wait seam without adding new orchestration or dependencies.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/workflow/finalize.ts",
@@ -260,7 +263,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1352c2b628f5b5f47cdbfb647c166bc1770f756a"
     },
     {
       "id": "US-006",
