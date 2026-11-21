@@ -10,12 +10,14 @@
  * Smart-runner has to work across package layouts and languages, so only test
  * classification is hard-filtered here. Everything else stays generic.
  */
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { DEFAULT_SEPARATED_TEST_DIRS, DEFAULT_TEST_FILE_PATTERNS, extractTestDirs } from "../test-runners/conventions";
 import { getGitRoot, gitWithTimeout } from "../utils/git";
 import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
+
+import { decodeChangedLines, keepUnderPrefix, projectPrefixUnderGitRoot, stripPrefix } from "./changed-paths";
 
 /**
  * Bun API wrappers — defined before functions to avoid circular type inference.
@@ -486,29 +488,18 @@ export async function getChangedNonTestFiles(
       getSafeLogger()?.warn("verification", "git diff failed — returning empty list", { ref, exitCode, stderr });
       return [];
     }
-    const lines = stdout.trim().split("\n").filter(Boolean);
+    const lines = decodeChangedLines(stdout);
     const effectiveRepoRoot = repoRoot ?? workdir;
     const packageDir = packagePrefix ? join(effectiveRepoRoot, packagePrefix) : undefined;
     const ignoreMatchers =
       naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(effectiveRepoRoot, packageDir));
 
-    // Issue #565: git diff paths are relative to the true git root, which may be an
-    // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
-    // regardless of where the git root sits relative to the project root.
-    let effectivePrefix = packagePrefix;
-    if (packagePrefix && repoRoot) {
-      const gitRoot = await getGitRootMemo(workdir);
-      const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
-      effectivePrefix = extraPrefix ? `${extraPrefix}/${packagePrefix}` : packagePrefix;
-    }
-
-    const scopedRaw = effectivePrefix ? lines.filter((f) => f.startsWith(`${effectivePrefix}/`)) : lines;
-    // Strip the extraPrefix so returned paths are relative to repoRoot (packagePrefix-relative).
-    const extraPrefix =
-      effectivePrefix && packagePrefix && effectivePrefix !== packagePrefix
-        ? effectivePrefix.slice(0, effectivePrefix.length - packagePrefix.length - 1)
-        : "";
-    const stripped = extraPrefix ? scopedRaw.map((f) => f.slice(`${extraPrefix}/`.length)) : scopedRaw;
+    // Issue #565: git diff paths are relative to the true git root, which may be an ancestor of repoRoot.
+    const extraPrefix = repoRoot ? projectPrefixUnderGitRoot(await getGitRootMemo(workdir), repoRoot) : "";
+    const inProject = keepUnderPrefix(lines, extraPrefix);
+    const scopedRaw = packagePrefix ? keepUnderPrefix(inProject, join(extraPrefix, packagePrefix)) : inProject;
+    // With a packagePrefix, returned paths are relative to repoRoot; without one they stay git-root relative.
+    const stripped = packagePrefix ? stripPrefix(scopedRaw, extraPrefix) : scopedRaw;
     const scoped = filterNaxInternalPaths(stripped, ignoreMatchers);
     if (testFileRegex.length === 0) return scoped;
     return scoped.filter((f) => !testFileRegex.some((re) => re.test(f)));
@@ -547,32 +538,26 @@ export async function getChangedTestFiles(
   if (testFileRegex.length === 0) return [];
   const ref = baseRef ?? "HEAD~1";
   try {
-    const { stdout, exitCode, stderr } = await _gitUtilDeps.gitWithTimeout(["diff", "--name-only", ref], workdir);
+    const { stdout, exitCode, stderr } = await _gitUtilDeps.gitWithTimeout(
+      ["diff", "--name-only", "--diff-filter=d", ref],
+      workdir,
+    );
     if (exitCode !== 0) {
       getSafeLogger()?.warn("verification", "git diff failed — returning empty list", { ref, exitCode, stderr });
       return [];
     }
 
-    const lines = stdout.trim().split("\n").filter(Boolean);
+    const lines = decodeChangedLines(stdout);
     const packageDir = packagePrefix ? join(repoRoot, packagePrefix) : undefined;
     const ignoreMatchers =
       naxIgnoreIndex?.getMatchers(packageDir) ?? (await resolveNaxIgnorePatterns(repoRoot, packageDir));
 
-    // Issue #565: git diff paths are relative to the true git root, which may be an
-    // ancestor of repoRoot. Compute the extra prefix so startsWith filtering works
-    // regardless of where the git root sits relative to the project root.
-    const gitRoot = await getGitRootMemo(workdir);
-    const extraPrefix = gitRoot && gitRoot !== repoRoot ? relative(gitRoot, repoRoot) : "";
-    const effectivePrefix = packagePrefix
-      ? extraPrefix
-        ? `${extraPrefix}/${packagePrefix}`
-        : packagePrefix
-      : undefined;
-
-    const scopedRaw = effectivePrefix ? lines.filter((f) => f.startsWith(`${effectivePrefix}/`)) : lines;
+    // Issue #565: git diff paths are relative to the true git root, which may be an ancestor of repoRoot.
+    const extraPrefix = projectPrefixUnderGitRoot(await getGitRootMemo(workdir), repoRoot);
+    const inProject = keepUnderPrefix(lines, extraPrefix);
+    const scopedRaw = packagePrefix ? keepUnderPrefix(inProject, join(extraPrefix, packagePrefix)) : inProject;
     const scoped = filterNaxInternalPaths(scopedRaw, ignoreMatchers);
-    // Strip the extraPrefix before constructing absolute paths so join(repoRoot, f) is correct.
-    const stripped = extraPrefix ? scoped.map((f) => f.slice(`${extraPrefix}/`.length)) : scoped;
+    const stripped = stripPrefix(scoped, extraPrefix);
     return stripped.filter((f) => testFileRegex.some((re) => re.test(f))).map((f) => join(repoRoot, f));
   } catch (error) {
     return warnDiffFailed(ref, error);

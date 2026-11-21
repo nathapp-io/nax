@@ -5,6 +5,7 @@ import { ledgerPath } from "@/advisor";
 import { NaxError } from "@/errors";
 import { buildBranchPackageReadingNote } from "@/prompts";
 import { ALWAYS_EXCLUDED, truncateDiff } from "@/review";
+import { unquotePorcelainPath } from "@/utils/porcelain";
 import type { MovedCommit } from "./publish-only";
 import { _workflowDeps } from "./step-context";
 
@@ -90,7 +91,10 @@ export async function changedFilesSince(projectDir: string, base: string): Promi
       storyId: "_run",
     });
   }
-  return stdout.split("\n").filter((line) => line !== "");
+  return stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map(unquotePorcelainPath);
 }
 
 /**

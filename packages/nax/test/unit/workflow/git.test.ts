@@ -49,6 +49,17 @@ describe("workflow git helpers", () => {
     await expect(changedFilesSince("/repo", "abc")).rejects.toThrow("bad revision");
   });
 
+  test("changedFilesSince decodes Git-quoted names", async () => {
+    const quoted = String.raw`"src/\346\224\257\346\211\225.ts"`;
+    const calls: string[][] = [];
+    _workflowDeps.git = async (args) => {
+      calls.push(args);
+      return { stdout: `${quoted}\nsrc/a.ts\n`, exitCode: 0 };
+    };
+    expect(await changedFilesSince("/repo", "abc")).toEqual(["src/支払.ts", "src/a.ts"]);
+    expect(calls[0]).toEqual(["diff", "--name-only", "abc..HEAD"]);
+  });
+
   test("package: commit list, stat and a -U10 diff; .nax excluded", async () => {
     const dir = await repo();
     const base = await readHead(dir);
