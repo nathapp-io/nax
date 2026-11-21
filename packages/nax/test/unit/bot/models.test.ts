@@ -156,3 +156,59 @@ describe("checkBotModelOverride", () => {
     expect(checkBotModelOverride(nativeTiers(tiers), name)).toStartWith(`invalid --model "${name}": No model entry`);
   });
 });
+
+describe("agent:@alias overrides", () => {
+  const SOL = "openai-codex/gpt-6.1-sol";
+  const aliased = (aliases: Record<string, string>): NaxConfig => ({
+    ...makeNaxConfig(),
+    agent: { ...makeNaxConfig().agent, modelAliases: aliases },
+  });
+
+  test("AC-1: a bare @name is refused naming <agent>:@sol", () => {
+    const err = (() => {
+      try {
+        parseModelOption("@sol");
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(NaxError);
+    expect((err as NaxError).code).toBe("BOT_MODEL_INVALID");
+    expect((err as NaxError).message).toContain("<agent>:@sol");
+  });
+  test("AC-2: native:@sol[high] parses unexpanded", () => {
+    expect(parseModelOption("native:@sol[high]")).toEqual({ agent: "native", model: "@sol[high]" });
+  });
+  test("AC-17: a tier with no colon and no @ is unchanged", () => {
+    expect(parseModelOption("balanced")).toBe("balanced");
+  });
+  test("AC-3: a known alias passes the check", () => {
+    expect(checkBotModelOverride(aliased({ sol: SOL }), { agent: "native", model: "@sol" })).toBeUndefined();
+  });
+  test("AC-6: an acp: alias is refused", () => {
+    expect(
+      checkBotModelOverride(aliased({ r: "acp:codex/gpt-6.1-terra" }), { agent: "native", model: "@r" }),
+    ).toContain("usable only from agent files");
+  });
+  test("an unknown alias is refused", () => {
+    expect(checkBotModelOverride(aliased({}), { agent: "native", model: "@nope" })).toContain(
+      'unknown model alias "nope"',
+    );
+  });
+  test("AC-7: botModel expands the override with its effort suffix", () => {
+    expect(botModel(aliased({ sol: SOL }), "review", { agent: "native", model: "@sol[high]" })).toEqual({
+      agent: "native",
+      model: `${SOL}[high]`,
+    });
+  });
+  test("AC-8: botModel expands for rulings", () => {
+    expect(botModel(aliased({ sol: SOL }), "rulings", { agent: "native", model: "@sol" })).toEqual({
+      agent: "native",
+      model: SOL,
+    });
+  });
+  test("AC-18: a literal override is returned deep-equal", () => {
+    const o = { agent: "native", model: SOL };
+    expect(botModel(aliased({ sol: SOL }), "review", o)).toEqual(o);
+  });
+});

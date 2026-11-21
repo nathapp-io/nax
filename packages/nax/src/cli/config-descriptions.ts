@@ -308,7 +308,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
   "agent.modelAliases":
-    'Map of a Claude Code model name to a nax model id or an ACP agent target, e.g. { sonnet: "anthropic/claude-sonnet-5-5", reviewer: "acp:codex/gpt-6.1-terra[high]" }. Each value is either "provider/model" or "acp:<agent>[/<model>]" (agent: claude, codex, cursor), with an optional [effort] suffix. An alias always wins over the models.native tier step. Default: {}.',
+    'Map of a Claude Code model name to a nax model id or an ACP agent target, e.g. { sonnet: "anthropic/claude-sonnet-5-5", reviewer: "acp:codex/gpt-6.1-terra[high]" }. Each value is either "provider/model" or "acp:<agent>[/<model>]" (agent: claude, codex, cursor), with an optional [effort] suffix. An alias always wins over the models.native tier step. Config model positions reference an alias as @name or @name[effort]; an alias is a model id, never a tier. Default: {}.',
   "agent.acpSubagents":
     'Settings for the ACP subagents a chat session may run, e.g. { profile: "review" }. Omit for the per-agent default; an alias pointing at an acp:<agent> target is what selects the subagent.',
   "agent.acpSubagents.profile":

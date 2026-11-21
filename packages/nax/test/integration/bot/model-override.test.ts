@@ -148,6 +148,12 @@ describe("runBotReview --model refusal", () => {
     expect(result).not.toHaveProperty("logPath");
   });
 
+  test("AC-4/5: an unknown @alias refuses before the runtime is created", async () => {
+    const result = await runBotReview({ ...reviewInput, model: { agent: "native", model: "@nope" } });
+    expect(result).toMatchObject({ outcome: "refused", reason: expect.stringContaining('unknown model alias "nope"') });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   test("US-003: a resolvable tier is not refused", async () => {
     await expect(runBotReview({ ...reviewInput, model: "balanced" })).rejects.toThrow(RUNTIME_SENTINEL);
     expect(create).toHaveBeenCalledTimes(1);
