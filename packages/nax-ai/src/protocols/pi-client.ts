@@ -47,6 +47,7 @@ import type {
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
+import { observeErrorResponses } from "./error-response-fetch.ts";
 import {
   classifyProviderError,
   classifyThrown,
@@ -317,6 +318,33 @@ function toolCallAt(partial: { content: readonly unknown[] }, index: number): { 
 }
 
 /**
+ * The input a finished tool call is reported with.
+ *
+ * nax sees only the argument text it accumulated from `toolcall_delta`, but a
+ * provider is free to send the whole argument object once, on the item that
+ * finishes the call, and emit no delta at all: OpenAI Responses replaces the
+ * streamed text at `output_item.done` without pushing a delta for the
+ * replacement. The accumulation then parses as `{}` while pi's own message
+ * already holds `{"city":"KL"}`, and reporting the accumulation loses the call
+ * (finding 3). So pi's completed object wins whenever it is trustworthy.
+ *
+ * `argumentsError` is pi's own verdict that the completed text was not a JSON
+ * object (`arguments` is `{}` in that case), so it keeps the accumulation —
+ * and so does a completed value that is not a plain object, which a
+ * hand-written backend could hand over. In both of those the accumulated
+ * deltas remain the only source of truth nax has.
+ */
+function completedToolInput(
+  toolCall: { readonly arguments: JsonObject; readonly argumentsError?: string },
+  accumulated: unknown,
+): unknown {
+  if (toolCall.argumentsError !== undefined) return accumulated;
+  const completed: unknown = toolCall.arguments;
+  if (typeof completed !== "object" || completed === null || Array.isArray(completed)) return accumulated;
+  return completed;
+}
+
+/**
  * The signature and redacted flag for the thinking block at a content index,
  * when the block at that index has that shape. `thinking_end`'s own event
  * carries no signature — pi accumulates it onto the block in `partial`
@@ -339,6 +367,47 @@ function thinkingBlockAt(
   };
 }
 
+/**
+ * A complete thinking block held back until the stream ends.
+ *
+ * `contentIndex` is kept because the terminal message is the only place a
+ * signature fit for a stateless replay appears: a provider may send the
+ * encrypted payload in the closing item rather than with the text, and pi-ai
+ * backfills it onto the message's block in `finalizeResponse` after
+ * `thinking_end` has already fired with a partial that lacked it (finding 7).
+ */
+interface HeldThinking {
+  readonly contentIndex: number;
+  readonly text: string;
+  readonly signature?: string;
+  readonly redacted?: boolean;
+}
+
+/**
+ * One held block, as the event to emit for it.
+ *
+ * `terminal` is the message a `done` event carries and is absent on every
+ * other end of the stream: an error, a drain, a truncated stream or a throw
+ * reports the values `thinking_end` held, because a failing stream never
+ * produced a terminal item worth trusting. When it is present, a field it
+ * carries replaces the held one and a field it omits keeps it — the text
+ * always comes from `thinking_end`, since that is the block whose boundaries
+ * the stream declared.
+ */
+function heldThinkingEvent(held: HeldThinking, terminal?: { content: readonly unknown[] }): ProtocolEvent {
+  const terminalMeta = terminal === undefined ? {} : thinkingBlockAt(terminal, held.contentIndex);
+  const signature = terminalMeta.signature ?? held.signature;
+  const redacted = terminalMeta.redacted ?? held.redacted;
+  return {
+    type: "thinking",
+    block: {
+      text: held.text,
+      ...(signature !== undefined ? { signature } : {}),
+      ...(redacted !== undefined ? { redacted } : {}),
+    },
+  };
+}
+
 export function createPiProtocol(name: string, deps: PiDeps): Protocol {
   return {
     name,
@@ -351,6 +420,25 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
       });
       const toolArgs = createToolArgAccumulator();
       let malformedToolArgs: Extract<ProtocolEvent, { type: "error" }> | undefined;
+      // Complete thinking blocks, in the order their thinking_end events
+      // arrived. Held rather than emitted there so the terminal message can
+      // supply the signature a stateless replay needs.
+      const heldThinking: HeldThinking[] = [];
+
+      /**
+       * Emits every held block and forgets them. Absent `terminal` is the
+       * "the stream did not end well" case, which keeps the thinking_end values.
+       *
+       * The abort check lives here rather than at each call site: a request the
+       * caller cancelled must not hand back a thinking block on ANY ending —
+       * including a `done` pi-ai delivers after the abort — and one guard
+       * forgotten at one call site is one leaked block (finding F1). The held
+       * blocks are dropped either way, so a later path cannot resurrect them.
+       */
+      const flushThinking = (terminal?: { content: readonly unknown[] }): ProtocolEvent[] => {
+        const held = heldThinking.splice(0);
+        return req.signal?.aborted ? [] : held.map((block) => heldThinkingEvent(block, terminal));
+      };
 
       try {
         for await (const event of events) {
@@ -359,12 +447,16 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
           // after the malformed call except its final usage and one error.
           if (malformedToolArgs !== undefined) {
             if (event.type === "done") {
+              // Held values, never the terminal message's: the response is not
+              // replayable with a tool call whose arguments did not parse.
+              yield* flushThinking();
               yield { type: "usage", usage: toTokenUsage(event.message.usage) };
               yield malformedToolArgs;
               return;
             }
             if (event.type === "error") {
               const usage = toTokenUsage(event.error.usage);
+              yield* flushThinking();
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
               if (req.signal?.aborted) throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
               yield malformedToolArgs;
@@ -383,18 +475,22 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               break;
 
             case "thinking_end": {
-              // Losing thinking text is worse than losing a signature: even
-              // when the block at this content index is not the shape we
-              // expect, still emit the text `thinking_end` itself carries.
+              // Held, not emitted. The signature a stateless replay needs
+              // (OpenAI Responses' encrypted reasoning payload) can arrive only
+              // with the item that closes the response, and pi-ai backfills it
+              // onto the terminal message's block after this event fired — so
+              // the partial read here is incomplete by construction, and the
+              // emittable block exists only once the stream ends. The text is
+              // taken from the event regardless: losing it is worse than
+              // losing a signature, even when the block at this content index
+              // is not the shape we expect.
               const { signature, redacted } = thinkingBlockAt(event.partial, event.contentIndex);
-              yield {
-                type: "thinking",
-                block: {
-                  text: event.content,
-                  ...(signature !== undefined ? { signature } : {}),
-                  ...(redacted !== undefined ? { redacted } : {}),
-                },
-              };
+              heldThinking.push({
+                contentIndex: event.contentIndex,
+                text: event.content,
+                ...(signature !== undefined ? { signature } : {}),
+                ...(redacted !== undefined ? { redacted } : {}),
+              });
               break;
             }
 
@@ -426,12 +522,23 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
                 };
                 break;
               }
-              yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
+              yield {
+                type: "tool-call",
+                call: {
+                  id: event.toolCall.id,
+                  name: event.toolCall.name,
+                  input: completedToolInput(event.toolCall, input),
+                },
+              };
               break;
             }
 
             case "done": {
               const stopReason = STOP_REASONS[event.reason];
+              // The terminal message is the only place the signature fit for a
+              // stateless replay appears. A request the caller aborted gets no
+              // block even here, which flushThinking enforces.
+              yield* flushThinking(event.message);
               yield { type: "usage", usage: toTokenUsage(event.message.usage) };
               if (stopReason === undefined) {
                 yield {
@@ -461,6 +568,11 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               const status = observed?.status ?? statusFromSdkMessage(event.error.errorMessage);
               const retryAfter = parseRetryAfter(observed?.headers);
               const usage = toTokenUsage(event.error.usage);
+              // Held blocks go out first, and with their thinking_end values:
+              // a failed stream never delivered a terminal item, so there is
+              // nothing newer to read. `flushThinking` withholds them entirely
+              // on an aborted request.
+              yield* flushThinking();
               // A failed request that consumed tokens still bills for them.
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
               // pi-ai delivers the CALLER's abort as an error event ("Request was aborted"), not a
@@ -487,10 +599,13 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               // start, text_start, text_end, thinking_start and toolcall_start
               // carry nothing our vocabulary expresses: content is already
               // delivered by the deltas (and, for thinking, by "thinking_end"
-              // above).
+              // above once the stream ends).
               break;
           }
         }
+        // The stream ended with no terminal event: hand over what the
+        // thinking_end events already gave us rather than dropping it.
+        yield* flushThinking();
         if (malformedToolArgs !== undefined) yield malformedToolArgs;
       } catch (cause) {
         // A stream failure with no HTTP response (connection reset, DNS
@@ -501,6 +616,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
         // relabelled as a transport fault: retryTransportFaults, and any
         // consumer-level abort handling, both need to see abort as abort.
         if (req.signal?.aborted) throw cause;
+        yield* flushThinking();
         if (malformedToolArgs !== undefined) yield malformedToolArgs;
         else yield { type: "error", error: classifyThrown(cause) };
       }
@@ -1139,6 +1255,15 @@ export function createPiDeps(
         // provider that actually needs one.
         ...(mergedHeaders !== undefined ? { headers: mergedHeaders } : {}),
         onResponse: (response) => onResponse({ status: response.status, headers: response.headers }),
+        // pi-ai calls the hook above only for a response it went on to consume,
+        // so an HTTP error never reached it: the failure arrived as a message
+        // with the status embedded and no headers at all, and finding 8's
+        // `Retry-After: 41` was dropped. Watching fetch is the only place the
+        // error response is visible, and reporting it through the same callback
+        // means the existing `error` case needs no second source to consult.
+        // pi-ai's own retry, when it succeeds, still overwrites what a failed
+        // attempt recorded — its response is the later, real one.
+        fetch: observeErrorResponses(onResponse),
       });
     },
   };
