@@ -15,7 +15,8 @@ import type { StoredCredential } from "../../src/types.ts";
  */
 const io = vi.hoisted(() => ({
   delayMs: 0,
-  lockCalls: 0,
+  /** Called when lock() is entered, so a test can await it instead of polling. */
+  onLock: undefined as (() => void) | undefined,
   /** When set, lock() hands out this release function instead of taking the real lock. */
   gate: undefined as Promise<() => Promise<void>> | undefined,
 }));
@@ -25,7 +26,7 @@ vi.mock("proper-lockfile", async (importOriginal) => {
   return {
     default: {
       lock: async (file: string, options?: LockOptions) => {
-        io.lockCalls += 1;
+        io.onLock?.();
         const delay = io.delayMs;
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
         const gate = io.gate;
@@ -76,9 +77,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-/** Yields to the real event loop for one turn. */
-function tick(): Promise<void> {
-  return new Promise<void>((resolve) => setImmediate(resolve));
+/**
+ * Drains the promise hand-offs a settled lock starts. Only microtasks are
+ * involved, so this needs no event-loop turn — and deliberately does not use
+ * one, which on a loaded runner can arrive before the store's file I/O does.
+ */
+async function flush(): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
 }
 
 /** Resolves after `ms`, so a release can be scheduled without awaiting it. */
@@ -197,11 +202,12 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
     const path = tempPath();
     const store = createFileCredentialStore({ path, lockTimeoutMs: 20 });
     const handed = deferred<() => Promise<void>>();
+    const attempted = deferred<void>();
     let releaseCalled = false;
     let cleanupDone = false;
     let callbackRan = false;
     let outcome: Outcome | undefined;
-    io.lockCalls = 0;
+    io.onLock = () => attempted.resolve();
     io.gate = handed.promise;
     try {
       // Only the clock and the deadline timer are faked: the store's real fs
@@ -215,8 +221,8 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
       ).then((settled) => {
         outcome = settled;
       });
-      for (let turns = 0; io.lockCalls === 0 && turns < 100; turns += 1) await tick();
-      expect(io.lockCalls).toBe(1);
+      // The file is created first, so this waits on the attempt, not on a guess.
+      await attempted.promise;
 
       // The stall: past the deadline with its timer unrun, so lock() answering
       // now is seen by the post-acquisition check, not by the timer.
@@ -230,7 +236,7 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
           }, 200);
         });
       });
-      for (let turns = 0; turns < 5; turns += 1) await tick();
+      await flush();
 
       // Answered at once rather than whenever the cleanup happens to finish.
       expect(outcome?.status).toBe("rejected");
@@ -242,10 +248,11 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
       expect(cleanupDone).toBe(false);
 
       vi.advanceTimersByTime(200);
-      for (let turns = 0; turns < 5; turns += 1) await tick();
+      await flush();
       expect(cleanupDone).toBe(true);
     } finally {
       io.gate = undefined;
+      io.onLock = undefined;
       vi.useRealTimers();
     }
     expect(await createFileCredentialStore({ path }).read("b")).toBeUndefined();
