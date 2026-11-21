@@ -158,19 +158,32 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
    * count, so `lockTimeoutMs` used to bound each wait instead of the total: a
    * caller asking for 200 ms could wait over a second, and a lock released
    * after the deadline could still be taken. Here each attempt is a single
-   * non-retrying lock() call, and the deadline is checked both before sleeping
-   * and again after it, so a late release cannot be picked up.
+   * non-retrying lock() call, and the deadline is checked before sleeping,
+   * after sleeping, and again when an attempt succeeds — the last one because
+   * lock() is filesystem I/O and can answer after the whole budget has gone.
+   * Sleeping is the cheap part of the wait; the acquiring call is the part that
+   * can quietly outlast the deadline.
    */
   async function acquire(): Promise<() => Promise<void>> {
     const deadline = Date.now() + lockTimeoutMs;
     let backoff = ACQUIRE_BACKOFF_START_MS;
     let lastError: unknown;
     for (;;) {
+      let release: (() => Promise<void>) | undefined;
       try {
-        return await lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
+        release = await lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
         lastError = error;
+      }
+      if (release !== undefined) {
+        // A lock that arrives after the deadline is not one this caller asked
+        // to wait for, and the caller's callback must not run under it. It is
+        // released rather than kept, so a late acquisition does not leave the
+        // file locked for everyone else.
+        if (Date.now() < deadline) return release;
+        await release();
+        throw lockTimeout(lastError);
       }
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw lockTimeout(lastError);

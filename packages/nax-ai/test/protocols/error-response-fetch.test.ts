@@ -65,6 +65,40 @@ describe("observeErrorResponses", () => {
     expect(observed.headers["retry-after"]).toBe("41");
   });
 
+  it("keeps a header named __proto__ as an entry of the reported record", async () => {
+    // `__proto__` is a valid header name, and assigning it to a plain object
+    // invokes the inherited setter instead of creating an own entry — the
+    // header would silently vanish from a record meant to be complete.
+    const { seen, onResponse } = recording();
+    const wrapper = observeErrorResponses(onResponse);
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(null, {
+          status: 429,
+          // The pair form, because a `__proto__` key in an object literal sets
+          // the prototype of the literal rather than becoming a header.
+          headers: [
+            ["retry-after", "41"],
+            ["__proto__", "kept"],
+          ],
+        }),
+    );
+
+    await wrapper(URL_UNDER_TEST);
+
+    const headers = seen[0]?.headers;
+    if (headers === undefined) throw new Error("onResponse was not called");
+    expect(Object.hasOwn(headers, "__proto__")).toBe(true);
+    // Read through a descriptor: `headers.__proto__` (or its computed form) is
+    // the deprecated accessor, which would answer with the prototype rather
+    // than with the header of that name.
+    expect(Object.getOwnPropertyDescriptor(headers, "__proto__")?.value).toBe("kept");
+    // Still a plain record, and still carrying the header the classifier reads.
+    expect(Object.getPrototypeOf(headers)).toBe(Object.prototype);
+    expect(headers["retry-after"]).toBe("41");
+  });
+
   it("AC-3 forwards exactly the URL and init it was called with to the fetch stub", async () => {
     const { seen, onResponse } = recording();
     const wrapper = observeErrorResponses(onResponse);

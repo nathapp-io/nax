@@ -1,9 +1,34 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import type { LockOptions } from "proper-lockfile";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFileCredentialStore } from "../../src/credentials/file-store.ts";
 import type { StoredCredential } from "../../src/types.ts";
+
+/**
+ * A `lock()` call is filesystem I/O, so it can settle after the caller's whole
+ * budget has gone — a lock released at 80 ms is then acquired by an attempt
+ * that started before the deadline. Retry sleeps alone cannot reproduce that,
+ * so the acquisition call is slowed here. `io.delayMs` is 0 (its default) for
+ * every other test in the file, which then drives the real proper-lockfile.
+ */
+const io = vi.hoisted(() => ({ delayMs: 0 }));
+
+vi.mock("proper-lockfile", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("proper-lockfile")>();
+  return {
+    default: {
+      lock: async (file: string, options?: LockOptions) => {
+        const delay = io.delayMs;
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        return actual.lock(file, options);
+      },
+      unlock: actual.unlock,
+      check: actual.check,
+    },
+  };
+});
 
 /**
  * lockTimeoutMs is one acquisition deadline, not a per-attempt maximum. The old
@@ -95,6 +120,49 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
     expect(outcome?.status).toBe("rejected");
     expect(rejectionOf(outcome)).toContain(TIMED_OUT);
     expect(callbackRan).toBe(false);
+  });
+
+  it("gives a lock back when its in-flight acquisition settles after the deadline", async () => {
+    // The window the retry sleep cannot cover: every lock() call here takes
+    // 80 ms, four times the whole budget, so the attempt that finally sees the
+    // released lock FINISHES long after the deadline instead of starting a
+    // sleep before it. That attempt must not hand the lock to the caller.
+    const path = tempPath();
+    const store = createFileCredentialStore({ path, lockTimeoutMs: 20 });
+    const holding = barrier();
+    const release = barrier();
+    const first = holdLock(store, holding.resolve, release.promise);
+    let outcome: Outcome | undefined;
+    let callbackRan = false;
+    try {
+      await holding.promise;
+      io.delayMs = 80;
+      // Released 10 ms in: inside the first attempt's I/O, not after it.
+      const lateRelease = schedule(10, release.resolve);
+      try {
+        outcome = await settle(
+          store.modify("b", async () => {
+            callbackRan = true;
+            return B;
+          }),
+        );
+      } finally {
+        clearTimeout(lateRelease);
+        io.delayMs = 0;
+      }
+    } finally {
+      release.resolve();
+      await settle(first);
+    }
+    expect(outcome?.status).toBe("rejected");
+    expect(rejectionOf(outcome)).toContain(TIMED_OUT);
+    expect(callbackRan).toBe(false);
+    // Handed back, not leaked: a lock taken after the deadline and never
+    // released would block every writer until it went stale.
+    await expect(createFileCredentialStore({ path, lockTimeoutMs: 1000 }).modify("c", async () => B)).resolves.toEqual(
+      B,
+    );
+    expect(await createFileCredentialStore({ path }).read("b")).toBeUndefined();
   });
 
   it("gives up less than twice the deadline after it started, however long the holder keeps the lock", async () => {

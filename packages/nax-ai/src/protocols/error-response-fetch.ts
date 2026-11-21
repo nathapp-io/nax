@@ -34,13 +34,15 @@ const FIRST_ERROR_STATUS = 400;
  * pushed onto the classifier: this is the module that knows a `Response` was
  * the source. Names are lowercased by `Headers` itself, and a name repeated on
  * the wire is joined with ", ", which is what the classifier expects.
+ *
+ * `Object.fromEntries`, not a `record[name] = value` loop: `__proto__` is a
+ * valid header name, and assigning it invokes the inherited setter instead of
+ * creating an own entry, which would silently drop that header from a record
+ * meant to hold every one of them. `fromEntries` defines own properties, so a
+ * `__proto__` header is kept and the prototype stays `Object.prototype`.
  */
 function toHeadersRecord(headers: Headers): Readonly<Record<string, string>> {
-  const record: Record<string, string> = {};
-  headers.forEach((value, name) => {
-    record[name] = value;
-  });
-  return record;
+  return Object.fromEntries(headers);
 }
 
 /**
