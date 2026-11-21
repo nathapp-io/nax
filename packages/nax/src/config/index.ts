@@ -19,6 +19,7 @@ export {
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
 export { mergePackageConfig } from "./merge";
+export { expandModelAliasRef, MODEL_ALIAS_PREFIX } from "./model-alias-expand";
 export { deepMergeConfig } from "./merger";
 export { loadConfigForPackage } from "./package-config";
 export { packageConfigCache } from "./package-config-cache";
