@@ -3,7 +3,7 @@
   "feature": "review-0b834-agent-acp",
   "branchName": "feat/review-0b834-agent-acp",
   "createdAt": "2026-11-21T07:25:26.087Z",
-  "updatedAt": "2026-11-21T07:58:33.208Z",
+  "updatedAt": "2026-11-21T08:08:01.699Z",
   "userStories": [
     {
       "id": "US-001",
@@ -161,14 +161,17 @@
         "persistence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Concurrent session lifecycle, lock-release ownership, transcript replay and credential-await interleavings span registry modules. Session/credential involvement requires strict three-session test isolation regardless of complexity."
+        "reasoning": "Concurrent session lifecycle, lock-release ownership, transcript replay and credential-await interleavings span registry modules. Session/credential involvement requires strict three-session test isolation regardless of complexity.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/server/registry.ts",
@@ -187,7 +190,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "190624879e25857768946d7979090a8eceb8f572"
     },
     {
       "id": "US-004",
