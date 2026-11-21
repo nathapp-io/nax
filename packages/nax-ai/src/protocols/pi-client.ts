@@ -427,9 +427,17 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
       /**
        * Emits every held block and forgets them. Absent `terminal` is the
        * "the stream did not end well" case, which keeps the thinking_end values.
+       *
+       * The abort check lives here rather than at each call site: a request the
+       * caller cancelled must not hand back a thinking block on ANY ending —
+       * including a `done` pi-ai delivers after the abort — and one guard
+       * forgotten at one call site is one leaked block (finding F1). The held
+       * blocks are dropped either way, so a later path cannot resurrect them.
        */
-      const flushThinking = (terminal?: { content: readonly unknown[] }): ProtocolEvent[] =>
-        heldThinking.splice(0).map((held) => heldThinkingEvent(held, terminal));
+      const flushThinking = (terminal?: { content: readonly unknown[] }): ProtocolEvent[] => {
+        const held = heldThinking.splice(0);
+        return req.signal?.aborted ? [] : held.map((block) => heldThinkingEvent(block, terminal));
+      };
 
       try {
         for await (const event of events) {
@@ -438,6 +446,8 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
           // after the malformed call except its final usage and one error.
           if (malformedToolArgs !== undefined) {
             if (event.type === "done") {
+              // Held values, never the terminal message's: the response is not
+              // replayable with a tool call whose arguments did not parse.
               yield* flushThinking();
               yield { type: "usage", usage: toTokenUsage(event.message.usage) };
               yield malformedToolArgs;
@@ -445,9 +455,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             }
             if (event.type === "error") {
               const usage = toTokenUsage(event.error.usage);
-              // Held blocks are not emitted on an aborted request: the caller
-              // asked for this response to stop, so it must not receive one.
-              if (!req.signal?.aborted) yield* flushThinking();
+              yield* flushThinking();
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
               if (req.signal?.aborted) throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
               yield malformedToolArgs;
@@ -526,6 +534,9 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
 
             case "done": {
               const stopReason = STOP_REASONS[event.reason];
+              // The terminal message is the only place the signature fit for a
+              // stateless replay appears. A request the caller aborted gets no
+              // block even here, which flushThinking enforces.
               yield* flushThinking(event.message);
               yield { type: "usage", usage: toTokenUsage(event.message.usage) };
               if (stopReason === undefined) {
@@ -558,9 +569,9 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               const usage = toTokenUsage(event.error.usage);
               // Held blocks go out first, and with their thinking_end values:
               // a failed stream never delivered a terminal item, so there is
-              // nothing newer to read. An aborted request emits none at all —
-              // the caller asked for the response to stop.
-              if (!req.signal?.aborted) yield* flushThinking();
+              // nothing newer to read. `flushThinking` withholds them entirely
+              // on an aborted request.
+              yield* flushThinking();
               // A failed request that consumed tokens still bills for them.
               if (totalTokens(usage) > 0) yield { type: "usage", usage };
               // pi-ai delivers the CALLER's abort as an error event ("Request was aborted"), not a

@@ -371,6 +371,42 @@ describe("createPiProtocol held thinking on an aborted request", () => {
 
     expect(thinkingBlocks(seen)).toEqual([]);
   });
+
+  it("F1 yields no held thinking block when an aborted request still ends on done", async () => {
+    const controller = new AbortController();
+    controller.abort(new DOMException("Aborted", "AbortError"));
+
+    const { seen } = await drainSettled([thinkingEnd(0, "hmm", EARLY), doneWith()], {
+      signal: controller.signal,
+    });
+
+    expect(thinkingBlocks(seen)).toEqual([]);
+    // The terminal events are untouched: only the held block is withheld.
+    expect(eventTypes(seen)).toEqual(["usage", "done"]);
+  });
+
+  it("F1 yields no held thinking block when the malformed drain ends on done after an abort", async () => {
+    const controller = new AbortController();
+    controller.abort(new DOMException("Aborted", "AbortError"));
+    const partial = partialWithCall();
+
+    const { seen } = await drainSettled([thinkingEnd(0, "hmm", partial), ...malformedCall(partial), doneWith()], {
+      signal: controller.signal,
+    });
+
+    expect(thinkingBlocks(seen)).toEqual([]);
+    expect(eventTypes(seen)).toEqual(["tool-call-partial", "usage", "error"]);
+  });
+
+  it("F1 yields no held thinking block when an aborted request's stream ends with no terminal event", async () => {
+    const controller = new AbortController();
+    controller.abort(new DOMException("Aborted", "AbortError"));
+
+    const { seen } = await drainSettled([thinkingEnd(0, "hmm", EARLY)], { signal: controller.signal });
+
+    expect(thinkingBlocks(seen)).toEqual([]);
+    expect(seen).toEqual([]);
+  });
 });
 
 /** A fetch stand-in that streams `frames` as SSE, never two frames in one macrotask. */
