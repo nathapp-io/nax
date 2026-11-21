@@ -3,7 +3,7 @@
   "feature": "review-0b834-workflow-verification",
   "branchName": "feat/review-0b834-workflow-verification",
   "createdAt": "2026-11-21T12:16:35.719Z",
-  "updatedAt": "2026-11-21T12:37:18.818Z",
+  "updatedAt": "2026-11-21T12:47:21.762Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,14 +125,17 @@
         "gitlab"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One predicate change reuses existing SHA extraction, mismatch detail and deadline handling; focused regression cases pin backward compatibility."
+        "reasoning": "One predicate change reuses existing SHA extraction, mismatch detail and deadline handling; focused regression cases pin backward compatibility.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-wait.ts",
@@ -143,7 +146,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5696c1ebbb00c4e0410d0876b00b7616e63f3029"
     },
     {
       "id": "US-004",
