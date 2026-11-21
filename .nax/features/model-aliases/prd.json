@@ -3,7 +3,7 @@
   "feature": "model-aliases",
   "branchName": "feat/model-aliases",
   "createdAt": "2026-11-21T05:11:38.326Z",
-  "updatedAt": "2026-11-21T05:46:00.466Z",
+  "updatedAt": "2026-11-21T05:53:22.199Z",
   "userStories": [
     {
       "id": "US-001",
@@ -222,14 +222,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three existing production modules consume the finished helper; bot already has a refusal catch and replay already has try/finally, so normalization and local harness instrumentation fit established seams without a new abstraction or security-policy change."
+        "reasoning": "Three existing production modules consume the finished helper; bot already has a refusal catch and replay already has try/finally, so normalization and local harness instrumentation fit established seams without a new abstraction or security-policy change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/models.ts",
@@ -266,7 +269,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9e74eaa3bf8c1f6e4e81c55e87712abbaf606730"
     },
     {
       "id": "US-005",
