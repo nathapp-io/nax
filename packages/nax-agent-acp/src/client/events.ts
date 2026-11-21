@@ -126,6 +126,9 @@ const RECEIPT_KINDS: ReadonlySet<string> = new Set([
   "plan",
 ]);
 
+/** Joins two assistant text runs split by tool calls, so progress text never glues to the answer (#3011). */
+const RUN_SEPARATOR = "\n\n";
+
 export function createTurnCollector(emit: TurnEventSink | undefined, options: CollectorOptions = {}): TurnCollector {
   const secrets = options.secrets ?? [];
   const meter = options.meter ?? createCostMeter();
@@ -137,6 +140,10 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
     send(event);
   }, secrets);
   const parts: string[] = [];
+  /** A new tool call ended the current text run; the next run starts after a separator (#3011). */
+  let runEnded = false;
+  let hasText = false;
+  const seenToolCalls = new Set<string>();
   let done = false;
   let spend: TurnSpend | undefined;
   let received = false;
@@ -151,18 +158,33 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
       // The backend's bookkeeping must not break the turn.
     }
   };
+  const onText = (text: string): void => {
+    if (text !== "" && runEnded) {
+      runEnded = false;
+      parts.push(RUN_SEPARATOR);
+      deltas.push("text_delta", RUN_SEPARATOR);
+    }
+    if (text !== "") hasText = true;
+    parts.push(text);
+    deltas.push("text_delta", text);
+  };
+  // Only a call not seen before ends a run: a late update of a known call can land mid-sentence.
+  const noteToolCall = (toolCallId: string): void => {
+    if (seenToolCalls.has(toolCallId)) return;
+    seenToolCalls.add(toolCallId);
+    if (hasText) runEnded = true;
+  };
   const route = (update: SessionUpdate): void => {
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
-        if (update.content.type !== "text") return;
-        parts.push(update.content.text);
-        deltas.push("text_delta", update.content.text);
+        if (update.content.type === "text") onText(update.content.text);
         return;
       case "agent_thought_chunk":
         if (update.content.type === "text") deltas.push("thinking_delta", update.content.text);
         return;
       case "tool_call":
       case "tool_call_update":
+        noteToolCall(update.toolCallId);
         tools.onUpdate(update);
         return;
       case "usage_update":
