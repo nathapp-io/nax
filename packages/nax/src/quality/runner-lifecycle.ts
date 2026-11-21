@@ -38,7 +38,25 @@ export type TerminalEvent =
   | { readonly kind: "exit"; readonly exitCode: number }
   | { readonly kind: "deadline" }
   | { readonly kind: "stalled"; readonly reason: GateStopReason }
+  | { readonly kind: "aborted" }
   | { readonly kind: "error"; readonly error: unknown };
+
+/** The notice a command that was cancelled by its abort signal carries. */
+export function cancelledOutput(commandName: string): string {
+  return `[nax] ${commandName} cancelled`;
+}
+
+/**
+ * Settle the latch with `aborted` when `signal` fires. Returns the disposer
+ * that removes the listener, so a later abort touches nothing.
+ */
+export function watchAbort(signal: AbortSignal | undefined, latch: { settle(event: TerminalEvent): void }): () => void {
+  if (signal === undefined) return () => {};
+  const onAbort = () => latch.settle({ kind: "aborted" });
+  if (signal.aborted) onAbort();
+  else signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
 
 export interface TerminalLatch {
   readonly terminal: Promise<TerminalEvent>;

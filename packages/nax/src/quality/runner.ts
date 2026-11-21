@@ -29,12 +29,14 @@ import { withAgentOutputEnv } from "../verification/executor";
 import { aggregateResults } from "./aggregate";
 import { qualityLogsAreQuiet } from "./log-scope";
 import {
+  cancelledOutput,
   createTerminalLatch,
   stopLogFields,
   stopProcessGroup,
   stoppedOutput,
   type TerminalLatch,
   timedOutOutput,
+  watchAbort,
 } from "./runner-lifecycle";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
@@ -129,6 +131,8 @@ export interface QualityCommandOptions {
    * so an agent-tool iteration loop keeps its own behaviour.
    */
   stallDetection?: Partial<GateStallPolicy>;
+  /** Cancels the command: nothing is spawned once aborted, and a live child's group is stopped. */
+  signal?: AbortSignal;
 }
 
 export interface QualityCommandResult {
@@ -388,7 +392,10 @@ async function runSingleCommand(
     // (forbidden-patterns-source.md, the clearTimeout exception).
     const killTimer = _qualityRunnerDeps.setTimeout(() => latch.settle({ kind: "deadline" }), timeoutMs);
 
+    const disposeAbort = watchAbort(opts.signal, latch);
+
     const terminal = await latch.terminal;
+    disposeAbort();
     // Settlement disarms everything this invocation armed — the wall deadline, the
     // silence deadline and every detector callback — so nothing late can change
     // the outcome and no timer outlives the call.
@@ -446,6 +453,10 @@ async function runSingleCommand(
 
     const durationMs = Date.now() - startTime;
     const partial = [stdout, stderr].join("\n");
+    if (terminal.kind === "aborted") {
+      logger?.warn("quality", `${commandName} cancelled`, { storyId, commandName, command, workdir, durationMs });
+      return cancelledResult(commandName, command, durationMs);
+    }
     const output =
       terminal.kind === "stalled"
         ? stoppedOutput({ commandName, reason: terminal.reason, partial, origin })
@@ -475,6 +486,27 @@ async function runSingleCommand(
   }
 }
 
+/** The result of a command cancelled by its abort signal, before or while it ran. */
+function cancelledResult(commandName: string, command: string, durationMs: number): QualityCommandResult {
+  return {
+    commandName,
+    command,
+    success: false,
+    exitCode: -1,
+    output: cancelledOutput(commandName),
+    durationMs,
+    timedOut: false,
+  };
+}
+
+/** Run one step, spawning nothing when the signal has already aborted. */
+async function runStep(
+  opts: Omit<QualityCommandOptions, "command"> & { command: string },
+): Promise<QualityCommandResult> {
+  if (opts.signal?.aborted && opts.command.trim() !== "") return cancelledResult(opts.commandName, opts.command, 0);
+  return await runSingleCommand(opts);
+}
+
 /**
  * Run a quality command, dispatching to every entry of a list-valued spec
  * (nax#1990). A string spec runs once. A list spec runs each entry
@@ -490,7 +522,7 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
   await assertTrusted(opts.workdir, "quality-command");
   const { command } = opts;
   if (typeof command === "string") {
-    return await runSingleCommand({ ...opts, command });
+    return await runStep({ ...opts, command });
   }
   const steps = normalizeCommandSpec(opts.command);
 
@@ -507,7 +539,7 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
   }
 
   if (steps.length === 1 && steps[0] !== undefined) {
-    return await runSingleCommand({ ...opts, command: steps[0] });
+    return await runStep({ ...opts, command: steps[0] });
   }
 
   const results: QualityCommandResult[] = [];
@@ -515,7 +547,9 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     // Sequential and unconditional: the whole point is that a failing step
     // does not stop the ones after it (nax#1990). Sequential rather than
     // parallel because these share a working directory and a build cache.
-    results.push(await runSingleCommand({ ...opts, command: step }));
+    // runStep returns the cancelled result without spawning once the signal
+    // has aborted, so entries after the abort never start.
+    results.push(await runStep({ ...opts, command: step }));
   }
   return aggregateResults(opts.commandName, results);
 }
