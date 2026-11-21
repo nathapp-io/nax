@@ -37,6 +37,11 @@ describe("expandModelAliasRef", () => {
     expect(expandModelAliasRef("@sol", aliases, "p")).toBe("openai-codex/gpt-6.1-sol[medium]");
   });
 
+  test("accepts a model id holding further slashes", () => {
+    expect(expandModelAliasRef("@m", { m: "provider/org/model" }, "p")).toBe("provider/org/model");
+    expect(expandModelAliasRef("@m[high]", { m: "provider/org/model[low]" }, "p")).toBe("provider/org/model[high]");
+  });
+
   test("AC-5 matches keys as trimmed", () => {
     expect(expandModelAliasRef("@sol", { " sol ": "a/b" }, "p")).toBe("a/b");
   });
