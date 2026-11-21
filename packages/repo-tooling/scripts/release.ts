@@ -53,6 +53,52 @@ function rejectExistingTag(tag: string): void {
   if (git("tag", "--list", tag)) throw new Error(`Tag ${tag} already exists`);
 }
 
+/**
+ * The commit a local tag points at, or undefined when the tag does not exist.
+ * `git tag --list` exits 0 for a miss, so only an existing tag is probed further.
+ */
+function localTagCommit(tag: string): string | undefined {
+  if (git("tag", "--list", tag) === "") return undefined;
+  return git("rev-list", "-n", "1", tag);
+}
+
+/**
+ * origin's commits for `refs/heads/main` and `refs/tags/<tag>`, by exact ref name.
+ * ls-remote patterns match ref-name suffixes, so the output is keyed by the whole ref.
+ */
+function remoteRefs(tag: string): Map<string, string> {
+  const refs = new Map<string, string>();
+  for (const line of git("ls-remote", "origin", "refs/heads/main", `refs/tags/${tag}`).split("\n")) {
+    const [sha, ref] = line.split("\t");
+    if (sha && ref) refs.set(ref, sha);
+  }
+  return refs;
+}
+
+/**
+ * Whether a local tag already sits at `head`. A tag anywhere else is refused, so the retry path
+ * can only ever deliver the commit the remote check approves.
+ */
+function localTagAtHead(tag: string, head: string): boolean {
+  const existing = localTagCommit(tag);
+  if (existing !== undefined && existing !== head) {
+    throw new Error(`Tag ${tag} already exists at ${existing}, not at HEAD`);
+  }
+  return existing !== undefined;
+}
+
+/** Refuses to deliver a tag origin already holds, or a HEAD origin/main does not have. */
+function rejectStaleOrigin(tag: string, head: string): void {
+  const refs = remoteRefs(tag);
+  if (refs.has(`refs/tags/${tag}`)) throw new Error(`Tag ${tag} already exists on origin`);
+  const remote = refs.get("refs/heads/main");
+  if (remote !== head) {
+    throw new Error(
+      `Local main ${head} does not match origin/main ${remote ?? "(no such branch)"}; pull or push main before tagging`,
+    );
+  }
+}
+
 async function confirm(message: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolveAnswer) => {
@@ -174,7 +220,8 @@ async function tagRelease(dryRun: boolean): Promise<void> {
   requireCleanMain();
   const version = sharedVersion(readManifests(REPO));
   const tag = `v${version}`;
-  rejectExistingTag(tag);
+  const head = git("rev-parse", "HEAD");
+  localTagAtHead(tag, head);
   console.log(`${tag}: publishes ${NAMES} at ${version} under ${distTagsFor(version).join(" + ")}`);
   if (dryRun) {
     console.log("Dry run; no tag created or pushed.");
@@ -184,8 +231,17 @@ async function tagRelease(dryRun: boolean): Promise<void> {
     console.log("Aborted.");
     return;
   }
-  git("tag", tag);
-  git("push", "origin", tag);
+  // The prompt is interactive, so another terminal can commit while it waits. Revalidate the
+  // checkout, then create the tag at — and deliver — exactly the commit the remote check approved,
+  // never whatever HEAD or the tag ref point at later.
+  const verified = git("rev-parse", "HEAD");
+  if (verified !== head) {
+    throw new Error(`HEAD moved from ${head} to ${verified} while the confirmation was open; rerun to review it`);
+  }
+  const existing = localTagAtHead(tag, verified);
+  rejectStaleOrigin(tag, verified);
+  if (!existing) git("tag", tag, verified);
+  git("push", "origin", `${verified}:refs/tags/${tag}`);
   console.log(`Pushed ${tag}; watch https://github.com/nathapp-io/nax/actions`);
 }
 
