@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import type { ForgeKind } from "@/forge";
 import { _ciWaitDeps, waitForChecks } from "@/workflow/ci-wait";
 
 const saved = { ..._ciWaitDeps };
@@ -89,4 +90,72 @@ test.each([
   if (outcome === "unavailable") expect(result.detail).toBe(`pipeline is waiting on a ${status} job`);
   expect(observed.polls()).toBe(1);
   expect(observed.sleeps).toEqual([]);
+});
+
+// --- US-003: a failed GitLab pipeline for another commit is held back like a stale green one ---
+
+/** The commit the previous push left in the pipeline, and the head HEAD now points at (US-003). */
+const OLD = "a".repeat(40);
+const NEW = "b".repeat(40);
+/** The story's options: every poll is bound to `NEW`, the pushed head. */
+const headOpts = { ...opts, expectedSha: NEW };
+const MR = "gitlab" satisfies ForgeKind;
+
+test("US-003 AC-1: a stale failed GitLab pipeline waits for the current head", async () => {
+  const observed = wire(
+    [{ head_pipeline: { sha: OLD, status: "failed" } }, { head_pipeline: { sha: NEW, status: "success" } }],
+    MR,
+  );
+  const result = await waitForChecks(MR, "b", headOpts);
+  expect(result.outcome).toBe("green");
+  expect(observed.polls()).toBe(2);
+  expect(observed.sleeps).toEqual([10]);
+});
+
+test("US-003 AC-2: a stale canceled GitLab pipeline waits for the current head", async () => {
+  const observed = wire(
+    [{ head_pipeline: { sha: OLD, status: "canceled" } }, { head_pipeline: { sha: NEW, status: "success" } }],
+    MR,
+  );
+  expect((await waitForChecks(MR, "b", headOpts)).outcome).toBe("green");
+  expect(observed.polls()).toBe(2);
+});
+
+test("US-003 AC-3: a failed pipeline that never reports HEAD ends unavailable at the deadline", async () => {
+  wire([{ head_pipeline: { sha: OLD, status: "failed" } }], MR);
+  expect(await waitForChecks(MR, "b", headOpts)).toEqual({
+    outcome: "unavailable",
+    detail: "checks report aaaaaaaa but HEAD is bbbbbbbb",
+  });
+});
+
+test("US-003 AC-4: a stale failed poll reads pipeline.sha as its commit", async () => {
+  const observed = wire(
+    [
+      { head_pipeline: { status: "failed" }, pipeline: { sha: OLD } },
+      { head_pipeline: { sha: NEW, status: "success" } },
+    ],
+    MR,
+  );
+  expect((await waitForChecks(MR, "b", headOpts)).outcome).toBe("green");
+  expect(observed.polls()).toBe(2);
+});
+
+test("US-003 AC-5: a failed pipeline for the current head ends the wait at once", async () => {
+  const observed = wire([{ head_pipeline: { sha: NEW, status: "failed" } }], MR);
+  expect(await waitForChecks(MR, "b", headOpts)).toEqual({ outcome: "failed", detail: "a check failed" });
+  expect(observed.polls()).toBe(1);
+});
+
+test("US-003 AC-6: a failed pipeline reporting no commit still ends the wait at once", async () => {
+  const observed = wire([{ head_pipeline: { status: "failed" } }], MR);
+  expect((await waitForChecks(MR, "b", headOpts)).outcome).toBe("failed");
+  expect(observed.polls()).toBe(1);
+});
+
+test("US-003 AC-7: without an expected head a stale failed poll still ends the wait", async () => {
+  const observed = wire([{ head_pipeline: { sha: OLD, status: "failed" } }], MR);
+  const { expectedSha: _unused, ...noHead } = headOpts;
+  expect((await waitForChecks(MR, "b", noHead)).outcome).toBe("failed");
+  expect(observed.polls()).toBe(1);
 });

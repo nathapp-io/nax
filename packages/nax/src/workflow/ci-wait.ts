@@ -334,9 +334,10 @@ async function waitWithHeartbeat(
   }
 }
 
-/** Only a would-be green poll is held back; absent SHAs preserve the auxiliary read's fail-open contract. */
+/** Green *and* failed polls for another commit wait: a stale red must not end the wait (US-003); no SHA fails open. */
 function bindToHead(poll: Poll, expectedSha?: string): Poll {
-  if (poll.state !== "green" || !expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
+  if (poll.state !== "green" && poll.state !== "failed") return poll;
+  if (!expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
   return { ...poll, state: "waiting", mismatch: headMismatchDetail(poll.sha, expectedSha) };
 }
 
