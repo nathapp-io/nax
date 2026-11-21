@@ -3,7 +3,7 @@
   "feature": "review-0b834-provider-credentials",
   "branchName": "feat/review-0b834-provider-credentials",
   "createdAt": "2026-11-21T14:05:52.494Z",
-  "updatedAt": "2026-11-21T14:43:08.571Z",
+  "updatedAt": "2026-11-21T14:50:03.295Z",
   "userStories": [
     {
       "id": "US-001",
@@ -210,14 +210,17 @@
         "concurrency"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two bounded fixes in one store plus two regression suites; credential integrity, secret-safe errors and concurrent refresh locking mandate strict security TDD isolation regardless of size."
+        "reasoning": "Two bounded fixes in one store plus two regression suites; credential integrity, secret-safe errors and concurrent refresh locking mandate strict security TDD isolation regardless of size.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/credentials/file-store.ts",
@@ -231,7 +234,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5b872d797a61ead2412d0b8a56108200952a5275"
     },
     {
       "id": "US-005",
