@@ -62,6 +62,53 @@ describe("createTurnCollector: text and thoughts (spec §6.7, D5-g)", () => {
     ]);
   });
 
+  test("text runs around a tool call stay separate in the output and the delta stream (#3011)", () => {
+    const { events, collector } = setup();
+    collector.onUpdate(say("A."));
+    collector.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "in_progress" });
+    collector.onUpdate({ sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+    collector.onUpdate(say("B"));
+    collector.onUpdate(say("C"));
+    collector.finish();
+    const deltas = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : []));
+    expect(collector.output()).toBe("A.\n\nBC");
+    expect(deltas.join("")).toBe("A.\n\nBC");
+  });
+
+  test("a tool call before any text adds no leading separator (#3011)", () => {
+    const { events, collector } = setup();
+    collector.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "in_progress" });
+    collector.onUpdate(say("B"));
+    collector.finish();
+    const deltas = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : []));
+    expect(collector.output()).toBe("B");
+    expect(deltas).toEqual(["B"]);
+  });
+
+  test("a late update of a known tool call does not split a text run (#3011)", () => {
+    const { events, collector } = setup();
+    collector.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "in_progress" });
+    collector.onUpdate(say("Reading the"));
+    collector.onUpdate({ sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" });
+    collector.onUpdate(say(" file now"));
+    collector.finish();
+    const deltas = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : []));
+    expect(collector.output()).toBe("Reading the file now");
+    expect(deltas.join("")).toBe("Reading the file now");
+  });
+
+  test("consecutive tool calls and an empty chunk add one separator before the next text (#3011)", () => {
+    const { collector } = setup();
+    collector.onUpdate(say("A."));
+    collector.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c1", title: "Read", status: "in_progress" });
+    collector.onUpdate({ sessionUpdate: "tool_call", toolCallId: "c2", title: "Grep", status: "in_progress" });
+    collector.onUpdate(say(""));
+    collector.onUpdate(think("hmm"));
+    collector.onUpdate(say("B"));
+    collector.finish();
+    expect(collector.output()).toBe("A.\n\nB");
+  });
+
   test("non-text chunks, user chunks, plans and mode updates are dropped", () => {
     const { events, collector } = setup();
     collector.onUpdate({
