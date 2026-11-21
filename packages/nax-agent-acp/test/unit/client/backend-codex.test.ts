@@ -12,6 +12,7 @@ import {
   type SessionSandbox,
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
+import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
 import type { AcpBackendOptions } from "#src/client/options";
 import { FULL_REASON, REVIEW_EXECUTE_REASON, REVIEW_NO_SANDBOX_REASON, readOnlyReason } from "#src/client/permissions";
@@ -65,6 +66,8 @@ interface OpenOptions {
   readonly script?: FakeScript;
   readonly sandbox?: SessionSandbox;
   readonly tools?: readonly EmbedderTool[];
+  /** The cancellation grace, for a turn that must miss it (US-004). The backend's default is long. */
+  readonly cancelGraceMs?: number;
 }
 
 interface Opened {
@@ -81,7 +84,12 @@ async function open(profile: AgentSessionProfile, options: OpenOptions = {}): Pr
     ...options.script,
   });
   _acpBackendDeps.launch = fake.launch;
-  const backend = acpBackend({ agent, allowUnsandboxed: true, command: "fake-agent" });
+  const backend = acpBackend({
+    agent,
+    allowUnsandboxed: true,
+    command: "fake-agent",
+    ...(options.cancelGraceMs === undefined ? {} : { cancelGraceMs: options.cancelGraceMs }),
+  });
   const session = await createAgentSession({
     backend: options.sandbox === undefined ? backend : withSandbox(backend, options.sandbox),
     profile,
@@ -360,6 +368,69 @@ describe("a deny that makes the agent cancel its turn is continued (nax#2582)", 
     });
     expect(endOf(events)).toMatchObject({ status: "cancelled" });
     expect(prompts(o)).toHaveLength(1);
+  });
+
+  /**
+   * US-004: a continuation that misses the cancellation grace still reports the tokens
+   * the first prompt answered. `atPrompt` counts the prompts the peer must hold before
+   * the cancel, so the cancel always lands on the prompt under test.
+   */
+  async function cancelOnPrompt(o: Opened, atPrompt: number): Promise<SessionEvent[]> {
+    const turn = driveTurn(o.session, "write a file");
+    await waitForCondition(() => prompts(o).length >= atPrompt, 2_000);
+    o.session.cancel();
+    return turn;
+  }
+
+  /** The denied first prompt, then a continuation that hangs past the grace (a read-only profile). */
+  const missesGrace = () =>
+    open("read", {
+      cancelGraceMs: 50,
+      script: { turns: [DENIED_THEN_CANCELLED, { steps: [{ kind: "hang" }] }] },
+    });
+
+  test("a continuation that misses the grace keeps the first prompt's tokens (US-004)", async () => {
+    const o = await missesGrace();
+    const events = await cancelOnPrompt(o, 2);
+    expect(endOf(events).usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+  });
+
+  test("a continuation that misses the grace has its process killed exactly once (US-004)", async () => {
+    const o = await missesGrace();
+    await cancelOnPrompt(o, 2);
+    expect(o.fake.kills()).toBe(1);
+  });
+
+  test("a continuation that misses the grace ends cancelled (US-004)", async () => {
+    const o = await missesGrace();
+    expect(endOf(await cancelOnPrompt(o, 2))).toMatchObject({ status: "cancelled" });
+  });
+
+  test("a continuation that misses the grace reports no cost: the meter carries it (US-004)", async () => {
+    const o = await missesGrace();
+    expect(endOf(await cancelOnPrompt(o, 2))).toMatchObject({ costUsd: 0, costSource: "unpriced" });
+  });
+
+  test("a continuation answered inside the grace adds its tokens to the first prompt's (US-004)", async () => {
+    const o = await open("read", {
+      cancelGraceMs: 50,
+      script: {
+        turns: [
+          DENIED_THEN_CANCELLED,
+          {
+            steps: [{ kind: "awaitCancel" }],
+            stopReason: "cancelled",
+            usage: { totalTokens: 3, inputTokens: 2, outputTokens: 1 },
+          },
+        ],
+      },
+    });
+    expect(endOf(await cancelOnPrompt(o, 2)).usage).toEqual({ inputTokens: 12, outputTokens: 6 });
+  });
+
+  test("a first prompt with no carried tokens that misses the grace reports none (control, US-004)", async () => {
+    const o = await open("read", { cancelGraceMs: 50, script: { turns: [{ steps: [{ kind: "hang" }] }] } });
+    expect(endOf(await cancelOnPrompt(o, 1)).usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 });
 

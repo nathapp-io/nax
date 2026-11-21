@@ -32,12 +32,18 @@ const DecisionSchema = z.object({
  * A pending forget as one mirror line. The slug and the client id are the two values
  * later code acts on — the slug names the note an approval retires, the client id names
  * the write — so a line carries a note slug and an outbox id, never an arbitrary string.
+ *
+ * `noteId` is optional so a line written before it existed still decodes: the field holds
+ * the id of the note the mirror held when the forget was recorded, and an absent one is a
+ * legacy entry (or a forget aimed at a slug the mirror held nothing at), which keeps the
+ * behaviour it had.
  */
 const PendingForgetSchema = z.object({
   clientId: z.string().regex(MEMORY_CLIENT_ID_RE),
   scope: z.enum(MEMORY_SCOPES),
   slug: z.string().regex(MEMORY_SLUG_RE),
   reason: z.string(),
+  noteId: z.string().min(1).optional(),
 });
 
 const SyncStateSchema = z.object({

@@ -70,9 +70,36 @@ async function throughStore(action: () => Promise<void>): Promise<void> {
   }
 }
 
-/** The entry a proposal forget leaves in the record: the request's own id and reason. */
-function queuedForget(request: MemoryWriteRequest): MemoryPendingForget {
-  return { clientId: request.clientId, scope: request.scope, slug: request.slug, reason: request.reason ?? "" };
+/**
+ * The id of the note the mirror holds at the request's key, or `undefined` when it holds none —
+ * and when the lookup cannot be answered at all.
+ *
+ * This is the one best-effort read in the provider. A store with no user directory cannot answer
+ * a user-scope read (`MEMORY_SCOPE_UNAVAILABLE`), and a forget of such a key is still a forget
+ * the record must hold: refusing it would turn a missing revision into a rejected write, so an
+ * unanswerable lookup records the entry exactly as it was recorded before the field existed.
+ * Only the lookup is best-effort — the record write it feeds keeps the store's own mapping.
+ */
+async function heldNoteId(store: MemoryStore, request: MemoryWriteRequest): Promise<string | undefined> {
+  try {
+    const note = await store.readNote(request.scope, request.slug);
+    return note === null ? undefined : note.id;
+  } catch {
+    // Unreadable is not a refusal: the entry is recorded without a revision, as it always was.
+    return undefined;
+  }
+}
+
+/** The entry a proposal forget leaves in the record: the request's own id and reason, plus its revision. */
+function queuedForget(request: MemoryWriteRequest, noteId: string | undefined): MemoryPendingForget {
+  return {
+    clientId: request.clientId,
+    scope: request.scope,
+    slug: request.slug,
+    reason: request.reason ?? "",
+    // Omitted rather than carried as `undefined`: the line stays the four-field shape it was.
+    ...(noteId === undefined ? {} : { noteId }),
+  };
 }
 
 /** Whether rewriting the record would change it: an unchanged list is not written back. */
@@ -85,7 +112,9 @@ function sameEntries(before: readonly MemoryPendingForget[], after: readonly Mem
       entry.clientId === other.clientId &&
       entry.scope === other.scope &&
       entry.slug === other.slug &&
-      entry.reason === other.reason
+      entry.reason === other.reason &&
+      // A re-forget of the same key can carry a different revision, which is a change to record.
+      entry.noteId === other.noteId
     );
   });
 }
@@ -122,7 +151,10 @@ export function createLocalMemoryProvider(store: MemoryStore): MemoryProvider {
     const direct = request.writeMode === "direct";
     if (direct) await throughStore(() => store.deleteNote(request.scope, request.slug));
     const key = memoryNoteKey(request.scope, request.slug);
-    await throughStore(() => rewriteRecord(store, key, direct ? null : queuedForget(request)));
+    // A proposal forget records the revision it was aimed at, so an approval elsewhere can tell
+    // a note refiled since (a new id) from the same note restamped by its own approval.
+    const noteId = direct ? undefined : await heldNoteId(store, request);
+    await throughStore(() => rewriteRecord(store, key, direct ? null : queuedForget(request, noteId)));
     return { id: request.clientId, status: direct ? "deleted" : "pending" };
   }
   return {

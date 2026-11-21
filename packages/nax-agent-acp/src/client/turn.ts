@@ -7,7 +7,9 @@
  * timeout, close()), session/cancel is sent and the prompt gets cancelGraceMs to
  * settle; an answer inside it settles the collector and its spend is attached to
  * the thrown reason; past that the process group is killed
- * and the session is marked disconnected. The facade reports cancelled or timed_out
+ * and the session is marked disconnected, and the reason carries the tokens this
+ * turn's earlier prompts answered (US-004) — no cost, since the cumulative meter
+ * reports that reading on the next turn. The facade reports cancelled or timed_out
  * from the signal, so after an abort this throws the signal's reason.
  *
  * nax#2582: an agent may answer a denied permission request by cancelling its own
@@ -60,6 +62,15 @@ const NO_RESPONSE_SPEND: FailedTurnSpend = Object.freeze({
   costSource: "unpriced",
 });
 
+/**
+ * The spend of a prompt that answered nothing: the tokens the turn's earlier prompts
+ * already answered, and no cost (the cumulative meter carries the reading to the next
+ * turn, US-004).
+ */
+function unansweredSpend(carried: PromptResponse["usage"]): FailedTurnSpend {
+  return carried === undefined ? NO_RESPONSE_SPEND : { ...NO_RESPONSE_SPEND, tokenUsage: tokenUsageOf(carried) };
+}
+
 /** Follow-up prompts one turn may send after a deny made the agent cancel (nax#2582). */
 export const MAX_DENIED_CONTINUATIONS = 2;
 
@@ -111,20 +122,18 @@ async function promptOnce(
       return outcome.value;
     case "failed": {
       const error = await promptFailure(state, outcome.error);
-      attachTurnSpend(
-        error,
-        carried === undefined ? NO_RESPONSE_SPEND : { ...NO_RESPONSE_SPEND, tokenUsage: tokenUsageOf(carried) },
-      );
+      attachTurnSpend(error, unansweredSpend(carried));
       throw error;
     }
     default: {
       const response = await cancelTurn(state, pending);
       const reason = abortReason(input.signal);
-      // #2367: an answer inside the grace still reports what the turn spent.
+      // #2367: an answer inside the grace still reports what the turn spent. US-004: so
+      // does no answer at all, for the prompts the turn already answered.
       attachTurnSpend(
         reason,
         response === undefined
-          ? NO_RESPONSE_SPEND
+          ? unansweredSpend(carried)
           : input.collector.settle({ ...response, usage: sumUsage(carried, response.usage) }),
       );
       throw reason;

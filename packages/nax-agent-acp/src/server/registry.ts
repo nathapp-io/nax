@@ -273,8 +273,14 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       }
       throw error;
     }
-    const meta: SessionMeta = { ...entry.meta, mode: next.mode, model: next.model, bashApproval: next.bashApproval };
-    entries.set(sessionId, { ...entry, meta });
+    // Re-read after the switch: a turn recorded during the credential lookup wrote
+    // its title, updatedAt and costUsd into the current entry, and the switch must
+    // not persist the metadata it captured before that turn. `?? entry` is
+    // defensive only — a close requested meanwhile makes ServerSession.switchTo
+    // throw sessionClosed() before this write, so a closed entry is never here.
+    const current = entries.get(sessionId) ?? entry;
+    const meta: SessionMeta = { ...current.meta, mode: next.mode, model: next.model, bashApproval: next.bashApproval };
+    entries.set(sessionId, { ...current, meta });
     await deps.storage.writeMeta(meta);
     if (next.mode !== from.mode && entry.mcp.connectedCount > 0 && !entry.mcp.offersTools(next.mode))
       await entry.port.update(modeNotice(entry.port.features.updates.notices, next.mode));

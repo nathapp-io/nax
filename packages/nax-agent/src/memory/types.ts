@@ -46,12 +46,19 @@ export interface MemoryDecision {
  * the mirror's `pending-forgets.jsonl` so it outlives the process that asked for it — the
  * index marks it and an approval finds it later. The `clientId` is the write's idempotency
  * key, and `reason` is the justification the forget carried (`""` when it carried none).
+ *
+ * `noteId` binds the entry to *which* note it was aimed at, so an approval in another project
+ * cannot retire a note that has since been refiled under the same slug. It holds the `id` of
+ * the note the mirror held when the forget was recorded, and it is absent when the mirror held
+ * no note there — or when the lookup could not be answered. An entry written before the field
+ * existed has none either and keeps the behaviour it had (`isStaleForget` answers `false`).
  */
 export interface MemoryPendingForget {
   readonly clientId: string;
   readonly scope: MemoryScope;
   readonly slug: string;
   readonly reason: string;
+  readonly noteId?: string;
 }
 
 export interface MemoryHit {

@@ -52,13 +52,18 @@
  * same `MEMORY_NOTE_NOT_FOUND` refusal a forget of it would be. A note the mirror's
  * `pending-forgets.jsonl` record holds a forget for is retired instead of approved: the note is
  * deleted, its entry comes out of the record and the index is regenerated, so the answer is that
- * note, unchanged but for `status: "deleted"` — a recorded forget wins over a pending save. It asks
- * no provider and writes nothing to the queue, but it writes the mirror and the record, so it takes
- * the same ordering and the same locks a save takes. It reads the queue only to keep the index's
- * marker, and approves no queued forget: an entry the outbox still holds stays the outbox's.
+ * note, unchanged but for `status: "deleted"` — a recorded forget wins over a pending save. The
+ * record is read through the revision check, because the note such an entry names may have been
+ * refiled by another project sharing the user directory since it was written: an entry aimed at a
+ * revision the mirror no longer holds comes out of the record, and the note is approved as though
+ * the forget had never been recorded. It asks no provider and writes nothing to the queue, but it
+ * writes the mirror and the record, so it takes the same ordering and the same locks a save takes.
+ * It reads the queue only to keep the index's marker, and approves no queued forget: an entry the
+ * outbox still holds stays the outbox's.
  */
 import { randomUUID } from "node:crypto";
 import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
+import { settleRecordedForget } from "./forget-revision.ts";
 import {
   clockOf,
   type MirrorLockInput,
@@ -358,23 +363,25 @@ function lockInputOf(input: MemoryApproveInput): MirrorLockInput {
  * wins over a pending save: the note the mirror holds was written first, and the forget of it
  * came after. A note that is history, or one the mirror does not hold, is the refusal it was
  * before the record is consulted at all.
+ *
+ * The record is read through `settleRecordedForget`, because a project-local entry can outlive
+ * the note it names: another project sharing the user directory may have refiled the slug since.
+ * An entry aimed at a note that is no longer there is dropped and the approval carries on as
+ * though no forget had been recorded — an active replacement comes back as it stands, a `pending`
+ * one is put in force — while an entry that still names the held note retires it. That removal
+ * regenerates the index, since the marker the previous refresh rendered is now about nothing.
  */
 async function approveLocked(input: MemoryApproveInput): Promise<MemoryNote> {
   const note = await input.store.readNote(input.scope, input.slug);
   if (note === null || RETIRED_STATUSES.has(note.status)) throw noteNotFound(input);
-  if (await holdsRecordedForget(input)) return await retireRecorded(input, note);
+  const recorded = await settleRecordedForget({ store: input.store, scope: input.scope, slug: input.slug, note });
+  if (recorded === "dropped") await refreshIndex({ store: input.store, outbox: mirrorOutbox(input.store) });
+  if (recorded === "held") return await retireRecorded(input, note);
   if (note.status === "active") return note;
   const approved = inForce(note, clockOf(input));
   await input.store.writeNote(approved);
   await refreshIndex({ store: input.store, outbox: mirrorOutbox(input.store) });
   return approved;
-}
-
-/** Whether the mirror's record holds a pending forget for the key this approval names. */
-async function holdsRecordedForget(input: MemoryApproveInput): Promise<boolean> {
-  const key = memoryNoteKey(input.scope, input.slug);
-  const recorded = await input.store.readPendingForgets();
-  return recorded.some((entry) => memoryNoteKey(entry.scope, entry.slug) === key);
 }
 
 /**
