@@ -93,7 +93,20 @@ function expandRef(ref: string, path: string, state: WalkState): string {
 /** `{ model: "@x" }`-bearing object: expand its `model` field, copy the rest. */
 function expandModelField(obj: Json, path: string, state: WalkState): Json {
   if (!isReference(obj.model)) return obj;
-  return { ...obj, model: expandRef(obj.model, `${path}.model`, state) };
+  const out: Json = {};
+  for (const [k, v] of Object.entries(obj)) setOwn(out, k, v);
+  setOwn(out, "model", expandRef(obj.model, `${path}.model`, state));
+  return out;
+}
+
+/** Legacy flat `models.<tier>` is a ModelDef: string `provider` and string `model`. */
+function isLegacyModelDef(value: Json): boolean {
+  return typeof value.model === "string" && typeof value.provider === "string";
+}
+
+/** Own data property, so a `__proto__` key survives instead of setting the prototype. */
+function setOwn(target: Json, key: string, value: unknown): void {
+  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 function expandModels(models: unknown, state: WalkState): unknown {
@@ -101,17 +114,17 @@ function expandModels(models: unknown, state: WalkState): unknown {
   const out: Json = {};
   for (const [agent, tiers] of Object.entries(models)) {
     // Legacy flat shape (models.<tier> = ModelDef) is left alone.
-    if (!isPlainObject(tiers) || typeof tiers.model === "string") {
-      out[agent] = tiers;
+    if (!isPlainObject(tiers) || isLegacyModelDef(tiers)) {
+      setOwn(out, agent, tiers);
       continue;
     }
     const mapped: Json = {};
     for (const [tier, entry] of Object.entries(tiers)) {
       const path = `models.${agent}.${tier}`;
-      if (isReference(entry)) mapped[tier] = expandRef(entry, path, state);
-      else mapped[tier] = isPlainObject(entry) ? expandModelField(entry, path, state) : entry;
+      if (isReference(entry)) setOwn(mapped, tier, expandRef(entry, path, state));
+      else setOwn(mapped, tier, isPlainObject(entry) ? expandModelField(entry, path, state) : entry);
     }
-    out[agent] = mapped;
+    setOwn(out, agent, mapped);
   }
   return out;
 }
@@ -124,7 +137,7 @@ function walk(value: unknown, path: string, state: WalkState): unknown {
   const out: Json = {};
   for (const [key, child] of Object.entries(base)) {
     const childPath = path === "" ? key : `${path}.${key}`;
-    out[key] = EXCLUDED_PATHS.has(childPath) ? child : walk(child, childPath, state);
+    setOwn(out, key, EXCLUDED_PATHS.has(childPath) ? child : walk(child, childPath, state));
   }
   return out;
 }

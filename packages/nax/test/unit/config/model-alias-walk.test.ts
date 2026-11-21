@@ -123,4 +123,15 @@ describe("expandConfigModelAliases", () => {
     expect(err.message).toContain('models.native.powerful.model: unknown model alias "b"');
     expect(err.message).toContain('plan.model.model: unknown model alias "c"');
   });
+  test("F2 a tier named model is expanded", () => {
+    const out = expandConfigModelAliases({ ...SOL, models: { native: { model: "@sol" } } });
+    expect(at(out, "models", "native", "model")).toBe("a/b");
+  });
+  test("F3 own __proto__ key is preserved", () => {
+    const raw = JSON.parse('{"x":{"__proto__":{"agent":"n","model":"@sol"}}}');
+    const out = expandConfigModelAliases({ ...SOL, ...raw });
+    const x = at(out, "x");
+    expect(Object.getPrototypeOf(x)).toBe(Object.prototype);
+    expect(Object.keys(Object(x))).toEqual(["__proto__"]);
+  });
 });
