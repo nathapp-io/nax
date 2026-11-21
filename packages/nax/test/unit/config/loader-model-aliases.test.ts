@@ -23,8 +23,8 @@ async function rejection(p: Promise<unknown>): Promise<NaxError> {
   try {
     await p;
   } catch (err) {
-    expect(err).toBeInstanceOf(NaxError);
-    return err as NaxError;
+    if (err instanceof NaxError) return err;
+    throw err;
   }
   throw new Error("expected rejection");
 }
