@@ -3,7 +3,7 @@
   "feature": "review-0b834-workflow-verification",
   "branchName": "feat/review-0b834-workflow-verification",
   "createdAt": "2026-11-21T12:16:35.719Z",
-  "updatedAt": "2026-11-21T12:16:35.719Z",
+  "updatedAt": "2026-11-21T12:29:48.017Z",
   "userStories": [
     {
       "id": "US-001",
@@ -24,14 +24,17 @@
         "process-lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two existing lifecycle modules already supply first-event arbitration, bounded process-group termination and fake-clock seams; adding abort registration and disposal reuses those mechanisms rather than creating new concurrency infrastructure. Trust/access-control behavior is unchanged."
+        "reasoning": "Two existing lifecycle modules already supply first-event arbitration, bounded process-group termination and fake-clock seams; adding abort registration and disposal reuses those mechanisms rather than creating new concurrency infrastructure. Trust/access-control behavior is unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/quality/runner.ts",
@@ -42,7 +45,11 @@
         "packages/nax/test/unit/quality/runner-cancel.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "52a34486ae075a7006ff4271831a927f5c56bdb3"
     },
     {
       "id": "US-002",
@@ -89,7 +96,10 @@
         "packages/nax/test/unit/finish/gates-quality-cancel.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -126,7 +136,10 @@
         "packages/nax/test/unit/workflow/ci-wait-sha.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -186,7 +199,10 @@
         "packages/nax/test/unit/workflow/ci-wait-commit.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -229,7 +245,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -286,7 +305,10 @@
         "packages/nax/test/integration/verification/scoped-selection-git-paths.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Refine-pass audit: re-read spec.md, the draft, and the existing runner/lifecycle, gate, CI, publisher and changed-path entry points using direct tools; codebase-memory MCP remains unavailable. All 66 numbered spec ACs remain in their original six stories, with their controls, preconditions, exact values and qualifying clauses. Preservation map (spec number -> draft label): US-001: 1->1a/1b, 2->2, 3->3, 4->4a/4b, 5->5a/5b, 6->6. US-002: 1->1a/1b, 2->2a/2b, 3->3, 4->4a/4b, 5->5, 6->6a/6b/6c, 7->7, 8->8, 9->9, 10->10a/10b. US-003: 1->1a/1b, 2->2a/2b, 3->3, 4->4a/4b, 5->5a/5b, 6->6a/6b, 7->7a/7b. US-004: 1->1, 2->2, 3->3, 4->4, 5->5a/5b, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18, 19->19, 20->20a/20b, 21->21. US-005: 1->1, 2->2, 3->3. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18, 19->19. Split labels preserve every assertion rather than silently dropping the second half of a composite spec AC. US-002 AC-6c now explicitly observes execution of all three no-signal gates, not just the returned ran array. US-004 failure-table diagnostic examples now specify concrete exit codes and stdout/stderr, including the 200-character bound. US-005 previously lacked an actual failure result: the refine-requested negative-path regression now pins publish returning local-only/CI skipped on a rejected push, consistent with finalize.ts:462-473. Other stories already have observable cancellation, stale/current failure, API failure, or deleted/outside-project rejection paths. All assertions use results, thrown errors, dependency-call records or filesystem state; no source-existence or quality-gate ACs were added. Every story retains a backward-compatibility control.\n\nAll spec-recommended context files are included within each story's five-file limit; created files remain only in expectedFiles. Exactly the binding IDs, workdirs and dependencies are retained, with no unresolved dependency references. All 18 exclusions from the spec's pre-Stories Out of Scope section remain verbatim at top level and are echoed at the relevant story boundary. No story-local deferral was hoisted. Descriptions retain the target algorithms and agree with their ACs, including no filesystem existence filtering, unchanged non-test path shape, no undefined signal/commitChecks keys, and no fallback based merely on a missing PR URL. Routing was lightened for US-001 (existing latch/stop infrastructure), US-005 (additive single-module runtime wiring) and US-006 (pure helper plus existing decoder/Git seams); US-004 stays complex because it introduces the commit API integration and shared classification extraction while preserving poll settlement and avoiding runtime import cycles. No authentication, authorization or trust-policy changes are introduced.\n\nThis is a targeted enhancement of existing Bun/TypeScript ESM code in @nathapp/nax, not a new subsystem. Direct source reads and text searches were used because codebase-memory MCP is unavailable in this host. All six binding stories retain workdir packages/nax and exactly the specified dependencies: US-002 follows US-001; US-005 follows US-004; the others are independent. US-005 also edits the repository-root guide despite its binding package workdir. No other package, dependency, release version, persisted schema, configuration migration, or permission policy needs changing.\n\nArchitecture and constraints: docs/architecture/ARCHITECTURE.md:13 documents injectable _deps, :23 async/testing standards, and :153 the quick-reference limits (600 source lines hard, 800 test lines hard, short functions, no public any, injectable external calls). Package instructions require Bun-native runtime APIs, bun:test, strict TypeScript, and no mock.module leakage. Read the applicable .nax/rules files before implementation. Use existing helpers, restore every replaced dependency after each test, use fake clocks rather than real sleeps, and keep production-entry-point assertions. Root scripts traverse workspaces; targeted tests run from packages/nax with an explicit path and timeout, never bare bun test or bun run nax. The pipeline owns lint/typecheck/test gates; they are not product acceptance criteria. Do not run coverage inside NAX_SANDBOXED=1.\n\nUS-001 command lifecycle: packages/nax/src/quality/runner.ts:93 defines QualityCommandOptions without signal; :279 begins runSingleCommand; :353 creates the terminal latch; :398-463 separates exit/error from the common stop lane but hardcodes timedOut true for every stop. :486 asserts trust before dispatch and :515-520 runs all list steps even after failure. Preserve assertTrusted and all no-signal/list-failure behavior; cancellation alone must suppress later entries. packages/nax/src/quality/runner-lifecycle.ts:37 defines four terminal kinds, :55 implements first-event-wins arbitration, and :91 bounds detached-process-group cleanup with SIGTERM, an existing 5-second grace, liveness probing, and SIGKILL without unsafe bare-pid fallback after leader exit. Add aborted and a lifecycle abort-listener helper rather than duplicating killing or exceeding cognitive complexity 20. Listener disposal must cover terminal settlement and setup/error paths; a late abort cannot kill an exited/reused process. Cancellation is not a timeout or detector stop: false success, -1 exit, false timedOut, and absent stopReason. Preserve concurrent stream draining and bounded cleanup. Existing tests at packages/nax/test/unit/quality/runner-timeout-kill.test.ts:22-68 show fake clock, fake spawn, and kill observation; :73-118 pin group escalation and timer cleanup; :146-172 pin safe signaling after leader exit. Create runner-cancel.test.ts with recording fakes in a trusted workdir. Shared callers include lint/typecheck operations (src/operations/lint-check.ts:131 and typecheck-check.ts:136), review runner (src/review/runner/index.ts:179), scoped lint (src/review/scoped-lint.ts:216), setup verification (src/cli/setup-verify.ts:41), and coding-tool declared commands (src/agents/coding-tool-support-resolve.ts:444); they must retain existing behavior when signal is absent. No authentication/access-control changes are involved; trust validation remains untouched.\n\nUS-002 gate propagation: packages/nax/src/finish/gates/quality.ts:339-354 runs gate setup; :376-420 executes all resolved gates with timeout/onGate options only. The same injected run backs setup and command, and gate reporting currently happens after each result. Add optional signal with conditional property spreads, reject using NaxError code QUALITY_GATES_ABORTED before any gate and after every awaited setup/command, and avoid onGate for an interrupted gate even if its stub returns exit 0. Guard function entry too so an already-aborted call cannot return the empty-gate result. packages/nax/src/workflow/repo-gates.ts:24-43 resolves commands, preserves the quiet logging scope, and maps non-abort failures into a repo-gates finding; its existing catch already rethrows if fc.runSignal is aborted. Only wire signal through this call. src/workflow/feature-deps.ts:2-16 exposes the existing typed seams; BranchStepContext already carries runSignal. Existing packages/nax/test/unit/workflow/repo-gates.test.ts:30-109 covers real resolution, quiet scope, package forwarding, empty gates, and error mapping. Add unit wiring cases there and create test/unit/finish/gates-quality-cancel.test.ts for gate-level recording stubs and cancellation behavior. Include a real-shell runRepoGates integration exercise through real runQualityGates: abort after lint-started exists and ensure later markers never appear. Reuse bounded event-driven waits and guarantee fixture/process cleanup, including resume creation in teardown if necessary. Existing gates-quality, gates-quality-e2e, and gates-quality-stall tests are regression anchors. CLI gates (src/cli/gates.ts:312) and bot baseline/fix paths (src/bot/gate-baseline.ts:65; fix-steps.ts:320) pass no signal and must not acquire an undefined signal key. The failure-handling table's non-abort row is already covered by repo-gates.test.ts:97; the spec explicitly excludes adding a new criterion for that row, so retain its behavior and existing test without expanding this story's ACs.\n\nUS-003 stale GitLab failures: packages/nax/src/workflow/ci-wait.ts:187 selects head_pipeline.sha with pipeline.sha fallback; classifyGlab follows it and already includes sha on failed/canceled polls. :338 binds only green to the pushed head. Widen that one predicate to green or failed when both SHAs are present and unequal. :448 deadlineVerdict already prioritizes mismatch detail, so persistent stale failures naturally become unavailable rather than failed. Preserve missing-SHA and missing-expectedSha fail-open behavior. Existing packages/nax/test/unit/workflow/ci-wait-sha.test.ts:9-26 supplies wire with fake clock/sleep/schedule; :29-92 pins stale green, fallback SHA, and missing-SHA controls. Add seven specified scenarios here. Do not redesign GitHub settlePoll or failure replay. US-003 and US-004 both touch ci-wait.ts but have no dependency by binding design; keep predicate edits isolated from US-004 extraction.\n\nUS-004 commit checks: packages/nax/src/workflow/ci-wait.ts is exactly 596 lines. :82-101 exports Poll; :103-104 owns GH_FAILED/GH_OK; :120 defines cliError; :124 defines GhCheck; :148-184 formats and classifies check lists; :260 pollOnce always executes PR/MR argv, and :463 waitForChecks owns the loop/options. Extract shared list classification, bucket sets, and cliError into ci-wait-checks.ts without changing PR-list interpretation (notably nonzero gh exits with parseable checks remain usable). Both new modules must import Poll/GhCheck from ci-wait.ts using import type only, as demonstrated by src/workflow/ci-wait-starved.ts:12-14; no value import cycle. Implement fallback branching and commit JSON conversion in ci-wait-commit.ts, passing CiRun (src/workflow/ci-starved.ts:18) as an argument using the current _ciWaitDeps.run at call time. Every poll must first attempt gh pr checks, including after a previous fallback; fallback requires commitChecks true, GitHub, expectedSha defined, and nonzero PR-check exit with case-insensitive no pull requests found stderr. Use the literal repos/{owner}/{repo} placeholders and ?per_page=100. Attach expectedSha to readable commit polls; bypass githubWaiting for green commit results to avoid gh pr view; failed results continue through existing settlePoll, whose head lookup at ci-wait-starved.ts:31-43 fails open without a PR. Empty runs have no summary and reach no-checks at deadline; unknown conclusions remain pending, not green. Malformed/truncated API output must be error polls, never successful partial data. Existing CI_ERROR_POLL_LIMIT, history, cancellation, heartbeat, starvation, and same-head logic remain authoritative. readChecksOnce at ci-wait.ts:554 already binds both failed and green reads and must not gain fallback behavior. Existing packages/nax/test/unit/workflow/ci-wait.test.ts:20-48 shows scripted run replies and clock; :65-143 covers classification/error retry/abort, and :145-190 covers failed-check settlement. That file is already 765 lines, so create ci-wait-commit.test.ts rather than growing it. API fixtures should record exact argv, fail gh pr view open, and isolate the clock/scheduler. Test shared-classification regression through existing wait/readChecksOnce entry points, not just the new helper.\n\nUS-005 publish integration: packages/nax/src/workflow/finalize.ts is exactly 593 lines. :423 waitForCi reads the pushed HEAD, :433 builds wait options, :462 pushMode waits without a PR URL, and :489 prMode opens a draft then waits with its URL. Thread an explicit push-only opt-in without inferring mode from a missing PR URL, because PR mode may also receive no draft URL. Keep the change within the seven available lines, leave sameHeadRerun and rerunStarved behavior intact, and omit commitChecks entirely in PR mode. packages/nax/test/unit/workflow/finalize-ci.test.ts:27-80 provides wire recording waits and git/push ordering; :83-110 asserts exact preexisting PR options; :195-240 pins same-head option eligibility and push mode. Extend it with two option assertions and a publish-to-real-waitForChecks seam test yielding pushed/green from No PR plus successful commit runs. docs/guides/workflow-mode.md:113 is the Publishing table push row to extend; no test should assert documentation text. Other wait callers, src/cli/workflow-promote.ts:181 and src/bot/fix-report.ts:164, remain unopted-in.\n\nUS-006 changed paths: packages/nax/src/utils/porcelain.ts:148 contains the existing private C-escape/byte-to-UTF-8 decoder; :108 already uses it for porcelain protection. Export only, preserving implementation. packages/nax/src/workflow/git.ts:85-96 returns raw nonempty git diff --name-only base..HEAD lines; decode each without changing argv/error behavior. Dependents include feature-env.ts:119 (branch fix eligibility), finalize.ts:291 (approval inventory), and no-work.ts:46,66 (work detection). packages/nax/src/workflow/feature-steps.ts:299-368 processes re-review and passes env.steps.changedFiles into nextBranchFixRound at :353; fix eligibility for a new important finding must see the decoded file. Do not change review scheduling policy. packages/nax/src/verification/smart-runner.ts is exactly 599 lines. :59 memoizes the injectable Git-root read; :473-519 non-test reader only computes root offset when packagePrefix and repoRoot both exist; :539-580 changed-test reader slices the offset even when no project filter ran. Both currently split raw lines and tests include deleted files. Keep gitWithTimeout and getGitRootMemo calls in smart-runner.ts, add --diff-filter=d only to changed-test Git reads, and extract pure decoding/scoping into verification/changed-paths.ts with resolved string|null Git root passed in. Decode before filters; only a nonempty relative(gitRoot,repoRoot) not starting .. authorizes P/ filtering and stripping; require the slash boundary so app2 is not app. For test results strip P/ before joining repoRoot. For non-tests with repoRoot always filter project membership, but strip P/ only when packagePrefix exists, preserving Git-root-relative output without it. Preserve package filtering, nax ignore filtering, regex classification, exported signatures, dependency seams, null-root fallback, and source deletion visibility. Do not introduce filesystem existence checks: stubbed nonexistent test paths are intentional contracts.\n\nUS-006 tests/seams: packages/nax/test/unit/workflow/git.test.ts:46-52 tests changedFilesSince and Git failures; extend it with quoted output and unchanged argv. Existing smart-runner.test.ts:406-435 and :554-582 cover Git-root ancestors with packagePrefix and must continue passing; :441-552 cover absolute results, package scoping, regexes and language independence. New unit verification/changed-paths.test.ts must exercise public smart-runner functions with stubbed _gitUtilDeps, not merely helper internals, and the exported decoder. src/test-runners/scoped-selection.ts:143-168 short-circuits on changed tests before reading sources at :170, so a bogus sibling test masks the relevant changed-source tests. Real-Git integration in the specified new scoped-selection-git-paths.test.ts must enter selectScopedTests and branchReReviewStep, set core.quotePath=true and diff.renames=false, stage added paths, canonicalize temp paths with realpathSync for macOS, and clear the Git-root cache between fixtures. Include the Japanese and ASCII controls, deletion plus kept-test selection, rename destination, sibling/app2 exclusion, and import-grep selecting app/src/value.test.ts after sibling exclusion. Initialize the logger required by selectScopedTests and clean it up through existing helpers.\n\nCompatibility/migration: all new options are optional; absent keys must actually be absent rather than undefined to preserve exact-options tests and consumers. Existing exports remain at their current sites; decoder export is additive. Keep diff stdout newline-delimited and use the existing decoder rather than changing to -z. New helper files solve source-size constraints without changing public signatures or dependency direction. Main risks are abort/exit races and lingering listeners/process groups, treating abort as a timeout, reporting interrupted gates, applying fallback too broadly or caching a no-PR decision across polls, false-green truncated check lists, cyclic imports/stale captured _deps.run, decoding after filtering, stripping the wrong path frame, and accidental changes to ignore matching or non-test path shape. No data migration or new configuration is required. Implement in the binding dependency order and verify the cross-story seams through production entry points as specified.",
