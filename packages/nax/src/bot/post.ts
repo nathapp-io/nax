@@ -6,7 +6,7 @@ import { editComment, postInlineComment, postPrComment, replyToThread, unresolve
 import { getLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
-import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
+import type { EffectiveBlockingTriggers, FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
@@ -14,6 +14,7 @@ import { type CarriedFinding, carriedOpen } from "./carried-findings";
 import type { CarriedEntry } from "./carried-record";
 import type { BotChecks } from "./checks";
 import { postCoverageRecord, recordsCodeReview } from "./coverage-record";
+import { settleFindingOrigins } from "./finding-origin";
 import { postCarriedRecord } from "./post-carried";
 import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import type { BotPushEntry, FindingLineage } from "./push-ledger";
@@ -39,6 +40,9 @@ export type AgreedItem =
         /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
         readonly trigger?: FindingTrigger;
         readonly triggerEvidence?: string;
+        /** US-001/US-003: where its lines came from; absent reads `pr`, as does a claim nothing backed. */
+        readonly origin?: FindingOrigin;
+        readonly originEvidence?: string;
         readonly raisedBy?: CarriedEntry["raisedBy"];
         /** US-004/US-005: the push whose lines the finding sits on; absent before any lineage read. */
         readonly lineage?: FindingLineage;
@@ -229,7 +233,7 @@ function lineageFacts(
 function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings
     .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
-    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence }) => {
+    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence, origin, originEvidence }) => {
       const key = findingKey({ file, issue });
       return {
         key,
@@ -242,6 +246,9 @@ function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
         ...(decision === undefined ? {} : { decision }),
         ...(trigger === undefined ? {} : { trigger }),
         ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
+        // US-003: the origin the settlement left, so a later fix or readiness pass reads the same claim.
+        ...(origin === undefined ? {} : { origin }),
+        ...(originEvidence === undefined ? {} : { originEvidence }),
         ...(reviewId === undefined ? {} : { raisedBy: reviewId }),
         ...lineageFacts(input, key),
       };
@@ -273,26 +280,38 @@ function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
 }
 
 const TRIGGER_LINE = "Trigger:";
+/** US-004: the origin fact an earlier thread states, and the one its merged issue must not keep. */
+const ORIGIN_LINE = "Origin:";
 /** US-005: the same shape the fix prompt and the inline body use, so one reader strips either. */
 const LINEAGE_LINE = "Lineage:";
 
-/**
- * US-002: the trigger class an earlier finding's first comment states, or undefined when it states
- * none. The class itself is read by the shared `readFindingThreadFacts`; an old thread written before
- * the vocabulary existed keeps an absent trigger so it still blocks as it did.
- */
-function earlierTrigger(body: string): FindingTrigger | undefined {
-  const states = body.split("\n").some((text) => text.startsWith(TRIGGER_LINE));
-  return states ? readFindingThreadFacts(body).trigger : undefined;
+/** Whether an earlier body states the fact line at all; a body that is silent claims nothing. */
+function statesLine(body: string, prefix: string): boolean {
+  return body.split("\n").some((text) => text.startsWith(prefix));
 }
 
 /**
- * US-001/US-005: the fact lines a rendered body carries are metadata, not part of the issue text an item
- * keeps — `Trigger:` and `Lineage:` say where a finding came from, not what it says.
+ * US-002/US-004: the trigger class and origin an earlier finding's first comment states, each kept only
+ * when the body states it — the values themselves are read by the shared `readFindingThreadFacts`. An old
+ * thread written before the vocabulary existed keeps an absent trigger, so it still blocks as it did, and
+ * carries no origin, which reads `pr` and blocks too.
+ */
+function earlierFacts(body: string): { trigger?: FindingTrigger; origin?: FindingOrigin } {
+  const { trigger, origin } = readFindingThreadFacts(body);
+  return {
+    ...(statesLine(body, TRIGGER_LINE) ? { trigger } : {}),
+    ...(statesLine(body, ORIGIN_LINE) ? { origin } : {}),
+  };
+}
+
+/**
+ * US-001/US-004/US-005: the fact lines a rendered body carries are metadata, not part of the issue text an
+ * item keeps — `Trigger:`, `Origin:` and `Lineage:` say where a finding came from, not what it says.
  */
 function withoutFactLines(issue: string): string {
+  const metadata = [TRIGGER_LINE, ORIGIN_LINE, LINEAGE_LINE];
   const lines = issue.split("\n");
-  const kept = lines.filter((line) => !line.startsWith(TRIGGER_LINE) && !line.startsWith(LINEAGE_LINE));
+  const kept = lines.filter((line) => !metadata.some((prefix) => line.startsWith(prefix)));
   if (kept.length === lines.length) return issue;
   return kept
     .join("\n")
@@ -308,11 +327,11 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
     seen.add(key);
     // `earlierIssue` is the finding text: the visible header and the identity markers are not content.
     const body = earlierIssue(thread);
-    const trigger = earlierTrigger(body);
-    // A finding carried over from an earlier round keeps the lineage its own key was read for (US-005).
+    // A finding carried over from an earlier round keeps the facts its own thread states (US-002, US-004)
+    // and the lineage its own key was read for (US-005).
     const facts = {
       issue: withoutFactLines(body),
-      ...(trigger === undefined ? {} : { trigger }),
+      ...earlierFacts(body),
       ...lineageFacts(input, key),
     };
     if (confirmed) {
@@ -538,7 +557,17 @@ async function postSummary(
 }
 
 /** Save complete fix inputs before mutation, then publish findings and the final summary. */
-export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
+export async function postPrReview(received: PostReviewInput): Promise<PostReviewOutcome> {
+  // US-003: settlement comes first, so even the review id and the artifact record the settled origins. The
+  // caller's own input is left untouched: every later call in this function reads this copy.
+  const input: PostReviewInput = {
+    ...received,
+    verdict: settleFindingOrigins(received.verdict, {
+      lineage: received.lineage,
+      // A top-level own comment (summary, carried record, signals) has no thread, so it is not one of these.
+      ownThreadKeys: new Set(received.own.flatMap(({ key, threadId }) => (threadId === undefined ? [] : [key]))),
+    }),
+  };
   const reviewId = crypto.randomUUID();
   await persistArtifact(input, recordsCodeReview(input) ? reviewId : undefined);
   const findings = await postFindings(input);

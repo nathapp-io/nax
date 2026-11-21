@@ -129,6 +129,44 @@ describe("parsePrReviewReply", () => {
   });
 });
 
+describe("parsePrReviewReply finding origin (US-002)", () => {
+  /** No prompt context at all: the parser keeps an origin a review was never asked for. */
+  const findingOf = (extra: Record<string, unknown>) =>
+    parsePrReviewReply(JSON.stringify({ ...base, findings: [{ issue: "bug", ...extra }] }), [], [])?.findings[0];
+
+  test("AC-11 reads fix-gap and trims its evidence on a review asked for no origin", () => {
+    const finding = findingOf({ origin: "fix-gap", originEvidence: "  added by push 1  " });
+    expect(finding).toMatchObject({ origin: "fix-gap", originEvidence: "added by push 1" });
+  });
+  test("AC-12 reads pr as a stated origin", () => {
+    expect(findingOf({ origin: "pr" })).toHaveProperty("origin", "pr");
+  });
+  test("AC-13 leaves a finding with no origin carrying neither field", () => {
+    const finding = findingOf({});
+    expect(finding).not.toHaveProperty("origin");
+    expect(finding).not.toHaveProperty("originEvidence");
+    // The same finding does carry the field once the reply states one: absence above is the omission.
+    expect(findingOf({ origin: "pr", originEvidence: "own line" })).toHaveProperty("origin", "pr");
+  });
+  test("AC-14 drops an unknown origin value", () => {
+    const finding = findingOf({ origin: "regression", originEvidence: "not a push" });
+    expect(finding).not.toHaveProperty("origin");
+    expect(finding).not.toHaveProperty("originEvidence");
+    expect(findingOf({ origin: "fix-regression", originEvidence: "not a push" })).toHaveProperty(
+      "origin",
+      "fix-regression",
+    );
+  });
+  test("AC-15 caps origin evidence at 300 characters", () => {
+    expect(findingOf({ origin: "fix-gap", originEvidence: "z".repeat(400) })?.originEvidence).toBe("z".repeat(300));
+  });
+  test("AC-16 drops whitespace-only origin evidence but keeps the origin", () => {
+    const finding = findingOf({ origin: "fix-gap", originEvidence: "   " });
+    expect(finding).toHaveProperty("origin", "fix-gap");
+    expect(finding).not.toHaveProperty("originEvidence");
+  });
+});
+
 describe("missingTriage", () => {
   test("US-006 AC-9 reports only unanswered earlier ids", () => {
     const verdict = {

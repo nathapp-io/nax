@@ -158,6 +158,45 @@ describe("renderFindingComment", () => {
   test("US-005 AC-11 renders no lineage line without a lineage", () => {
     expect(bot.renderFindingComment(finding)).not.toContain("Lineage:");
   });
+  test("US-001 AC-14 puts the origin line directly after the trigger line", () => {
+    const body = bot.renderFindingComment({
+      ...finding,
+      trigger: "normal",
+      origin: "fix-gap",
+      originEvidence: "added by push 1",
+    });
+    const lines = body.split("\n");
+    const trigger = lines.indexOf("Trigger: normal");
+    expect(trigger).toBeGreaterThan(-1);
+    expect(lines[trigger + 1]).toBe("Origin: fix-gap - added by push 1");
+  });
+  test("US-001 AC-15 places a bare origin line before the lineage line", () => {
+    const body = bot.renderFindingComment({
+      ...finding,
+      trigger: "normal",
+      origin: "fix-gap",
+      lineage: { generation: 2, parents: [], pushSha: `${"abcdef1"}${"0".repeat(33)}` },
+    });
+    const lines = body.split("\n");
+    expect(lines).toContain("Origin: fix-gap");
+    expect(lines.indexOf("Origin: fix-gap")).toBeLessThan(lines.findIndex((line) => line.startsWith("Lineage:")));
+  });
+  test("US-001 AC-16 renders a pr origin exactly as an absent origin", () => {
+    const base = { ...finding, trigger: "normal" as const, triggerEvidence: "two writers" };
+    expect(bot.renderFindingComment({ ...base, origin: "pr" })).toBe(bot.renderFindingComment(base));
+  });
+  test("US-001 AC-17 caps the origin evidence as the trigger evidence is capped", () => {
+    const evidence = "z".repeat(400);
+    const body = bot.renderFindingComment({
+      ...finding,
+      trigger: "normal",
+      origin: "fix-gap",
+      originEvidence: evidence,
+    });
+    const origin = body.split("\n").find((line) => line.startsWith("Origin: ")) ?? "";
+    expect(origin).toBe(`Origin: fix-gap - ${bot.safeText(evidence, 300)}`);
+    expect(origin.length).toBeLessThan(`Origin: fix-gap - ${evidence}`.length);
+  });
   test("sanitizes and caps both issue and suggestion", () => {
     const text = `@alice #12 [x](http://e.com) ${"z".repeat(3_000)}`;
     const body = `**Important** (quality): ${bot.safeText(text, 2_000)}\n\nSuggestion: ${bot.safeText(text, 2_000)}`;
@@ -257,6 +296,34 @@ describe("renderReviewSummary", () => {
     expect(bot.renderReviewSummary(summary({ earlier: { open: 0, fixed: 0, withdrawn: 0 } }))).not.toContain(
       "earlier findings re-checked",
     );
+  });
+  test("US-001 AC-18 adds the origin and its evidence to a residual finding", () => {
+    const body = bot.renderReviewSummary(
+      summary({
+        residual: [
+          {
+            ...finding,
+            issue: "Lock leaks",
+            file: "a.ts",
+            line: 3,
+            trigger: "normal",
+            origin: "fix-gap",
+            originEvidence: "added by push 1",
+          },
+        ],
+      }),
+    );
+    expect(body.split("\n")).toContain(
+      "- **Important** `a.ts`:3: Lock leaks (trigger normal; origin fix-gap - added by push 1)",
+    );
+  });
+  test("US-001 AC-19 leaves a pr-origin residual line unchanged", () => {
+    const body = bot.renderReviewSummary(
+      summary({
+        residual: [{ ...finding, issue: "Lock leaks", file: "a.ts", line: 3, trigger: "normal", origin: "pr" }],
+      }),
+    );
+    expect(body.split("\n")).toContain("- **Important** `a.ts`:3: Lock leaks (trigger normal)");
   });
   test.each([
     ["agents-md", "AGENTS.md"],

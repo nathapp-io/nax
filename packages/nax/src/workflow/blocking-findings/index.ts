@@ -1,7 +1,7 @@
 /**
- * The shared finding vocabulary: what a review finding needs in order to occur (`trigger`, US-001),
- * which of those classes block readiness (`blockingTriggers`, US-002), and how an authorized
- * per-PR scope ruling narrows or widens that set.
+ * The shared finding vocabulary: what a review finding needs in order to occur (`trigger`, US-001), which of
+ * those classes block readiness (`blockingTriggers`, US-002), where its lines came from (`origin`, US-001) and
+ * how an authorized per-PR scope ruling narrows or widens the trigger set.
  *
  * A nested barrel (`@/workflow/blocking-findings`), not an export of the `@/workflow` barrel: that
  * barrel imports `@/operations` and `@/config`, so routing through it would close an import cycle
@@ -20,6 +20,20 @@ export const FINDING_TRIGGERS = ["normal", "own-concurrency", "adversarial", "ma
 
 export type FindingTrigger = (typeof FINDING_TRIGGERS)[number];
 
+/**
+ * Where a finding's lines came from, relative to what this PR was asked to change (US-001): the PR's own
+ * change, lines a bot fix added on top of it, or a gap in that fix. A reviewer judgement, backed by the
+ * one deterministic fact the lineage supplies.
+ */
+export const FINDING_ORIGINS = ["pr", "fix-regression", "fix-gap"] as const;
+
+export type FindingOrigin = (typeof FINDING_ORIGINS)[number];
+
+/** An absent or unknown origin reads `pr`: the finding sits on the PR's own change. */
+export function parseFindingOrigin(value: unknown): FindingOrigin | undefined {
+  return FINDING_ORIGINS.find((origin) => origin === value);
+}
+
 /** Missing or unknown reads as "normal", so an unclassified finding still blocks. */
 export function parseFindingTrigger(value: unknown): FindingTrigger {
   return FINDING_TRIGGERS.find((trigger) => trigger === value) ?? "normal";
@@ -35,23 +49,37 @@ const BLOCKING_SEVERITIES: readonly WorkflowSeverity[] = ["critical", "important
 const SEVERITY_LABEL = /^\*\*(critical|important|minor)\*\*/i;
 const ISSUE_LABEL = /^\*\*(?:critical|important|minor)\*\*(?: \([^)]*\))?:\s*/i;
 const TRIGGER_PREFIX = "Trigger:";
+const ORIGIN_PREFIX = "Origin:";
 const LINEAGE_PREFIX = "Lineage:";
 /** A line opening with one of these is quoting a ruling, not making one. */
 const QUOTE_MARKERS = [">", "-", "*"];
 const SCOPE_RULING = /^blocking triggers:[ \t]*(.*)$/i;
 
-/** Critical or important AND trigger in the set; an absent trigger reads "normal". */
+/**
+ * Critical or important AND not fix-gap AND trigger in the set. An absent origin reads "pr" and an absent
+ * trigger reads "normal", so an unclassified finding blocks as it always did; a finding on lines a bot fix
+ * itself added (`fix-gap`) never blocks, because the fix would otherwise block on its own work (#2987).
+ */
 export function isBlockingFinding(
-  finding: { readonly severity: WorkflowSeverity; readonly trigger?: FindingTrigger },
+  finding: {
+    readonly severity: WorkflowSeverity;
+    readonly trigger?: FindingTrigger;
+    readonly origin?: FindingOrigin;
+  },
   blocking: readonly FindingTrigger[],
 ): boolean {
   if (!BLOCKING_SEVERITIES.includes(finding.severity)) return false;
+  if ((finding.origin ?? "pr") === "fix-gap") return false;
   return blocking.includes(finding.trigger ?? "normal");
 }
 
-/** Severity and trigger read back from a bot finding thread body (first comment). */
-export function readFindingThreadFacts(body: string): { severity: WorkflowSeverity; trigger: FindingTrigger } {
-  return { severity: readSeverity(body), trigger: readTrigger(body) };
+/** Severity, trigger and origin read back from a bot finding thread body (first comment). */
+export function readFindingThreadFacts(body: string): {
+  severity: WorkflowSeverity;
+  trigger: FindingTrigger;
+  origin: FindingOrigin;
+} {
+  return { severity: readSeverity(body), trigger: readTrigger(body), origin: readOrigin(body) };
 }
 
 /** The label a bot finding body leads with; an unlabelled body reads important, as `mergeEarlier` did. */
@@ -67,9 +95,17 @@ function readTrigger(body: string): FindingTrigger {
   return parseFindingTrigger(line.slice(TRIGGER_PREFIX.length).split(" - ")[0]?.trim() ?? "");
 }
 
-/** The plain first line of a finding issue: no severity label, no Trigger:/Lineage: lines. */
+/** The origin a finding states on its `Origin:` line; absent or unknown reads pr. */
+function readOrigin(body: string): FindingOrigin {
+  const line = body.split("\n").find((text) => text.startsWith(ORIGIN_PREFIX));
+  if (line === undefined) return "pr";
+  return parseFindingOrigin(line.slice(ORIGIN_PREFIX.length).split(" - ")[0]?.trim() ?? "") ?? "pr";
+}
+
+/** The plain first line of a finding issue: no severity label, no Trigger:/Origin:/Lineage: lines. */
 export function firstIssueLine(issue: string): string {
-  const kept = issue.split("\n").filter((line) => !line.startsWith(TRIGGER_PREFIX) && !line.startsWith(LINEAGE_PREFIX));
+  const metadata = [TRIGGER_PREFIX, ORIGIN_PREFIX, LINEAGE_PREFIX];
+  const kept = issue.split("\n").filter((line) => !metadata.some((prefix) => line.startsWith(prefix)));
   const first = kept.find((line) => line.trim().length > 0) ?? "";
   return first.trim().replace(ISSUE_LABEL, "").trim();
 }

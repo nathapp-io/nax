@@ -1,7 +1,7 @@
 import { MAX_FORGE_COMMENT_CHARS, withNaxBotMarker } from "@/forge";
 import type { PrEarlierVerdict, PrIntent, PrTriageDecision, PrTriageVerdict } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
-import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
+import type { EffectiveBlockingTriggers, FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 // Reuse the safe path leaf without loading workflow's orchestration barrel (as in render.ts).
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
@@ -82,6 +82,9 @@ function severityLabel(finding: { readonly severity: WorkflowSeverity }): string
 export interface FindingWithTrigger extends WorkflowFindingDraft {
   readonly trigger?: FindingTrigger;
   readonly triggerEvidence?: string;
+  /** US-001: where its lines came from; absent reads `pr`, the PR's own change. */
+  readonly origin?: FindingOrigin;
+  readonly originEvidence?: string;
   /** US-005: the bot fix whose lines this finding sits on; absent when nothing owns them. */
   readonly lineage?: FindingLineage;
 }
@@ -92,6 +95,31 @@ function lineageLine(lineage: FindingLineage): string {
   return `Lineage: generation ${lineage.generation}, on lines added by nax bot fix ${lineage.pushSha.slice(0, SHORT_SHA_LENGTH)}${parents === "" ? "" : ` for ${parents}`}`;
 }
 
+/**
+ * US-001: the origin a reader must be able to see, or `undefined` when there is none to state. A `pr`
+ * origin is what an absent origin already means, so it writes nothing and the body stays as it was.
+ */
+function statedOrigin(finding: { readonly origin?: FindingOrigin }): FindingOrigin | undefined {
+  return finding.origin === undefined || finding.origin === "pr" ? undefined : finding.origin;
+}
+
+/** The evidence suffix, capped exactly as the trigger line's is. */
+function originEvidence(finding: { readonly originEvidence?: string }): string {
+  return finding.originEvidence === undefined ? "" : ` - ${safeText(finding.originEvidence, EVIDENCE_LIMIT)}`;
+}
+
+/** US-001: the origin fact line an inline thread carries, so a later run reading only the PR sees it. */
+function originLine(finding: { readonly origin?: FindingOrigin; readonly originEvidence?: string }): string[] {
+  const origin = statedOrigin(finding);
+  return origin === undefined ? [] : [`Origin: ${origin}${originEvidence(finding)}`];
+}
+
+/** US-001: the same fact on a residual summary line, as a clause inside the parenthesis. */
+function originClause(finding: { readonly origin?: FindingOrigin; readonly originEvidence?: string }): string {
+  const origin = statedOrigin(finding);
+  return origin === undefined ? "" : `; origin ${origin}${originEvidence(finding)}`;
+}
+
 /** Fact lines sit together under the issue, and carry no prose of their own (US-001, US-005). */
 function factLines(finding: FindingWithTrigger): string[] {
   const lines: string[] = [];
@@ -100,6 +128,7 @@ function factLines(finding: FindingWithTrigger): string[] {
       finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
     lines.push(`Trigger: ${finding.trigger}${evidence}`);
   }
+  lines.push(...originLine(finding));
   if (finding.lineage !== undefined) lines.push(lineageLine(finding.lineage));
   return lines;
 }
@@ -150,11 +179,15 @@ export interface CarriedSummary {
   readonly line?: number;
   readonly trigger?: FindingTrigger;
   readonly triggerEvidence?: string;
+  /** US-001: absent reads `pr`; a carried finding is built without one, so it never shows an origin. */
+  readonly origin?: FindingOrigin;
+  readonly originEvidence?: string;
 }
 
 /**
  * US-003: a finding that does not block gets no inline thread, so the summary is the only place it appears —
- * with the class of condition it needs, which is why it did not block.
+ * with the class of condition it needs, which is why it did not block. US-001 adds the origin for the same
+ * reason: a later run reading only the PR must see that a residual sits on lines a bot fix added.
  */
 function residualItem(finding: CarriedSummary): string {
   const code = finding.file === undefined ? "" : `\`${safeCode(finding.file)}\``;
@@ -163,7 +196,7 @@ function residualItem(finding: CarriedSummary): string {
   const evidence =
     finding.triggerEvidence === undefined ? "" : ` - ${safeText(finding.triggerEvidence, EVIDENCE_LIMIT)}`;
   const issue = safeText(finding.issue, TEXT_LIMIT);
-  return `- **${severityLabel(finding)}** ${location}${issue} (trigger ${finding.trigger ?? "normal"}${evidence})`;
+  return `- **${severityLabel(finding)}** ${location}${issue} (trigger ${finding.trigger ?? "normal"}${evidence}${originClause(finding)})`;
 }
 
 /**

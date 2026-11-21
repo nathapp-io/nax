@@ -97,12 +97,17 @@ function pushRecordComment(entry: BotPushEntry): PrComment {
 }
 
 /** An open finding thread an earlier bot review opened, at the line the tests blame. */
-function earlierThread(key = EARLIER_KEY, line = LINE, id = "T1"): PrThread {
+function earlierThread(
+  key = EARLIER_KEY,
+  line = LINE,
+  id = "T1",
+  body = "**Important** (quality): Lock leaks",
+): PrThread {
   const opener = {
     id: "77",
     kind: "thread" as const,
     author: "bot",
-    body: withNaxBotMarker("**Important** (quality): Lock leaks", key),
+    body: withNaxBotMarker(body, key),
     createdAt: "",
   };
   return { id, replyTo: "77", path: FILE, line, resolved: false, outdated: false, comments: [opener] };
@@ -351,5 +356,211 @@ describe("runBotReview finding lineage", () => {
     const agreed = agreedFinding(artifact, findingKey(finding));
     expect(agreed).toMatchObject({ lineageUnknown: true });
     expect(agreed).not.toHaveProperty("lineage");
+  });
+});
+
+/** The claim the reviewer made: a finding on a line a bot fix wrote, with the evidence it gave for it. */
+const fixGap: PrFinding = { ...finding, origin: "fix-gap", originEvidence: "the fix added this line" };
+
+/** An incremental review whose range holds P: the reviewed head and P are reachable, P is after the range base. */
+function incrementalRange(): void {
+  outcome = { ...outcome, index: { reviewedHead: RANGE_BASE, reviewedBase: REVIEWED_BASE, keys: [] } };
+  _botReviewDeps.isAncestor = stubAncestry({
+    [`${RANGE_BASE}>${HEAD}`]: true,
+    [`${REVIEWED_BASE}>merge`]: true,
+    [`${PUSH}>${HEAD}`]: true,
+    [`${PUSH}>${RANGE_BASE}`]: false,
+  });
+}
+
+/** The review summary the post node wrote: the only body it posts at the issue endpoint that opens this way. */
+function summaryBody(): string {
+  const body = postedBodies().find((text) => text.includes("Review of"));
+  if (body === undefined) throw new Error("the review posted no summary");
+  return body;
+}
+
+/** One `### <heading>` section of that summary, without the sections that follow it. */
+function summarySection(heading: string): string {
+  const body = summaryBody();
+  const at = body.indexOf(`### ${heading}`);
+  if (at === -1) return "";
+  const rest = body.slice(at + heading.length + "### ".length);
+  const end = rest.indexOf("\n### ");
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+/** The body of every inline-thread comment the review rewrote in place (`PATCH` on the comment itself). */
+function editedThreadBodies(): string[] {
+  return run.mock.calls
+    .filter(([args]) => args.includes("PATCH") && args.some((arg) => arg.startsWith("repos/o/r/pulls/comments/")))
+    .flatMap(([args]) => args.filter((arg) => arg.startsWith("body=")))
+    .map((arg) => arg.slice("body=".length));
+}
+
+describe("runBotReview finding origins", () => {
+  beforeEach(() => {
+    incrementalRange();
+    comments = [summaryComment([push])];
+    verdict = { ...emptyVerdict, findings: [fixGap] };
+    // Blame names P itself, which the reviewed head reaches, so the push owns the finding's line.
+    _botReviewDeps.runGit = stubGit({ ancestry: { [`${PUSH}>${HEAD}`]: 0 } });
+  });
+
+  test("AC-12 posts no inline comment for a fix-gap finding a bot push backs", async () => {
+    await runBotReview(input);
+
+    expect(postedBodies("repos/o/r/pulls/7/comments")).not.toContainEqual(expect.stringContaining(fixGap.issue));
+  });
+
+  test("AC-13 lists a backed fix-gap finding as residual with its origin in the parenthesis", async () => {
+    await runBotReview(input);
+
+    expect(summaryBody()).toContain("### Residual findings (not blocking)");
+    expect(summaryBody()).toContain(`${fixGap.issue} (trigger normal; origin fix-gap`);
+  });
+
+  test("AC-14 records the fix-gap origin and its evidence on the agreed item", async () => {
+    const artifact = await reviewArtifact();
+
+    expect(agreedFinding(artifact, findingKey(fixGap))).toMatchObject({
+      origin: "fix-gap",
+      originEvidence: fixGap.originEvidence,
+    });
+  });
+
+  test("AC-15 posts an inline comment when blame names a commit the push cannot reach", async () => {
+    // The ancestry answer this test adds: the blamed commit is not reachable from the push.
+    _botReviewDeps.runGit = stubGit({
+      ancestry: { [`${PUSH}>${HEAD}`]: 0, [`${BLAMED}>${PUSH}`]: 1 },
+      blame: { sha: BLAMED },
+    });
+
+    await runBotReview(input);
+
+    expect(postedBodies("repos/o/r/pulls/7/comments")).toContainEqual(expect.stringContaining(fixGap.issue));
+  });
+
+  test("AC-16 records the unsupported claim as pr, with no evidence left behind", async () => {
+    _botReviewDeps.runGit = stubGit({
+      ancestry: { [`${PUSH}>${HEAD}`]: 0, [`${BLAMED}>${PUSH}`]: 1 },
+      blame: { sha: BLAMED },
+    });
+
+    const artifact = await reviewArtifact();
+
+    const agreed = agreedFinding(artifact, findingKey(fixGap));
+    expect(agreed).toMatchObject({ origin: "pr" });
+    expect(agreed).not.toHaveProperty("originEvidence");
+  });
+
+  test("AC-20 settles an unsolicited fix-gap claim a review that listed no bot push still states", async () => {
+    // No ledger at all: nothing in range to list, and no lineage that could back the claim.
+    comments = [];
+
+    const artifact = await reviewArtifact();
+
+    expect(prompt()).not.toContain("## Earlier nax bot fix pushes in this range");
+    expect(agreedFinding(artifact, findingKey(fixGap))).toMatchObject({ origin: "pr" });
+  });
+});
+
+/**
+ * US-004: a `fix-gap` finding gets no thread of its own, so an own inline thread for its key means the
+ * finding was posted while it blocked. Re-raising it cannot pass the lineage check on its own words: it
+ * reads `pr`, blocks, and its thread is rewritten rather than duplicated.
+ */
+describe("runBotReview re-raised fix-gap findings (US-004)", () => {
+  const ownKey = findingKey(fixGap);
+
+  beforeEach(() => {
+    incrementalRange();
+    comments = [summaryComment([push])];
+    // The bot already owns an inline thread for the key, so the re-raise has a thread to rewrite.
+    threads = [earlierThread(ownKey)];
+    verdict = { ...emptyVerdict, findings: [fixGap] };
+    _botReviewDeps.runGit = stubGit({ ancestry: { [`${PUSH}>${HEAD}`]: 0 } });
+  });
+
+  test("AC-1 edits the own thread's comment and posts no new inline comment", async () => {
+    await runBotReview(input);
+
+    expect(editedThreadBodies()).toContainEqual(expect.stringContaining(fixGap.issue));
+    expect(postedBodies("repos/o/r/pulls/7/comments")).not.toContainEqual(expect.stringContaining(fixGap.issue));
+  });
+
+  test("AC-2 edits the thread to a body with no line starting Origin:", async () => {
+    await runBotReview(input);
+
+    const body = editedThreadBodies().find((text) => text.includes(fixGap.issue));
+    expect(body).toBeDefined();
+    expect((body ?? "").split("\n").some((line) => line.startsWith("Origin:"))).toBe(false);
+  });
+
+  test("AC-3 records the re-raised finding's agreed item with origin pr", async () => {
+    const artifact = await reviewArtifact();
+
+    expect(agreedFinding(artifact, ownKey)).toMatchObject({ origin: "pr" });
+  });
+
+  test("AC-4 lists a minor fix-gap finding under Minor findings with no origin clause", async () => {
+    threads = [];
+    verdict = { ...emptyVerdict, findings: [{ ...fixGap, severity: "minor" }] };
+
+    await runBotReview(input);
+
+    const minor = summarySection("Minor findings");
+    expect(minor).toContain(fixGap.issue);
+    expect(minor.toLowerCase()).not.toContain("origin");
+  });
+
+  test("AC-11 does not list the finding under ### Residual findings (not blocking)", async () => {
+    await runBotReview(input);
+
+    expect(summarySection("Residual findings (not blocking)")).not.toContain(fixGap.issue);
+  });
+});
+
+/** An earlier own finding thread whose body states the facts a rendered comment carries. */
+const EARLIER_WITH_ORIGIN =
+  "**Important** (quality): Lock leaks\n\nTrigger: normal\nOrigin: fix-regression - added by push 1";
+const EARLIER_WITHOUT_ORIGIN = "**Important** (quality): Lock leaks\n\nTrigger: normal";
+
+/**
+ * US-004: a finding re-carried from an earlier own thread keeps the origin that thread states, and its
+ * issue text carries none of the fact lines — a thread written before origins existed carries none at all.
+ */
+describe("runBotReview earlier finding origins (US-004)", () => {
+  beforeEach(() => {
+    // Nothing new is raised: the only agreed finding is the one the earlier thread carries.
+    verdict = { ...emptyVerdict, findings: [] };
+  });
+
+  test("AC-5 carries the origin an earlier own thread states into the agreed item", async () => {
+    threads = [earlierThread(EARLIER_KEY, LINE, "T1", EARLIER_WITH_ORIGIN)];
+
+    const artifact = await reviewArtifact();
+
+    expect(agreedFinding(artifact, EARLIER_KEY)).toMatchObject({ origin: "fix-regression" });
+  });
+
+  test("AC-6 records the merged issue with no line starting Origin:", async () => {
+    threads = [earlierThread(EARLIER_KEY, LINE, "T1", EARLIER_WITH_ORIGIN)];
+
+    const artifact = await reviewArtifact();
+
+    const item = agreedFinding(artifact, EARLIER_KEY);
+    expect(item?.kind).toBe("finding");
+    expect((item?.issue ?? "").split("\n").some((line) => line.startsWith("Origin:"))).toBe(false);
+  });
+
+  test("AC-7 records no origin field when the earlier thread states none", async () => {
+    threads = [earlierThread(EARLIER_KEY, LINE, "T1", EARLIER_WITHOUT_ORIGIN)];
+
+    const artifact = await reviewArtifact();
+
+    const item = agreedFinding(artifact, EARLIER_KEY);
+    expect(item?.kind).toBe("finding");
+    expect(item).not.toHaveProperty("origin");
   });
 });

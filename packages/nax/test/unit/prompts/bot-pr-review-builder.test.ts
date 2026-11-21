@@ -40,8 +40,9 @@ const taskContract = `Answer every listed thread id and comment id exactly once.
 "agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
 Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
 Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
+Severity: "critical" = unsafe behaviour or lost data a user or caller can reach; "important" = other wrong behaviour a user or caller can reach, a changed behaviour no test would catch, or a break of a listed project rule; "minor" = worth noting.
 Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
-normal: reachable in ordinary use of the product.
+normal: reachable in ordinary use of the product, as this repository documents or configures it.
 own-concurrency: needs two of the tool's own processes or sessions interleaving.
 adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).
 manual: needs a human acting on the checkout or state mid-operation.
@@ -56,7 +57,11 @@ Reply with only one JSON object:
   "cannotVerify": ["..."],
   "inspectedFiles": ["src/a.ts"]
 }`;
-/** The complete `## Your task` text before the approval line existed. */
+/**
+ * The complete `## Your task` text a conversation-only review gets: the review sentence and the
+ * contract, with no approval line. US-002 added the severity scale and the grounded `normal`
+ * definition to every contract, so it is no longer the text from before the approval line existed.
+ */
 const preChangeTask = ["## Your task", reviewIntentLine, taskContract].join("\n");
 const taskWithApprovalLine = ["## Your task", reviewIntentLine, approvalLine, taskContract].join("\n");
 
@@ -532,7 +537,7 @@ describe("buildBotPrReviewPrompt finding trigger contract (US-001)", () => {
     expect(contract).toContain('"trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..."');
   });
   test.each([
-    ["normal", "normal: reachable in ordinary use of the product."],
+    ["normal", "normal: reachable in ordinary use of the product, as this repository documents or configures it."],
     ["own-concurrency", "own-concurrency: needs two of the tool's own processes or sessions interleaving."],
     [
       "adversarial",
@@ -542,6 +547,37 @@ describe("buildBotPrReviewPrompt finding trigger contract (US-001)", () => {
   ])("AC-9 defines the %s class on its own line", (trigger, definition) => {
     const lines = contract.split("\n").filter((line) => line.startsWith(`${trigger}:`));
     expect(lines).toEqual([definition]);
+  });
+});
+
+describe("buildBotPrReviewPrompt severity scale (US-002)", () => {
+  const severityLine =
+    'Severity: "critical" = unsafe behaviour or lost data a user or caller can reach; "important" = other wrong behaviour a user or caller can reach, a changed behaviour no test would catch, or a break of a listed project rule; "minor" = worth noting.';
+  const DECISION_LINE_PREFIX = 'Set "decision" on a finding only';
+  const taskOf = (input: BotPrReviewPromptInput) => {
+    const prompt = prompts.buildBotPrReviewPrompt(input);
+    return prompt.slice(prompt.lastIndexOf("## Your task"));
+  };
+
+  test("AC-1 states the severity scale on exactly one line of a full review's task", () => {
+    expect(
+      taskOf(base)
+        .split("\n")
+        .filter((line) => line.startsWith("Severity:")),
+    ).toEqual([severityLine]);
+  });
+  test("AC-2 places the severity scale directly after the optional-decision line", () => {
+    const lines = taskOf(base).split("\n");
+    const decisionAt = lines.findIndex((line) => line.startsWith(DECISION_LINE_PREFIX));
+    expect(decisionAt).toBeGreaterThan(-1);
+    expect(lines[decisionAt + 1]).toBe(severityLine);
+  });
+  test("AC-3 states the same severity scale in a conversation-only review", () => {
+    expect(
+      taskOf({ ...base, conversationOnly: true })
+        .split("\n")
+        .filter((line) => line.startsWith("Severity:")),
+    ).toEqual([severityLine]);
   });
 });
 

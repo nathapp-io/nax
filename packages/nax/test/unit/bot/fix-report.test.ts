@@ -6,7 +6,7 @@ import { type BotPushEntry, pushRecordKey, readPushLedger, withPushLedger } from
 import { ownLedgerEntries } from "@/bot/push-record";
 import { NAX_WORKFLOW_PR_MARKER, ownComments, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
-import { firstIssueLine } from "@/workflow/blocking-findings";
+import { type FindingOrigin, firstIssueLine } from "@/workflow/blocking-findings";
 
 afterEach(() => mock.restore());
 
@@ -114,6 +114,63 @@ describe("readyStep published head (US-009)", () => {
     spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "failed", detail: "red" });
     await readyStep(makeBotFixDraftEnv(), { step: "ready", timings: {} });
     expect(wait).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * US-004: readiness takes its origin decision from `isBlockingFinding` alone, never a second one of its
+ * own. A `fix-gap` finding holds nothing; a `fix-regression` one and a historical item that states no
+ * origin still hold, exactly as they did before origins existed.
+ */
+describe("readyStep open finding hold (US-004)", () => {
+  const KEY = "f-0123456789abcdef";
+
+  /** A draft PR whose every other readiness input passes, so only the review's agreed items decide. */
+  async function readyWith(agreed: readonly AgreedItem[]) {
+    const base = makeBotFixDraftEnv();
+    const env: BotFixEnv = { ...base, review: { ...base.review, agreed } };
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "green", detail: "all checks passed" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "readHeadGateNames").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "readSettledKeys").mockResolvedValue(new Set<string>());
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    return readyStep(env, { step: "ready", timings: {} });
+  }
+
+  /** The review's only agreed item: an important normal finding, with the origin the case names. */
+  function onlyFinding(origin?: FindingOrigin): AgreedItem {
+    return {
+      kind: "finding",
+      key: KEY,
+      issue: "Lock leaks",
+      severity: "important",
+      trigger: "normal",
+      ...(origin === undefined ? {} : { origin }),
+    };
+  }
+
+  test("AC-8 reports no open-finding hold for an important normal fix-gap finding", async () => {
+    const result = await readyWith([onlyFinding("fix-gap")]);
+
+    expect(result.patch.readyHeld).toBeUndefined();
+    expect(result.patch.markedReady).toBe(true);
+  });
+
+  test("AC-9 holds the key of an important normal fix-regression finding", async () => {
+    const result = await readyWith([onlyFinding("fix-regression")]);
+
+    expect(result.patch.readyHeld).toContain(KEY);
+    expect(result.patch.markedReady).toBe(false);
+  });
+
+  test("AC-10 holds the key of an artifact that states no origin", async () => {
+    const result = await readyWith([onlyFinding()]);
+
+    expect(result.patch.readyHeld).toContain(KEY);
+    expect(result.patch.markedReady).toBe(false);
   });
 });
 

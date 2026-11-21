@@ -170,6 +170,30 @@ describe("readBlockingFindingThreads", () => {
     expect(await readBlockingFindingThreads(input({ threads: [findingThread({ body })] }))).toEqual([]);
   });
 
+  // US-001: the origin is carried on the thread exactly as the trigger class is, and the shared predicate
+  // decides both. A fix-gap finding sits on lines a bot fix added, so it never holds readiness.
+  test("US-001 AC-20 leaves out an important normal finding that claims a fix-gap origin", async () => {
+    const body = findingBody(
+      "**Important** (quality): lock leaks\n\nTrigger: normal - two writers\nOrigin: fix-gap - added by push 1",
+    );
+    const items = await readBlockingFindingThreads(
+      input({ threads: [findingThread({ body })], configured: ["normal", "own-concurrency"] }),
+    );
+    expect(items).toEqual([]);
+  });
+
+  test("US-001 AC-21 keeps an important normal finding that claims a fix-regression origin", async () => {
+    const body = findingBody(
+      "**Important** (quality): lock leaks\n\nTrigger: normal - two writers\nOrigin: fix-regression - added by push 1",
+    );
+    const items = await readBlockingFindingThreads(
+      input({ threads: [findingThread({ body })], configured: ["normal", "own-concurrency"] }),
+    );
+    expect(items).toEqual([
+      { id: KEY, kind: "finding", severity: "important", file: PATH, line: LINE, issue: "bot review: lock leaks" },
+    ]);
+  });
+
   test("AC-6 leaves out another author's thread and an own workflow item key", async () => {
     const foreign = findingThread({ author: "mallory" });
     const item = findingThread({ key: "w-US-001.1a2b3c4d" });
