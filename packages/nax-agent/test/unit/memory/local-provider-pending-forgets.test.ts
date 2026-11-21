@@ -353,6 +353,10 @@ describe("local provider pending forgets", () => {
       // The note survives a proposal forget whether or not the record was ever written.
       expect(result).toEqual({ id: "client-forget-1", status: "pending" });
       expect(await store.readNote("project", "a")).toEqual(saved);
+      // The entry names the revision it was aimed at: the id of the note the mirror holds.
+      expect(await store.readPendingForgets()).toEqual([
+        { clientId: "client-forget-1", scope: "project", slug: "a", reason: "the budget doubled", noteId: saved.id },
+      ]);
     });
   });
 });

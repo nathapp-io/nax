@@ -84,6 +84,27 @@ describe("memory store pending forgets", () => {
     });
   });
 
+  test("a line with a noteId round-trips, and a line without one keeps its four fields", async () => {
+    await withTempDir(async (dir) => {
+      const project = projectPath(dir);
+      const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+      // The revision the forget was aimed at, and a legacy entry written before it existed.
+      const withRevision = pendingForget({ noteId: "note-a" });
+      const legacy = pendingForget({ clientId: "client-2", slug: "export-append", reason: "the export landed" });
+
+      await store.writePendingForgets([withRevision, legacy]);
+
+      const read = await store.readPendingForgets();
+      expect(read).toEqual([withRevision, legacy]);
+      // The absent field stays absent: a legacy line is written back as the line it was, so a
+      // reader that treats "no revision" differently from "undefined revision" sees no change.
+      expect(read[1]).not.toHaveProperty("noteId");
+      expect(await Bun.file(recordPath(project)).text()).toBe(
+        `${JSON.stringify(withRevision)}\n${JSON.stringify(legacy)}\n`,
+      );
+    });
+  });
+
   test("AC-4: writePendingForgets([]) then readPendingForgets resolves []", async () => {
     await withTempDir(async (dir) => {
       const project = projectPath(dir);
