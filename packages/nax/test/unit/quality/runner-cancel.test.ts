@@ -26,8 +26,10 @@ beforeEach(() => {
   kills = [];
   spawns = 0;
   clock = makeFakeClock();
-  _qualityRunnerDeps.setTimeout = clock.setTimeout as typeof _qualityRunnerDeps.setTimeout;
-  _qualityRunnerDeps.clearTimeout = clock.clearTimeout as typeof _qualityRunnerDeps.clearTimeout;
+  _qualityRunnerDeps.setTimeout = clock.setTimeout;
+  _qualityRunnerDeps.clearTimeout = (handle) => {
+    if (typeof handle === "number") clock.clearTimeout(handle);
+  };
   _qualityRunnerDeps.killProcessGroup = (pid, signal) => {
     kills.push({ pid, signal });
     if (signal === 0) return false;
@@ -138,6 +140,7 @@ describe("runQualityCommand — abort signal", () => {
     controller.abort();
     expect(result.success).toBe(true);
     expect(kills).toEqual([]);
+    expect(clock.pending()).toBe(0);
   });
 
   test("AC-6: a list command with an already-aborted signal spawns nothing", async () => {
