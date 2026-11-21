@@ -165,16 +165,10 @@ describe("agent:@alias overrides", () => {
   });
 
   test("AC-1: a bare @name is refused naming <agent>:@sol", () => {
-    const err = (() => {
-      try {
-        parseModelOption("@sol");
-      } catch (e) {
-        return e;
-      }
-    })();
-    expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("BOT_MODEL_INVALID");
-    expect((err as NaxError).message).toContain("<agent>:@sol");
+    expect(() => parseModelOption("@sol")).toThrow(NaxError);
+    expect(() => parseModelOption("@sol")).toThrow(
+      expect.objectContaining({ code: "BOT_MODEL_INVALID", message: expect.stringContaining("<agent>:@sol") }),
+    );
   });
   test("AC-2: native:@sol[high] parses unexpanded", () => {
     expect(parseModelOption("native:@sol[high]")).toEqual({ agent: "native", model: "@sol[high]" });

@@ -4,7 +4,6 @@ import { makeAdviceDecision, makeCallOp, makeMockCallContext, makeNaxConfig, wit
 import type { AdviceAuditRecord } from "@/advisor";
 import { appendLabel, buildMenu, writeAdviceAudit } from "@/advisor";
 import { type AdvisorReplayDeps, runAdvisorReplay } from "@/cli/advisor-replay";
-import { NaxError } from "@/errors";
 import type { AdviseOpOutput } from "@/operations";
 import { type NaxRuntime, storyExecRoot } from "@/runtime";
 
@@ -347,10 +346,10 @@ describe("nax advisor replay — model alias overrides", () => {
   test("AC-14/16: a bare @name rejects naming <agent>:@sol with MODEL_ALIAS_INVALID", async () => {
     await withTempDir(async (dir) => {
       const h = await setup(dir, aliasConfig());
-      const err = await run("@sol", dir, h).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(NaxError);
-      expect((err as NaxError).code).toBe("MODEL_ALIAS_INVALID");
-      expect((err as NaxError).message).toContain("<agent>:@sol");
+      await expect(run("@sol", dir, h)).rejects.toMatchObject({
+        code: "MODEL_ALIAS_INVALID",
+        message: expect.stringContaining("<agent>:@sol"),
+      });
       expect(h.closes()).toBe(1);
     });
   });
