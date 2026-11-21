@@ -13,6 +13,7 @@
  * `refreshMemoryIndex` is the one impure entry: it renders from a store and writes
  * both scope indexes back through it.
  */
+import { isStaleForget } from "./forget-revision.ts";
 import type { MemoryStore } from "./store.ts";
 import {
   MEMORY_DESCRIPTION_MAX_CHARS,
@@ -23,6 +24,7 @@ import {
   type MemoryDecision,
   type MemoryNote,
   type MemoryNoteType,
+  type MemoryPendingForget,
   memoryNoteKey,
 } from "./types.ts";
 
@@ -199,8 +201,16 @@ export interface RefreshMemoryIndexOptions {
  * a scope outside this mirror feeds (koda's forget approvals) is the third reading, and a key
  * held by more than one of them is one mark.
  *
- * The record stays what it was: the source's keys never reach `pending-forgets.jsonl`, or an
- * approval would retire a note this mirror has no record of.
+ * A recorded entry marks its note only while it still names that note. The record is per project
+ * and a user note is shared, so a different project may have refiled the slug after the entry was
+ * written — and the note it was written for is gone. Marking it anyway would tell the next session
+ * that a note it should use is on its way out. The check is a read of the note, so it is the one
+ * part of a render that can fail: an unanswerable read (a user entry on a store with no user
+ * directory, a path outside its scope root) is not a stale revision, and the entry marks its key
+ * exactly as it did before the record carried a revision at all.
+ *
+ * The record stays what it was: the source's keys never reach `pending-forgets.jsonl`, and a
+ * stale entry is left for an approval to remove — a render reports, it does not rewrite.
  */
 async function markedForgets(
   store: MemoryStore,
@@ -211,8 +221,28 @@ async function markedForgets(
   if (recorded.length === 0 && fromSource.size === 0) return heldForgets ?? NO_HELD_FORGETS;
   const keys = new Set(heldForgets ?? NO_HELD_FORGETS);
   for (const key of fromSource) keys.add(key);
-  for (const entry of recorded) keys.add(memoryNoteKey(entry.scope, entry.slug));
+  for (const entry of recorded) {
+    if (await entryStillCurrent(store, entry)) keys.add(memoryNoteKey(entry.scope, entry.slug));
+  }
   return keys;
+}
+
+/**
+ * Whether one recorded entry still names the note the mirror holds under its key.
+ *
+ * A note that is absent answers "current" — there is nothing the entry would wrongly retire, and
+ * a recorded forget of a slug the mirror does not hold keeps waiting, as it always has.
+ */
+async function entryStillCurrent(store: MemoryStore, entry: MemoryPendingForget): Promise<boolean> {
+  try {
+    return !isStaleForget(entry, await store.readNote(entry.scope, entry.slug));
+  } catch {
+    // A read this render cannot answer (no user directory, a path outside its scope root) is not
+    // evidence of a refile, and marking is the answer that errs safe: a marker a render could not
+    // rule out is better than telling the session a held-forget note is settled. A render has no
+    // logger to report it through, and the store already warns for the reads it can report.
+    return true;
+  }
 }
 
 /**
