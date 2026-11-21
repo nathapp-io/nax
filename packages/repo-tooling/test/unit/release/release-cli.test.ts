@@ -124,11 +124,12 @@ describe("release command", () => {
       }),
   );
 
-  test("a confirmed tag pushes vX.Y.Z only", () =>
+  test("a confirmed tag pushes vX.Y.Z only, pinned to the confirmed commit", () =>
     withFixture((f) => {
       const result = f.run(["tag"], "y\n");
       expect(result.status).toBe(0);
       expect(f.git("tag", "--list")).toBe("v0.84.0");
-      expect(result.calls).toContain("git push origin v0.84.0");
+      const head = f.git("rev-parse", "HEAD");
+      expect(result.calls).toContain(`git push origin ${head}:refs/tags/v0.84.0`);
     }));
 });

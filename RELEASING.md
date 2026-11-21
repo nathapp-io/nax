@@ -36,7 +36,9 @@ bun run release tag
 
 The command then reads `origin` once: it refuses when `origin` already holds
 `vX.Y.Z`, and it refuses unless `origin/main` is the commit it is about to tag, so
-a local commit that was never pushed cannot be released. If the tag push itself
+a local commit that was never pushed cannot be released. It re-reads `main` once
+the push is confirmed and refuses if it moved meanwhile, and it creates and
+delivers the tag at exactly the confirmed commit. If the tag push itself
 fails, rerunning `bun run release tag` on the same clean `main` pushes the
 existing local tag instead of refusing it.
 

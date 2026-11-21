@@ -75,6 +75,18 @@ function remoteRefs(tag: string): Map<string, string> {
   return refs;
 }
 
+/**
+ * Whether a local tag already sits at `head`. A tag anywhere else is refused, so the retry path
+ * can only ever deliver the commit the remote check approves.
+ */
+function localTagAtHead(tag: string, head: string): boolean {
+  const existing = localTagCommit(tag);
+  if (existing !== undefined && existing !== head) {
+    throw new Error(`Tag ${tag} already exists at ${existing}, not at HEAD`);
+  }
+  return existing !== undefined;
+}
+
 /** Refuses to deliver a tag origin already holds, or a HEAD origin/main does not have. */
 function rejectStaleOrigin(tag: string, head: string): void {
   const refs = remoteRefs(tag);
@@ -209,10 +221,7 @@ async function tagRelease(dryRun: boolean): Promise<void> {
   const version = sharedVersion(readManifests(REPO));
   const tag = `v${version}`;
   const head = git("rev-parse", "HEAD");
-  const existing = localTagCommit(tag);
-  if (existing !== undefined && existing !== head) {
-    throw new Error(`Tag ${tag} already exists at ${existing}, not at HEAD`);
-  }
+  localTagAtHead(tag, head);
   console.log(`${tag}: publishes ${NAMES} at ${version} under ${distTagsFor(version).join(" + ")}`);
   if (dryRun) {
     console.log("Dry run; no tag created or pushed.");
@@ -222,9 +231,17 @@ async function tagRelease(dryRun: boolean): Promise<void> {
     console.log("Aborted.");
     return;
   }
-  rejectStaleOrigin(tag, head);
-  if (existing === undefined) git("tag", tag);
-  git("push", "origin", tag);
+  // The prompt is interactive, so another terminal can commit while it waits. Revalidate the
+  // checkout, then create the tag at — and deliver — exactly the commit the remote check approved,
+  // never whatever HEAD or the tag ref point at later.
+  const verified = git("rev-parse", "HEAD");
+  if (verified !== head) {
+    throw new Error(`HEAD moved from ${head} to ${verified} while the confirmation was open; rerun to review it`);
+  }
+  const existing = localTagAtHead(tag, verified);
+  rejectStaleOrigin(tag, verified);
+  if (!existing) git("tag", tag, verified);
+  git("push", "origin", `${verified}:refs/tags/${tag}`);
   console.log(`Pushed ${tag}; watch https://github.com/nathapp-io/nax/actions`);
 }
 

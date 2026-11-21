@@ -11,13 +11,15 @@ const REAL_GIT = { PATH: "/usr/bin:/bin" };
 const TAG = "refs/tags/v0.84.0";
 const MAIN = "refs/heads/main";
 
-function withFixture(fn: (f: ReleaseCliFixture) => void): void {
+function withFixture(fn: (f: ReleaseCliFixture) => void | Promise<void>): Promise<void> {
   const f = makeReleaseCliFixture();
-  try {
-    fn(f);
-  } finally {
-    cleanupTempDir(f.dir);
-  }
+  return (async () => {
+    try {
+      await fn(f);
+    } finally {
+      cleanupTempDir(f.dir);
+    }
+  })();
 }
 
 function originDir(f: ReleaseCliFixture): string {
@@ -104,6 +106,35 @@ describe("release tag against a bare origin", () => {
       localOnlyCommit(f);
       f.run(["tag"], "y\n", REAL_GIT);
       expect(f.git("tag", "--list", "v0.84.0")).toBe("");
+    }));
+
+  test("a commit that lands while the confirmation waits is refused", () =>
+    withFixture(async (f) => {
+      const result = await f.runPaused(["tag"], () => localOnlyCommit(f), REAL_GIT);
+      expect(result.prompted).toBe(true);
+      expect(result.status).not.toBe(0);
+      expect(originRef(f, TAG)).toBeUndefined();
+      expect(f.git("tag", "--list", "v0.84.0")).toBe("");
+    }));
+
+  test("a local tag that appears while the confirmation waits is refused", () =>
+    withFixture(async (f) => {
+      let tagCommit = "";
+      const result = await f.runPaused(
+        ["tag"],
+        () => {
+          localOnlyCommit(f);
+          tagCommit = f.git("rev-parse", "HEAD");
+          f.git("tag", "v0.84.0");
+          f.git("reset", "--hard", "HEAD~1");
+        },
+        REAL_GIT,
+      );
+      expect(result.prompted).toBe(true);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("not at HEAD");
+      expect(f.git("rev-parse", "v0.84.0")).toBe(tagCommit);
+      expect(originRef(f, TAG)).toBeUndefined();
     }));
 
   test("refuses when origin/main holds a commit local main lacks", () =>
