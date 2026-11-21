@@ -1,4 +1,4 @@
-import type { FindingTrigger } from "@/workflow/blocking-findings";
+import type { FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 import type { WorkflowFindingDraft } from "./workflow-types";
 
 export type PrIntent = "pass" | "fail" | "n/a";
@@ -22,6 +22,10 @@ export type PrFinding = WorkflowFindingDraft & {
   readonly trigger?: FindingTrigger;
   /** US-001: the one detail that shows the trigger class, as the reviewer reported it. */
   readonly triggerEvidence?: string;
+  /** US-002: where the problem came from; absent reads `pr`, including on artifacts written before it. */
+  readonly origin?: FindingOrigin;
+  /** US-002: the one detail that shows the origin, as the reviewer reported it. */
+  readonly originEvidence?: string;
 };
 
 export interface PrReviewVerdict {
