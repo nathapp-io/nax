@@ -89,20 +89,34 @@ describe("expandConfigModelAliases", () => {
     expect(err.code).toBe("MODEL_ALIAS_INVALID");
     expect(err.message).toContain('unknown model alias "sol"');
   });
+  test("single bad reference preserves its expansion context", () => {
+    const err = caught(() =>
+      expandConfigModelAliases({ bot: { models: { review: { agent: "native", model: "@nope" } } } }),
+    );
+    expect(err.code).toBe("MODEL_ALIAS_INVALID");
+    expect(err.context).toEqual({
+      stage: "config",
+      path: "bot.models.review.model",
+      alias: "nope",
+      paths: ["bot.models.review.model"],
+    });
+    expect(err.message).toBe('bot.models.review.model: unknown model alias "nope"');
+  });
   test("AC-14/17 aggregates every bad reference in one error", () => {
     const raw = {
       bot: { models: { review: { agent: "native", model: "@sol" } } },
-      models: { native: { fast: "@sol" } },
+      models: { native: { fast: "@missing" } },
     };
     const err = caught(() => expandConfigModelAliases(raw));
     expect(err.code).toBe("MODEL_ALIAS_INVALID");
+    expect(err.context).toMatchObject({ stage: "config", path: "bot.models.review.model", alias: "sol" });
     expect([...String(err.context?.paths).split(",")].sort()).toEqual([
       "bot.models.review.model",
       "models.native.fast",
     ]);
     const lines = err.message.split("\n");
     expect(lines).toContain('bot.models.review.model: unknown model alias "sol"');
-    expect(lines).toContain('models.native.fast: unknown model alias "sol"');
+    expect(lines).toContain('models.native.fast: unknown model alias "missing"');
     expect(lines).toHaveLength(2);
   });
   test("AC-15 absent modelAliases", () => {

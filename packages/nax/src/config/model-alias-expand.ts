@@ -154,7 +154,11 @@ export function expandConfigModelAliases(raw: Record<string, unknown>): Record<s
   const result = "models" in raw ? { ...walked, models: expandModels(raw.models, state) } : walked;
   if (state.errors.length > 0) {
     const paths = state.errors.map((e) => e.context?.path as string);
-    throw new NaxError(state.errors.map((e) => e.message).join("\n"), MODEL_ALIAS_INVALID, { stage: "config", paths });
+    throw new NaxError(state.errors.map((e) => e.message).join("\n"), MODEL_ALIAS_INVALID, {
+      ...state.errors[0]?.context,
+      stage: "config",
+      paths,
+    });
   }
   return result;
 }
