@@ -3,7 +3,7 @@
   "feature": "model-aliases",
   "branchName": "feat/model-aliases",
   "createdAt": "2026-11-21T05:11:38.326Z",
-  "updatedAt": "2026-11-21T05:28:35.976Z",
+  "updatedAt": "2026-11-21T05:38:22.075Z",
   "userStories": [
     {
       "id": "US-001",
@@ -93,14 +93,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded pure recursive walker with explicit full-path exclusions and aggregate errors, extending an upstream helper without loader or runtime changes."
+        "reasoning": "A bounded pure recursive walker with explicit full-path exclusions and aggregate errors, extending an upstream helper without loader or runtime changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/model-alias-expand.ts",
@@ -115,7 +118,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "84048fa09cddd511ada8fedbccdd5c13ad0862c8"
     },
     {
       "id": "US-003",
