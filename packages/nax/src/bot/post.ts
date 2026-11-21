@@ -280,26 +280,38 @@ function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
 }
 
 const TRIGGER_LINE = "Trigger:";
+/** US-004: the origin fact an earlier thread states, and the one its merged issue must not keep. */
+const ORIGIN_LINE = "Origin:";
 /** US-005: the same shape the fix prompt and the inline body use, so one reader strips either. */
 const LINEAGE_LINE = "Lineage:";
 
-/**
- * US-002: the trigger class an earlier finding's first comment states, or undefined when it states
- * none. The class itself is read by the shared `readFindingThreadFacts`; an old thread written before
- * the vocabulary existed keeps an absent trigger so it still blocks as it did.
- */
-function earlierTrigger(body: string): FindingTrigger | undefined {
-  const states = body.split("\n").some((text) => text.startsWith(TRIGGER_LINE));
-  return states ? readFindingThreadFacts(body).trigger : undefined;
+/** Whether an earlier body states the fact line at all; a body that is silent claims nothing. */
+function statesLine(body: string, prefix: string): boolean {
+  return body.split("\n").some((text) => text.startsWith(prefix));
 }
 
 /**
- * US-001/US-005: the fact lines a rendered body carries are metadata, not part of the issue text an item
- * keeps — `Trigger:` and `Lineage:` say where a finding came from, not what it says.
+ * US-002/US-004: the trigger class and origin an earlier finding's first comment states, each kept only
+ * when the body states it — the values themselves are read by the shared `readFindingThreadFacts`. An old
+ * thread written before the vocabulary existed keeps an absent trigger, so it still blocks as it did, and
+ * carries no origin, which reads `pr` and blocks too.
+ */
+function earlierFacts(body: string): { trigger?: FindingTrigger; origin?: FindingOrigin } {
+  const { trigger, origin } = readFindingThreadFacts(body);
+  return {
+    ...(statesLine(body, TRIGGER_LINE) ? { trigger } : {}),
+    ...(statesLine(body, ORIGIN_LINE) ? { origin } : {}),
+  };
+}
+
+/**
+ * US-001/US-004/US-005: the fact lines a rendered body carries are metadata, not part of the issue text an
+ * item keeps — `Trigger:`, `Origin:` and `Lineage:` say where a finding came from, not what it says.
  */
 function withoutFactLines(issue: string): string {
+  const metadata = [TRIGGER_LINE, ORIGIN_LINE, LINEAGE_LINE];
   const lines = issue.split("\n");
-  const kept = lines.filter((line) => !line.startsWith(TRIGGER_LINE) && !line.startsWith(LINEAGE_LINE));
+  const kept = lines.filter((line) => !metadata.some((prefix) => line.startsWith(prefix)));
   if (kept.length === lines.length) return issue;
   return kept
     .join("\n")
@@ -315,11 +327,11 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
     seen.add(key);
     // `earlierIssue` is the finding text: the visible header and the identity markers are not content.
     const body = earlierIssue(thread);
-    const trigger = earlierTrigger(body);
-    // A finding carried over from an earlier round keeps the lineage its own key was read for (US-005).
+    // A finding carried over from an earlier round keeps the facts its own thread states (US-002, US-004)
+    // and the lineage its own key was read for (US-005).
     const facts = {
       issue: withoutFactLines(body),
-      ...(trigger === undefined ? {} : { trigger }),
+      ...earlierFacts(body),
       ...lineageFacts(input, key),
     };
     if (confirmed) {
