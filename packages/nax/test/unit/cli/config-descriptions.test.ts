@@ -116,6 +116,10 @@ describe("FIELD_DESCRIPTIONS agent.modelAliases", () => {
   test("AC-7: names the acp: shape", () => {
     expect(FIELD_DESCRIPTIONS["agent.modelAliases"]).toContain("acp:");
   });
+
+  test("AC-15: names the @name reference form", () => {
+    expect(FIELD_DESCRIPTIONS["agent.modelAliases"]).toContain("@name");
+  });
 });
 
 // US-002 (chat-acp-subagents): the optional subagent profile override and its

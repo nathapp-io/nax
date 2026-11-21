@@ -41,6 +41,7 @@ import {
   warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
+import { expandConfigModelAliases } from "./model-alias-expand";
 import { PROJECT_NAX_DIR } from "./paths";
 import { sensitiveFilteredProcessEnv } from "./profile";
 import { stripRemovedConfig } from "./removed-stage-names";
@@ -252,7 +253,17 @@ export function validatePackageConfig(
   // The block is enforced now, so validate it rather than reject it.
   validatePermissionsBlock(rawMerged);
   const stripped = stripRemovedConfig(rawMerged, warnDedupe.warn);
-  const result = NaxConfigSchema.safeParse(stripped);
+  // MODEL_ALIAS_INVALID keeps its own code; only add the package to its context.
+  let expanded: Record<string, unknown>;
+  try {
+    expanded = expandConfigModelAliases(stripped);
+  } catch (err) {
+    if (err instanceof NaxError && err.code === "MODEL_ALIAS_INVALID") {
+      throw new NaxError(err.message, err.code, { ...err.context, packageDir, cause: err });
+    }
+    throw err;
+  }
+  const result = NaxConfigSchema.safeParse(expanded);
   if (!result.success) {
     const errors = result.error.issues.map((err) => {
       const path = String(err.path.join("."));

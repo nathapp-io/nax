@@ -289,7 +289,18 @@ function isLegacyFlatModels(val: unknown): boolean {
 }
 
 /** Per-agent model map: Record<agentName, Record<tierName, ModelEntry>> */
-const PerAgentModelMapSchema = z.record(z.string().min(1), z.record(z.string().min(1), ModelEntrySchema));
+const TierMapSchema = z.record(z.string().min(1), ModelEntrySchema).superRefine((tiers, ctx) => {
+  for (const key of Object.keys(tiers)) {
+    if (key.startsWith("@")) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message: 'tier names cannot start with "@" (reserved for model aliases)',
+      });
+    }
+  }
+});
+const PerAgentModelMapSchema = z.record(z.string().min(1), TierMapSchema);
 
 export const ModelMapSchema = z.preprocess((val) => {
   if (isLegacyFlatModels(val)) {
@@ -298,7 +309,13 @@ export const ModelMapSchema = z.preprocess((val) => {
   return val;
 }, PerAgentModelMapSchema);
 
-export const ModelTierSchema = z.string().min(1, "Tier name must be non-empty");
+export const ModelTierSchema = z
+  .string()
+  .min(1, "Tier name must be non-empty")
+  .refine((value) => !value.startsWith("@"), {
+    message:
+      'an @alias is a model id, not a tier; where a model pin is accepted, write { "agent": "<agent>", "model": "<value>" }',
+  });
 const ConfiguredModelObjectSchema = z.object({
   agent: z.string().min(1, "agent must be non-empty"),
   model: z.string().min(1, "model must be non-empty"),

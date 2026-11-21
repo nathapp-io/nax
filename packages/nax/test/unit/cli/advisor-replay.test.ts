@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { makeAdviceDecision, makeCallOp, makeMockCallContext, withTempDir } from "@test/helpers";
+import { makeAdviceDecision, makeCallOp, makeMockCallContext, makeNaxConfig, withTempDir } from "@test/helpers";
 import type { AdviceAuditRecord } from "@/advisor";
 import { appendLabel, buildMenu, writeAdviceAudit } from "@/advisor";
 import { type AdvisorReplayDeps, runAdvisorReplay } from "@/cli/advisor-replay";
@@ -61,7 +61,12 @@ const replyFor = (optionId: string): AdviseOpOutput => ({
   },
 });
 
-function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: string) {
+function harness(
+  outDir: string,
+  replies: (AdviseOpOutput | Error)[],
+  failGit?: string,
+  config?: ReturnType<typeof makeNaxConfig>,
+) {
   const git: string[][] = [];
   const out: string[] = [];
   const err: string[] = [];
@@ -70,19 +75,27 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
   const contexts: [string, string][] = [];
   const dispatched: { featureName?: string; packageDir: string; viewPackageDir: string; execRoot: string }[] = [];
   const specPaths: unknown[] = [];
+  const models: unknown[] = [];
+  let closes = 0;
   let i = 0;
   let tmp = 0;
   const deps: AdvisorReplayDeps = {
     resolveOutputDir: async () => outDir,
     buildCallContext: async (d, feature) => {
       contexts.push([d, feature]);
-      const ctx = makeMockCallContext();
+      const ctx = makeMockCallContext(config ? { config } : {});
       runtimes.push(ctx.runtime);
-      return { ctx, close: async () => {} };
+      return {
+        ctx,
+        close: async () => {
+          closes++;
+        },
+      };
     },
     callOp: makeCallOp({
       onDispatch: (_op, ctx, input) => {
         order.push("callOp");
+        models.push(typeof input === "object" && input !== null && "model" in input ? input.model : undefined);
         specPaths.push(typeof input === "object" && input !== null && "specPath" in input ? input.specPath : null);
         dispatched.push({
           featureName: ctx.featureName,
@@ -115,7 +128,19 @@ function harness(outDir: string, replies: (AdviseOpOutput | Error)[], failGit?: 
     },
     now: () => "2026-10-10T00-00-00",
   };
-  return { deps, git, out, err, order, writes, dispatched, contexts, specPaths };
+  return {
+    deps,
+    git,
+    out,
+    err,
+    order,
+    writes,
+    dispatched,
+    contexts,
+    specPaths,
+    models,
+    closes: () => closes,
+  };
 }
 
 describe("nax advisor replay", () => {
@@ -285,6 +310,55 @@ describe("nax advisor replay — argument validation", () => {
       }
       expect(codes).toEqual([2, 2]);
       expect(h.order).toEqual([]);
+    });
+  });
+});
+
+describe("nax advisor replay — model alias overrides", () => {
+  const SOL = "openai-codex/gpt-6.1-sol";
+  const aliasConfig = () => makeNaxConfig({ agent: { modelAliases: { sol: SOL } } });
+  const run = async (model: string, dir: string, h: ReturnType<typeof harness>) =>
+    runAdvisorReplay({ dir, feature: "feat", eval: false, json: false, model }, h.deps);
+  const setup = async (dir: string, config?: ReturnType<typeof makeNaxConfig>) => {
+    const outDir = join(dir, "out");
+    await writeAdviceAudit(outDir, "feat", rec("D-1", "fix"));
+    return harness(outDir, [replyFor("A")], undefined, config);
+  };
+
+  test("AC-9: agent:@name dispatches the expanded model", async () => {
+    await withTempDir(async (dir) => {
+      const h = await setup(dir, aliasConfig());
+      await run("native:@sol", dir, h);
+      expect(h.models).toEqual([{ agent: "native", model: SOL }]);
+    });
+  });
+
+  test("AC-10/11/12/13: an unknown alias rejects before any dispatch or git call, closing once", async () => {
+    await withTempDir(async (dir) => {
+      const h = await setup(dir, aliasConfig());
+      await expect(run("native:@nope", dir, h)).rejects.toMatchObject({ code: "MODEL_ALIAS_INVALID" });
+      expect(h.models).toEqual([]);
+      expect(h.git).toEqual([]);
+      expect(h.closes()).toBe(1);
+    });
+  });
+
+  test("AC-14/16: a bare @name rejects naming <agent>:@sol with MODEL_ALIAS_INVALID", async () => {
+    await withTempDir(async (dir) => {
+      const h = await setup(dir, aliasConfig());
+      await expect(run("@sol", dir, h)).rejects.toMatchObject({
+        code: "MODEL_ALIAS_INVALID",
+        message: expect.stringContaining("<agent>:@sol"),
+      });
+      expect(h.closes()).toBe(1);
+    });
+  });
+
+  test("AC-20: a literal agent:model override is dispatched unchanged", async () => {
+    await withTempDir(async (dir) => {
+      const h = await setup(dir, aliasConfig());
+      await run(`native:${SOL}`, dir, h);
+      expect(h.models).toEqual([{ agent: "native", model: SOL }]);
     });
   });
 });

@@ -1,0 +1,336 @@
+{
+  "project": "nax-monorepo",
+  "feature": "model-aliases",
+  "branchName": "feat/model-aliases",
+  "createdAt": "2026-11-21T05:11:38.326Z",
+  "updatedAt": "2026-11-21T06:05:09.244Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add the pure model alias reference helper",
+      "description": "**Goal** — Add and export the pure, one-level alias reference helper without wiring any callers yet.\n\n**Motivation** — Custom tiers cannot carry this: a tier entry cannot reference another name, tiers are per agent with default-agent fallback, and turning a pin into a tier changes escalation behaviour (#2977).\n\n**Approach** — A reference is `@<name>` or `@<name>[<effort>]`, matched against the whole string: `<name>` is one or more characters that are not whitespace, `[` or `]`, and the optional suffix is exactly one trailing `[<effort>]` with a non-empty effort that holds no whitespace or brackets. Any other string that starts with `@` (`@sol[high`, `@sol[]`, `@sol[a][b]`, `@sol[high]x`, `@ sol`) is a malformed reference. Before lookup the pass treats a missing or non-object `agent.modelAliases` as `{}` and a non-string alias value as an invalid alias, so a malformed map produces `MODEL_ALIAS_INVALID`, never a crash. Expansion looks `<name>` up in the alias map with an own-property check. A reference without a suffix yields the alias value unchanged. A reference with a suffix yields the alias value's base id (`parseModelSpec(value).model`) followed by `[<effort>]`, replacing any suffix the value carried, the same rule `withEffort` applies to tier selectors (`src/config/schema-types.ts`).\n\nThe pass reads the alias map from `raw.agent.modelAliases` (absent: `{}`), matching each reference against the keys as trimmed, the same way `ModelAliasesSchema` trims them. The helper owns this matching rule so direct CLI callers get the same result. `ModelAliasesSchema` (`src/config/schemas-model-alias.ts`): `z.record(z.string().trim().min(1), ModelAliasTargetSchema)`; a value is `provider/model[effort]` (`MODEL_ALIAS_TARGET`) or `acp:<agent>[/<model>][effort]` (`ACP_ALIAS_TARGET`). Referenced values must be literal provider/model ids in this feature's config/override positions, not acp: targets, aliases, bare ids, tiers or lists.\n\nAll expansion errors are `NaxError` with code `MODEL_ALIAS_INVALID` and context `{ stage: \"config\", path, alias }`. Error text is `<path>: <message>`. Required messages: `unknown model alias \"name\"`; `model alias \"name\" must be a literal model id, not another alias`; `model alias \"name\" is an acp: target, usable only from agent files`; `model alias \"name\" is not a provider/model id`; `empty model alias reference` for `@` or `@[high]`; `malformed model alias reference \"<ref>\"` for malformed nonempty references. Use the shared parseModelSpec API for suffix replacement; the map's target shape is not broadened.\n\n**Scope** — In: create src/config/model-alias-expand.ts and its helper unit tests; export MODEL_ALIAS_PREFIX and expandModelAliasRef from src/config/index.ts. Out: US-002's recursive config walker and aggregation, US-003's load/schema wiring, US-004's CLI consumers, and US-005's guide. Alias chaining and agent-file @ syntax are not introduced.\n\n**Interface** —\n```typescript\nexport const MODEL_ALIAS_PREFIX = \"@\";\n\n/** One `@name[effort]` reference -> the literal id it stands for. Throws MODEL_ALIAS_INVALID. */\nexport function expandModelAliasRef(\n  ref: string,\n  aliases: Readonly<Record<string, string>>,\n  path: string, // config path or \"--model\", named in the error\n): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] expandModelAliasRef(\"@sol\", { sol: \"openai-codex/gpt-6.1-sol\" }, \"bot.models.review.model\") returns \"openai-codex/gpt-6.1-sol\".",
+        "[unit] expandModelAliasRef(\"@sol[high]\", { sol: \"openai-codex/gpt-6.1-sol\" }, \"p\") returns \"openai-codex/gpt-6.1-sol[high]\".",
+        "[unit] expandModelAliasRef(\"@sol[high]\", { sol: \"openai-codex/gpt-6.1-sol[medium]\" }, \"p\") returns \"openai-codex/gpt-6.1-sol[high]\", the reference's suffix replacing the value's.",
+        "[unit] expandModelAliasRef(\"@sol\", { sol: \"openai-codex/gpt-6.1-sol[medium]\" }, \"p\") returns \"openai-codex/gpt-6.1-sol[medium]\".",
+        "[unit] expandModelAliasRef(\"@sol\", { \" sol \": \"a/b\" }, \"p\") returns \"a/b\", matching keys as trimmed.",
+        "[unit] expandModelAliasRef(\"@nope\", {}, \"bot.models.review.model\") throws a NaxError with code MODEL_ALIAS_INVALID.",
+        "[unit] The error thrown by expandModelAliasRef(\"@nope\", {}, \"bot.models.review.model\") has the message 'bot.models.review.model: unknown model alias \"nope\"'.",
+        "[unit] expandModelAliasRef(\"@toString\", {}, \"p\") throws MODEL_ALIAS_INVALID, because inherited object keys are not aliases.",
+        "[unit] expandModelAliasRef(\"@a\", { a: \"@b\" }, \"p\") throws an error whose message contains 'model alias \"a\" must be a literal model id, not another alias'.",
+        "[unit] expandModelAliasRef(\"@r\", { r: \"acp:codex/gpt-6.1-terra\" }, \"p\") throws an error whose message contains 'model alias \"r\" is an acp: target, usable only from agent files'.",
+        "[unit] expandModelAliasRef(\"@x\", { x: \"no-provider\" }, \"p\") throws an error whose message contains 'model alias \"x\" is not a provider/model id'.",
+        "[unit] expandModelAliasRef(\"@[high]\", { sol: \"a/b\" }, \"p\") throws an error whose message contains 'empty model alias reference'.",
+        "[unit] expandModelAliasRef throws an error whose message contains 'malformed model alias reference' for each of \"@sol[high\", \"@sol[]\", \"@sol[a][b]\" and \"@sol[high]x\" with { sol: \"a/b\" }.",
+        "[unit] expandModelAliasRef(\"@sol\", { sol: 42 } as unknown as Record<string, string>, \"p\") throws MODEL_ALIAS_INVALID with a message containing 'not a provider/model id'.",
+        "[unit] expandModelAliasRef(\"@\", {}, \"p\") throws MODEL_ALIAS_INVALID with a message containing 'empty model alias reference'.",
+        "[unit] expandModelAliasRef(\"@ sol\", { sol: \"a/b\" }, \"p\") throws MODEL_ALIAS_INVALID with a message containing 'malformed model alias reference \"@ sol\"'.",
+        "[unit] The NaxError from expandModelAliasRef(\"@nope\", {}, \"bot.models.review.model\") has context containing { stage: \"config\", path: \"bot.models.review.model\", alias: \"nope\" }."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "model-aliases"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small pure parser/validator plus barrel export and focused tests; existing target-shape and effort conventions provide clear contracts, with no runtime integration or security-policy changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-model-alias.ts",
+        "packages/nax/src/config/schema-types.ts",
+        "packages/nax/src/config/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/model-alias-expand.ts",
+        "packages/nax/test/unit/config/model-alias-expand.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4d6db8d500a500ff75a76ccde61de3cbb5e677c3"
+    },
+    {
+      "id": "US-002",
+      "title": "Expand aliases in raw config model positions",
+      "description": "**Goal** — Extend the helper module with an immutable config walker that expands only model-position references and aggregates failures.\n\n**Motivation** — Custom tiers cannot carry this: a tier entry cannot reference another name, tiers are per agent with default-agent fallback, and turning a pin into a tier changes escalation behaviour (#2977).\n\n**Approach** — The pass reads the alias map from `raw.agent.modelAliases` (absent: `{}`), matching each reference against the keys as trimmed, the same way `ModelAliasesSchema` trims them, and rewrites exactly these positions:\n\n1. A string entry `models.<agent>.<tier>`.\n2. The `model` field of an object entry `models.<agent>.<tier>` (`ModelDef`).\n3. The `model` field of any object, at any depth, that has a string `agent` field and a string `model` field, except inside the excluded subtrees below. This covers every `{ agent, model }` selector (`ConfiguredModelObjectSchema`: `plan.model`, `routing.llm.model`, `review.semantic.model`, `review.adversarial.model`, `review.fixReview.model`, `advisor.model`, `advisor.fallbackModels[]`, `bot.models.*`, `workflow.models.*`, `finish.reviewers.*`) and every `agent.fallback.map` rung of the form `{ agent, model }`, including inside arrays, and a selector added to the schema later gets alias support without a code change.\n\nExcluded subtrees, never walked by rule 3, each matched by its full path from the config root: the top-level `models` (handled by rules 1 and 2; `bot.models` and `workflow.models` are walked), `agent.modelAliases` (the map itself), `routing.agents` (its `profiles[].target` is `{ agent, model: ModelTierSchema }`, a tier field, so an `@` reference there must reach the tier refusal below rather than be expanded), and `chat` (its `chat.workflow.*` model fields are out of scope).\n\nOnly a string that starts with `@` is rewritten. No other string in the config is touched, so values such as npm scopes (`@nathapp/...`) elsewhere in the config are safe.\n\nString-form selectors (`review.semantic.model: \"balanced\"`, `bot.models.review: \"fast\"`) are tier names by definition (`resolveConfiguredModel` treats every string selector as a tier). The pass leaves them alone, and `ModelTierSchema` rejects a tier string that starts with `@`, with a message that names the object form. Tier keys under `models.<agent>` are rejected the same way. This is what keeps an alias from ever being read as a tier. Schema refusal itself belongs to US-003; this story must leave those inputs intact.\n\nAll expansion errors are `NaxError` with code `MODEL_ALIAS_INVALID` and context `{ stage: \"config\", path, alias }`. At config load the pass collects every bad reference and throws once, one `<path>: <message>` line per reference, with `context.paths` listing them, before `safeParse` runs. At the per-package site (`validatePackageConfig`) the same error also carries `packageDir` in its context. This story implements collection; the per-package enrichment belongs to US-003.\n\n`expandConfigModelAliases` calls `expandModelAliasRef` for every reference. Before lookup the pass treats a missing or non-object `agent.modelAliases` as `{}` and a non-string alias value as an invalid alias, so a malformed map produces `MODEL_ALIAS_INVALID`, never a crash. The walker never mutates its input, even while expanding nested objects and arrays.\n\n**Scope** — In: extend src/config/model-alias-expand.ts, export expandConfigModelAliases from src/config/index.ts, and add walker tests. Out: US-003's loader/schema changes, US-004's post-load overrides, US-005's guide, and reimplementation of US-001's reference parser. Expanding `@` strings in config positions other than the three listed in Design § Approach. `@` references in `chat.workflow.*` model fields (`specWriter`, `specReviewer`, `botReview`, `botFix`); the `chat` subtree is not walked. `@` entries in the legacy flat `models` shape (pre per-agent map): left unexpanded and unvalidated, and they fail only at dispatch; only the per-agent `models.<agent>.<tier>` shape is walked. `agent.fallback.map` rungs written as a bare string (an agent name) or as `{ agent, tier }`: an `@` there is left unexpanded and unvalidated and fails only at dispatch; only `{ agent, model }` rungs are expanded.\n\n**Interface** —\n```typescript\n/** The raw merged config with every model-position reference expanded. Never mutates `raw`. */\nexport function expandConfigModelAliases(raw: Record<string, unknown>): Record<string, unknown>;\n```",
+      "acceptanceCriteria": [
+        "[unit] expandConfigModelAliases on { agent: { modelAliases: { sol: \"a/b\" } }, models: { native: { powerful: \"@sol[medium]\" } } } returns models.native.powerful equal to \"a/b[medium]\".",
+        "[unit] expandConfigModelAliases on { agent: { modelAliases: { sol: \"a/b\" } }, models: { native: { fast: { provider: \"a\", model: \"@sol\" } } } } returns models.native.fast.model equal to \"a/b\".",
+        "[unit] With sol set to \"a/b\", expandConfigModelAliases on a config whose bot.models.review is { agent: \"native\", model: \"@sol\" } returns bot.models.review.model equal to \"a/b\".",
+        "[unit] With sol set to \"a/b\", expandConfigModelAliases on a config whose advisor.fallbackModels is [{ agent: \"native\", model: \"@sol[low]\" }] returns advisor.fallbackModels[0].model equal to \"a/b[low]\".",
+        "[unit] With sol set to \"a/b\", expandConfigModelAliases on a config whose agent.fallback.map is { native: [{ agent: \"native\", model: \"@sol\" }] } returns agent.fallback.map.native[0].model equal to \"a/b\".",
+        "[unit] With sol set to \"a/b\", expandConfigModelAliases on a config whose review.semantic.model is { agent: \"native\", model: \"@sol\" } returns review.semantic.model.model equal to \"a/b\".",
+        "[unit] expandConfigModelAliases returns a string-form bot.models.fix of \"@sol\" unchanged.",
+        "[unit] expandConfigModelAliases returns plugins set to [{ module: \"@nathapp/x\" }] unchanged.",
+        "[unit] expandConfigModelAliases returns routing.agents.profiles[0].target set to { agent: \"native\", model: \"@sol\" } unchanged.",
+        "[unit] expandConfigModelAliases returns chat.workflow.specWriter set to { agent: \"native\", model: \"@sol\" } unchanged.",
+        "[unit] After expandConfigModelAliases(raw) returns, raw still deep-equals a structuredClone of it taken before the call.",
+        "[unit] expandConfigModelAliases on a config with no agent.modelAliases and no @ strings returns a value deep-equal to its input.",
+        "[unit] expandConfigModelAliases on a config whose agent.modelAliases is the string \"oops\" and whose bot.models.review is { agent: \"native\", model: \"@sol\" } throws MODEL_ALIAS_INVALID naming 'unknown model alias \"sol\"', not a TypeError.",
+        "[unit] expandConfigModelAliases on a config with unknown references at bot.models.review.model and models.native.fast throws one NaxError with code MODEL_ALIAS_INVALID whose context.paths holds exactly those two paths.",
+        "[unit] expandConfigModelAliases with agent.modelAliases absent and bot.models.review set to { agent: \"native\", model: \"@sol\" } throws MODEL_ALIAS_INVALID naming 'unknown model alias \"sol\"'.",
+        "[unit] expandConfigModelAliases with a non-object agent.modelAliases and multiple model-position @ references reports each reference as an unknown model alias in its aggregate error.",
+        "[unit] The aggregate MODEL_ALIAS_INVALID from expandConfigModelAliases with unknown references at bot.models.review.model and models.native.fast contains one '<path>: unknown model alias \"<name>\"' message line per failing reference."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "model-aliases"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded pure recursive walker with explicit full-path exclusions and aggregate errors, extending an upstream helper without loader or runtime changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/model-alias-expand.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/schemas-model.ts",
+        "packages/nax/src/config/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/config/model-alias-walk.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "84048fa09cddd511ada8fedbccdd5c13ad0862c8"
+    },
+    {
+      "id": "US-003",
+      "title": "Expand aliases at config validation and reserve @ from tiers",
+      "description": "**Goal** — Wire expansion into both merged-config validators and reject alias syntax in tier-only positions while retaining pin versus tier identity.\n\n**Motivation** — Custom tiers cannot carry this: a tier entry cannot reference another name, tiers are per agent with default-agent fallback, and turning a pin into a tier changes escalation behaviour (#2977).\n\n**Approach** — One pure expansion pass, `expandConfigModelAliases(raw)`, runs on the raw merged config immediately before `NaxConfigSchema.safeParse` at the two sites that validate a merged config: `finalizeAndValidateRootConfig` (`src/config/loader.ts`, the root chain: global, project, profiles, CLI overrides) and `validatePackageConfig` (`src/config/package-layer.ts`, every per-package overlay). Running after the merge means a root-chain profile can repoint one alias for its run and every reference in the config sees the final value. A per-package layer starts from the already-expanded root config, so an alias it sets applies only to the `@` references that package layer writes itself; references inherited from the root keep the root value. `mergePackageConfig` shallow-merges `agent`, so a package layer that sets `agent.modelAliases` replaces the root map for that package's own references.\n\nBecause every supported model-position reference is gone before validation, everything downstream is unchanged: `classifyModelSelector` sees a provider-qualified literal and returns `kind: \"model\"` (a pin), a tier entry that held `@sol` resolves as a tier with the expanded id, `validateNativeModelIds` checks the expanded native ids, and `nax config` prints expanded ids alongside the `agent.modelAliases` map itself.\n\n- `finalizeAndValidateRootConfig(rawConfig)` (`src/config/loader.ts`)\n  - Target: same, with `expandConfigModelAliases(stripped)` applied immediately before `safeParse`.\n- `validatePackageConfig(rawMerged, packageDir, profileChain, warnDedupe)` (`src/config/package-layer.ts`)\n  - Target: same, with `expandConfigModelAliases(stripped)` applied immediately before `safeParse`.\n- `ModelTierSchema` (`src/config/schemas-model.ts`)\n  - Target: also refuses a value starting with `@`, message: `an @alias is a model id, not a tier; where a model pin is accepted, write { \"agent\": \"<agent>\", \"model\": \"<value>\" }`. `ModelTierSchema` is also used for escalation rungs (`schemas-execution.ts`), which is why the message is conditional.\n- `PerAgentModelMapSchema` tier keys (`src/config/schemas-model.ts`)\n  - Target: an inner (tier) key starting with `@` is refused with `tier names cannot start with \"@\" (reserved for model aliases)`.\n\nAll expansion errors are `NaxError` with code `MODEL_ALIAS_INVALID` and context `{ stage: \"config\", path, alias }`. At config load the pass collects every bad reference and throws once, one `<path>: <message>` line per reference, with `context.paths` listing them, before `safeParse` runs. At the per-package site (`validatePackageConfig`) the same error also carries `packageDir` in its context. Preserve MODEL_ALIAS_INVALID rather than recoding it as the package's schema error. An alias defined but never referenced, with a bad value, is unchanged: `ModelAliasesSchema` rejects it during `safeParse`. Preserve reject guards, strip, warning order and all existing non-alias schema-error behavior.\n\n**Scope** — In: loader.ts, package-layer.ts, schemas-model.ts and real-file loader/schema/model-resolution tests in loader-model-aliases.test.ts. Out: changing US-001/US-002's expansion contracts, US-004's --model overrides, US-005's guide, changing runtime classifier/escalation semantics, and changing root-inherited literal ids after package alias overrides. A per-package layer repointing an alias for references inherited from the root config; inherited references keep the root value. `@` entries in the legacy flat `models` shape (pre per-agent map): left unexpanded and unvalidated, and they fail only at dispatch; only the per-agent `models.<agent>.<tier>` shape is walked.\n\n**Interface** — Consume the upstream public contract unchanged:\n```typescript\nexport function expandConfigModelAliases(raw: Record<string, unknown>): Record<string, unknown>;\n```\nExisting integration surfaces are `finalizeAndValidateRootConfig(rawConfig)`, `validatePackageConfig(rawMerged, packageDir, profileChain, warnDedupe)`, `ModelTierSchema` and `PerAgentModelMapSchema`; keep their existing call interfaces.",
+      "acceptanceCriteria": [
+        "[integration] loadConfig(projectDir) with a project .nax/config.json setting agent.modelAliases.sol to \"openai-codex/gpt-6.1-sol\" and models.native.powerful to \"@sol[medium]\" returns models.native.powerful equal to \"openai-codex/gpt-6.1-sol[medium]\".",
+        "[integration] loadConfig(projectDir) with the same alias and bot.models.review set to { agent: \"native\", model: \"@sol[high]\" } returns bot.models.review.model equal to \"openai-codex/gpt-6.1-sol[high]\".",
+        "[integration] loadConfig(projectDir, { profile: \"upgrade\" }), where the project config defines sol as \"openai-codex/gpt-6.1-sol\" and references it from bot.models.review, and the project profile file profiles/upgrade.json beside that config sets agent.modelAliases.sol to \"openai-codex/gpt-6.2-sol\", returns bot.models.review.model equal to \"openai-codex/gpt-6.2-sol\".",
+        "[integration] loadConfigForWorkdir(rootConfigPath, \"packages/x\"), where the project's mono/packages/x/config.json overlay beside the root config sets review.semantic.model to { agent: \"native\", model: \"@sol\" }, with sol defined only in the root config, returns review.semantic.model.model equal to \"openai-codex/gpt-6.1-sol\".",
+        "[integration] loadConfig with bot.models.review set to { agent: \"native\", model: \"@nope\" } rejects with a NaxError whose code is MODEL_ALIAS_INVALID and whose message names bot.models.review.model.",
+        "[integration] loadConfig with a string-form review.semantic.model of \"@sol\" rejects with code CONFIG_SCHEMA_INVALID and a message containing 'an @alias is a model id, not a tier'.",
+        "[integration] loadConfig with routing.agents.profiles[0].target set to { agent: \"native\", model: \"@sol\" } rejects with code CONFIG_SCHEMA_INVALID and a message containing 'an @alias is a model id, not a tier'.",
+        "[unit] NaxConfigSchema.safeParse of a config whose models.native has a tier key \"@sol\" returns a failure result (success: false) whose error.issues contains a message including 'tier names cannot start with \"@\"'.",
+        "[unit] For a config loaded with bot.models.review written as { agent: \"native\", model: \"@sol\" }, resolveConfiguredModel(config.models, \"native\", config.bot.models.review, \"native\") returns a result with no modelTier, so the selector is a pin.",
+        "[integration] loadConfigForWorkdir(rootConfigPath, \"packages/x\") with that overlay setting review.semantic.model to { agent: \"native\", model: \"@nope\" } rejects with code MODEL_ALIAS_INVALID whose context.packageDir is \"packages/x\".",
+        "[unit] For a config loaded with models.native.powerful written as \"@sol[medium]\", resolveConfiguredModel(config.models, \"native\", \"powerful\", \"native\") returns modelTier equal to \"powerful\" and modelDef.model equal to \"openai-codex/gpt-6.1-sol[medium]\".",
+        "[integration] loadConfig with an invalid agent.modelAliases value that is never referenced rejects with CONFIG_SCHEMA_INVALID from ModelAliasesSchema during safeParse, unchanged.",
+        "[unit] ModelTierSchema rejects a value starting with @ with the message 'an @alias is a model id, not a tier; where a model pin is accepted, write { \"agent\": \"<agent>\", \"model\": \"<value>\" }'.",
+        "[integration] loadConfig with no alias references and review.semantic.model set to the string \"balanced\" returns review.semantic.model equal to \"balanced\", preserving the existing string-selector tier behavior.",
+        "[integration] loadConfig with models.native.powerful set to the literal \"openai-codex/gpt-6.1-sol[medium]\" returns that literal unchanged."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "model-aliases",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The upstream walker is complete; this story adds two calls at existing validation boundaries, enriches one error context and adds two schema refinements across three production files, using established real-file loader fixtures.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/config/package-layer.ts",
+        "packages/nax/src/config/schemas-model.ts",
+        "packages/nax/src/config/schema-types.ts",
+        "packages/nax/src/config/model-alias-expand.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/config/loader-model-aliases.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a package overlay repoints sol and writes its own @sol selector, loadConfigForWorkdir returns the new id for that selector while a root-inherited selector retains its root-expanded id.",
+        "When a package overlay replaces agent.modelAliases without sol and writes @sol, loadConfigForWorkdir rejects with MODEL_ALIAS_INVALID even if the root map originally defined sol.",
+        "When loadPackageOverrideWithConfig receives an overlay containing @sol, its returned config contains the expanded id just as loadConfigForWorkdir does.",
+        "When a root config has two unknown model aliases, loadConfig rejects with one MODEL_ALIAS_INVALID whose context.paths lists both model-position paths."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3d06dff359864834e60805173d18cb6c39860e6a"
+    },
+    {
+      "id": "US-004",
+      "title": "Accept agent-qualified alias overrides in bot and advisor replay",
+      "description": "**Goal** — Normalize post-load agent:@name overrides through the shared helper, refuse bare alias flags, and document the config reference syntax in field descriptions.\n\n**Motivation** — Custom tiers cannot carry this: a tier entry cannot reference another name, tiers are per agent with default-agent fallback, and turning a pin into a tier changes escalation behaviour (#2977).\n\n**Approach** — `--model` flags arrive after load. `nax bot review` / `nax bot fix` (`parseModelOption`, `checkBotModelOverride`, `botModel` in `src/bot/models.ts`) and `nax advisor replay` (`runAdvisorReplay`, `src/cli/advisor-replay.ts`) expand an `agent:@name` override through the same reference helper, `expandModelAliasRef`, reading the loaded config's `agent.modelAliases`. Advisor replay resolves the override once, right after `deps.buildCallContext` and inside the `try` whose `finally` calls `close()`, before the record loop, so a bad alias fails before any worktree is created and `close()` still runs.\n\n- `parseModelOption(value)` (`src/bot/models.ts`)\n  - Target: a value with no `:` that starts with `@` throws `NaxError` `BOT_MODEL_INVALID` naming the `<agent>:@<name>` form; everything else unchanged.\n- `checkBotModelOverride(config, model)` (`src/bot/models.ts`)\n  - Target: for an object override whose `model` starts with `@`, an unknown or invalid alias returns a refusal string containing the `expandModelAliasRef` error message; a valid one is checked as the expanded literal.\n- `botModel(config, role, override)` (`src/bot/models.ts`)\n  - Target: an object override whose `model` starts with `@` is returned with `model` expanded from `config.agent.modelAliases`; every other path unchanged.\n- `runAdvisorReplay` model input (`src/cli/advisor-replay.ts`)\n  - Target: after `deps.buildCallContext`, the override is parsed once; an object model whose `model` starts with `@` is expanded from `ctx.config.agent.modelAliases`, a bare `@name` (no `agent:`) throws `MODEL_ALIAS_INVALID` naming `<agent>:@name`, and `replayOne` dispatches the resolved value. This resolution sits inside the `try` whose `finally` calls `close()`, so any throw here propagates out of `runAdvisorReplay` after `close()` runs.\n- `FIELD_DESCRIPTIONS[\"agent.modelAliases\"]` (`src/cli/config-descriptions.ts`)\n  - Target: the existing text, plus that config model positions reference an alias as `@name` or `@name[effort]` and that an alias is a model id, never a tier.\n\n`runBotReview` -> `reviewCheckout` (`src/bot/review-run.ts`) and `runBotFix` -> `fixCheckout` (`src/bot/fix-run.ts`): both call `checkBotModelOverride(loadedConfig, input.model)` right after `loadBotConfig` and return `{ outcome: \"refused\", reason }` when it returns a string. Preserve this early refusal seam and all checkout cleanup. The helper's errors retain `MODEL_ALIAS_INVALID` and context `{ stage: \"config\", path, alias }`, using `--model` as the reference path; bot's bare-flag parser deliberately uses `BOT_MODEL_INVALID` instead. A referenced acp: target is refused with `model alias \"name\" is an acp: target, usable only from agent files`. Expansion applies before the rulings early-return path as well as review/fix. Non-alias overrides and model precedence remain unchanged.\n\nExtend the existing parseModelOption/checkBotModelOverride/botModel test blocks, runBotReview refusal integration block, advisor-replay harness and config-description assertions. The advisor replay test file's `harness` gains an optional config parameter passed to `makeMockCallContext({ config })` from the shared call-context test helper (unchanged) so `ctx.config.agent.modelAliases` can define `sol`, records each dispatched `input.model`, and counts `close` calls; alias cases are added on it; existing cases and their assertions stay. The existing `acp:` field-description assertion stays. A value with no `:` and no leading `@` still returns the string unchanged.\n\n**Scope** — In: bot/models.ts, cli/advisor-replay.ts, cli/config-descriptions.ts and the four existing test files named in the spec. Out: US-002/US-003's config walking/loading, US-005's guide, modifications to shared call-context test helpers, and `@name` references inside agent files (`model:` frontmatter) and in `nax chat --model` / `nax agents run --model`; those keep the existing bare-name alias lookup (`resolveSubagentModel`). No permission, trust-gate or session-policy changes.\n\n**Interface** — Reuse the existing bot/replay APIs and the upstream helper exactly:\n```typescript\nexport function expandModelAliasRef(\n  ref: string,\n  aliases: Readonly<Record<string, string>>,\n  path: string, // config path or \"--model\", named in the error\n): string;\n```\nExisting public surfaces remain `parseModelOption(value)`, `checkBotModelOverride(config, model)`, `botModel(config, role, override)` and `runAdvisorReplay`; replayOne receives the already-resolved selection instead of parsing opts.model per record.",
+      "acceptanceCriteria": [
+        "[unit] parseModelOption(\"@sol\") throws a NaxError with code BOT_MODEL_INVALID whose message contains <agent>:@sol.",
+        "[unit] parseModelOption(\"native:@sol[high]\") returns { agent: \"native\", model: \"@sol[high]\" }.",
+        "[unit] checkBotModelOverride(config, { agent: \"native\", model: \"@sol\" }) returns undefined when config.agent.modelAliases.sol is \"openai-codex/gpt-6.1-sol\".",
+        "[integration] runBotReview with input.model set to { agent: \"native\", model: \"@nope\" } and a stubbed _botReviewDeps.loadBotConfig whose config defines no nope alias returns outcome \"refused\" with a reason containing 'unknown model alias \"nope\"'.",
+        "[integration] The stubbed _botReviewDeps.createRuntime is never called when runBotReview refuses input.model { agent: \"native\", model: \"@nope\" } because the loaded config defines no nope alias.",
+        "[unit] checkBotModelOverride(config, { agent: \"native\", model: \"@r\" }) returns a string containing 'usable only from agent files' when config.agent.modelAliases.r is \"acp:codex/gpt-6.1-terra\".",
+        "[unit] botModel(config, \"review\", { agent: \"native\", model: \"@sol[high]\" }) returns { agent: \"native\", model: \"openai-codex/gpt-6.1-sol[high]\" } when config.agent.modelAliases.sol is \"openai-codex/gpt-6.1-sol\".",
+        "[unit] botModel(config, \"rulings\", { agent: \"native\", model: \"@sol\" }) returns { agent: \"native\", model: \"openai-codex/gpt-6.1-sol\" } for the same config.",
+        "[integration] runAdvisorReplay with opts.model \"native:@sol\", one audit record, and the test file's harness given a config whose agent.modelAliases.sol is \"openai-codex/gpt-6.1-sol\", dispatches callOp once with a recorded input model equal to { agent: \"native\", model: \"openai-codex/gpt-6.1-sol\" }.",
+        "[integration] runAdvisorReplay with opts.model \"native:@nope\" and the same harness rejects with a NaxError whose code is MODEL_ALIAS_INVALID.",
+        "[integration] The same harness records no callOp dispatch when runAdvisorReplay rejects opts.model \"native:@nope\".",
+        "[integration] The same harness records no git call when runAdvisorReplay rejects opts.model \"native:@nope\".",
+        "[integration] The same harness records exactly one close call when runAdvisorReplay rejects opts.model \"native:@nope\".",
+        "[integration] runAdvisorReplay with opts.model \"@sol\" and the same harness rejects with a NaxError whose message contains <agent>:@sol.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.modelAliases\"] contains @name.",
+        "[integration] runAdvisorReplay with a bare opts.model \"@sol\" rejects with code MODEL_ALIAS_INVALID.",
+        "[unit] parseModelOption(\"balanced\") returns the string \"balanced\" unchanged, preserving the existing no-colon and no-leading-@ parsing behavior.",
+        "[unit] botModel(config, \"review\", override) returns a value deep-equal to the override when override is { agent: \"native\", model: \"openai-codex/gpt-6.1-sol\" }, preserving the existing non-alias override path.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.modelAliases\"] still contains acp:, preserving the existing ACP-target description assertion.",
+        "[integration] Given one audit record, runAdvisorReplay with opts.model \"native:openai-codex/gpt-6.1-sol\" dispatches input.model equal to { agent: \"native\", model: \"openai-codex/gpt-6.1-sol\" }, preserving literal overrides after moving parsing before the record loop."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "bot",
+        "advisor",
+        "model-aliases"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing production modules consume the finished helper; bot already has a refusal catch and replay already has try/finally, so normalization and local harness instrumentation fit established seams without a new abstraction or security-policy change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/models.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/cli/advisor-replay.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/config/model-alias-expand.ts"
+      ],
+      "suggestedCriteria": [
+        "botModel(config, \"fix\", { agent: \"native\", model: \"@sol\" }) returns the expanded literal when sol is configured.",
+        "runBotFix with an unknown explicit alias returns outcome refused before creating a runtime.",
+        "runAdvisorReplay with opts.model native:@sol[high] dispatches the alias base id with [high], replacing an alias value's [medium] suffix.",
+        "When runAdvisorReplay rejects a bare @sol override with audit records available, it calls close exactly once before rejecting."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/models.test.ts",
+          "reason": "the `parseModelOption`, `checkBotModelOverride` and `botModel` describe blocks gain `@` cases; existing assertions stay, and a value with no `:` and no leading `@` still returns the string unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/model-override.test.ts",
+          "reason": "the existing `runBotReview --model refusal` describe block gains a case for an unknown `@` alias; existing cases stay."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/advisor-replay.test.ts",
+          "reason": "the file's `harness` gains an optional config parameter passed to `makeMockCallContext({ config })` from the shared call-context test helper (unchanged) so `ctx.config.agent.modelAliases` can define `sol`, records each dispatched `input.model`, and counts `close` calls; alias cases are added on it; existing cases and their assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/config-descriptions.test.ts",
+          "reason": "the `FIELD_DESCRIPTIONS agent.modelAliases` describe block gains an `@name` case; the existing `acp:` assertion stays."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9e74eaa3bf8c1f6e4e81c55e87712abbaf606730"
+    },
+    {
+      "id": "US-005",
+      "title": "Document model alias references and tier boundaries",
+      "description": "**Goal** — Add the model-aliases subsection under Agent Configuration in docs/guides/configuration.md.\n\n**Motivation** — Moving one model family to a new release touched 77 literal ids across `~/.nax/config.json` and 46 profiles (2026-11-18, GPT-6.2), and reverting it took 74 lines across 48 files (2026-11-20).\n\n**Approach** — A config can name a model id once, in the existing `agent.modelAliases` map, and refer to it anywhere a model id goes with an explicit `@` prefix: `\"@sol\"` or `\"@sol[high]\"`. nax expands every reference once, after the config layers merge and before schema validation, so the runtime, run logs, cost ledger and prompt audit only ever see real ids. A model upgrade becomes one edit to the alias value instead of one edit per profile.\n\nAn alias is not a tier. A tier is a per-agent role (`models.<agent>.<tier>`) with default-agent fallback and escalation. An alias is one literal model id. `{ agent, model: \"@sol\" }` is a pin, exactly as if the literal id were written. A tier entry may hold `\"@sol[medium]\"` and stays a tier. An `@` reference never falls through to a tier lookup, and a tier name may not start with `@`.\n\nRunning after the merge means a root-chain profile can repoint one alias for its run and every reference in the config sees the final value. A per-package layer starts from the already-expanded root config, so an alias it sets applies only to the `@` references that package layer writes itself; references inherited from the root keep the root value. `mergePackageConfig` shallow-merges `agent`, so a package layer that sets `agent.modelAliases` replaces the root map for that package's own references.\n\nThe subsection must show an agent.modelAliases map, models.native.powerful set to \"@sol[medium]\", and bot.models.review set to { \"agent\": \"native\", \"model\": \"@sol[high]\" }. Compare tiers and aliases with rows for where each lives, reference syntax, default-agent fallback, escalation, and permitted values. Clarify @name[effort] replaces any suffix on the alias value, and config positions cannot use acp: aliases although agent-file bare-name aliases still can. Alias references are supported only in per-agent tier-entry strings/ModelDef.model and walked {agent,model} selectors; routing.agents and chat are excluded. No new models.aliases key exists.\n\nDocument every load-time Failure Handling row and its text: unknown reference -> `unknown model alias \"name\"`; alias value starting @ -> `model alias \"name\" must be a literal model id, not another alias`; referenced acp: target -> `model alias \"name\" is an acp: target, usable only from agent files`; invalid/non-string value -> `model alias \"name\" is not a provider/model id`; bare @ or @[high] -> `empty model alias reference`; malformed examples @sol[high, @sol[], @sol[a][b], @sol[high]x and @ sol -> `malformed model alias reference \"<ref>\"`; missing/non-object map -> each reference is unknown; string selectors and routing.agents.profiles[].target.model starting @ -> `an @alias is a model id, not a tier; where a model pin is accepted, write { \"agent\": \"<agent>\", \"model\": \"<value>\" }`; tier keys starting @ -> `tier names cannot start with \"@\" (reserved for model aliases)`; invalid unused alias -> existing ModelAliasesSchema message `agent.modelAliases values must be \"provider/model\" or \"acp:<agent>[/<model>]\" (agent: claude, codex, cursor), each with an optional [effort] suffix and no whitespace`. Explain path-qualified MODEL_ALIAS_INVALID aggregation and packageDir context. The CLI forms may be illustrated as native:@sol; bare aliases require <agent>:@sol, with bot refusal and advisor pre-loop rejection as implemented by US-004.\n\n**Scope** — In: configuration guide only, reviewed against US-003/US-004 behavior. Out: implementation or tests in other stories, generated instruction files, and migrating the user's global config and profiles to @ references. No-test: documentation only.\n\n**Interface** — Document the existing agent.modelAliases map and @name / @name[effort] reference syntax; no new runtime interface.",
+      "acceptanceCriteria": [
+        "[review] docs/guides/configuration.md has a model-aliases subsection under ### Agent Configuration showing an agent.modelAliases map, a models.native tier entry written as \"@sol[medium]\", and a bot.models.review pin written as { \"agent\": \"native\", \"model\": \"@sol[high]\" }.",
+        "[review] The same subsection has a tier-versus-alias table with one row each for where it lives, how a reference is written, default-agent fallback, escalation, and what a value may hold.",
+        "[review] The same subsection states that references are expanded at config load, so run logs and the cost ledger record the expanded id and nax config prints expanded ids.",
+        "[review] The same subsection lists each load-time error from the spec's Failure Handling table with its message text.",
+        "[review] The same subsection explicitly shows that a string-form selector such as review.semantic.model: \"@sol\" is refused with 'an @alias is a model id, not a tier' rather than resolved as a tier, and directs the reader to the { \"agent\": \"native\", \"model\": \"@sol\" } object form."
+      ],
+      "tags": [
+        "documentation",
+        "config",
+        "model-aliases"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "Single existing root-level guide update; the binding story structure explicitly requires this documentation-only story.",
+        "noTestJustification": "Binding US-005 is documentation only: a Markdown guide subsection changes no runtime behavior and is verified by guide-content review criteria, including the rejected string-selector example.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "docs/guides/configuration.md",
+        "packages/nax/src/config/model-alias-expand.ts"
+      ],
+      "workdirSource": "defaulted",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1cca84dbc67f0d660ef5fc8c08254e5a5efbe6e5"
+    }
+  ],
+  "analysis": "Feature goal: close #2977 by reusing agent.modelAliases for explicit @name and @name[effort] references, with one pure expansion pass after merging and before validation. This is an enhancement to the existing Bun/TypeScript/Zod CLI, not a new package or runtime model-resolution layer. Codebase-memory MCP is unavailable in this session; findings below come from direct reads and text search in the supplied worktree.\n\nExisting architecture and contracts: packages/nax/src/config/schemas-model-alias.ts:15 defines MODEL_ALIAS_TARGET as provider/model with an optional effort suffix; :23 defines the separate acp:<agent>[/<model>][effort] shape; :32-42 deliberately validates acp: targets separately and trims alias keys through ModelAliasesSchema. Reuse these shape semantics without broadening accepted values or introducing models.aliases. The alias map is already mounted with a default empty object at packages/nax/src/config/schemas-infra.ts:416. A referenced acp: value is legal in the map for agent files but illegal in a config model position; unused invalid values must continue to fail the existing schema rather than being ignored. packages/nax/src/config/index.ts:12-26 exports config loading and merge entry points and :115-133 exposes model resolution through the config barrel; add the new public helper exports there. The spec's Creates/Modifies shorthand is not a complete production-file edit list: US-001 must also modify index.ts, and US-002 modifies US-001's new module.\n\nSelector and tier separation: packages/nax/src/config/schemas-model.ts:266-278 defines ModelDef and string-or-object ModelEntry; :281-299 detects and preprocesses legacy flat models; :292 defines the per-agent map with a separate inner tier-key schema; :301-307 defines ModelTierSchema and the configured-model union. Only the per-agent shape is walked; do not accidentally expand the legacy flat form before its existing preprocess step. Add distinct leading-@ refusals to ModelTierSchema and the inner tier keys, preserving all other validation. packages/nax/src/config/schema-types.ts:196-200 already uses own-property tier lookup; :252-268 classifies an object selector by existing tier membership, :277-280 implements effort replacement with parseModelSpec, and :297 onward resolves configured models. String selectors stay tiers; an expanded object pin should have no modelTier, whereas resolving a tier whose entry expanded still returns the original tier identity. No runtime classifier or escalation rewrite is requested. parseModelSpec is already publicly exported at packages/nax-agent/src/index.ts:76 and implemented at packages/nax-agent/src/cost/model-spec.ts:33; consume the package API rather than duplicating suffix parsing or changing nax-agent. Dispatch consumes resolveConfiguredModel at packages/nax/src/operations/call-dispatch-prologue.ts:121, so load-time literal normalization reaches operations, auditing and costing without alias-awareness downstream.\n\nWalker boundaries: the broad selector rule must require string agent and string model on the same object, including objects inside arrays. packages/nax/src/config/schemas-infra.ts:47-53 gives routing.agents.profiles[].target an agent/model shape but its model is ModelTierSchema, so skipping the entire full-path routing.agents subtree is essential. :189-193 defines fallback rungs as agent-name strings, {agent,tier}, or {agent,model}; only the last is expanded. Full-path exclusions are top-level models, agent.modelAliases, routing.agents and chat, not any property simply named models or modelAliases. bot.models and workflow.models must still be walked. Clone rather than mutate raw merged input, leave unrelated @ strings and string selectors intact, collect every reference failure with its exact path (including array indexes), and use own-property lookup after key trimming. Missing, null, primitive or otherwise non-record alias maps must not crash pre-schema expansion. Non-string referenced values must become MODEL_ALIAS_INVALID. packages/nax/src/errors.ts:7-9 re-exports the shared NaxError, so use that existing error type, with context stage=config, path and alias; aggregate failures additionally carry paths. No error-class hierarchy or new error-code registry was found necessary in the nax module.\n\nLoad integration and merge timing: packages/nax/src/config/loader.ts:180-234 runs reject guards, removed-key stripping, warnings and root safeParse; insert expansion immediately before safeParse, leaving earlier ordering unchanged. :241-315 merges defaults, global, project, profile chain and CLI overrides before finalizeAndValidateRootConfig, which ensures a root-chain profile repoints all surviving references. The no-merged-config fast path returns known defaults and does not need alias expansion. packages/nax/src/config/package-layer.ts:239-277 contains the shared validatePackageConfig final parse; preserve its PER_PACKAGE_PROFILE_INVALID schema behavior, but expansion failures must propagate as MODEL_ALIAS_INVALID with packageDir added, not be recoded as schema failures. packages/nax/src/config/loader.ts:367-406 uses that validator for loadPackageOverrideWithConfig and :423-529 for loadConfigForWorkdir, so both runtime hydration and direct package loading gain expansion through the shared site. Package root configs are already expanded. packages/nax/src/config/merge.ts:107-114 shallow-spreads agent apart from special nested fields, so a package modelAliases map replaces the root map for newly written package references; do not change this merge behavior or reinterpret root literals. Package and root caches exist at packages/nax/src/config/loader.ts:323-332 and :433-464; integration fixtures must clear both caches and isolate NAX_GLOBAL_CONFIG_DIR. packages/nax/src/config/schemas-protocol-gate.ts:113-137 validates native tier model ids after schema parsing; expansion must precede it, retaining validation of real ids and leaving the sibling provider field untouched.\n\nCLI integration: packages/nax/src/bot/models.ts:7-23 implements botModel precedence, including an early rulings return. Expand explicit object overrides before every role path, preserving non-alias object identity and fallback precedence. :26-36 parses only the first colon, preserving colons in model ids, while :66-82 wraps resolver failures in refusal text. Bare @ overrides require BOT_MODEL_INVALID with the agent-qualified example; explicit alias checking must occur within the existing refusal-producing try and resolve the expanded literal. packages/nax/src/cli/bot.ts:100-101 consumes parseModelOption; bot/index.ts exports these helpers. packages/nax/src/bot/review-run.ts:512-518 and fix-run.ts:389-394 already invoke checkBotModelOverride immediately after loadBotConfig and before createRuntime. Preserve checkout cleanup and avoid changing either orchestration flow unnecessarily. packages/nax/src/cli/advisor-replay.ts:125-129 has a separate permissive parseModel; :201-211 currently parses opts.model inside each replay call, while :255-269 builds context and loops under finally close. Resolve once inside that try before the loop, pass the resolved ConfiguredModel into replayOne, and do not place alias validation inside replayOne's catch that converts exceptions into replay rows. An invalid alias must reject before any git/worktree or callOp dispatch, with exactly one close call. This changes model normalization only, not trust, permissions, authentication, session policy or worktree security. packages/nax/src/cli/config-descriptions.ts:310-311 already explains the alias map and acp: values; append @name/@name[effort] and model-id-not-tier wording without removing existing description text.\n\nExisting test seams and additions: packages/nax/test/unit/bot/models.test.ts:7-68 pins rulings defaults, review/fix precedence, absent configuration and explicit literal identity; :70-96 pins parsing, including first-colon behavior and bare ordinary tier strings; :98-158 pins override refusal shape, warn-only explicit literals and prototype-name rejection. Extend these blocks rather than replacing assertions. packages/nax/test/integration/bot/model-override.test.ts:18-80 provides injectable config/runtime dependencies and cleanup; :127-155 has the runBotReview refusal block to extend for @nope before runtime creation. packages/nax/test/unit/cli/advisor-replay.test.ts:64-120 has the harness with makeMockCallContext, dispatch recording, git events and a currently no-op close. Add an optional config argument, record each input.model and count close calls locally; do not change the shared makeMockCallContext helper. Existing replay tests at :123-290 must remain. packages/nax/test/unit/cli/config-descriptions.test.ts:104-117 asserts a nonempty modelAliases description and acp: support; retain those and add @name. Existing packages/nax/test/unit/config/loader-schema-error.test.ts:18-83 demonstrates real temp config files, global-dir isolation and assertNaxError. packages/nax/test/unit/config/loader-workdir.test.ts:26-48 demonstrates both config-cache clearing and isolated package fixtures, with overlay path .nax/mono/packages/api/config.json at :77-82. packages/nax/test/unit/config/schemas-model.test.ts:4-24 covers TierConfigSchema, not the new alias contract. New files are exactly model-alias-expand.test.ts (helper), model-alias-walk.test.ts (walker), and loader-model-aliases.test.ts (loader/schema/resolution seams), plus the new production module. Follow current shared test helpers and Bun-native APIs rather than copying older Node-fs fixture patterns verbatim. Preserve each story's specified unit/integration assertions even when the loader integration tests live in the spec-mandated unit/config directory.\n\nDocumentation: docs/guides/configuration.md:101 begins Agent Configuration, :128-157 contains its existing agent table, and :159 onward continues agent-specific explanations. US-005 is the binding documentation-only exception to the generic no-documentation-story rule: add a nested model-aliases subsection here, without editing generated AGENTS/CLAUDE files or adding runtime work. Include the exact example, tier comparison rows, expanded-id observability, and all load-time error messages. This story is repository-root scoped; omit workdir, as its output is outside any workspace package.\n\nRisk and compatibility: the highest risks are expanding before final merge, accidentally treating aliases as tiers, traversing excluded tier/chat positions, missing array selectors, alias-key prototype leakage, malformed raw data crashing before validation, truncating suffixes, failing to preserve aggregate paths/package context, and advisor replay swallowing the alias error or leaking its runtime. The only intentional new reservation is a leading @ on tiers/inner tier keys or bare CLI model overrides; ordinary tier strings, literal pins, legacy flat behavior and agent-file bare-name lookup remain unchanged. The existing map schemas and merge semantics remain the source of truth. No dependency changes, package version bumps, cross-package implementation or config migration is required. Operators may manually replace repeated literal model ids with @ references after release; the global operator config/profile repository must not be edited by this feature. Agent-file alias resolution remains in packages/nax/src/chat/subagent-model.ts:82 and packages/nax/src/cli/agents-run-model.ts:9-19, unchanged. Tests should exercise the helper-to-walker seam in US-002, real root/package loading in US-003 and runBotReview/runAdvisorReplay dispatch boundaries in US-004. Use the prescribed dependency graph: US-001 -> US-002 -> US-003 and US-001 -> US-004, then US-005. Use Bun targeted tests during implementation; automatic pipeline gates handle lint/typecheck/test, and never run bare bun test or coverage inside a sandboxed nax session.\n\nRefine-pass adversarial audit: all 54 numbered spec acceptance criteria are retained in their original stories. Enumeration by original criterion number -> current acceptanceCriteria index: US-001 {1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14}; US-002 {1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14}; US-003 {1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11}; US-004 {1->1, 2->2, 3->3, 4->4+5, 5->6, 6->7, 7->8, 8->9, 9->10+11+12+13, 10->14, 11->15}; US-005 {1->1, 2->2, 3->3, 4->4}. Splits in US-004 retain every refusal, no-dispatch, no-git and exactly-once-close assertion rather than weakening the originals. Regression qualifiers remain: helper suffix replacement and trimmed-key matching, inherited-key refusal, every walker unchanged-position assertion, input immutability and no-reference equality, and selector pin/tier identity. The safeParse criterion now explicitly inspects its failure result rather than suggesting an exception.\n\nAll 15 Failure Handling table rows have behavioral criteria: unknown, chained, acp:, malformed-target, empty-name, malformed-reference and non-string-value cases are in US-001; absent/non-object maps and aggregate references are in US-002; string-selector/tier-key refusal, routing-profile refusal and unused-invalid-alias schema rejection are in US-003; the four bot/advisor override failures are in US-004. US-005 additionally has an explicit rejected-string-selector documentation example, giving every story a negative-path assertion without adding runtime behavior to the documentation-only story. US-003 adds ordinary string-selector and literal-id compatibility criteria; US-004 adds unchanged ordinary-tier parsing, non-alias override identity, the existing acp: description assertion and literal advisor dispatch compatibility.\n\nAll 13 feature exclusions remain verbatim and separate in outOfScope: expanded config printing; agent-file/chat/agents-run syntax; bare ACP ids; alias chaining/tier/list values; catalog alias keys; selector/tier semantics; a second alias map; operator-config migration; unrelated config positions; chat.workflow fields; root-inherited package references; legacy flat models; non-model fallback rungs. Nearby exclusions are also echoed in story scopes. No story-local deferral was hoisted into that feature list. Context-file lists retain every spec-recommended file, with only the existing config barrel additionally supplied to US-002; created modules appear as context only in downstream dependency stories. All five binding IDs, dependencies and package workdirs remain unchanged, and US-005 stays root-scoped.\n\nRouting was reduced for US-003 and US-004 to medium/tdd-simple: rereading loader.ts:191-231, package-layer.ts:242-277, bot/models.ts:7-82 and advisor-replay.ts:123-268 confirms these are small additions at existing parsing, refusal and try/finally seams, not new cross-module abstractions. The helper and walker remain medium/tdd-simple, and the guide stays simple/no-test. The description's overbroad every-reference assertion now refers only to supported model-position references, avoiding a contradiction with excluded routing/chat positions and tier-only validation. No invented helper, new package, extra story or dependency is required.",
+  "outOfScope": [
+    "`nax config` printing references as written: config is printed after load, so it shows expanded ids plus the `agent.modelAliases` map.",
+    "`@name` references inside agent files (`model:` frontmatter) and in `nax chat --model` / `nax agents run --model`; those keep the existing bare-name alias lookup (`resolveSubagentModel`).",
+    "Aliases for bare model ids used by ACP agents (for example `\"codex-sol\": \"gpt-6.2-sol\"`); an alias value stays `provider/model` or `acp:` as `ModelAliasesSchema` defines it today.",
+    "Alias values that reference another alias, a tier, or a list of ids (one level, literal ids only).",
+    "`agent.native.catalogOverrides` keyed by alias: catalog entries stay keyed by the real model id.",
+    "Changes to tier semantics or the `{ agent, model }` vs `{ agent, tier }` selector split (#2572).",
+    "A new top-level or `models.aliases` key; `agent.modelAliases` is the only alias map.",
+    "Migrating the user's global config and profiles to `@` references: a manual follow-up outside the run, in the operator config repository.",
+    "Expanding `@` strings in config positions other than the three listed in Design § Approach.",
+    "`@` references in `chat.workflow.*` model fields (`specWriter`, `specReviewer`, `botReview`, `botFix`); the `chat` subtree is not walked.",
+    "A per-package layer repointing an alias for references inherited from the root config; inherited references keep the root value.",
+    "`@` entries in the legacy flat `models` shape (pre per-agent map): left unexpanded and unvalidated, and they fail only at dispatch; only the per-agent `models.<agent>.<tier>` shape is walked.",
+    "`agent.fallback.map` rungs written as a bare string (an agent name) or as `{ agent, tier }`: an `@` there is left unexpanded and unvalidated and fails only at dispatch; only `{ agent, model }` rungs are expanded."
+  ],
+  "routingProfile": "native-claude-opus"
+}

@@ -1,14 +1,32 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "../agents";
-import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig, resolveConfiguredModel } from "../config";
+import {
+  type ConfiguredModel,
+  DEFAULT_CONFIG,
+  expandModelAliasRef,
+  MODEL_ALIAS_PREFIX,
+  type NaxConfig,
+  resolveConfiguredModel,
+} from "../config";
 import { NaxError } from "../errors";
+
+const OVERRIDE_PATH = "--model";
+
+/** An `{ agent, model: "@name[effort]" }` override with `model` expanded; every other value is returned as is. */
+function expandOverride(config: NaxConfig, override: ConfiguredModel | undefined): ConfiguredModel | undefined {
+  if (override === undefined || typeof override === "string" || !override.model.startsWith(MODEL_ALIAS_PREFIX)) {
+    return override;
+  }
+  return { ...override, model: expandModelAliasRef(override.model, config.agent?.modelAliases ?? {}, OVERRIDE_PATH) };
+}
 
 /** Review/fix leave an unset model to the op; rulings default independently to fast. */
 export function botModel(
   config: NaxConfig,
   role: "review" | "fix" | "rulings",
-  override?: ConfiguredModel,
+  rawOverride?: ConfiguredModel,
 ): ConfiguredModel | undefined {
+  const override = expandOverride(config, rawOverride);
   if (role === "rulings") return override ?? config.bot?.models.rulings ?? "fast";
   const workflowRole = role === "review" ? "branchReview" : "branchFix";
   const finishRole = role === "review" ? "quality" : "fix";
@@ -30,7 +48,16 @@ export function parseModelOption(value: string): ConfiguredModel {
       value,
     });
   }
-  if (separator === -1) return value;
+  if (separator === -1) {
+    if (value.startsWith(MODEL_ALIAS_PREFIX)) {
+      throw new NaxError(
+        `[bot] Invalid --model "${value}": an alias needs its agent, use <agent>:${value}`,
+        "BOT_MODEL_INVALID",
+        { stage: "bot", value },
+      );
+    }
+    return value;
+  }
   return { agent: value.slice(0, separator), model: value.slice(separator + 1) };
 }
 
@@ -67,7 +94,9 @@ export function checkBotModelOverride(config: NaxConfig, model: ConfiguredModel 
   if (model === undefined) return undefined;
   const defaultAgent = resolveDefaultAgent(config);
   try {
-    resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, defaultAgent, model, defaultAgent);
+    // Throws MODEL_ALIAS_INVALID for an unknown or acp: alias; the literal then takes the normal check.
+    const expanded = expandOverride(config, model) as ConfiguredModel;
+    resolveConfiguredModel(config.models ?? DEFAULT_CONFIG.models, defaultAgent, expanded, defaultAgent);
     return undefined;
   } catch (error) {
     const parts = [

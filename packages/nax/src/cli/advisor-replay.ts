@@ -12,7 +12,7 @@ import { errorMessage, gitWithTimeout } from "@nathapp/nax-agent/internal";
 import type { AdviceAuditRecord, AdviceLabel } from "@/advisor";
 import { adviceAuditDir, readAdviceAudit, readLabels } from "@/advisor";
 import type { ConfiguredModel } from "@/config";
-import { featureDir, loadConfig } from "@/config";
+import { expandModelAliasRef, featureDir, loadConfig, MODEL_ALIAS_PREFIX } from "@/config";
 import { NaxError } from "@/errors";
 import type { AdviseOpOutput, CallContext } from "@/operations";
 import { adviseOp, callOp } from "@/operations";
@@ -120,10 +120,26 @@ function artifactId(r: AdviceAuditRecord): string {
   return r.result.decision?.id ?? r.question.id;
 }
 
-function parseModel(model: string | undefined): ConfiguredModel | undefined {
+/** Parse `--model` once; an `agent:@name` override expands from the loaded config's aliases. */
+function resolveModelOption(
+  model: string | undefined,
+  aliases: Readonly<Record<string, string>>,
+): ConfiguredModel | undefined {
   if (!model) return undefined;
   const i = model.indexOf(":");
-  return i > 0 ? { agent: model.slice(0, i), model: model.slice(i + 1) } : model;
+  if (i <= 0) {
+    if (model.startsWith(MODEL_ALIAS_PREFIX)) {
+      throw new NaxError(
+        `[advisor] --model "${model}": an alias needs its agent, use <agent>:${model}`,
+        "MODEL_ALIAS_INVALID",
+        { stage: "advisor", path: "--model", alias: model },
+      );
+    }
+    return model;
+  }
+  const parsed = { agent: model.slice(0, i), model: model.slice(i + 1) };
+  if (!parsed.model.startsWith(MODEL_ALIAS_PREFIX)) return parsed;
+  return { ...parsed, model: expandModelAliasRef(parsed.model, aliases, "--model") };
 }
 
 async function loadRecords(auditDir: string, id?: string): Promise<AdviceAuditRecord[]> {
@@ -181,6 +197,7 @@ async function replayOne(
   base: CallContext,
   r: AdviceAuditRecord,
   opts: AdvisorReplayOptions & { index: number },
+  model: ConfiguredModel | undefined,
 ): Promise<{ row: ReplayRow; out: AdviseOpOutput | null }> {
   const id = artifactId(r);
   const originalType = r.result.decision?.action.type ?? null;
@@ -205,7 +222,7 @@ async function replayOne(
         priorDecisions: r.context.priorDecisions,
         continuation: warm && opts.index > 0,
         keepOpen: warm,
-        ...(parseModel(opts.model) ? { model: parseModel(opts.model) } : {}),
+        ...(model ? { model } : {}),
       });
       const replayType = out.ok ? (r.question.options.find((o) => o.id === out.reply.optionId)?.type ?? null) : null;
       return { row: { id, originalType, replayType, ...(out.ok ? {} : { error: out.error }) }, out };
@@ -253,8 +270,9 @@ export async function runAdvisorReplay(
   const { ctx, close } = await deps.buildCallContext(opts.dir, opts.feature);
   const rows: ReplayRow[] = [];
   try {
+    const model = resolveModelOption(opts.model, ctx.config?.agent?.modelAliases ?? {});
     for (const [index, r] of records.entries()) {
-      const { row, out } = await replayOne(deps, ctx, r, { ...opts, index });
+      const { row, out } = await replayOne(deps, ctx, r, { ...opts, index }, model);
       rows.push(row);
       await deps.writeFile(
         join(auditDir, `${row.id}.replay-${deps.now()}.json`),
