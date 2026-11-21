@@ -127,6 +127,7 @@ The `agent` block is the canonical source of truth for agent selection and avail
 | Key | Default | Description |
 |:----|:--------|:------------|
 | `agent.protocol` | `"hybrid"` | Transport protocol — `"acp"` (ACP agents via `@nathapp/nax-agent-acp`), `"native"` (nax drives the model directly), or `"hybrid"` (both). A capability gate, not a router. `"acp"` requires `agent.default` to name an ACP agent such as `"claude"`. |
+| `agent.modelAliases` | `{}` | Name-to-model-id map. A config refers to an alias as `@name` or `@name[effort]` anywhere a model id goes — [Model aliases](#model-aliases) below. |
 | `agent.default` | `"native"` | Primary agent. The built-in `models.native` map (`anthropic/claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5-5`) backs it, so the native agent needs Anthropic credentials unless you override the map. Read via `resolveDefaultAgent(config)` / `ctx.agentManager.getDefault()`. |
 | `agent.maxInteractionTurns` | `20` | Max turns per agent session. |
 | `agent.fallback.enabled` | `false` | Master switch for availability fallback (auth / rate-limit / service-down). |
@@ -498,6 +499,147 @@ suffix is ignored with a warning, since a ladder rung carries no effort. Before
 nax#2571 a profile target such as `fast[high]` was a pin that dispatched with its
 effort; it now binds to the `(agent, fast)` rung, so config load fails when that
 rung is missing. Use a literal model id to keep the effort.
+
+#### Model aliases
+
+`agent.modelAliases` names a model id once, and a config refers to it with an explicit
+`@` prefix anywhere a model id goes: `"@sol"` or `"@sol[high]"` (nax#2977). A model
+upgrade then becomes one edit to the alias value instead of one edit per profile.
+
+```json
+{
+  "agent": {
+    "modelAliases": {
+      "sol": "openai-codex/gpt-6.1-sol"
+    }
+  },
+  "models": {
+    "native": {
+      "powerful": "@sol[medium]"
+    }
+  },
+  "bot": {
+    "models": {
+      "review": { "agent": "native", "model": "@sol[high]" }
+    }
+  }
+}
+```
+
+`models.native.powerful` is still the `powerful` tier — escalation and default-agent
+fallback included — and dispatches `openai-codex/gpt-6.1-sol[medium]`. `bot.models.review`
+is a pin on the same id at `high` effort, exactly as if the literal id had been written.
+`agent.modelAliases` stays the only alias map: there is no `models.aliases` key, because
+`models` is parsed as `Record<agentName, Record<tierName, ModelEntry>>`, so
+`models.aliases.sol` would load as an agent named `aliases` with a tier named `sol`.
+
+**Where a reference is expanded.** Three positions, and no others:
+
+| Position | Example |
+|:---------|:--------|
+| A per-agent tier entry, written as a string | `"models": { "native": { "powerful": "@sol[medium]" } }` |
+| The `model` field of a per-agent tier entry | `"models": { "native": { "powerful": { "provider": "openai-codex", "model": "@sol" } } }` |
+| The `model` field of a `{ "agent": …, "model": … }` selector, at any depth, including inside arrays | `plan.model`, `routing.llm.model`, `review.semantic.model`, `review.adversarial.model`, `review.fixReview.model`, `advisor.model`, `advisor.fallbackModels[]`, `bot.models.*`, `workflow.models.*`, `finish.reviewers.*`, and an `agent.fallback.map` rung written as `{ agent, model }` |
+
+Two subtrees are never walked: `routing.agents` (its `profiles[].target` is a tier field,
+so an `@` there is refused rather than expanded — see the failure table) and `chat` (its
+`chat.workflow.*` model fields take no references). The legacy flat `models` shape — a
+`models.<tier>` `ModelDef` with no agent level — is not walked either, and an `@` there
+fails only at dispatch. The same is true of an `agent.fallback.map` rung written as a bare
+agent name or as `{ agent, tier }`: only a `{ agent, model }` rung takes a reference. Only a
+string that starts with `@` is a reference, so a value such as an npm scope (`@nathapp/…`)
+elsewhere in the config is untouched.
+
+**A tier is not an alias.** A tier is a per-agent role; an alias is one literal model id.
+
+| | Tier | Alias |
+|:---|:---|:---|
+| Where it lives | `models.<agent>.<tier>` — `fast` / `balanced` / `powerful` per agent | `agent.modelAliases.<name>` — one name to one literal id |
+| How a reference is written | the bare tier name: `"balanced"`, `{ "agent": "claude", "model": "powerful" }`, or `@sol` as a *value* inside a tier entry (that entry is still the tier, and its id is the expanded one) | `@name` or `@name[effort]`, only in the three positions above |
+| Default-agent fallback | Yes — a tier the named agent does not define resolves from the default agent's map | No — an alias is looked up only in `agent.modelAliases`; an unknown name is an error, never a tier lookup |
+| Escalation | Yes — `autoMode.escalation` walks fast → balanced → powerful, and a routing profile follows the tier ladder | No — an expanded `{ agent, model }` reference is a pin, dispatched as written; an op pinned to a model swaps to its fallback agent at `balanced` |
+| What a value may hold | a model entry: a `provider/model[effort]` string, or a `ModelDef` object with `provider` and `model` (plus optional `pricing`, `contextWindow`, `env`) | one literal `provider/model[effort]` id, or an `acp:` target (agent files only). One level: an alias value is never another alias and never a tier name |
+
+A tier name may not start with `@`, so a reference can never be read as a tier.
+
+**The reference's `[effort]` suffix wins.** With `"sol": "openai-codex/gpt-6.1-sol[medium]"`,
+`@sol` dispatches `openai-codex/gpt-6.1-sol[medium]` and `@sol[high]` dispatches
+`openai-codex/gpt-6.1-sol[high]` — the reference's suffix replaces any suffix on the alias
+value, the same rule a tier selector follows.
+
+**Expansion happens at config load.** The pass runs once on the merged config,
+immediately before schema validation: after the global, project, profile and CLI layers
+have merged, and again for each per-package overlay. Everything downstream therefore sees
+a real id — the runtime dispatches it, run logs and the cost ledger record the expanded id,
+the prompt audit shows the expanded id, and `nax config` prints expanded ids, beside the
+`agent.modelAliases` map they were expanded from (`--diff` is the exception: it compares the
+raw project and global files, so it shows references as written). Because the pass runs after
+the merge, a profile that repoints one alias changes every reference in that run.
+
+A per-package layer starts from the already-expanded root config, so an alias a package
+layer sets applies only to the references that package layer writes itself; references
+inherited from the root keep the root value. `mergePackageConfig` shallow-merges `agent`, so
+a package layer that sets `agent.modelAliases` replaces the whole map for that package's own
+references.
+
+**`acp:` alias values are for agent files.** An alias value may be an
+`acp:<agent>[/<model>]` target; that is how an agent file's `model:` frontmatter selects an
+ACP subagent. A config model position cannot use one: with `"r": "acp:codex/gpt-6.1-terra"`,
+a `"@r"` reference in config fails at load with
+`model alias "r" is an acp: target, usable only from agent files`. Agent-file bare-name
+aliases are unaffected.
+
+**Failures at load.** Every expansion error is a `NaxError` with code `MODEL_ALIAS_INVALID`:
+
+| Input | Message text |
+|:------|:-------------|
+| `@name` where `agent.modelAliases` has no own key `name` | `unknown model alias "name"` |
+| an alias value that starts with `@` | `model alias "name" must be a literal model id, not another alias` |
+| an alias value that is an `acp:` target, used from a config model position | `model alias "name" is an acp: target, usable only from agent files` |
+| an alias value that is neither `provider/model[effort]` nor `acp:` — including a non-string value | `model alias "name" is not a provider/model id` |
+| a bare `@`, or `@[high]` (no name) | `empty model alias reference` |
+| `@sol[high`, `@sol[]`, `@sol[a][b]`, `@sol[high]x`, `@ sol` | `malformed model alias reference "<ref>"` |
+| `agent.modelAliases` missing or not an object | treated as `{}`, so every `@` reference reports `unknown model alias "name"` |
+| a string-form selector (`review.semantic.model: "@sol"`, `bot.models.review: "@sol"`) or `routing.agents.profiles[].target.model` | `an @alias is a model id, not a tier; where a model pin is accepted, write { "agent": "<agent>", "model": "<value>" }` |
+| a tier key under `models.<agent>` that starts with `@` | `tier names cannot start with "@" (reserved for model aliases)` |
+| an alias defined but never referenced, with a bad value | `agent.modelAliases values must be "provider/model" or "acp:<agent>[/<model>]" (agent: claude, codex, cursor), each with an optional [effort] suffix and no whitespace` |
+
+One load collects every bad reference and fails once: the message is one
+`<path>: <message>` line per reference (for example
+`bot.models.review.model: unknown model alias "nope"`), and `context.paths` lists those
+paths. At the per-package site the same error also carries `packageDir` in its context, so
+an overlay's bad reference names the package it came from. These errors are raised before
+schema validation, so a bad reference is never reported as a schema error; the two
+tier/tier-key rows above are schema failures, and surface as `CONFIG_SCHEMA_INVALID` at the
+root load and as an invalid-per-package-config error for an overlay.
+
+**A string selector cannot hold a reference.** A string-form selector is a tier name by
+definition, so an `@` there is refused rather than resolved — it is never read as a tier:
+
+```json
+"review": { "semantic": { "model": "@sol" } }
+```
+
+fails at load with `an @alias is a model id, not a tier`. Write the object form instead,
+which is a pin where the reference does expand:
+
+```json
+"review": { "semantic": { "model": { "agent": "native", "model": "@sol" } } }
+```
+
+The same applies to `bot.models.*` and every other `{ agent, model }` position: an `@`
+belongs in the object's `model` field, not in place of the object.
+
+**`--model` on the command line.** A `--model` flag arrives after load, so it expands
+through the same helper against the loaded config's `agent.modelAliases`. The flag already
+takes `agent:model`, so an alias is written `native:@sol` (or `native:@sol[high]`); a bare
+`@sol` is refused — the flag names the form to use (`use <agent>:@sol`), as
+`BOT_MODEL_INVALID` from `nax bot review` / `nax bot fix` and as `MODEL_ALIAS_INVALID` from
+`nax advisor replay`. `nax bot review --model native:@nope` is
+refused before any runtime, run log or worktree exists, naming the unknown alias, and
+`nax advisor replay --model native:@nope` rejects with `MODEL_ALIAS_INVALID` before the
+record loop, so no billed call is made and its `close()` still runs. `nax chat --model` and
+`nax agents run --model` keep the bare-name alias lookup agent files use.
 
 **Legacy keys are rejected, not stripped.** `autoMode.defaultAgent`, `autoMode.fallbackOrder`, and `context.v2.fallback` were removed in ADR-012 Phase 6. Loading a config with them throws `NaxError code: CONFIG_LEGACY_AGENT_KEYS` with a migration hint. This is intentional — silently stripping would mask the migration.
 
