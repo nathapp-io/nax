@@ -227,7 +227,7 @@ None. `postPrReview`'s existing callers pass verdicts with no `origin`, which `s
 
 ### Seams
 
-- US-001 -> US-003: `isBlockingFinding` reads `origin` from the agreed items US-003 records. US-003 AC-12, AC-13 and AC-15 enter at `runBotReview` and assert the posting outcome, and AC-14 the recorded artifact. AC-17 enters at `hasPushWorthyItem`, the production predicate `fixStep` asks. US-004's `readyStep` ACs enter at the readiness pass, the readiness pass.
+- US-001 -> US-003: `isBlockingFinding` reads `origin` from the agreed items US-003 records. US-003 AC-12, AC-13 and AC-15 enter at `runBotReview` and assert the posting outcome, and AC-14 the recorded artifact. AC-17 enters at `hasPushWorthyItem`, the production predicate `fixStep` asks. US-004's `readyStep` ACs enter at the readiness pass.
 - US-002 -> US-003: `PrFinding.origin` from the reply parser is what `settleFindingOrigins` reads. US-003's integration ACs feed it through the stubbed review verdict, exactly as `runPrReview` returns it.
 
 ## Acceptance Criteria
