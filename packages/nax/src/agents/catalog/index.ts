@@ -27,7 +27,7 @@
  */
 
 import type { Catalog, Pricing, RawProvider, ThinkingLevel } from "@nathapp/nax-ai";
-import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
+import { DEFAULT_PROTOCOL_NAMES, defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
 import pkg from "@/_pkg";
 
 /** Exact `X.Y.Z` pin, optionally with a prerelease tag; rejects ranges and tags like `latest`. */
@@ -188,14 +188,34 @@ export async function lookupThinkingLevels(
   }
 }
 
-/** Tool-capable models in requested provider order and bundled catalog order. */
+/**
+ * The protocols the native client actually registers — `buildNativeClient`
+ * wires exactly `defaultProtocols()`, whose entries are `DEFAULT_PROTOCOL_NAMES`.
+ * Widened to `string` because a model's protocol is catalog-supplied and
+ * arbitrary: a provider may declare a wire protocol nax-ai has no backend for.
+ */
+const REGISTERED_PROTOCOLS: ReadonlySet<string> = new Set<string>(DEFAULT_PROTOCOL_NAMES);
+
+/**
+ * Tool-capable models in requested provider order and bundled catalog order.
+ *
+ * A model is offered only when its protocol is one the native client registers
+ * (`DEFAULT_PROTOCOL_NAMES`) *and* it declares tool support. Filtering on
+ * `supportsTools` alone let a discovered Google model into the picker and fail
+ * the first request with "Unknown protocol" — the model existed in the catalog,
+ * but nax-ai has no backend to send it to.
+ *
+ * Only discoveries are filtered here. Configured tier models and
+ * `agent.native.catalogOverrides` entries are explicit local declarations and
+ * stay selectable whatever their protocol; they never reach this function.
+ */
 export async function listCatalogModels(providerIds: readonly string[]): Promise<readonly string[]> {
   const catalog = await loadCatalog(_catalogDeps.loadProviders);
   if (catalog === null) return [];
   return providerIds.flatMap((provider) =>
     catalog
       .listModels(provider)
-      .filter((model) => model.supportsTools)
+      .filter((model) => model.supportsTools && REGISTERED_PROTOCOLS.has(model.protocol))
       .map((model) => `${provider}/${model.id}`),
   );
 }

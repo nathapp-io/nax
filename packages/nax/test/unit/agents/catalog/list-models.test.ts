@@ -9,10 +9,10 @@ function provider(id: string): RawProvider {
     id,
     baseUrl: "https://test.invalid",
     auth: { kind: "api-key" },
-    defaultProtocol: "test",
+    defaultProtocol: "openai-completions",
     models: (id === "anthropic" ? [true, false] : [true, false, true]).map((supportsTools, index) => ({
       id: `a${index + 1}`,
-      protocol: "test",
+      protocol: "openai-completions",
       supportsTools,
       pricing: { input: 1, output: 2, cacheRead: 1, cacheWrite: 1 },
       contextWindow: 1000,
