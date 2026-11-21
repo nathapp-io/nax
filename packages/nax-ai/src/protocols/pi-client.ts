@@ -317,6 +317,33 @@ function toolCallAt(partial: { content: readonly unknown[] }, index: number): { 
 }
 
 /**
+ * The input a finished tool call is reported with.
+ *
+ * nax sees only the argument text it accumulated from `toolcall_delta`, but a
+ * provider is free to send the whole argument object once, on the item that
+ * finishes the call, and emit no delta at all: OpenAI Responses replaces the
+ * streamed text at `output_item.done` without pushing a delta for the
+ * replacement. The accumulation then parses as `{}` while pi's own message
+ * already holds `{"city":"KL"}`, and reporting the accumulation loses the call
+ * (finding 3). So pi's completed object wins whenever it is trustworthy.
+ *
+ * `argumentsError` is pi's own verdict that the completed text was not a JSON
+ * object (`arguments` is `{}` in that case), so it keeps the accumulation —
+ * and so does a completed value that is not a plain object, which a
+ * hand-written backend could hand over. In both of those the accumulated
+ * deltas remain the only source of truth nax has.
+ */
+function completedToolInput(
+  toolCall: { readonly arguments: JsonObject; readonly argumentsError?: string },
+  accumulated: unknown,
+): unknown {
+  if (toolCall.argumentsError !== undefined) return accumulated;
+  const completed: unknown = toolCall.arguments;
+  if (typeof completed !== "object" || completed === null || Array.isArray(completed)) return accumulated;
+  return completed;
+}
+
+/**
  * The signature and redacted flag for the thinking block at a content index,
  * when the block at that index has that shape. `thinking_end`'s own event
  * carries no signature — pi accumulates it onto the block in `partial`
@@ -426,7 +453,14 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
                 };
                 break;
               }
-              yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
+              yield {
+                type: "tool-call",
+                call: {
+                  id: event.toolCall.id,
+                  name: event.toolCall.name,
+                  input: completedToolInput(event.toolCall, input),
+                },
+              };
               break;
             }
 
