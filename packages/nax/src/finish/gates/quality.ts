@@ -27,6 +27,7 @@ import {
   PROJECT_NAX_DIR,
   parseDeclaredStallDetection,
 } from "@/config";
+import { NaxError } from "@/errors";
 import { type QualityCommandResult, runQualityCommand } from "@/quality";
 import { type GateStallPolicy, type GateStopReason, resolveStallDetection } from "@/utils/gate-stall";
 import type { QualityGateResult } from "../types";
@@ -326,6 +327,15 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
   return out;
 }
 
+/** Reject with QUALITY_GATES_ABORTED once the run signal has fired. */
+function throwIfAborted(signal: AbortSignal | undefined, gate: string): void {
+  if (!signal?.aborted) return;
+  throw new NaxError(`[quality-gates] aborted before gate ${gate} finished`, "QUALITY_GATES_ABORTED", {
+    stage: "quality-gates",
+    gate,
+  });
+}
+
 /**
  * Run a gate's `setup` when it has one, under the gate's own cwd, timeout and
  * stall policy — a bootstrap that repeats one line forever is as stuck as the
@@ -340,6 +350,7 @@ async function runGateSetup(
   gate: GateCommand,
   stallDetection: GateStallPolicy,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<QualityCommandResult | null> {
   if (gate.setup === undefined) return null;
   const res = await _qualityGateDeps.run({
@@ -348,7 +359,10 @@ async function runGateSetup(
     workdir: gate.cwd,
     timeoutMs,
     stallDetection,
+    // Spread: the key is absent, never `undefined`, when there is no signal.
+    ...(signal === undefined ? {} : { signal }),
   });
+  throwIfAborted(signal, gate.name);
   return res.exitCode === 0 ? null : res;
 }
 
@@ -376,7 +390,7 @@ async function runGateSetup(
 export async function runQualityGates(
   repoRoot: string,
   commands: GateCommand[],
-  opts: { timeoutMs?: number; onGate?: (record: GateRunRecord) => void } = {},
+  opts: { timeoutMs?: number; onGate?: (record: GateRunRecord) => void; signal?: AbortSignal } = {},
 ): Promise<QualityGateResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_GATE_TIMEOUT_MS;
   const ran: string[] = [];
@@ -384,10 +398,11 @@ export async function runQualityGates(
   const chunks: string[] = [];
 
   for (const gate of commands) {
+    throwIfAborted(opts.signal, gate.name);
     ran.push(gate.name);
     const stallDetection = _qualityGateDeps.resolveStallDetection(gate.stallDetection);
 
-    const setupFailure = await runGateSetup(gate, stallDetection, timeoutMs);
+    const setupFailure = await runGateSetup(gate, stallDetection, timeoutMs, opts.signal);
     if (setupFailure !== null) {
       chunks.push(`[${gate.name}] exit=${setupFailure.exitCode}\nsetup failed:\n${setupFailure.output}`);
       failing.push(gate.name);
@@ -401,7 +416,9 @@ export async function runQualityGates(
       workdir: gate.cwd,
       timeoutMs,
       stallDetection,
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
+    throwIfAborted(opts.signal, gate.name);
     chunks.push(`[${gate.name}] exit=${res.exitCode}\n${res.output}`);
     if (res.exitCode !== 0) failing.push(gate.name);
     opts.onGate?.(gateRecord(gate, res));

@@ -24,7 +24,13 @@ export function gateExcerpt(output: string, name: string): string {
 export async function runRepoGates(fc: BranchStepContext): Promise<RepoGateRun> {
   try {
     const commands = await _featureDeps.resolveGateCommands(fc.projectDir, [...fc.packageDirs]);
-    const res = await runQualityQuietly(() => _featureDeps.runQualityGates(fc.projectDir, commands));
+    const res = await runQualityQuietly(() =>
+      _featureDeps.runQualityGates(
+        fc.projectDir,
+        commands,
+        fc.runSignal === undefined ? undefined : { signal: fc.runSignal },
+      ),
+    );
     return {
       summary: { ran: res.ran, failing: res.failing },
       findings: res.failing.map((name) => ({
