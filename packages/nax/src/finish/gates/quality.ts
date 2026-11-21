@@ -397,6 +397,7 @@ export async function runQualityGates(
   const failing: string[] = [];
   const chunks: string[] = [];
 
+  throwIfAborted(opts.signal, "(none)");
   for (const gate of commands) {
     throwIfAborted(opts.signal, gate.name);
     ran.push(gate.name);

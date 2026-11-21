@@ -47,6 +47,12 @@ describe("runQualityGates cancellation", () => {
     expect(calls).toHaveLength(0);
   });
 
+  test("AC-1: an already-aborted signal rejects even with no gates", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    expect(await rejectionCode(runQualityGates("/repo", [], { signal: ac.signal }))).toBe("QUALITY_GATES_ABORTED");
+  });
+
   test("AC-2/AC-3: abort during lint rejects, starts nothing further, and never calls onGate", async () => {
     const ac = new AbortController();
     const calls = stubRun(() => ac.abort());
