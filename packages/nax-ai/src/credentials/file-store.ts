@@ -34,6 +34,14 @@ const STALE_MS = 10_000;
 /** How long to wait for a lock another process is legitimately holding. */
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
 
+/**
+ * Acquisition backoff. The first retry comes quickly, because most contention
+ * is a write that finishes almost at once; the growth keeps a long-lived holder
+ * from being polled hundreds of times.
+ */
+const ACQUIRE_BACKOFF_START_MS = 20;
+const ACQUIRE_BACKOFF_FACTOR = 1.6;
+
 export interface FileCredentialStoreOptions {
   /** Absolute path to the credential file. Created on first write. */
   readonly path: string;
@@ -55,8 +63,16 @@ const EMPTY: FileShape = { version: 1, credentials: {} };
  * wrong path than a file that should be discarded — and discarding it would
  * silently log the user out of every provider at once.
  *
+ * Two shapes are refused. A `credentials` value that is not an object (null, an
+ * array, a string) cannot be a credential map, and a `version` other than 1 is a
+ * layout this build does not understand. Writing either back as version 1 would
+ * destroy it: an array would be re-keyed by index, and a later version would be
+ * silently downgraded. Refusing costs one clear error; overwriting costs the
+ * user every credential in the file.
+ *
  * The cause is not attached: a JSON parse error quotes the text it failed on,
- * which here is the credential file.
+ * which here is the credential file. Neither message quotes the file, so no
+ * stored key reaches a log or a terminal.
  */
 async function readShape(path: string): Promise<FileShape> {
   let raw: string;
@@ -74,12 +90,26 @@ async function readShape(path: string): Promise<FileShape> {
     throw new Error(`The credential file at ${path} could not be parsed. Refusing to overwrite it.`);
   }
 
-  if (typeof parsed !== "object" || parsed === null || !("credentials" in parsed)) {
+  if (!isRecord(parsed) || !isRecord(parsed.credentials)) {
     throw new Error(
       `The credential file at ${path} could not be parsed as a credential store. Refusing to overwrite it.`,
     );
   }
-  return parsed as FileShape;
+  if (parsed.version !== 1) {
+    throw new Error(`The credential file at ${path} is not a version 1 credential store. Refusing to overwrite it.`);
+  }
+  // The entries themselves are not validated: a store that cannot read back one
+  // provider's credential is a different failure, and this gate is about the
+  // file's shape.
+  return { version: 1, credentials: parsed.credentials as Readonly<Record<string, StoredCredential>> };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -121,24 +151,46 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
     await writeShape(path, EMPTY, true);
   }
 
+  /**
+   * One deadline for the whole acquisition, not a per-attempt maximum.
+   *
+   * proper-lockfile's own retry loop multiplies a capped backoff by its retry
+   * count, so `lockTimeoutMs` used to bound each wait instead of the total: a
+   * caller asking for 200 ms could wait over a second, and a lock released
+   * after the deadline could still be taken. Here each attempt is a single
+   * non-retrying lock() call, and the deadline is checked both before sleeping
+   * and again after it, so a late release cannot be picked up.
+   */
+  async function acquire(): Promise<() => Promise<void>> {
+    const deadline = Date.now() + lockTimeoutMs;
+    let backoff = ACQUIRE_BACKOFF_START_MS;
+    let lastError: unknown;
+    for (;;) {
+      try {
+        return await lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+        lastError = error;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw lockTimeout(lastError);
+      await sleep(Math.min(backoff, remaining));
+      backoff *= ACQUIRE_BACKOFF_FACTOR;
+      // Checked after the sleep, because a lock released while we slept must
+      // not be acquired past the deadline the caller asked for.
+      if (Date.now() >= deadline) throw lockTimeout(lastError);
+    }
+  }
+
+  function lockTimeout(cause: unknown): Error {
+    return new Error(`Timed out waiting for the credential file lock at ${path}. Another process is holding it.`, {
+      cause,
+    });
+  }
+
   async function withLock<T>(fn: () => Promise<T>): Promise<T> {
     await ensureFile();
-    let release: () => Promise<void>;
-    try {
-      release = await lockfile.lock(path, {
-        realpath: false,
-        stale: STALE_MS,
-        retries: { retries: 10, factor: 1.6, minTimeout: 20, maxTimeout: lockTimeoutMs },
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ELOCKED") {
-        throw new Error(`Timed out waiting for the credential file lock at ${path}. Another process is holding it.`, {
-          cause: error,
-        });
-      }
-      throw error;
-    }
-
+    const release = await acquire();
     try {
       return await fn();
     } finally {
