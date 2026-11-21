@@ -3,7 +3,7 @@
   "feature": "review-0b834-provider-credentials",
   "branchName": "feat/review-0b834-provider-credentials",
   "createdAt": "2026-11-21T14:05:52.494Z",
-  "updatedAt": "2026-11-21T14:34:28.042Z",
+  "updatedAt": "2026-11-21T14:43:08.571Z",
   "userStories": [
     {
       "id": "US-001",
@@ -146,14 +146,17 @@
         "retry"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A small Node-compatible fetch adapter, one production wiring change and local real-pi tests restore metadata without modifying retry policy or authentication."
+        "reasoning": "A small Node-compatible fetch adapter, one production wiring change and local real-pi tests restore metadata without modifying retry policy or authentication.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/pi-client.ts",
@@ -169,7 +172,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0991db82fb9d1ee53d2a7df425fb664c982c6253"
     },
     {
       "id": "US-004",
