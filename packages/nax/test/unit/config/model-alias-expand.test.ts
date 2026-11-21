@@ -6,8 +6,8 @@ function thrown(fn: () => unknown): NaxError {
   try {
     fn();
   } catch (err) {
-    expect(err).toBeInstanceOf(NaxError);
-    return err as NaxError;
+    if (err instanceof NaxError) return err;
+    throw err;
   }
   throw new Error("expected expandModelAliasRef to throw");
 }
@@ -86,8 +86,8 @@ describe("expandModelAliasRef", () => {
   });
 
   test("AC-14 non-string alias value is invalid, not a crash", () => {
-    const bad: unknown = { sol: 42 };
-    const err = thrown(() => expandModelAliasRef("@sol", bad as Record<string, string>, "p"));
+    const bad = JSON.parse('{"sol":42}');
+    const err = thrown(() => expandModelAliasRef("@sol", bad, "p"));
     expect(err.code).toBe("MODEL_ALIAS_INVALID");
     expect(err.message).toContain("not a provider/model id");
   });
