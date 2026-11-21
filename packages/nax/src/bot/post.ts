@@ -6,7 +6,7 @@ import { editComment, postInlineComment, postPrComment, replyToThread, unresolve
 import { getLogger } from "@/logger";
 import type { PrFinding, PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
-import type { EffectiveBlockingTriggers, FindingTrigger } from "@/workflow/blocking-findings";
+import type { EffectiveBlockingTriggers, FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 import { DEFAULT_BLOCKING_TRIGGERS, isBlockingFinding, readFindingThreadFacts } from "@/workflow/blocking-findings";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
@@ -14,6 +14,7 @@ import { type CarriedFinding, carriedOpen } from "./carried-findings";
 import type { CarriedEntry } from "./carried-record";
 import type { BotChecks } from "./checks";
 import { postCoverageRecord, recordsCodeReview } from "./coverage-record";
+import { settleFindingOrigins } from "./finding-origin";
 import { postCarriedRecord } from "./post-carried";
 import { earlierCounts, earlierIssue, firstCarriedEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import type { BotPushEntry, FindingLineage } from "./push-ledger";
@@ -39,6 +40,9 @@ export type AgreedItem =
         /** US-001: the class of condition the finding needs; absent on artifacts written before it. */
         readonly trigger?: FindingTrigger;
         readonly triggerEvidence?: string;
+        /** US-001/US-003: where its lines came from; absent reads `pr`, as does a claim nothing backed. */
+        readonly origin?: FindingOrigin;
+        readonly originEvidence?: string;
         readonly raisedBy?: CarriedEntry["raisedBy"];
         /** US-004/US-005: the push whose lines the finding sits on; absent before any lineage read. */
         readonly lineage?: FindingLineage;
@@ -229,7 +233,7 @@ function lineageFacts(
 function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings
     .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
-    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence }) => {
+    .map(({ severity, issue, file, line, suggestion, decision, trigger, triggerEvidence, origin, originEvidence }) => {
       const key = findingKey({ file, issue });
       return {
         key,
@@ -242,6 +246,9 @@ function agreedItems(input: PostReviewInput, reviewId?: string): AgreedItem[] {
         ...(decision === undefined ? {} : { decision }),
         ...(trigger === undefined ? {} : { trigger }),
         ...(triggerEvidence === undefined ? {} : { triggerEvidence }),
+        // US-003: the origin the settlement left, so a later fix or readiness pass reads the same claim.
+        ...(origin === undefined ? {} : { origin }),
+        ...(originEvidence === undefined ? {} : { originEvidence }),
         ...(reviewId === undefined ? {} : { raisedBy: reviewId }),
         ...lineageFacts(input, key),
       };
@@ -538,7 +545,17 @@ async function postSummary(
 }
 
 /** Save complete fix inputs before mutation, then publish findings and the final summary. */
-export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
+export async function postPrReview(received: PostReviewInput): Promise<PostReviewOutcome> {
+  // US-003: settlement comes first, so even the review id and the artifact record the settled origins. The
+  // caller's own input is left untouched: every later call in this function reads this copy.
+  const input: PostReviewInput = {
+    ...received,
+    verdict: settleFindingOrigins(received.verdict, {
+      lineage: received.lineage,
+      // A top-level own comment (summary, carried record, signals) has no thread, so it is not one of these.
+      ownThreadKeys: new Set(received.own.flatMap(({ key, threadId }) => (threadId === undefined ? [] : [key]))),
+    }),
+  };
   const reviewId = crypto.randomUUID();
   await persistArtifact(input, recordsCodeReview(input) ? reviewId : undefined);
   const findings = await postFindings(input);
