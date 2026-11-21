@@ -165,6 +165,38 @@ describe("createFileCredentialStore lock acquisition deadline", () => {
     expect(await createFileCredentialStore({ path }).read("b")).toBeUndefined();
   });
 
+  it("rejects at the deadline rather than when the in-flight lock() call finally answers", async () => {
+    // The failure mode a post-hoc deadline check cannot catch: the caller is
+    // blocked INSIDE lock(), so a 20 ms budget could only be reported when that
+    // call settled — 300 ms here, whatever the option asked for.
+    const path = tempPath();
+    const store = createFileCredentialStore({ path, lockTimeoutMs: 20 });
+    const holding = barrier();
+    const release = barrier();
+    const first = holdLock(store, holding.resolve, release.promise);
+    let outcome: Outcome | undefined;
+    let elapsed = Number.POSITIVE_INFINITY;
+    try {
+      await holding.promise;
+      io.delayMs = 300;
+      const startedAt = Date.now();
+      try {
+        outcome = await settle(store.modify("b", async () => B));
+      } finally {
+        elapsed = Date.now() - startedAt;
+        io.delayMs = 0;
+      }
+    } finally {
+      release.resolve();
+      await settle(first);
+    }
+    expect(outcome?.status).toBe("rejected");
+    expect(rejectionOf(outcome)).toContain(TIMED_OUT);
+    // Well clear of both bounds: the deadline is 20 ms and the attempt's own
+    // I/O is 300 ms, so anything near either side is unambiguous.
+    expect(elapsed).toBeLessThan(250);
+  });
+
   it("gives up less than twice the deadline after it started, however long the holder keeps the lock", async () => {
     const path = tempPath();
     const store = createFileCredentialStore({ path, lockTimeoutMs: 200 });

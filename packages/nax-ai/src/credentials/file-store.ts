@@ -151,6 +151,51 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
     await writeShape(path, EMPTY, true);
   }
 
+  /** What one bounded lock() call came to. */
+  type Attempt =
+    | { readonly kind: "acquired"; readonly release: () => Promise<void> }
+    | { readonly kind: "held"; readonly error: unknown }
+    | { readonly kind: "deadline" };
+
+  /**
+   * One lock() call, raced against the time left before the deadline.
+   *
+   * The attempt itself is filesystem I/O and can settle long after the budget
+   * has gone: probed with a 20 ms budget, lock() answered at 67 ms. Awaiting it
+   * reports the timeout whenever that call happens to finish, so the wait is
+   * bounded by a timer instead.
+   *
+   * An attempt abandoned this way is not cancelled — lock() keeps running — so
+   * whatever it wins afterwards is released at once. Nobody was handed it, and
+   * keeping it would block every writer until it went stale. Its late rejection
+   * is swallowed for the same reason: the caller has already been answered.
+   */
+  function attemptLock(remainingMs: number): Promise<Attempt> {
+    const pending = lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
+    return new Promise<Attempt>((resolve) => {
+      const timer = setTimeout(() => {
+        pending.then(
+          (release) => {
+            release().catch(() => {});
+          },
+          () => {},
+        );
+        resolve({ kind: "deadline" });
+      }, remainingMs);
+
+      pending.then(
+        (release) => {
+          clearTimeout(timer);
+          resolve({ kind: "acquired", release });
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          resolve({ kind: "held", error });
+        },
+      );
+    });
+  }
+
   /**
    * One deadline for the whole acquisition, not a per-attempt maximum.
    *
@@ -158,40 +203,38 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
    * count, so `lockTimeoutMs` used to bound each wait instead of the total: a
    * caller asking for 200 ms could wait over a second, and a lock released
    * after the deadline could still be taken. Here each attempt is a single
-   * non-retrying lock() call, and the deadline is checked before sleeping,
-   * after sleeping, and again when an attempt succeeds — the last one because
-   * lock() is filesystem I/O and can answer after the whole budget has gone.
-   * Sleeping is the cheap part of the wait; the acquiring call is the part that
-   * can quietly outlast the deadline.
+   * non-retrying lock() call bounded by the time left, and the deadline is
+   * checked before each attempt, after each sleep, and once more when an
+   * attempt succeeds — the last one because lock() can answer just past the
+   * deadline on a busy event loop that delayed the timer.
    */
   async function acquire(): Promise<() => Promise<void>> {
     const deadline = Date.now() + lockTimeoutMs;
     let backoff = ACQUIRE_BACKOFF_START_MS;
     let lastError: unknown;
     for (;;) {
-      let release: (() => Promise<void>) | undefined;
-      try {
-        release = await lockfile.lock(path, { realpath: false, stale: STALE_MS, retries: 0 });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
-        lastError = error;
-      }
-      if (release !== undefined) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw lockTimeout(lastError);
+
+      const attempt = await attemptLock(remaining);
+      if (attempt.kind === "deadline") throw lockTimeout(lastError);
+
+      if (attempt.kind === "acquired") {
         // A lock that arrives after the deadline is not one this caller asked
         // to wait for, and the caller's callback must not run under it. It is
         // released rather than kept, so a late acquisition does not leave the
         // file locked for everyone else.
-        if (Date.now() < deadline) return release;
-        await release();
+        if (Date.now() < deadline) return attempt.release;
+        await attempt.release();
         throw lockTimeout(lastError);
       }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) throw lockTimeout(lastError);
-      await sleep(Math.min(backoff, remaining));
+
+      if ((attempt.error as NodeJS.ErrnoException).code !== "ELOCKED") throw attempt.error;
+      lastError = attempt.error;
+      const left = deadline - Date.now();
+      if (left <= 0) throw lockTimeout(lastError);
+      await sleep(Math.min(backoff, left));
       backoff *= ACQUIRE_BACKOFF_FACTOR;
-      // Checked after the sleep, because a lock released while we slept must
-      // not be acquired past the deadline the caller asked for.
-      if (Date.now() >= deadline) throw lockTimeout(lastError);
     }
   }
 
