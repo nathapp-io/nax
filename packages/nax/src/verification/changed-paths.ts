@@ -4,7 +4,7 @@
  * Pure helpers: the Git read and the Git-root lookup stay in smart-runner.ts, which passes the
  * resolved Git root in so this module never imports it back.
  */
-import { relative } from "node:path";
+import { relative, sep } from "node:path";
 import { unquotePorcelainPath } from "../utils/porcelain";
 
 /** Split Git stdout into lines and decode each Git-quoted name; unquoted lines are returned as they are. */
@@ -22,7 +22,15 @@ export function decodeChangedLines(stdout: string): string[] {
  */
 export function projectPrefixUnderGitRoot(gitRoot: string | null, repoRoot: string): string {
   if (!gitRoot) return "";
-  const prefix = relative(gitRoot, repoRoot);
+  return gitStylePrefix(relative(gitRoot, repoRoot), sep);
+}
+
+/**
+ * Normalize a `relative()` result to Git's forward slashes; "" when it is empty or leaves the Git root.
+ * `separator` is the platform separator (a parameter so both forms are testable).
+ */
+export function gitStylePrefix(rel: string, separator: string): string {
+  const prefix = separator === "/" ? rel : rel.split(separator).join("/");
   if (prefix === "" || prefix === ".." || prefix.startsWith("../")) return "";
   return prefix;
 }

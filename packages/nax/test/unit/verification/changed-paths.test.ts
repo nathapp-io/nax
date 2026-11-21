@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { withDepsRestore } from "@test/helpers";
 import { unquotePorcelainPath } from "@/utils/porcelain";
+import { gitStylePrefix } from "@/verification/changed-paths";
 import {
   _gitUtilDeps,
   clearGitRootCache,
@@ -56,5 +57,18 @@ describe("smart-runner readers decode Git-quoted names", () => {
     };
     await getChangedTestFiles("/repo", "/repo", "HEAD", undefined, TEST_RE);
     expect(seen[0]).toContain("--diff-filter=d");
+  });
+});
+
+describe("gitStylePrefix (Windows separators)", () => {
+  test("converts a backslash prefix to forward slashes", () => {
+    expect(gitStylePrefix("packages\\app", "\\")).toBe("packages/app");
+  });
+  test("treats a backslash parent step as outside the Git root", () => {
+    expect(gitStylePrefix("..\\other", "\\")).toBe("");
+    expect(gitStylePrefix("..", "\\")).toBe("");
+  });
+  test("keeps a posix prefix", () => {
+    expect(gitStylePrefix("packages/app", "/")).toBe("packages/app");
   });
 });
