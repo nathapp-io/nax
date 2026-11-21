@@ -206,10 +206,15 @@ describe("approveMemoryNote and a record from before another project refiled the
       await a.forget();
       await b.save(FRENCH, REFILED_AT);
 
-      await a.approve();
+      const approved = await a.approve();
 
       // The entry is not merely ignored: it is taken out, so a later approval does not meet it
-      // again and the index stops marking the note.
+      // again and the index stops marking the note. Retiring the note would empty the record too,
+      // so the empty record only means "the stale entry was removed" together with the approval
+      // having answered the replacement: the retirement arm deletes that note and answers
+      // `deleted`, which both assertions below rule out.
+      expect(approved).toMatchObject({ status: "active", body: FRENCH });
+      expect(await a.store.readNote(SCOPE, SLUG)).toMatchObject({ status: "active", body: FRENCH });
       expect(await a.store.readPendingForgets()).toEqual([]);
     });
   });
