@@ -3,11 +3,10 @@ import { expandConfigModelAliases } from "@/config/model-alias-expand";
 import { NaxError } from "@/errors";
 
 const SOL = { agent: { modelAliases: { sol: "a/b" } } };
-type Obj = Record<string, unknown>;
 
 function at(value: unknown, ...keys: Array<string | number>): unknown {
   let cur = value;
-  for (const k of keys) cur = (cur as Obj)[k];
+  for (const k of keys) cur = Reflect.get(Object(cur), k);
   return cur;
 }
 
