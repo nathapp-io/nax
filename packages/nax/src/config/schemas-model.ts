@@ -277,15 +277,33 @@ const ModelDefSchema = z.object({
 
 const ModelEntrySchema = z.union([z.string().min(1, "Model identifier must be non-empty"), ModelDefSchema]);
 
-/** Detect legacy flat format: any top-level value is a string or has 'provider'/'model' key directly */
+/**
+ * Detect the legacy flat format: some top-level value is a model definition
+ * rather than an agent's tier map.
+ *
+ * A definition shape is a string (`{ fast: "claude-haiku" }`) or an object whose
+ * `provider` AND `model` are both strings. Key presence alone is not enough:
+ * `{ model: "openai/one" }` used to match, so a per-agent tier map whose tiers
+ * were named `model` or `provider` was migrated to `{ claude: <the map> }` and
+ * then failed `ModelDefSchema` — `Invalid configuration` for a valid config.
+ * An object holding only one of the two, or a non-string one (a tier mapped to
+ * a definition object), is a tier map and must not be migrated.
+ */
 function isLegacyFlatModels(val: unknown): boolean {
   if (typeof val !== "object" || val === null) return false;
   const obj = val as Record<string, unknown>;
   for (const v of Object.values(obj)) {
     if (typeof v === "string") return true;
-    if (typeof v === "object" && v !== null && ("provider" in v || "model" in v)) return true;
+    if (isModelDefinition(v)) return true;
   }
   return false;
+}
+
+/** An object carrying both `provider` and `model` as strings — a `ModelDef`. */
+function isModelDefinition(val: unknown): boolean {
+  if (typeof val !== "object" || val === null) return false;
+  const def = val as { provider?: unknown; model?: unknown };
+  return typeof def.provider === "string" && typeof def.model === "string";
 }
 
 /** Per-agent model map: Record<agentName, Record<tierName, ModelEntry>> */
