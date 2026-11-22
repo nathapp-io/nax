@@ -3,7 +3,7 @@
   "feature": "chat-live-shell-output",
   "branchName": "feat/chat-live-shell-output",
   "createdAt": "2026-11-22T09:34:24.748Z",
-  "updatedAt": "2026-11-22T10:18:35.056Z",
+  "updatedAt": "2026-11-22T10:28:15.689Z",
   "userStories": [
     {
       "id": "US-001",
@@ -209,14 +209,17 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two registry modules consume contracts already supplied by US-001 and US-003; subscription/unregister plumbing reuses the existing foreground lifecycle and is directly testable through the sanctioned runArgv seam."
+        "reasoning": "Two registry modules consume contracts already supplied by US-001 and US-003; subscription/unregister plumbing reuses the existing foreground lifecycle and is directly testable through the sanctioned runArgv seam.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/background/task-registry.ts",
@@ -231,7 +234,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "75ebae0c48f0f21257625b698b6a472419a13159"
     },
     {
       "id": "US-005",
