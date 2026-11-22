@@ -3,7 +3,7 @@
   "feature": "chat-live-shell-output",
   "branchName": "feat/chat-live-shell-output",
   "createdAt": "2026-11-22T09:34:24.748Z",
-  "updatedAt": "2026-11-22T10:28:15.689Z",
+  "updatedAt": "2026-11-22T10:45:05.373Z",
   "userStories": [
     {
       "id": "US-001",
@@ -271,14 +271,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coordinates coalesced React updates, transcript identity/cache invalidation, rendering geometry and result cleanup across multiple modules."
+        "reasoning": "Coordinates coalesced React updates, transcript identity/cache invalidation, rendering geometry and result cleanup across multiple modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/tool-card.ts",
@@ -301,7 +304,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "60c9b637a75625196fb058fd145aadf7baae774a"
     },
     {
       "id": "US-006",
