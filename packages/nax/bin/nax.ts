@@ -483,18 +483,29 @@ program
   });
 
 // ── features helpers ──────────────────────────────────
+function printResolvedFeature(result: import("../src/cli/features-resolve").ResolveResult): void {
+  const { featureName, specSource } = result;
+  if (featureName) console.log(`Feature: ${featureName}`);
+  if (specSource) console.log(`Spec:    ${specSource.path} (${specSource.kind})`);
+  if (result.matchedBy === "branch") console.log(chalk.dim(`Picked from current branch ${result.branch}`));
+}
+
+function printAmbiguousFeatures(result: import("../src/cli/features-resolve").ResolveResult): void {
+  const scope = result.branch ? `on current branch ${result.branch}` : "found";
+  console.log(`Multiple features ${scope} — pass one explicitly:`);
+  (result.candidates ?? []).forEach((c, i) => {
+    console.log(`  ${i + 1}. ${c}`);
+  });
+}
+
 function printHumanReadable(result: import("../src/cli/features-resolve").ResolveResult): void {
-  const { status, featureName, specSource, candidates } = result;
+  const { status, candidates } = result;
   if (status === "ok") {
-    if (featureName) console.log(`Feature: ${featureName}`);
-    if (specSource) console.log(`Spec:    ${specSource.path} (${specSource.kind})`);
+    printResolvedFeature(result);
     return;
   }
   if (status === "ambiguous") {
-    console.log("Multiple features found — pass one explicitly:");
-    (candidates ?? []).forEach((c, i) => {
-      console.log(`  ${i + 1}. ${c}`);
-    });
+    printAmbiguousFeatures(result);
     return;
   }
   if (status === "missing") {

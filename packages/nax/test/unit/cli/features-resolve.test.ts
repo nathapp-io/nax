@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { resolveFeatureSpec } from "@/cli/features-resolve";
+import { _featuresResolveDeps, resolveFeatureSpec } from "@/cli/features-resolve";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -334,6 +334,149 @@ describe("empty name / undefined — auto-discover", () => {
     const result = await resolveFeatureSpec(undefined, tempDir);
     expect(result.status).toBe("ok");
     expect(result.featureName).toBe("real-feat");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty name with several features — pick the one on the checked-out branch
+// ---------------------------------------------------------------------------
+
+const originalReadBranch = _featuresResolveDeps.readCurrentBranch;
+
+function setBranch(branch: string): void {
+  _featuresResolveDeps.readCurrentBranch = async () => branch;
+}
+
+afterEach(() => {
+  _featuresResolveDeps.readCurrentBranch = originalReadBranch;
+});
+
+/** Creates a feature with a spec.md and, unless `prd` is null, the given raw prd.json text. */
+function createBranchFeature(naxDir: string, name: string, prd: string | null): void {
+  const featureDir = join(naxDir, "features", name);
+  mkdirSync(featureDir, { recursive: true });
+  writeFileSync(join(featureDir, "spec.md"), `# ${name}`);
+  if (prd !== null) writeFileSync(join(featureDir, "prd.json"), prd);
+}
+
+function prdOn(name: string, branchName: string): string {
+  return JSON.stringify({ feature: name, branchName, userStories: [] });
+}
+
+describe("empty name — current-branch match", () => {
+  test("one feature on the current branch → ok with matchedBy branch", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", "feat/a"));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("feat/b");
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBe("feat-b");
+    expect(result.matchedBy).toBe("branch");
+    expect(result.branch).toBe("feat/b");
+    expect(result.specSource?.path).toBe(join(".nax", "features", "feat-b", "spec.md"));
+    expect(result.message).toContain("feat/b");
+  });
+
+  test("an empty-string name behaves like no name", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", "feat/a"));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("feat/a");
+
+    const result = await resolveFeatureSpec("", tempDir);
+
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBe("feat-a");
+  });
+
+  test("no feature on the current branch → ambiguous with every candidate", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", "feat/a"));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("main");
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ambiguous");
+    expect(result.candidates).toEqual(["feat-a", "feat-b"]);
+    expect(result.matchedBy).toBeUndefined();
+    expect(result.branch).toBeUndefined();
+  });
+
+  test("two features on the current branch → ambiguous with only those two", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", "feat/shared"));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/shared"));
+    createBranchFeature(naxDir, "feat-c", prdOn("feat-c", "feat/c"));
+    setBranch("feat/shared");
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ambiguous");
+    expect(result.candidates).toEqual(["feat-a", "feat-b"]);
+    expect(result.branch).toBe("feat/shared");
+    expect(result.message).toContain("feat/shared");
+  });
+
+  test("detached HEAD (empty branch) → ambiguous with every candidate", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", ""));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("");
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ambiguous");
+    expect(result.candidates).toEqual(["feat-a", "feat-b"]);
+  });
+
+  test("spec-only and unparseable prd.json features never match, and do not throw", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "spec-only", null);
+    createBranchFeature(naxDir, "broken", "{not json");
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("feat/b");
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBe("feat-b");
+  });
+
+  test("a single candidate still resolves without reading the branch", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "solo", prdOn("solo", "feat/solo"));
+    _featuresResolveDeps.readCurrentBranch = async () => {
+      throw new Error("branch must not be read for a single candidate");
+    };
+
+    const result = await resolveFeatureSpec(undefined, tempDir);
+
+    expect(result.status).toBe("ok");
+    expect(result.featureName).toBe("solo");
+    expect(result.matchedBy).toBeUndefined();
+  });
+
+  test("a named feature never consults the branch", async () => {
+    const naxDir = initNaxRepo();
+    createBranchFeature(naxDir, "feat-a", prdOn("feat-a", "feat/a"));
+    createBranchFeature(naxDir, "feat-b", prdOn("feat-b", "feat/b"));
+    setBranch("feat/b");
+
+    const result = await resolveFeatureSpec("feat-a", tempDir);
+
+    expect(result.featureName).toBe("feat-a");
+    expect(result.matchedBy).toBeUndefined();
+  });
+});
+
+describe("default readCurrentBranch", () => {
+  test("returns an empty string when git cannot run there instead of throwing", async () => {
+    // A directory that does not exist fails the same way wherever the temp root lives.
+    expect(await originalReadBranch(join(tempDir, "does-not-exist"))).toBe("");
   });
 });
 
