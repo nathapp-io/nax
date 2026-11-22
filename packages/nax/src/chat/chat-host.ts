@@ -22,7 +22,7 @@ import {
 import { withAgentCallModel } from "./agent-call-model";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
-import { type ChatBackgroundTasks, createHostTasks } from "./background";
+import { type ChatBackgroundTasks, type ChatShellOutput, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
@@ -77,6 +77,7 @@ class NativeChatHost implements ChatHost {
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
+  readonly shellOutput?: ChatShellOutput;
   readonly taskNoticeTurns?: number;
   readonly confirmBeforeClose?: () => Promise<boolean>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
@@ -210,6 +211,7 @@ class NativeChatHost implements ChatHost {
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
+      this.shellOutput = hostTasks.tasks;
       const providers = [...resources.toolProviders, ...(hostJobs?.providers ?? []), hostTasks.provider];
       this.toolProviders = chatToolProviders({ catalog: resources.catalog, providers, runs: this.runs });
     }

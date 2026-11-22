@@ -12,6 +12,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
+import { createShellTails, SHELL_TAIL_TOTAL_MAX_BYTES, type ShellTails } from "./shell-tails";
 import {
   createTaskEventLog,
   TASK_EVENTS_TOTAL_MAX_BYTES,
@@ -26,6 +27,8 @@ import {
   type BackgroundTask,
   type BackgroundTaskState,
   type ChatBackgroundTasks,
+  type ChatShellOutput,
+  type ShellTailView,
   TASK_ID_PATTERN,
   type TaskOutputOptions,
 } from "./task-types";
@@ -79,6 +82,8 @@ export const _backgroundTaskDeps = {
   readLog: readLogTail,
   /** The limits on events retained across all agent tasks; a seam so a test need not record thousands. */
   eventLimits: { entries: TASK_EVENTS_TOTAL_MAX_ENTRIES, bytes: TASK_EVENTS_TOTAL_MAX_BYTES },
+  /** The budget shared by every retained shell tail; a seam so a test need not write 4 MiB. */
+  shellTailTotalMaxBytes: SHELL_TAIL_TOTAL_MAX_BYTES,
 };
 
 /** What only an agent task keeps beyond its record: the view's inputs. */
@@ -118,20 +123,39 @@ function isMissingLog(cause: unknown): boolean {
   return typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
-class BackgroundTasks implements ChatBackgroundTasks {
+class BackgroundTasks implements ChatBackgroundTasks, ChatShellOutput {
   private readonly entries = new Map<string, TaskEntry>();
   private readonly listeners = new Set<() => void>();
   private readonly eventListeners = new Set<(id: string) => void>();
   private readonly foregroundCalls = new Map<symbol, ForegroundCommand>();
   private readonly completions = new Set<Promise<void>>();
   private readonly unnoticed = new Map<string, BackgroundTask>();
+  /** The display-only tails of this registry's shells; the read side is `ChatShellOutput`. */
+  private readonly shellTails: ShellTails;
   /** Entries and estimated bytes held by every agent log that has not been evicted. */
   private retained = { entries: 0, bytes: 0 };
   /** Finished agent tasks whose log is still held, in the order they finished: the eviction queue. */
   private readonly finishedLogs: TaskEntry[] = [];
   private notice?: { ids: readonly string[]; text: string };
   private shuttingDown = false;
-  constructor(private readonly options: BackgroundTaskOptions) {}
+  constructor(private readonly options: BackgroundTaskOptions) {
+    this.shellTails = createShellTails({
+      logger: options.logger,
+      totalMaxBytes: _backgroundTaskDeps.shellTailTotalMaxBytes,
+    });
+  }
+
+  taskTail(id: string): ShellTailView | undefined {
+    return this.shellTails.taskTail(id);
+  }
+
+  foregroundTail(callId: string): ShellTailView | undefined {
+    return this.shellTails.foregroundTail(callId);
+  }
+
+  onShellOutput(listener: (id: string) => void): () => void {
+    return this.shellTails.onShellOutput(listener);
+  }
 
   private emit(): void {
     for (const listener of [...this.listeners]) {
@@ -311,6 +335,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
       logFailed: false,
     };
     this.entries.set(id, entry);
+    this.shellTails.addTask(id);
     this.enqueue(entry, () => _backgroundTaskDeps.mkdir(join(this.options.outputDir, "chat-tasks")));
     const completion = handle.ended.then((end) => {
       this.finalize(entry, end);
@@ -322,7 +347,11 @@ class BackgroundTasks implements ChatBackgroundTasks {
     return {
       id,
       append: (_stream, chunk) => {
-        if (entry.record.state === "running") this.append(entry, chunk);
+        if (entry.record.state !== "running") return;
+        // The tail is display-only and independent of the log: output still shows when the
+        // log is capped or its writes failed.
+        this.shellTails.appendTask(id, chunk);
+        this.append(entry, chunk);
       },
     };
   }
@@ -419,6 +448,8 @@ class BackgroundTasks implements ChatBackgroundTasks {
     const line =
       end.launchError !== undefined ? `[nax] launch failed: ${end.launchError}` : `[nax] exit code ${end.exitCode}`;
     this.appendLine(entry, line);
+    // The tail keeps the shell's own output only; the marker above is the registry's record.
+    this.shellTails.endTask(entry.record.id);
     if (entry.record.state === "succeeded" || entry.record.state === "failed") {
       this.unnoticed.set(entry.record.id, entry.record);
     }
@@ -491,6 +522,6 @@ class BackgroundTasks implements ChatBackgroundTasks {
   }
 }
 
-export function createBackgroundTasks(options: BackgroundTaskOptions): ChatBackgroundTasks {
+export function createBackgroundTasks(options: BackgroundTaskOptions): ChatBackgroundTasks & ChatShellOutput {
   return new BackgroundTasks(options);
 }

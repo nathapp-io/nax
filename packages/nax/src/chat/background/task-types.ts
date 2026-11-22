@@ -28,6 +28,16 @@ export interface ShellTailView {
   readonly truncated: boolean;
 }
 
+/** Display-only shell output tails; nothing here reaches the model. */
+export interface ChatShellOutput {
+  /** The tail of the background shell task `id`; undefined for an unknown id or an agent task. */
+  taskTail(id: string): ShellTailView | undefined;
+  /** The tail of the running foreground call `callId`; undefined once it ended or moved, or when no call carries that id. */
+  foregroundTail(callId: string): ShellTailView | undefined;
+  /** Told the task id or call id whose tail changed; returns the unsubscribe. */
+  onShellOutput(listener: (id: string) => void): () => void;
+}
+
 export type BackgroundAgentOutcome = "succeeded" | "failed" | "stopped";
 
 export interface BackgroundAgentEnd {
