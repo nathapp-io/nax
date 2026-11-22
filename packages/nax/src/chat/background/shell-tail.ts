@@ -31,6 +31,11 @@ export interface ShellTailLimits {
 export interface ShellTail {
   /** Decode and append one chunk of the shell's output; a chunk may split a character or a line. */
   append(chunk: Uint8Array): void;
+  /**
+   * The output ended: flush the decoder, so the bytes of a character the shell left incomplete
+   * become U+FFFD here rather than vanishing with the decoder. Idempotent.
+   */
+  finalize(): void;
   /** The retained lines and whether anything was dropped; stable until the next change. */
   view(): ShellTailView;
   /** The UTF-8 bytes of the retained line text, the partial line included. */
@@ -184,6 +189,13 @@ export function createShellTail(limits?: ShellTailLimits): ShellTail {
     append(chunk) {
       if (chunk.length === 0) return;
       const text = decoder.decode(chunk, { stream: true });
+      let index = 0;
+      while (index < text.length) index = step(text, index);
+    },
+    finalize() {
+      // No chunk: this is the decoder flushing what it still holds, which for an incomplete
+      // trailing character is its U+FFFD replacement. A second call has nothing left to flush.
+      const text = decoder.decode();
       let index = 0;
       while (index < text.length) index = step(text, index);
     },

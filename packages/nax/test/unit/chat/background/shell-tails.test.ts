@@ -49,6 +49,8 @@ function makeTasks(): Tasks {
 interface Shell {
   readonly id: string;
   readonly append: (text: string) => void;
+  /** Append raw bytes, for the output a decoder can only settle by ending the task. */
+  readonly appendBytes: (bytes: Uint8Array) => void;
   readonly finish: () => Promise<void>;
 }
 
@@ -59,6 +61,7 @@ function adoptShell(tasks: Tasks, origin: "agent" | "moved" = "agent"): Shell {
   return {
     id: sink.id,
     append: (text: string) => sink.append("stdout", encoder.encode(text)),
+    appendBytes: (bytes: Uint8Array) => sink.append("stdout", bytes),
     finish: async () => {
       end.resolve({ exitCode: 0, timedOut: false, aborted: false });
       await end.promise;
@@ -206,6 +209,17 @@ describe("createBackgroundTasks shell tails", () => {
     });
     shell.append("hi\n");
     expect(tasks.taskTail(shell.id)?.lines).toEqual(["hi"]);
+  });
+
+  test("AC-15 the end of a task flushes a character the output left incomplete", async () => {
+    const tasks = makeTasks();
+    const shell = adoptShell(tasks);
+    // "a" then the first byte of a two-byte character, and then the shell exits: the byte can
+    // only be settled by the decoder being flushed, which is the task's end.
+    shell.appendBytes(new Uint8Array([0x61, 0xc3]));
+    expect(tasks.taskTail(shell.id)?.lines).toEqual(["a"]);
+    await shell.finish();
+    expect(tasks.taskTail(shell.id)?.lines).toEqual(["a\ufffd"]);
   });
 });
 

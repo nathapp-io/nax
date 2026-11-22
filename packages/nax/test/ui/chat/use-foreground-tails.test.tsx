@@ -83,6 +83,8 @@ function recordLayouts(): ToolEntry[] {
 interface MountOptions {
   /** False mounts a host with no `shellOutput` at all, the way every pre-US-005 caller does. */
   readonly withShellOutput?: boolean;
+  /** False leaves the transcript without the Bash call, so a case can commit it itself. */
+  readonly withBashCall?: boolean;
 }
 
 /**
@@ -101,7 +103,7 @@ async function mount(options: MountOptions = {}) {
     mouse: mouse.events,
   });
   await ui.submit("make");
-  ui.emit(BASH_CALL);
+  if (options.withBashCall !== false) ui.emit(BASH_CALL);
   /** Give call `callId` the tail `lines`, as a running call's output would. */
   const setTail = (callId: string, lines: readonly string[]): void => {
     tails.set(callId, lines);
@@ -144,6 +146,34 @@ describe("useForegroundTails", () => {
     await ui.advance(SHELL_TAIL_REFRESH_MS);
     expect(ui.rows().some((row) => row.includes("⎿  one"))).toBe(true);
     expect(ui.rows().some((row) => row.includes("two"))).toBe(true);
+  });
+
+  test("AC-1b draws the first output when it arrives before the tool_call is committed", async () => {
+    const ui = await mount({ withBashCall: false });
+    ui.setTail(CALL_ID, ["one", "two"]);
+    // The entry and its first output reach the screen in one act, so the output is notified
+    // while the transcript the screen last drew still has no Bash call in it at all.
+    act(() => {
+      ui.emit(BASH_CALL);
+      ui.shell.notify(CALL_ID);
+    });
+    await ui.advance(SHELL_TAIL_REFRESH_MS);
+    expect(ui.ui.lastFrame()).toContain("one");
+    expect(ui.ui.lastFrame()).toContain("two");
+  });
+
+  test("AC-1c draws the tail when the entry is committed after the refresh window", async () => {
+    const ui = await mount({ withBashCall: false });
+    ui.setTail(CALL_ID, ["one", "two"]);
+    ui.shell.notify(CALL_ID);
+    // The coalesced update lands first and finds no Bash entry to carry the tail.
+    await ui.advance(SHELL_TAIL_REFRESH_MS);
+    expect(ui.ui.lastFrame()).not.toContain("one");
+    // The entry appears afterwards: the start of the command must still reach the card, or a
+    // command that prints once and then waits shows nothing for the rest of its run.
+    ui.emit(BASH_CALL);
+    await ui.settle();
+    expect(ui.ui.lastFrame()).toContain("one");
   });
 
   test("AC-2 shows only the newest five lines of a longer tail", async () => {

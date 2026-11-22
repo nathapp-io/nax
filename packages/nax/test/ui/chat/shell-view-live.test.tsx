@@ -283,6 +283,27 @@ describe("the shell view follows its shell", () => {
     expect(view.header()).toContain("exit 0");
   });
 
+  test("AC-4b a stopped shell shows its final exit code when finalisation lands later", async () => {
+    const view = mount();
+    // Stopping the shell sets its state at once, with neither an end time nor an exit code yet.
+    view.tasks.stop.mockImplementation((id: string) => {
+      view.rows[0] = { ...view.rows[0], state: "stopped" };
+      view.tasks.change();
+      return view.rows[0] ?? shellTask(id);
+    });
+    await view.press(STOP_KEY);
+    expect(view.header()).toContain("stopped");
+    expect(view.header()).not.toContain("exit");
+    // Another foreground call registers and the registry announces it: a lifecycle change that
+    // has nothing to do with this shell, and leaves it exactly as the view last drew it.
+    view.tasks.change();
+    await view.settle();
+    // Now the stopped shell finalises: the state is `stopped` again, and only the end time and
+    // the exit code say anything happened.
+    await view.end("stopped", 143);
+    expect(view.header()).toContain("exit 143");
+  });
+
   test("AC-5 the footer offers only the way back once the task ended", async () => {
     const view = mount();
     expect(view.footer()).toBe("esc to return · k to stop");

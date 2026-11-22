@@ -35,7 +35,10 @@ export interface ShellTails extends ChatShellOutput {
   addTask(id: string): void;
   /** Feed one chunk of task `id`'s output; ignored once it ended, or for an id with no tail. */
   appendTask(id: string, chunk: Uint8Array): void;
-  /** The task ended: keep its tail for display, and consider eviction now that it is evictable. */
+  /**
+   * The task ended: flush whatever the output left incomplete, keep the tail for display, tell
+   * the listeners the tail settled, and consider eviction now that it is evictable.
+   */
   endTask(id: string): void;
   /** Start retaining the output of the running foreground call `callId`; never evicted. */
   addForeground(callId: string): void;
@@ -111,6 +114,11 @@ export function createShellTails(options: ShellTailsOptions): ShellTails {
       const task = tasks.get(id);
       if (task === undefined || task.ended) return;
       task.ended = true;
+      // The shell's last byte is in: a character its output left incomplete becomes U+FFFD now,
+      // because nothing after this can complete it. Flushed before eviction, so an evicted tail
+      // is the only reason the bytes are gone.
+      task.tail.finalize();
+      notify(id);
       finished.push(id);
       evict();
     },

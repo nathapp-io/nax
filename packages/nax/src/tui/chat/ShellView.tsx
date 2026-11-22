@@ -20,7 +20,12 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput } from "ink";
 import { memo, type ReactElement, useEffect, useMemo, useRef, useState } from "react";
-import { type ChatBackgroundTasks, type ChatShellOutput, SHELL_TAIL_REFRESH_MS } from "@/chat/background";
+import {
+  type BackgroundTask,
+  type ChatBackgroundTasks,
+  type ChatShellOutput,
+  SHELL_TAIL_REFRESH_MS,
+} from "@/chat/background";
 import { AGENT_VIEW_HEADER_ROWS } from "./agent-view-model";
 import { FixedRow } from "./FixedRow";
 import { usableFrameRows } from "./frame-layout";
@@ -79,6 +84,26 @@ interface ShellViewTimers {
   tick: TimerHandle | undefined;
 }
 
+/**
+ * Whether two records of the viewed task would draw the same header and footer — every field the
+ * view reads of it, not the state alone. A stopped shell is finalised under the state it already
+ * had (`stopped`), so comparing state alone swallows the change that carries its `exitCode` and
+ * its `endedAt`, and the view would show a stopped shell with no outcome for good.
+ */
+function sameShellRow(left: BackgroundTask | undefined, right: BackgroundTask | undefined): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return false;
+  return (
+    left.command === right.command &&
+    left.description === right.description &&
+    left.state === right.state &&
+    left.startedAt === right.startedAt &&
+    left.endedAt === right.endedAt &&
+    left.exitCode === right.exitCode &&
+    left.logPath === right.logPath
+  );
+}
+
 /** Cancel the timer held in `slot`, if any, through the seam it was armed with. */
 function cancelTimer(timers: ShellViewTimers, slot: keyof ShellViewTimers): void {
   const handle = timers[slot];
@@ -114,13 +139,13 @@ function useLiveShell(shells: ChatShellOutput, tasks: ChatBackgroundTasks, id: s
   }, [shells, id]);
 
   useEffect(() => {
-    // A hidden turn's Bash calls register and unregister by the dozen; only a change in THIS
-    // task's state is worth a redraw, and it must not wait for a tick.
-    let seenState = tasks.get(id)?.state;
+    // A hidden turn's Bash calls register and unregister by the dozen; only a change in what the
+    // header or footer would draw of THIS task is worth a redraw, and it must not wait for a tick.
+    let seenTask = tasks.get(id);
     const offChange = tasks.onChange(() => {
-      const state = tasks.get(id)?.state;
-      if (state === seenState) return;
-      seenState = state;
+      const task = tasks.get(id);
+      if (sameShellRow(seenTask, task)) return;
+      seenTask = task;
       refresh((current) => current + 1);
     });
     return offChange;

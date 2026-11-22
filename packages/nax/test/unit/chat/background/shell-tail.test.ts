@@ -104,6 +104,32 @@ describe("createShellTail", () => {
       appendText(tail, "\n");
       expect(tail.view().lines).toEqual(["\ufffd"]);
     });
+
+    test("flushes a character the output left incomplete when it ends", () => {
+      const tail = createShellTail();
+      // "a" then the first byte of a two-byte character: nothing can follow it, so the decoder
+      // holds it until the tail is told the output ended.
+      tail.append(new Uint8Array([0x61, 0xc3]));
+      expect(tail.view().lines).toEqual(["a"]);
+      tail.finalize();
+      expect(tail.view().lines).toEqual(["a\ufffd"]);
+    });
+
+    test("keeps a complete text unchanged when it is finalised", () => {
+      const tail = createShellTail();
+      appendText(tail, "a\nb");
+      tail.finalize();
+      expect(tail.view().lines).toEqual(["a", "b"]);
+      expect(tail.view().truncated).toBe(false);
+    });
+
+    test("settles the tail when it is finalised twice", () => {
+      const tail = createShellTail();
+      tail.append(new Uint8Array([0x61, 0xc3]));
+      tail.finalize();
+      tail.finalize();
+      expect(tail.view().lines).toEqual(["a\ufffd"]);
+    });
   });
 
   describe("default caps", () => {
