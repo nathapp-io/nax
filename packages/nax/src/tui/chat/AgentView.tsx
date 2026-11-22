@@ -45,7 +45,12 @@ export interface AgentViewProps {
 }
 
 /** Seams for the work a redraw must not repeat; a test counts the folds and layouts through them. */
-export const _agentViewDeps = { fold: agentViewEntries, layout: layoutTranscript };
+export const _agentViewDeps = {
+  fold: agentViewEntries,
+  layout: layoutTranscript,
+  /** Called once per render of the view, so a test can prove an unrelated redraw never reaches it. */
+  rendered: (): void => {},
+};
 
 /**
  * A counter that moves when the task records an event or changes state; a burst of events is
@@ -67,8 +72,15 @@ function useTaskRevision(tasks: ChatBackgroundTasks, id: string): number {
     const offEvents = tasks.onAgentEvents((taskId) => {
       if (taskId === id) schedule();
     });
-    // A state change is rare and worth showing at once.
-    const offState = tasks.onChange(() => refresh((revision) => revision + 1));
+    // The registry announces every change to every task (a hidden turn's Bash calls register and
+    // unregister foreground commands by the dozen); only a change in THIS task's state is ours.
+    let seenState = tasks.get(id)?.state;
+    const offState = tasks.onChange(() => {
+      const state = tasks.get(id)?.state;
+      if (state === seenState) return;
+      seenState = state;
+      refresh((revision) => revision + 1);
+    });
     return () => {
       offEvents();
       offState();
@@ -80,6 +92,7 @@ function useTaskRevision(tasks: ChatBackgroundTasks, id: string): number {
 }
 
 function AgentViewBase({ tasks, id, columns, rows, theme, mouse, onCopy, onClose }: AgentViewProps): ReactElement {
+  _agentViewDeps.rendered();
   const revision = useTaskRevision(tasks, id);
   const [expanded, setExpanded] = useState(false);
   const [opened, setOpened] = useState<ReadonlyMap<string, boolean>>(new Map());

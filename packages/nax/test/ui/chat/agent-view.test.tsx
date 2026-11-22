@@ -48,6 +48,7 @@ function shellTask(): BackgroundTask {
 /** A registry whose one agent run can be changed and announced while the screen is mounted. */
 function fakeTasks(rows: BackgroundTask[], run: { current: BackgroundAgentRun | undefined }) {
   const listeners = new Set<(id: string) => void>();
+  const changeListeners = new Set<() => void>();
   const output = mock(async () => "shell output");
   const port: ChatBackgroundTasks = {
     adopt: () => {
@@ -74,7 +75,12 @@ function fakeTasks(rows: BackgroundTask[], run: { current: BackgroundAgentRun | 
     peekNotice: () => undefined,
     releaseNotice: () => {},
     takeNotice: () => undefined,
-    onChange: () => () => {},
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    },
     list: () => rows,
     get: (id) => rows.find((row) => row.id === id),
     running: () => rows.filter((row) => row.state === "running"),
@@ -85,6 +91,10 @@ function fakeTasks(rows: BackgroundTask[], run: { current: BackgroundAgentRun | 
     output,
     announce: (id: string): void => {
       for (const listener of listeners) listener(id);
+    },
+    /** A registry change, as `foreground()` register and unregister emit it. */
+    change: (): void => {
+      for (const listener of changeListeners) listener();
     },
   };
 }
@@ -125,7 +135,8 @@ function withAgent(
   options: { rows?: BackgroundTask[]; run?: BackgroundAgentRun; strip?: string; holdTurn?: boolean } = {},
 ) {
   const run: { current: BackgroundAgentRun | undefined } = { current: options.run ?? runOf(SAMPLE) };
-  const tasks = fakeTasks(options.rows ?? [agentTask()], run);
+  const rows = options.rows ?? [agentTask()];
+  const tasks = fakeTasks(rows, run);
   const mouse = fakeMouse();
   const ui = mount({
     tasks: tasks.port,
@@ -138,7 +149,7 @@ function withAgent(
     mouse.emit("press", { button: "left", x: stripColumn, y: footerRow });
     mouse.emit("release", { button: "left", x: stripColumn, y: footerRow });
   };
-  return { ui, tasks, run, click, stripColumn };
+  return { ui, tasks, run, click, stripColumn, rows };
 }
 
 describe("the agent strip click", () => {
@@ -311,6 +322,66 @@ describe("inside the view", () => {
     } finally {
       Object.assign(_agentViewDeps, original);
     }
+  });
+
+  test("registry changes that are not this task's cause neither a render nor a refold", async () => {
+    const { ui, click, tasks } = withAgent();
+    const rendered = mock(() => {});
+    const fold = mock(_agentViewDeps.fold);
+    const original = { ..._agentViewDeps };
+    Object.assign(_agentViewDeps, { fold, rendered });
+    try {
+      click();
+      await flush(ui);
+      const folds = fold.mock.calls.length;
+      const renders = rendered.mock.calls.length;
+      // A hidden turn's Bash calls register and unregister foreground commands: 20 pairs.
+      for (let at = 0; at < 40; at += 1) await ui.settleAfter(() => tasks.change());
+      await flush(ui);
+      expect(fold.mock.calls.length).toBe(folds);
+      expect(rendered.mock.calls.length).toBe(renders);
+    } finally {
+      Object.assign(_agentViewDeps, original);
+    }
+  });
+
+  test("a change in this task's own state does redraw the view", async () => {
+    const { ui, click, tasks, rows, run } = withAgent();
+    click();
+    await flush(ui);
+    expect(text(ui)).toContain("running");
+    rows[0] = agentTask({ state: "succeeded" });
+    run.current = runOf(SAMPLE, { state: "succeeded" });
+    await ui.settleAfter(() => tasks.change());
+    await waitForCondition(() => text(ui).includes("done"));
+  });
+
+  test("a chat redraw renders nothing in the view, so removing React.memo fails this", async () => {
+    const { ui, click } = withAgent();
+    const rendered = mock(() => {});
+    const original = { ..._agentViewDeps };
+    Object.assign(_agentViewDeps, { rendered });
+    try {
+      click();
+      await flush(ui);
+      const renders = rendered.mock.calls.length;
+      for (let at = 0; at < 3; at += 1) await ui.settleAfter(() => ui.ui.stdout.emit("resize"));
+      await flush(ui);
+      expect(rendered.mock.calls.length).toBe(renders);
+    } finally {
+      Object.assign(_agentViewDeps, original);
+    }
+  });
+
+  test("a log evicted by another task's event switches an open view to the not-retained note", async () => {
+    const { ui, click, run, tasks } = withAgent();
+    click();
+    await flush(ui);
+    expect(text(ui)).toContain("Found two gaps in section 3");
+    run.current = runOf([], { state: "succeeded", logRetained: false });
+    tasks.announce(AGENT_ID);
+    await waitForCondition(() => text(ui).includes("no longer retained"));
+    expect(text(ui)).not.toContain("Found two gaps in section 3");
   });
 
   test("a task that has left the registry says so, and escape still returns", async () => {
