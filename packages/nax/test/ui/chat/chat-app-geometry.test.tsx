@@ -83,6 +83,7 @@ describe("allocated interaction boundaries", () => {
         open,
         note: () => {},
         showOutput: () => {},
+        openAgent: () => {},
       });
       return null;
     }
@@ -108,6 +109,7 @@ describe("allocated interaction boundaries", () => {
         open,
         note,
         showOutput: () => {},
+        openAgent: () => {},
       });
       return null;
     }
@@ -134,6 +136,7 @@ describe("allocated interaction boundaries", () => {
         open,
         note: () => {},
         showOutput: () => {},
+        openAgent: () => {},
       });
       return null;
     }

@@ -40,6 +40,8 @@ export interface ChatPickerOptions {
   onError(error: unknown): void;
   /** Append a local transcript entry: what a jobs choice shows, never sent to the agent. */
   show(entry: TranscriptEntry): void;
+  /** Open the full-screen view of a background agent task: what Enter on an agent row does. */
+  openAgent?(id: string): void;
 }
 
 /** What the screen holds while a picker is open. */
@@ -125,7 +127,7 @@ function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): Pi
  * rejection after an escape — or after a second `/resume` — neither an error the user never
  * asked about nor a stale list over the wrong picker.
  */
-export function useChatPicker({ host, runControl, onError, show }: ChatPickerOptions): ChatPicker {
+export function useChatPicker({ host, runControl, onError, show, openAgent }: ChatPickerOptions): ChatPicker {
   const [state, setState] = useState<PickerState | undefined>(undefined);
   /** Counts openings, so a `listSessions()` that settles late is dropped rather than drawn. */
   const openings = useRef(0);
@@ -194,7 +196,9 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
       if (kind === "jobs") {
         openings.current += 1;
         setState(undefined);
-        void showOutput(entry);
+        // An agent row opens the run's whole conversation; a shell or a job lists its output.
+        if (openAgent !== undefined && host.tasks?.get(entry.value)?.kind === "agent") openAgent(entry.value);
+        else void showOutput(entry);
         return;
       }
       // A session another process holds is not resumed from here: the row warns instead, and
@@ -215,7 +219,7 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
       pending.current = new Map();
       void runControl(() => actionFor(host, kind, chosen));
     },
-    [state, host, runControl, showOutput],
+    [state, host, runControl, showOutput, openAgent],
   );
 
   /** Draw `warning` (or clear it) on the picker that is open now; a picker closed since is left alone. */
