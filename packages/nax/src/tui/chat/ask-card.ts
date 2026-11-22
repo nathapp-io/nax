@@ -171,10 +171,12 @@ function attribution(reason: string): Attribution {
  * The summary the card draws under the command: nothing when it only restates it. The host
  * builds a Bash summary as `Bash command=<command>`, cut to a length limit, so a summary that
  * is that text (or a cut prefix of it) adds nothing to the bold command line. Any other
- * summary (more fields, another tool, no command, the withheld-secret form) stays.
+ * summary (more fields, another tool, no command, the withheld-secret form) stays. A blank
+ * command keeps it too: the card draws no command line then, and the summary is all that names
+ * the call.
  */
 function askSummaryText(tool: string, command: string | undefined, summary: string): string {
-  if (command === undefined || tool !== COMMAND_TOOL) return summary;
+  if (command === undefined || command.trim() === "" || tool !== COMMAND_TOOL) return summary;
   return `${tool} command=${command}`.startsWith(summary) && summary.startsWith(`${tool} command=`) ? "" : summary;
 }
 

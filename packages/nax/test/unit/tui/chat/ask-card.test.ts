@@ -196,6 +196,11 @@ describe("askCardModel summary", () => {
     expect(approvalCard({ tool: "Edit", command: undefined, summary }).summary).toBe(summary);
   });
 
+  test("keeps the summary when the command is blank, so the card still names the call", () => {
+    expect(approvalCard({ command: "", summary: "Bash command=" }).summary).toBe("Bash command=");
+    expect(approvalCard({ command: "   ", summary: "Bash command=" }).summary).toBe("Bash command=");
+  });
+
   test("keeps the withheld-secret summary even when a command is shown", () => {
     const summary = "Bash [arguments withheld: contains a secret]";
     expect(approvalCard({ command: "npm test", summary }).summary).toBe(summary);

@@ -172,19 +172,19 @@ describe("resolveAskOutcome — unsandboxed metadata (US-004)", () => {
   };
 
   test("AC-5: a real ask rule keeps matchedRule and appends the suffix", async () => {
-    const request = await askRequestFor(askRule, { suffix: " -- S" });
+    const request = await askRequestFor(askRule, { suffix: "; S" });
     expect(request).toMatchObject({
       rule: "Bash(*)",
       matchedRule: "Bash(*)",
       unsandboxed: true,
-      reason: "matches an ask rule -- S",
+      reason: "matches an ask rule; S",
     });
   });
 
   test("AC-6: a synthetic Unsandboxed rule sets the flag, keeps rule, leaves matchedRule unset", async () => {
-    const request = await askRequestFor(converted, { suffix: " -- S" });
+    const request = await askRequestFor(converted, { suffix: "; S" });
     expect(request.rule).toBe("Unsandboxed(Bash)");
-    expect(request.reason).toBe("unsandboxed run requested -- S");
+    expect(request.reason).toBe("unsandboxed run requested; S");
     expect(request).toHaveProperty("unsandboxed", true);
     expect("matchedRule" in request).toBe(false);
   });
