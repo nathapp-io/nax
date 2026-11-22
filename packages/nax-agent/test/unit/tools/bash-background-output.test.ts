@@ -250,6 +250,37 @@ describe("US-001 AC-9: observing output does not change the tool result", () => 
   });
 });
 
+describe("US-001 AC-8: observation is non-invasive — a listener cannot alter what is replayed", () => {
+  test("AC-8: a listener that mutates its chunk cannot corrupt the bytes replayed to the sink", async () => {
+    const h = makeHarness();
+    await h.start({ toolCallId: "c1" });
+    const onOutput = h.call().onOutput;
+    assertDefined(onOutput, "the registered ForegroundCommand has no onOutput");
+    onOutput((_stream, chunk) => {
+      chunk.fill(0);
+    });
+    h.emit("stdout", "payload");
+    h.call().moveToBackground();
+    expect(h.rows(h.appended)).toEqual([["stdout", "payload"]]);
+    await h.settle();
+  });
+
+  test("AC-8: a listener that mutates its chunk does not alter another listener's bytes", async () => {
+    const h = makeHarness();
+    await h.start({ toolCallId: "c1" });
+    const onOutput = h.call().onOutput;
+    assertDefined(onOutput, "the registered ForegroundCommand has no onOutput");
+    onOutput((_stream, chunk) => {
+      chunk.fill(0);
+    });
+    const received: Chunk[] = [];
+    subscribe(h.call(), received);
+    h.emit("stderr", "intact");
+    expect(h.rows(received)).toEqual([["stderr", "intact"]]);
+    await h.settle();
+  });
+});
+
 describe("US-001 AC-10/AC-11: a throwing listener is contained", () => {
   test("AC-10: a throwing listener does not prevent the move's replay of that chunk", async () => {
     const h = makeHarness();

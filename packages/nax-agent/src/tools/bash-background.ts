@@ -133,12 +133,16 @@ function foregroundControl<T extends LaunchResult>(
    * Observers are told BEFORE the replay buffer takes the chunk, and only
    * while the call is still foreground: once it moves, the chunk belongs to
    * the adopted sink, and once it settles there is no call left to observe.
+   *
+   * Each observer gets its own copy. Observation is non-invasive: a listener
+   * that writes into the array it was handed must not be able to corrupt the
+   * bytes the replay buffer retains or another listener's view of them.
    */
   const append = (stream: BackgroundStream, chunk: Uint8Array) => {
     if (!moved && !settled) {
       for (const listener of [...observers]) {
         try {
-          listener(stream, chunk);
+          listener(stream, Uint8Array.from(chunk));
         } catch {
           // An observer is extra, never load-bearing: its failure must cost
           // neither the replay buffer this chunk nor the other observers theirs.
