@@ -222,6 +222,26 @@ describe("useForegroundTails", () => {
     expect(tailed[0]?.liveTail).toEqual(["one", "two"]);
   });
 
+  test("AC-5b an unrelated transcript change inside the window does not draw the tail early", async () => {
+    const ui = await mount();
+    const rendered = recordLayouts();
+    ui.setTail(CALL_ID, ["one", "two"]);
+    ui.shell.notify(CALL_ID);
+    // Another card's events, while the tail's refresh window is still open: the transcript
+    // changes, but the tail is the armed timer's to draw and nothing else's.
+    ui.emit({ type: "tool_call", callId: "c2", name: "Read", input: { path: "src/a.ts" } });
+    ui.emit({ type: "tool_result", callId: "c2", isError: false, preview: "1 line" });
+    await ui.advance(SHELL_TAIL_REFRESH_MS - 1);
+    expect(ui.ui.lastFrame()).not.toContain("one");
+    expect(rendered.filter((entry) => entry.callId === CALL_ID)).toHaveLength(0);
+    await ui.advance(1);
+    expect(ui.ui.lastFrame()).toContain("one");
+    // One update for the window: the transcript changes did not each lay the card out again.
+    const tailed = rendered.filter((entry) => entry.callId === CALL_ID && entry.liveTail !== undefined);
+    expect(tailed).toHaveLength(1);
+    expect(tailed[0]?.liveTail).toEqual(["one", "two"]);
+  });
+
   test("AC-6 clips a 300-character tail line to one 80-column row ending in an ellipsis", async () => {
     const line = "0123456789".repeat(30);
     const ui = await mount();
