@@ -20,6 +20,14 @@ export interface BackgroundTask {
 
 export const TASK_ID_PATTERN = /^(bash|agent)-[0-9a-f]{8}$/;
 
+/** The bounded lines of one shell's output, as the live tail and the shell view read them. */
+export interface ShellTailView {
+  /** Newest lines, oldest first; the current partial line, if any, is last. */
+  readonly lines: readonly string[];
+  /** True when older output was dropped from the tail, or the whole tail was evicted. */
+  readonly truncated: boolean;
+}
+
 export type BackgroundAgentOutcome = "succeeded" | "failed" | "stopped";
 
 export interface BackgroundAgentEnd {
