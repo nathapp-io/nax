@@ -61,6 +61,18 @@ describe("createShellTail", () => {
       expect(tail.view().lines).toEqual(["100%"]);
     });
 
+    test("treats a repeated CR as a CR followed by a non-LF character", () => {
+      expect(viewOf("old\r\r\n").lines).toEqual([""]);
+    });
+
+    test("clears the partial line for a CR run split across appends", () => {
+      const tail = createShellTail();
+      appendText(tail, "old\r");
+      appendText(tail, "\r\n");
+      expect(tail.view().lines).toEqual([""]);
+      expect(tail.view().lines).toEqual(viewOf("old\r\r\n").lines);
+    });
+
     test("reports a tail with nothing dropped as not truncated", () => {
       expect(viewOf("a\nb\n").truncated).toBe(false);
     });

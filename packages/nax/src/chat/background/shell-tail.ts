@@ -156,32 +156,36 @@ export function createShellTail(limits?: ShellTailLimits): ShellTail {
     changed();
   }
 
+  /** Apply the character at `index` of one decoded chunk; returns the index to resume at. */
+  function step(text: string, index: number): number {
+    const char = text[index];
+    if (char === "\r") {
+      // A CR followed by anything but LF — another CR included — clears the partial line, so a
+      // progress line that redraws itself replaces its own text.
+      if (pendingCr) clearPartial();
+      pendingCr = true;
+      return index + 1;
+    }
+    if (char === "\n") {
+      endLine();
+      return index + 1;
+    }
+    if (pendingCr) {
+      clearPartial();
+      pendingCr = false;
+    }
+    let end = index + 1;
+    while (end < text.length && text[end] !== "\r" && text[end] !== "\n") end += 1;
+    appendText(text.slice(index, end));
+    return end;
+  }
+
   return {
     append(chunk) {
       if (chunk.length === 0) return;
       const text = decoder.decode(chunk, { stream: true });
       let index = 0;
-      while (index < text.length) {
-        const char = text[index];
-        if (char === "\r") {
-          pendingCr = true;
-          index += 1;
-          continue;
-        }
-        if (char === "\n") {
-          endLine();
-          index += 1;
-          continue;
-        }
-        if (pendingCr) {
-          clearPartial();
-          pendingCr = false;
-        }
-        let end = index + 1;
-        while (end < text.length && text[end] !== "\r" && text[end] !== "\n") end += 1;
-        appendText(text.slice(index, end));
-        index = end;
-      }
+      while (index < text.length) index = step(text, index);
     },
     view() {
       if (cached !== undefined) return cached;
