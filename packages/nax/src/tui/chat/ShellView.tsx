@@ -6,13 +6,21 @@
  * the agent view — and one footer row. What this view draws is the shell's bounded in-memory
  * tail; a tail that dropped older output names its log file instead of reaching back to disk.
  *
- * Read-only as it stands: it owns no key and no subscription yet (US-007 adds the live tail and
- * the ESC/k keys). Time arrives through `_shellViewDeps.now()`, so the header's elapsed time is
- * arithmetic a test can fix, and the timers US-007 arms reach the runtime through the same seam.
+ * It is live: it follows the shell's tail (coalesced to one redraw per `SHELL_TAIL_REFRESH_MS`,
+ * because the registry notifies per append), takes a registry change at once so a task that ends
+ * while the view is open updates its header and footer without waiting, and ticks the elapsed
+ * time every `SHELL_VIEW_TICK_MS` while the task runs. Escape hands the screen back to the chat;
+ * `k` stops a running shell without closing the view, and a stop that fails says why in the
+ * footer instead of disappearing. An unmount drops every subscription and cancels every timer.
+ *
+ * Time arrives through `_shellViewDeps.now()` and the timers through the same `schedule`/`cancel`
+ * seams, so a test fixes the clock and arms nothing real. Output is display-only: the view has no
+ * stdin and touches no file.
  */
-import { Box } from "ink";
-import { memo, type ReactElement, useMemo } from "react";
-import type { ChatBackgroundTasks, ChatShellOutput } from "@/chat/background";
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { Box, useInput } from "ink";
+import { memo, type ReactElement, useEffect, useMemo, useRef, useState } from "react";
+import { type ChatBackgroundTasks, type ChatShellOutput, SHELL_TAIL_REFRESH_MS } from "@/chat/background";
 import { AGENT_VIEW_HEADER_ROWS } from "./agent-view-model";
 import { FixedRow } from "./FixedRow";
 import { usableFrameRows } from "./frame-layout";
@@ -30,6 +38,9 @@ export const SHELL_VIEW_TICK_MS = 1000;
 
 /** The footer's one row, below the body. */
 const FOOTER_ROWS = 1;
+
+/** The key that stops a running shell from inside its view; it does nothing once it ended. */
+const STOP_KEY = "k";
 
 export interface ShellViewProps {
   /** Where the shell's tail comes from; display only, nothing here reaches the model. */
@@ -60,14 +71,121 @@ export const _shellViewDeps = {
   rendered: (): void => {},
 };
 
-function ShellViewBase({ shells, tasks, id, columns, rows, theme, mouse, onCopy }: ShellViewProps): ReactElement {
+/** The two timers the view can hold at once, so an unmount cancels exactly what it armed. */
+interface ShellViewTimers {
+  /** The one coalesced redraw a burst of tail appends shares. */
+  tail: TimerHandle | undefined;
+  /** The running task's next elapsed-time tick. */
+  tick: TimerHandle | undefined;
+}
+
+/** Cancel the timer held in `slot`, if any, through the seam it was armed with. */
+function cancelTimer(timers: ShellViewTimers, slot: keyof ShellViewTimers): void {
+  const handle = timers[slot];
+  if (handle === undefined) return;
+  _shellViewDeps.cancel(handle);
+  timers[slot] = undefined;
+}
+
+/**
+ * The revision a redraw is keyed on: a coalesced bump when this shell's tail changes, an
+ * immediate one when the viewed task's own state changes, and a tick per `SHELL_VIEW_TICK_MS`
+ * while it runs. Everything else the registry announces is somebody else's business.
+ */
+function useLiveShell(shells: ChatShellOutput, tasks: ChatBackgroundTasks, id: string): number {
+  const [revision, refresh] = useState(0);
+  const timers = useRef<ShellViewTimers>({ tail: undefined, tick: undefined });
+
+  useEffect(() => {
+    const held = timers.current;
+    const offOutput = shells.onShellOutput((changedId) => {
+      // The registry notifies per append, for every shell: only this one is drawn here, and a
+      // burst of appends shares the one redraw already waiting.
+      if (changedId !== id || held.tail !== undefined) return;
+      held.tail = _shellViewDeps.schedule(() => {
+        held.tail = undefined;
+        refresh((current) => current + 1);
+      }, SHELL_TAIL_REFRESH_MS);
+    });
+    return () => {
+      offOutput();
+      cancelTimer(held, "tail");
+    };
+  }, [shells, id]);
+
+  useEffect(() => {
+    // A hidden turn's Bash calls register and unregister by the dozen; only a change in THIS
+    // task's state is worth a redraw, and it must not wait for a tick.
+    let seenState = tasks.get(id)?.state;
+    const offChange = tasks.onChange(() => {
+      const state = tasks.get(id)?.state;
+      if (state === seenState) return;
+      seenState = state;
+      refresh((current) => current + 1);
+    });
+    return offChange;
+  }, [tasks, id]);
+
+  const running = tasks.get(id)?.state === "running";
+  useEffect(() => {
+    if (!running) return;
+    const held = timers.current;
+    // A timer that re-arms itself: the elapsed time keeps counting with no output at all.
+    const arm = (): void => {
+      held.tick = _shellViewDeps.schedule(() => {
+        held.tick = undefined;
+        refresh((current) => current + 1);
+        arm();
+      }, SHELL_VIEW_TICK_MS);
+    };
+    arm();
+    return () => {
+      cancelTimer(held, "tick");
+    };
+  }, [running]);
+
+  return revision;
+}
+
+function ShellViewBase({
+  shells,
+  tasks,
+  id,
+  columns,
+  rows,
+  theme,
+  mouse,
+  onCopy,
+  onClose,
+}: ShellViewProps): ReactElement {
   _shellViewDeps.rendered();
-  const task = tasks.get(id);
-  const title = shellViewTitle(task, id, _shellViewDeps.now());
+  const revision = useLiveShell(shells, tasks, id);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `revision` is what says the shell moved on.
+  const task = useMemo(() => tasks.get(id), [tasks, id, revision]);
+  const [stopError, setStopError] = useState<string | undefined>(undefined);
   // A task the registry no longer lists has no tail to show: a stale one must not be drawn.
   const view = task === undefined ? undefined : shells.taskTail(id);
   const body = useMemo(() => shellViewBody(view, task?.logPath), [view, task?.logPath]);
   const height = Math.max(0, usableFrameRows(rows) - AGENT_VIEW_HEADER_ROWS - FOOTER_ROWS);
+  const title = shellViewTitle(task, id, _shellViewDeps.now());
+  useInput((input, key) => {
+    if (key.escape) {
+      onClose();
+      return;
+    }
+    if (input !== STOP_KEY) return;
+    // Only a running shell can be stopped; once it ended the key does nothing. The registry is
+    // read again here rather than trusting the render that registered this handler.
+    if (tasks.get(id)?.state !== "running") return;
+    try {
+      tasks.stop(id);
+      setStopError(undefined);
+    } catch (error) {
+      // The view stays open — it was a stop that failed, not a reason to leave — and the footer
+      // carries the reason in place of a hint that would claim the key still works.
+      setStopError(errorMessage(error));
+    }
+  });
   return (
     <Box flexDirection="column" width={columns}>
       <FixedRow>
@@ -86,7 +204,7 @@ function ShellViewBase({ shells, tasks, id, columns, rows, theme, mouse, onCopy 
         active
       />
       <FixedRow>
-        <StyledLineView line={shellViewFooter(task)} theme={theme} />
+        <StyledLineView line={shellViewFooter(task, stopError)} theme={theme} />
       </FixedRow>
     </Box>
   );
