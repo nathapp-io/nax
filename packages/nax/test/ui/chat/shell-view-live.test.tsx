@@ -358,7 +358,13 @@ describe("the shell view's keys", () => {
 describe("the shell view's cleanup", () => {
   test("AC-12 an unmount cancels every armed timer", () => {
     const view = mount();
+    // One timer while the shell merely runs: the elapsed-time tick.
     expect(view.clock.pending()).toBe(1);
+    // A tail append arms the other one, the coalesced redraw — still inside its window, so both
+    // timers are armed at the moment of the unmount and both have to be cancelled by it.
+    view.shells.setTail(ID, [...TAIL, "one more line"]);
+    view.shells.notify(ID);
+    expect(view.clock.pending()).toBe(2);
     view.ui.unmount();
     expect(view.clock.pending()).toBe(0);
     expect(view.shells.listening()).toBe(0);
