@@ -469,6 +469,7 @@ export function createCodingToolRuntime(opts: {
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
             ...ports,
             ...(callSignal !== undefined ? { signal: callSignal } : {}),
+            ...(context?.toolCallId !== undefined ? { toolCallId: context.toolCallId } : {}),
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
