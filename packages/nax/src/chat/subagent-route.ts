@@ -11,8 +11,11 @@ import type { SessionEvent } from "@nathapp/nax-agent";
 import { type BackgroundAgentSink, createTaskEventLog, type TaskEventLog } from "./background";
 
 export interface RunRoute {
-  /** Events seen while the run is foreground; emptied when the run moves to a task. */
-  readonly log: TaskEventLog;
+  /**
+   * Events seen while the run is foreground; emptied when the run moves to a task. Absent for a
+   * run no registry can adopt, which has nothing to replay and so must not pay for a log.
+   */
+  readonly log?: TaskEventLog;
   /** Set once the run belongs to a task; from then on the parent turn sees none of its activity. */
   sink?: BackgroundAgentSink;
   /** The parent turn the run became a background run in; its spend is ineligible until a later turn. */
@@ -24,9 +27,14 @@ export function foregroundRoute(): RunRoute {
   return { log: createTaskEventLog() };
 }
 
+/** A route for a foreground run no registry can adopt: it forwards to the turn and keeps nothing. */
+export function untrackedRoute(): RunRoute {
+  return {};
+}
+
 /** A route for a run that is a task from its first event. */
 export function taskRoute(sink: BackgroundAgentSink, turn: number): RunRoute {
-  return { log: createTaskEventLog(), sink, backgroundTurn: turn };
+  return { sink, backgroundTurn: turn };
 }
 
 function writeToTask(sink: BackgroundAgentSink, event: SessionEvent): void {
@@ -36,8 +44,8 @@ function writeToTask(sink: BackgroundAgentSink, event: SessionEvent): void {
 
 /** Hand a foreground run over to `sink`: replay what it did so far, then route what it does next. */
 export function moveRouteToTask(route: RunRoute, sink: BackgroundAgentSink, turn: number): void {
-  for (const event of route.log.snapshot()) writeToTask(sink, event);
-  route.log.clear();
+  for (const event of route.log?.snapshot() ?? []) writeToTask(sink, event);
+  route.log?.clear();
   route.sink = sink;
   route.backgroundTurn = turn;
 }
@@ -52,6 +60,6 @@ export function deliverActivity(
     writeToTask(route.sink, event);
     return;
   }
-  route.log.append(event);
+  route.log?.append(event);
   if (event.type === "tool_call" || event.type === "tool_result") forward?.(event);
 }

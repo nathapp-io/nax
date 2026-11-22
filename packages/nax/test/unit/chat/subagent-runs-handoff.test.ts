@@ -10,6 +10,7 @@ import {
   makeAgentResource,
   makeLogger,
   makeNaxConfig,
+  makeScriptedSession,
   textDeltaEvent,
   toolCallEvent,
   toolResultEvent,
@@ -193,6 +194,32 @@ describe("SubagentRuns.run with ctrl+b", () => {
     expect(input.signal?.aborted).toBe(true);
     run.finish({ isError: true, content: "cancelled" });
     await pending;
+  });
+
+  test("a run the parent turn already cancelled is not moved, and no task is adopted", async () => {
+    const { tasks, runs } = setup();
+    const run = scriptedRun();
+    const controller = new AbortController();
+    const pending = runs.run(reviewer, "check it", controller.signal);
+    await run.input;
+    controller.abort();
+    tasks.moveForeground();
+    run.finish({ isError: true, content: "subagent reviewer cancelled: cancelled" });
+    expect(await pending).toEqual({ isError: true, content: "subagent reviewer cancelled: cancelled" });
+    expect(tasks.list()).toEqual([]);
+  });
+
+  test("a run cancelled through cancelAll on its open session is not moved either", async () => {
+    const { tasks, runs } = setup();
+    const run = scriptedRun();
+    const pending = runs.run(reviewer, "check it");
+    const input = await run.input;
+    input.onSession?.(makeScriptedSession("nested-1", async function* () {}));
+    runs.cancelAll();
+    tasks.moveForeground();
+    run.finish({ isError: true, content: "cancelled" });
+    expect((await pending).content).toBe("cancelled");
+    expect(tasks.list()).toEqual([]);
   });
 
   test("stopping the moved task aborts the run", async () => {

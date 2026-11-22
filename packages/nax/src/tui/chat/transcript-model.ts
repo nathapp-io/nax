@@ -213,6 +213,9 @@ function applyToolResult(
   if (tool) {
     return replaceIn(entries, tool.index, {
       ...tool.entry,
+      // A nested call whose own result never came (the run moved to the background mid-call)
+      // ends with the agent card, so no child row is left running.
+      children: tool.entry.children.map((child) => (child.status === "running" ? { ...child, status } : child)),
       status,
       preview: event.preview,
       endedAt: event.at,

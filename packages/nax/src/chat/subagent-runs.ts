@@ -27,7 +27,14 @@ import {
   type SubagentModelSource,
   subagentModelLabel,
 } from "./subagent-model";
-import { deliverActivity, foregroundRoute, moveRouteToTask, type RunRoute, taskRoute } from "./subagent-route";
+import {
+  deliverActivity,
+  foregroundRoute,
+  moveRouteToTask,
+  type RunRoute,
+  taskRoute,
+  untrackedRoute,
+} from "./subagent-route";
 import { runSubagent } from "./subagent-session";
 import { createNestedSpend } from "./subagent-spend";
 import { mapSubagentTools } from "./subagent-tools";
@@ -190,6 +197,8 @@ function noBackgroundRuns(): ToolResult {
 interface RunEntry {
   readonly controller: AbortController;
   session?: AgentSession;
+  /** Set when the host cancelled the run through its open session; a cancelled run is never moved. */
+  cancelled?: boolean;
 }
 
 /** What one nested run was started with, beyond the agent and task. */
@@ -331,7 +340,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
    */
   function run(agent: AgentResource, task: string, signal?: AbortSignal, model?: string): Promise<ToolResult> {
     const entry: RunEntry = { controller: new AbortController() };
-    const route = foregroundRoute();
+    const tasks = deps.backgroundTasks?.();
+    // Only a run a registry can adopt needs the event log its move would replay.
+    const route = tasks === undefined ? untrackedRoute() : foregroundRoute();
     const onParentAbort = () => entry.controller.abort();
     if (signal?.aborted) onParentAbort();
     else signal?.addEventListener("abort", onParentAbort, { once: true });
@@ -341,7 +352,6 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       inFlight.delete(promise);
     });
     inFlight.set(promise, entry);
-    const tasks = deps.backgroundTasks?.();
     if (tasks === undefined) return promise;
     const detach = () => {
       // A moved run is no longer the parent turn's: its signal and `settle` must not reach it.
@@ -361,7 +371,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     unregister = tasks.foreground({
       command: `${agent.qualifiedName}: ${task.split(/\r?\n/)[0] ?? ""}`,
       moveToBackground() {
-        if (settled || moved) return;
+        // A run already cancelled is ending: reporting it as moved would hand the model a task
+        // that is about to be reported stopped.
+        if (settled || moved || entry.cancelled === true || entry.controller.signal.aborted) return;
         moved = true;
         unregister();
         input.detach();
@@ -512,11 +524,12 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     commitCost: spend.commitCost,
     backgroundAvailable: () => deps.backgroundTasks?.() !== undefined,
     cancelAll() {
-      for (const { controller, session } of inFlight.values()) {
+      for (const entry of inFlight.values()) {
         // A run whose session is not open yet is cancelled through its signal; one with a
         // session is cancelled on the session, whose turn then ends `cancelled`.
-        if (session === undefined) controller.abort();
-        else session.cancel();
+        entry.cancelled = true;
+        if (entry.session === undefined) entry.controller.abort();
+        else entry.session.cancel();
       }
     },
     async settle() {
