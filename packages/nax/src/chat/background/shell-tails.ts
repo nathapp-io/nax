@@ -37,12 +37,18 @@ export interface ShellTails extends ChatShellOutput {
   appendTask(id: string, chunk: Uint8Array): void;
   /** The task ended: keep its tail for display, and consider eviction now that it is evictable. */
   endTask(id: string): void;
+  /** Start retaining the output of the running foreground call `callId`; never evicted. */
+  addForeground(callId: string): void;
+  /** Feed one chunk of foreground call `callId`'s output; ignored for an id with no tail. */
+  appendForeground(callId: string, chunk: Uint8Array): void;
+  /** The call ended or moved: drop its tail and with it its share of the retained total. */
+  endForeground(callId: string): void;
 }
 
 export function createShellTails(options: ShellTailsOptions): ShellTails {
   const totalMaxBytes = options.totalMaxBytes ?? SHELL_TAIL_TOTAL_MAX_BYTES;
   const tasks = new Map<string, TaskTail>();
-  /** Tails of running foreground calls, keyed by call id; US-004 registers them here. */
+  /** Tails of running foreground calls, keyed by call id; the registry registers and drops them. */
   const foregrounds = new Map<string, ShellTail>();
   /** Ids of finished tasks in the order they ended: the eviction queue. */
   const finished: string[] = [];
@@ -107,6 +113,21 @@ export function createShellTails(options: ShellTailsOptions): ShellTails {
       task.ended = true;
       finished.push(id);
       evict();
+    },
+    addForeground(callId) {
+      foregrounds.set(callId, createShellTail());
+    },
+    appendForeground(callId, chunk) {
+      const tail = foregrounds.get(callId);
+      if (tail === undefined || chunk.byteLength === 0) return;
+      tail.append(chunk);
+      notify(callId);
+      // The foreground tail only ADDS to the retained total: a foreground tail is never evicted,
+      // so this can only drop a finished task's tail.
+      evict();
+    },
+    endForeground(callId) {
+      foregrounds.delete(callId);
     },
   };
 }

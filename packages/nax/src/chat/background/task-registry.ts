@@ -252,8 +252,20 @@ class BackgroundTasks implements ChatBackgroundTasks, ChatShellOutput {
   foreground(call: ForegroundCommand): () => void {
     const key = Symbol();
     this.foregroundCalls.set(key, call);
+    // A foreground tail is addressed by call id, so only a call that offers an observer AND an
+    // id gets one. A call with an observer but no id is still subscribed — the same one
+    // subscription nax-agent makes — and a call with neither registers exactly as it always did.
+    const observe = call.onOutput;
+    const tailId = observe === undefined ? undefined : call.callId;
+    if (tailId !== undefined) this.shellTails.addForeground(tailId);
+    const unsubscribe = observe?.((_stream, chunk) => {
+      if (tailId !== undefined) this.shellTails.appendForeground(tailId, chunk);
+    });
     this.emit();
     return () => {
+      unsubscribe?.();
+      // Dropping the tail releases its share of the retained total as well as the tail itself.
+      if (tailId !== undefined) this.shellTails.endForeground(tailId);
       if (this.foregroundCalls.delete(key)) this.emit();
     };
   }
