@@ -1,5 +1,11 @@
 export { createHostTasks } from "./host-tasks";
 export {
+  createTaskEventLog,
+  TASK_EVENTS_MAX_BYTES,
+  TASK_EVENTS_MAX_ENTRIES,
+  type TaskEventLog,
+} from "./task-events";
+export {
   _backgroundTaskDeps,
   createBackgroundTasks,
   TASK_LOG_MAX_BYTES,
@@ -10,6 +16,7 @@ export type {
   BackgroundAgentEnd,
   BackgroundAgentHandle,
   BackgroundAgentOutcome,
+  BackgroundAgentRun,
   BackgroundAgentSink,
   BackgroundTask,
   BackgroundTaskState,

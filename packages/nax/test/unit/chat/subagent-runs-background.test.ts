@@ -68,7 +68,7 @@ function registry() {
   });
   const adoptAgent = mock((handle: BackgroundAgentHandle): BackgroundAgentSink => {
     adopt(handle);
-    return { id: SINK_ID, appendLine };
+    return { id: SINK_ID, appendLine, record: () => {} };
   });
   tasks.adoptAgent = adoptAgent;
   return { tasks, adoptAgent, appendLine, lines };

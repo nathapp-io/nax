@@ -73,6 +73,8 @@ function fakeTasks(rows: readonly BackgroundTask[]): ChatBackgroundTasks {
     stop: mock<ChatBackgroundTasks["stop"]>((id) => rows.find((row) => row.id === id) ?? task()),
     stopAll: async () => {},
     moveForeground: () => false,
+    agentRun: () => undefined,
+    onAgentEvents: () => () => {},
     hasForeground: () => false,
     peekNotice: () => undefined,
     releaseNotice: () => {},

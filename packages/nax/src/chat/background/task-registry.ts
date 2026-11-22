@@ -6,14 +6,17 @@ import type {
   BackgroundCommandHandle,
   BackgroundCommandSink,
   ForegroundCommand,
+  SessionEvent,
 } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
+import { createTaskEventLog, type TaskEventLog } from "./task-events";
 import {
   type BackgroundAgentEnd,
   type BackgroundAgentHandle,
+  type BackgroundAgentRun,
   type BackgroundAgentSink,
   type BackgroundTask,
   type BackgroundTaskState,
@@ -71,8 +74,18 @@ export const _backgroundTaskDeps = {
   readLog: readLogTail,
 };
 
+/** What only an agent task keeps beyond its record: the view's inputs. */
+interface AgentDetail {
+  readonly agent: string;
+  readonly model?: string;
+  readonly prompt: string;
+  readonly events: TaskEventLog;
+}
+
 interface TaskEntry {
   record: BackgroundTask;
+  /** Set for an agent task; its event log goes with the entry when the entry does. */
+  readonly detail?: AgentDetail;
   /** Both a command's and an agent run's handle expose only this to the registry. */
   readonly stop: () => void;
   pending: Promise<void>;
@@ -101,6 +114,7 @@ function isMissingLog(cause: unknown): boolean {
 class BackgroundTasks implements ChatBackgroundTasks {
   private readonly entries = new Map<string, TaskEntry>();
   private readonly listeners = new Set<() => void>();
+  private readonly eventListeners = new Set<(id: string) => void>();
   private readonly foregroundCalls = new Map<symbol, ForegroundCommand>();
   private readonly completions = new Set<Promise<void>>();
   private readonly unnoticed = new Map<string, BackgroundTask>();
@@ -123,6 +137,39 @@ class BackgroundTasks implements ChatBackgroundTasks {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  onAgentEvents(listener: (id: string) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  agentRun(id: string): BackgroundAgentRun | undefined {
+    const entry = this.entries.get(id);
+    const detail = entry?.detail;
+    if (entry === undefined || detail === undefined) return undefined;
+    return {
+      id,
+      agent: detail.agent,
+      ...(detail.model !== undefined ? { model: detail.model } : {}),
+      prompt: detail.prompt,
+      state: entry.record.state,
+      events: detail.events.snapshot(),
+    };
+  }
+
+  private recordEvent(entry: TaskEntry, event: SessionEvent): void {
+    if (entry.record.state !== "running" || entry.detail === undefined) return;
+    entry.detail.events.append(event);
+    for (const listener of [...this.eventListeners]) {
+      try {
+        listener(entry.record.id);
+      } catch (cause) {
+        this.options.logger.warn("chat", "Background task event callback failed", { error: errorMessage(cause) });
+      }
+    }
   }
 
   foreground(call: ForegroundCommand): () => void {
@@ -231,6 +278,12 @@ class BackgroundTasks implements ChatBackgroundTasks {
     const id = this.newId("agent");
     const first = taskFirstLine(handle.task);
     const entry: TaskEntry = {
+      detail: {
+        agent: handle.agent,
+        ...(handle.model !== undefined ? { model: handle.model } : {}),
+        prompt: handle.task,
+        events: createTaskEventLog(),
+      },
       record: {
         id,
         kind: "agent",
@@ -262,6 +315,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
       appendLine: (line) => {
         if (entry.record.state === "running") this.appendLine(entry, line);
       },
+      record: (event) => this.recordEvent(entry, event),
     };
   }
 
