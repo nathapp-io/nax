@@ -15,6 +15,7 @@ import {
 import { type PickerEntry, type PickerModel, pickerModel } from "./picker-model";
 import type { PickerKind } from "./slash-commands";
 import type { TranscriptEntry } from "./transcript-model";
+import { opensTaskView } from "./use-agent-view";
 
 /** How many trailing lines of a task's or job's output the listing shows. */
 const OUTPUT_TAIL_LINES = 40;
@@ -196,8 +197,10 @@ export function useChatPicker({ host, runControl, onError, show, openAgent }: Ch
       if (kind === "jobs") {
         openings.current += 1;
         setState(undefined);
-        // An agent row opens the run's whole conversation; a shell or a job lists its output.
-        if (openAgent !== undefined && host.tasks?.get(entry.value)?.kind === "agent") openAgent(entry.value);
+        // An agent row opens the run's whole conversation, a shell row its live view where the
+        // host reports shell output; any other row — a shell's on a host without one, and a job's
+        // always — lists its output.
+        if (openAgent !== undefined && opensTaskView(host, entry.value)) openAgent(entry.value);
         else void showOutput(entry);
         return;
       }

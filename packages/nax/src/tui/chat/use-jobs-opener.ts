@@ -3,9 +3,10 @@
  * footer's job and task strip. Both read the registries at event time, so a click acts on what
  * runs now rather than on what the frame it was drawn from was counted at. ctrl+g always opens
  * the picker; a click opens the picker too, except when the strip counts exactly one task and
- * no job — a shell's output is shown straight away, an agent's full view is opened, and ctrl+g
- * still reaches the picker for its ctrl+x. An ask card, an open picker or a shown slash menu owns the screen, so both
- * gestures are ignored then.
+ * no job — a lone agent's full view is opened, a lone shell's live view is opened on a host that
+ * reports shell output (and its output listing is shown where it does not), and ctrl+g still
+ * reaches the picker for its ctrl+x. An ask card, an open picker or a shown slash menu owns the
+ * screen, so both gestures are ignored then.
  */
 
 import { useInput } from "ink";
@@ -17,6 +18,7 @@ import type { MouseEvents } from "./mouse-input";
 import { _pickerDeps, type PickerEntry, taskEntry } from "./picker-model";
 import type { PickerKind } from "./slash-commands";
 import type { StyledLine } from "./styled-line";
+import { opensTaskView } from "./use-agent-view";
 import { spansWidth } from "./wrap";
 
 /** ink reports ctrl+g as the letter `g` with the ctrl modifier. ctrl+j arrives as a line feed, so it is not used. */
@@ -59,7 +61,10 @@ export interface JobsOpenerInput {
   note(text: string): void;
   /** Append one row's output listing — what Enter on that row of the jobs picker draws. */
   showOutput(entry: PickerEntry): void;
-  /** Open the full-screen view of one background agent task. */
+  /**
+   * Open the full-screen view of one background task: an agent's conversation, or a shell's live
+   * output on a host that reports it. A shell on a host that reports none lists its output instead.
+   */
   openAgent(id: string): void;
 }
 
@@ -113,13 +118,15 @@ function stripClicked(input: JobsOpenerInput, pressed: Press, released: Press): 
 }
 
 /**
- * A completed click on the strip: the lone shell's output, the lone agent's view, or the jobs picker. `markBlocked`
- * stands the gesture down at once, so a second click in the same batch opens nothing.
+ * A completed click on the strip: the lone task's view — an agent's conversation, or a shell's
+ * live output on a host that reports one — the lone shell's output listing where it reports none,
+ * or the jobs picker. `markBlocked` stands the gesture down at once, so a second click in the
+ * same batch opens nothing.
  */
 function openFromStrip(input: JobsOpenerInput, markBlocked: () => void): void {
   const task = loneTask(input.host);
   // A lone task has nothing to choose between, so it opens without the picker.
-  if (task?.kind === "agent") {
+  if (task !== undefined && opensTaskView(input.host, task.id)) {
     markBlocked();
     input.openAgent(task.id);
     return;
