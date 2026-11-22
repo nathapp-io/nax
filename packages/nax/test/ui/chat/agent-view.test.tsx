@@ -14,9 +14,11 @@ import {
 } from "@test/helpers";
 import { cleanup } from "ink-testing-library";
 import type { BackgroundAgentRun, BackgroundTask, ChatBackgroundTasks } from "@/chat/background";
+import { _agentViewDeps } from "@/tui/chat/AgentView";
 import { fakeMouse } from "./mouse";
 
 const ESC = "\x1b";
+const CTRL_C = "\x03";
 const CTRL_G = "\x07";
 const RETURN = "\r";
 const PAGE_UP = "\x1b[5~";
@@ -60,7 +62,8 @@ function fakeTasks(rows: BackgroundTask[], run: { current: BackgroundAgentRun | 
     },
     stopAll: async () => {},
     moveForeground: () => false,
-    agentRun: (id) => (id === run.current?.id ? run.current : undefined),
+    // A fresh object per call, like the registry's snapshot: identity must not hide a refold.
+    agentRun: (id) => (id === run.current?.id ? { ...run.current } : undefined),
     onAgentEvents: (listener) => {
       listeners.add(listener);
       return () => {
@@ -93,6 +96,7 @@ function runOf(events: readonly SessionEvent[], patch: Partial<BackgroundAgentRu
     model: "openai-codex/gpt-6-luna",
     prompt: "Review the spec for gaps",
     state: "running",
+    logRetained: true,
     events,
     ...patch,
   };
@@ -117,11 +121,17 @@ const flush = async (ui: Ui): Promise<void> => {
 };
 
 /** A mounted screen over one running agent task, with the strip's cell read off the footer. */
-function withAgent(options: { rows?: BackgroundTask[]; run?: BackgroundAgentRun; strip?: string } = {}) {
+function withAgent(
+  options: { rows?: BackgroundTask[]; run?: BackgroundAgentRun; strip?: string; holdTurn?: boolean } = {},
+) {
   const run: { current: BackgroundAgentRun | undefined } = { current: options.run ?? runOf(SAMPLE) };
   const tasks = fakeTasks(options.rows ?? [agentTask()], run);
   const mouse = fakeMouse();
-  const ui = mount({ tasks: tasks.port, mouse: mouse.events, send: async () => {} });
+  const ui = mount({
+    tasks: tasks.port,
+    mouse: mouse.events,
+    ...(options.holdTurn === true ? {} : { send: async () => {} }),
+  });
   const footerRow = ui.rows().length;
   const stripColumn = (ui.rows()[footerRow - 1] ?? "").indexOf(options.strip ?? STRIP) + 1;
   const click = (): void => {
@@ -220,6 +230,21 @@ describe("inside the view", () => {
     expect(ui.host.cancel).not.toHaveBeenCalled();
   });
 
+  test("ctrl+c closes the view and does not interrupt the hidden turn; a second one does", async () => {
+    const { ui, click } = withAgent({ holdTurn: true });
+    await ui.submit("long question");
+    click();
+    await flush(ui);
+    expect(text(ui)).toContain("esc to return");
+    ui.press(CTRL_C);
+    await flush(ui);
+    expect(text(ui)).not.toContain("esc to return");
+    expect(ui.host.cancel).not.toHaveBeenCalled();
+    ui.press(CTRL_C);
+    await flush(ui);
+    expect(ui.host.cancel).toHaveBeenCalledTimes(1);
+  });
+
   test("it redraws while the run records more events", async () => {
     const { ui, click, run, tasks } = withAgent();
     click();
@@ -251,6 +276,41 @@ describe("inside the view", () => {
     ui.press(PAGE_UP);
     await flush(ui);
     expect(text(ui)).toMatch(/Scroll to bottom|new lines/);
+  });
+
+  test("a finished run whose log was dropped says so and still shows its prompt", async () => {
+    const { ui, click } = withAgent({ run: runOf([], { state: "succeeded", logRetained: false }) });
+    click();
+    await flush(ui);
+    expect(text(ui)).toContain("Review the spec for gaps");
+    expect(text(ui)).toContain("the log of this agent is no longer retained");
+    expect(text(ui)).toContain("done");
+  });
+
+  test("a redraw of the chat underneath does not refold or relayout the view; new agent events do", async () => {
+    const { ui, click, run, tasks } = withAgent();
+    const fold = mock(_agentViewDeps.fold);
+    const layout = mock(_agentViewDeps.layout);
+    const original = { ..._agentViewDeps };
+    _agentViewDeps.fold = fold;
+    _agentViewDeps.layout = layout;
+    try {
+      click();
+      await flush(ui);
+      const folds = fold.mock.calls.length;
+      const layouts = layout.mock.calls.length;
+      expect(folds).toBeGreaterThan(0);
+      // Main-chat renders: a resize event re-renders the whole screen.
+      for (let at = 0; at < 3; at += 1) await ui.settleAfter(() => ui.ui.stdout.emit("resize"));
+      await flush(ui);
+      expect(fold.mock.calls.length).toBe(folds);
+      expect(layout.mock.calls.length).toBe(layouts);
+      run.current = runOf([...SAMPLE, textDeltaEvent(" more")]);
+      tasks.announce(AGENT_ID);
+      await waitForCondition(() => fold.mock.calls.length > folds);
+    } finally {
+      Object.assign(_agentViewDeps, original);
+    }
   });
 
   test("a task that has left the registry says so, and escape still returns", async () => {

@@ -36,9 +36,14 @@ interface ChatKeysOptions {
   onNotice?: (text: string) => void;
   /** Diagnostic frames retain Ctrl-C only; no hidden control shortcut may act. */
   active?: () => boolean;
+  /**
+   * Offered ctrl-c before the interrupt: true means something else took it (the agent view,
+   * which it closes) and the key does nothing more.
+   */
+  takeCtrlC?: () => boolean;
 }
 
-export function useChatKeys({ host, running, refresh, onError, onNotice, active }: ChatKeysOptions): {
+export function useChatKeys({ host, running, refresh, onError, onNotice, active, takeCtrlC }: ChatKeysOptions): {
   locked: boolean;
   /**
    * True while a ctrl-c that cancelled a turn is still within the double-interrupt window:
@@ -176,7 +181,7 @@ export function useChatKeys({ host, running, refresh, onError, onNotice, active 
   useInput((input, key) => {
     if (closing.current) return;
     if (key.ctrl && input === "c") {
-      interrupt();
+      if (takeCtrlC?.() !== true) interrupt();
     } else if (active?.() === false) {
       return;
     } else if (key.ctrl && input === "b" && canControl()) {

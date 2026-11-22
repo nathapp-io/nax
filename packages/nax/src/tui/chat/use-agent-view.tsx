@@ -9,7 +9,7 @@
  *
  * Kept out of `ChatApp`, whose cognitive complexity is at the gate's limit.
  */
-import { type ReactElement, useCallback, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatHost } from "@/chat";
 import { AgentView } from "./AgentView";
 import type { MouseEvents } from "./mouse-input";
@@ -24,12 +24,20 @@ export interface AgentViewControl {
   close(): void;
   /** True when `other` holds or a view is open: the states in which the chat takes no input. */
   hushes(other: boolean): boolean;
+  /** ctrl-c while a view is open closes it and reports true; with none open it reports false and does nothing. */
+  closeForCtrlC(): boolean;
 }
 
 /** The open view's task id. A question or approval that needs an answer closes the view first. */
 export function useAgentView(host: ChatHost): AgentViewControl {
-  const [id, setId] = useState<string | undefined>(undefined);
-  const close = useCallback(() => setId(undefined), []);
+  const [id, setState] = useState<string | undefined>(undefined);
+  /** Ahead of React: a key batched behind the one that opened or closed the view reads the truth. */
+  const openId = useRef<string | undefined>(undefined);
+  const setId = useCallback((next: string | undefined) => {
+    openId.current = next;
+    setState(next);
+  }, []);
+  const close = useCallback(() => setId(undefined), [setId]);
   const ask = host.asks.pending()[0];
   // A card behind the view cannot be answered, so it brings the chat back.
   useEffect(() => {
@@ -41,6 +49,11 @@ export function useAgentView(host: ChatHost): AgentViewControl {
     open: setId,
     close,
     hushes: (other) => other || id !== undefined,
+    closeForCtrlC() {
+      if (openId.current === undefined) return false;
+      close();
+      return true;
+    },
   };
 }
 

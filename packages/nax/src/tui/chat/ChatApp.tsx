@@ -390,8 +390,11 @@ export function ChatApp({
   const append = useCallback((entry: TranscriptEntry) => appendAll([entry]), [appendAll]);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
   const interactive = useRef(true);
+  /** The full-screen agent view: the chat stays mounted underneath, hidden and inert, while it is open. */
+  const agentView = useAgentView(host);
   const keys = useChatKeys({
     active: () => interactive.current,
+    takeCtrlC: agentView.closeForCtrlC,
     host,
     running: sending,
     refresh: update,
@@ -399,8 +402,6 @@ export function ChatApp({
     onNotice: (text) => append({ kind: "notice", text }),
   });
   /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
-  /** The full-screen agent view: the chat stays mounted underneath, hidden and inert, while it is open. */
-  const agentView = useAgentView(host);
   const picker = useChatPicker({
     host,
     runControl: keys.runControl,
