@@ -3,6 +3,8 @@ export {
   createTaskEventLog,
   TASK_EVENTS_MAX_BYTES,
   TASK_EVENTS_MAX_ENTRIES,
+  TASK_EVENTS_TOTAL_MAX_BYTES,
+  TASK_EVENTS_TOTAL_MAX_ENTRIES,
   type TaskEventLog,
 } from "./task-events";
 export {

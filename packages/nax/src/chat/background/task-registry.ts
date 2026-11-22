@@ -12,7 +12,12 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
-import { createTaskEventLog, type TaskEventLog } from "./task-events";
+import {
+  createTaskEventLog,
+  TASK_EVENTS_TOTAL_MAX_BYTES,
+  TASK_EVENTS_TOTAL_MAX_ENTRIES,
+  type TaskEventLog,
+} from "./task-events";
 import {
   type BackgroundAgentEnd,
   type BackgroundAgentHandle,
@@ -72,6 +77,8 @@ export const _backgroundTaskDeps = {
     appendFileSync(path, chunk);
   },
   readLog: readLogTail,
+  /** The limits on events retained across all agent tasks; a seam so a test need not record thousands. */
+  eventLimits: { entries: TASK_EVENTS_TOTAL_MAX_ENTRIES, bytes: TASK_EVENTS_TOTAL_MAX_BYTES },
 };
 
 /** What only an agent task keeps beyond its record: the view's inputs. */
@@ -156,13 +163,42 @@ class BackgroundTasks implements ChatBackgroundTasks {
       ...(detail.model !== undefined ? { model: detail.model } : {}),
       prompt: detail.prompt,
       state: entry.record.state,
+      logRetained: !detail.events.evicted(),
       events: detail.events.snapshot(),
     };
+  }
+
+  /**
+   * Keep the events retained across every agent task under the total limits: while over, drop
+   * the log of the oldest FINISHED task that still has one. Its record and state stay; only its
+   * conversation goes. A running task is never evicted, so a chat of running tasks is bounded by
+   * the per-task caps alone.
+   */
+  private enforceEventLimits(): void {
+    const { entries: maxEntries, bytes: maxBytes } = _backgroundTaskDeps.eventLimits;
+    const logs = [...this.entries.values()].flatMap((entry) => (entry.detail === undefined ? [] : [entry]));
+    const total = () =>
+      logs.reduce(
+        (sum, entry) => {
+          const size = entry.detail?.events.size() ?? { entries: 0, bytes: 0 };
+          return { entries: sum.entries + size.entries, bytes: sum.bytes + size.bytes };
+        },
+        { entries: 0, bytes: 0 },
+      );
+    const evictable = logs
+      .filter((entry) => entry.record.state !== "running" && entry.detail?.events.evicted() === false)
+      .sort((a, b) => (a.record.endedAt ?? "").localeCompare(b.record.endedAt ?? ""));
+    for (const entry of evictable) {
+      const now = total();
+      if (now.entries <= maxEntries && now.bytes <= maxBytes) return;
+      entry.detail?.events.evict();
+    }
   }
 
   private recordEvent(entry: TaskEntry, event: SessionEvent): void {
     if (entry.record.state !== "running" || entry.detail === undefined) return;
     entry.detail.events.append(event);
+    this.enforceEventLimits();
     for (const listener of [...this.eventListeners]) {
       try {
         listener(entry.record.id);
@@ -381,6 +417,8 @@ class BackgroundTasks implements ChatBackgroundTasks {
     };
     if (end.text.trimEnd() !== "") this.appendLine(entry, end.text.trimEnd());
     this.appendLine(entry, `[nax] agent ended: ${end.outcome}`);
+    // This task just became evictable.
+    this.enforceEventLimits();
     if (entry.record.state === "succeeded" || entry.record.state === "failed") {
       this.unnoticed.set(entry.record.id, entry.record);
     }

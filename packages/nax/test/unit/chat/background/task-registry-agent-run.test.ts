@@ -2,7 +2,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger, textDeltaEvent, toolCallEvent } from "@test/helpers";
 import type { BackgroundAgentEnd, BackgroundAgentHandle } from "@/chat/background";
-import { _backgroundTaskDeps, createBackgroundTasks } from "@/chat/background";
+import {
+  _backgroundTaskDeps,
+  createBackgroundTasks,
+  TASK_EVENTS_TOTAL_MAX_BYTES,
+  TASK_EVENTS_TOTAL_MAX_ENTRIES,
+} from "@/chat/background";
 
 const original = { ..._backgroundTaskDeps };
 let logs: Map<string, string>;
@@ -19,6 +24,17 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(_backgroundTaskDeps, original);
 });
+
+function adoptAgent(tasks: ReturnType<typeof createBackgroundTasks>, name: string) {
+  const end = Promise.withResolvers<BackgroundAgentEnd>();
+  const sink = tasks.adoptAgent({ agent: name, task: `task ${name}`, ended: end.promise, stop: mock(() => {}) });
+  const finish = async () => {
+    end.resolve({ outcome: "succeeded", text: "" });
+    await end.promise;
+    await Promise.resolve();
+  };
+  return { sink, finish };
+}
 
 function setup() {
   const tasks = createBackgroundTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
@@ -43,6 +59,7 @@ describe("ChatBackgroundTasks.agentRun", () => {
       model: "openai-codex/gpt-6-luna",
       prompt: "Review the spec\nin full",
       state: "running",
+      logRetained: true,
       events: [],
     });
   });
@@ -112,5 +129,60 @@ describe("ChatBackgroundTasks.agentRun", () => {
     sink.appendLine("[tool] Read");
     sink.record(toolCallEvent("c1"));
     expect(await tasks.output(sink.id)).toBe("[nax] agent reviewer: Review the spec\n[tool] Read");
+  });
+});
+
+describe("the total event retention across tasks", () => {
+  const limits = { ..._backgroundTaskDeps.eventLimits };
+  beforeEach(() => {
+    _backgroundTaskDeps.eventLimits = { entries: 6, bytes: Number.MAX_SAFE_INTEGER };
+  });
+  afterEach(() => {
+    _backgroundTaskDeps.eventLimits = limits;
+  });
+
+  test("names the two limits", () => {
+    expect(TASK_EVENTS_TOTAL_MAX_ENTRIES).toBeGreaterThan(0);
+    expect(TASK_EVENTS_TOTAL_MAX_BYTES).toBeGreaterThan(0);
+  });
+
+  test("drops the oldest finished task's log first, keeping its record and state", async () => {
+    const tasks = createBackgroundTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
+    const first = adoptAgent(tasks, "first");
+    const second = adoptAgent(tasks, "second");
+    for (let at = 0; at < 3; at += 1) first.sink.record(toolCallEvent(`a${at}`));
+    for (let at = 0; at < 3; at += 1) second.sink.record(toolCallEvent(`b${at}`));
+    await first.finish();
+    await second.finish();
+    const third = adoptAgent(tasks, "third");
+    third.sink.record(toolCallEvent("c0"));
+    expect(tasks.agentRun(first.sink.id)).toMatchObject({ state: "succeeded", logRetained: false, events: [] });
+    expect(tasks.agentRun(second.sink.id)).toMatchObject({ logRetained: true });
+    expect(tasks.agentRun(second.sink.id)?.events).toHaveLength(3);
+    expect(tasks.get(first.sink.id)?.state).toBe("succeeded");
+  });
+
+  test("never evicts a running task, however far over the limit", () => {
+    const tasks = createBackgroundTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
+    const a = adoptAgent(tasks, "a");
+    const b = adoptAgent(tasks, "b");
+    for (let at = 0; at < 5; at += 1) {
+      a.sink.record(toolCallEvent(`a${at}`));
+      b.sink.record(toolCallEvent(`b${at}`));
+    }
+    expect(tasks.agentRun(a.sink.id)).toMatchObject({ logRetained: true });
+    expect(tasks.agentRun(a.sink.id)?.events).toHaveLength(5);
+    expect(tasks.agentRun(b.sink.id)?.events).toHaveLength(5);
+  });
+
+  test("a task that finishes under pressure becomes evictable at once", async () => {
+    const tasks = createBackgroundTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
+    const a = adoptAgent(tasks, "a");
+    const b = adoptAgent(tasks, "b");
+    for (let at = 0; at < 4; at += 1) a.sink.record(toolCallEvent(`a${at}`));
+    for (let at = 0; at < 4; at += 1) b.sink.record(toolCallEvent(`b${at}`));
+    await a.finish();
+    expect(tasks.agentRun(a.sink.id)).toMatchObject({ logRetained: false });
+    expect(tasks.agentRun(b.sink.id)).toMatchObject({ logRetained: true });
   });
 });

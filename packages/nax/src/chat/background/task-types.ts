@@ -56,7 +56,9 @@ export interface BackgroundAgentRun {
   /** The whole task prompt, the view's first user message. */
   readonly prompt: string;
   readonly state: BackgroundTaskState;
-  /** The retained events, oldest first. */
+  /** False once the registry dropped this finished task's event log to stay under its total limit. */
+  readonly logRetained: boolean;
+  /** The retained events, oldest first; empty when the log is no longer retained. */
   readonly events: readonly SessionEvent[];
 }
 

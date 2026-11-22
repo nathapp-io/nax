@@ -13,6 +13,15 @@ import type { SessionEvent } from "@nathapp/nax-agent";
 export const TASK_EVENTS_MAX_ENTRIES = 2000;
 /** The most estimated payload bytes one task retains (text, tool inputs, tool previews). */
 export const TASK_EVENTS_MAX_BYTES = 2 * 1024 * 1024;
+/**
+ * The most events all agent tasks together retain. Past it the registry drops the oldest
+ * FINISHED task's log first; a running task's log is never dropped.
+ */
+export const TASK_EVENTS_TOTAL_MAX_ENTRIES = 20_000;
+/** The most estimated payload bytes all agent tasks together retain; evicted like the entry limit. */
+export const TASK_EVENTS_TOTAL_MAX_BYTES = 16 * 1024 * 1024;
+/** A JS string holds UTF-16 code units: its heap cost is two bytes per unit, not one. */
+const BYTES_PER_CODE_UNIT = 2;
 /** What an event with no measurable payload is charged, so an endless stream of them is bounded too. */
 const EVENT_OVERHEAD_BYTES = 128;
 
@@ -33,6 +42,11 @@ export interface TaskEventLog {
   snapshot(): readonly SessionEvent[];
   /** Forget everything. */
   clear(): void;
+  /** What the log holds now: its entry count and estimated bytes. */
+  size(): { readonly entries: number; readonly bytes: number };
+  /** Drop everything for good: the log is then `evicted` and takes no more events. */
+  evict(): void;
+  evicted(): boolean;
 }
 
 function inputBytes(input: unknown): number {
@@ -49,13 +63,13 @@ function payloadBytes(event: SessionEvent): number {
   switch (event.type) {
     case "text_delta":
     case "thinking_delta":
-      return event.text.length;
+      return event.text.length * BYTES_PER_CODE_UNIT;
     case "tool_call":
-      return inputBytes(event.input);
+      return inputBytes(event.input) * BYTES_PER_CODE_UNIT;
     case "tool_result":
-      return event.preview.length;
+      return event.preview.length * BYTES_PER_CODE_UNIT;
     case "turn_end":
-      return event.output.length;
+      return event.output.length * BYTES_PER_CODE_UNIT;
     default:
       return 0;
   }
@@ -67,7 +81,8 @@ function costOf(event: SessionEvent): number {
 
 /** Keep the newest part of a run that outgrew the byte cap on its own. */
 function capped(text: string): string {
-  return text.length > TASK_EVENTS_MAX_BYTES ? text.slice(-TASK_EVENTS_MAX_BYTES) : text;
+  const maxUnits = TASK_EVENTS_MAX_BYTES / BYTES_PER_CODE_UNIT;
+  return text.length > maxUnits ? text.slice(-maxUnits) : text;
 }
 
 /** `last` with `next`'s text folded in when `next` continues its run, else undefined. */
@@ -95,6 +110,7 @@ function continued(last: SessionEvent | undefined, next: SessionEvent): SessionE
 export function createTaskEventLog(): TaskEventLog {
   let events: SessionEvent[] = [];
   let bytes = 0;
+  let gone = false;
 
   function trim(): void {
     let drop = 0;
@@ -112,7 +128,7 @@ export function createTaskEventLog(): TaskEventLog {
 
   return {
     append(event) {
-      if (!KEPT_TYPES.has(event.type)) return;
+      if (gone || !KEPT_TYPES.has(event.type)) return;
       const last = events.at(-1);
       const merged = continued(last, event);
       if (last !== undefined && merged !== undefined) {
@@ -129,5 +145,12 @@ export function createTaskEventLog(): TaskEventLog {
       events = [];
       bytes = 0;
     },
+    size: () => ({ entries: events.length, bytes }),
+    evict() {
+      events = [];
+      bytes = 0;
+      gone = true;
+    },
+    evicted: () => gone,
   };
 }

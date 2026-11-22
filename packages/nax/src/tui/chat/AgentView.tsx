@@ -7,7 +7,7 @@
  * finished run for as long as the registry still holds it.
  */
 import { Box, useInput } from "ink";
-import { type ReactElement, useEffect, useRef, useState } from "react";
+import { memo, type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatBackgroundTasks } from "@/chat/background";
 import {
   AGENT_VIEW_HEADER_ROWS,
@@ -15,6 +15,8 @@ import {
   agentViewFooter,
   agentViewTitle,
   missingAgentTitle,
+  toggledEntry,
+  withOpened,
 } from "./agent-view-model";
 import { FixedRow } from "./FixedRow";
 import { usableFrameRows } from "./frame-layout";
@@ -24,7 +26,6 @@ import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import type { ChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
-import type { TranscriptEntry } from "./transcript-model";
 
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier. */
 const CTRL_O = "o";
@@ -43,9 +44,16 @@ export interface AgentViewProps {
   onClose(): void;
 }
 
-/** Redraw when the task records an event or changes state; a burst is folded into one redraw. */
-function useTaskRefresh(tasks: ChatBackgroundTasks, id: string): void {
-  const [, refresh] = useState(0);
+/** Seams for the work a redraw must not repeat; a test counts the folds and layouts through them. */
+export const _agentViewDeps = { fold: agentViewEntries, layout: layoutTranscript };
+
+/**
+ * A counter that moves when the task records an event or changes state; a burst of events is
+ * folded into one step. Everything expensive is memoised on it, so a redraw the main chat caused
+ * (a token of the turn running underneath) costs nothing here.
+ */
+function useTaskRevision(tasks: ChatBackgroundTasks, id: string): number {
+  const [revision, refresh] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     // A timer that can be cleared mid-flight: the view may close while a redraw is waiting.
@@ -68,39 +76,19 @@ function useTaskRefresh(tasks: ChatBackgroundTasks, id: string): void {
       timer.current = undefined;
     };
   }, [tasks, id]);
+  return revision;
 }
 
-/** The entries with the user's click-opened rows applied; the fold alone never opens one. */
-function withOpened(
-  entries: readonly TranscriptEntry[],
-  opened: ReadonlyMap<number, boolean>,
-): readonly TranscriptEntry[] {
-  if (opened.size === 0) return entries;
-  return entries.map((entry, index) =>
-    opened.has(index) ? Object.assign({}, entry, { open: opened.get(index) }) : entry,
-  );
-}
-
-/** The index of the one entry a toggle changed, with its new `open`; undefined when nothing changed. */
-function toggledEntry(
-  before: readonly TranscriptEntry[],
-  after: readonly TranscriptEntry[],
-): { index: number; open: boolean } | undefined {
-  const index = after.findIndex((entry, at) => entry !== before[at]);
-  const entry = after[index];
-  if (entry === undefined || !("open" in entry)) return undefined;
-  return { index, open: entry.open === true };
-}
-
-export function AgentView({ tasks, id, columns, rows, theme, mouse, onCopy, onClose }: AgentViewProps): ReactElement {
-  useTaskRefresh(tasks, id);
+function AgentViewBase({ tasks, id, columns, rows, theme, mouse, onCopy, onClose }: AgentViewProps): ReactElement {
+  const revision = useTaskRevision(tasks, id);
   const [expanded, setExpanded] = useState(false);
-  const [opened, setOpened] = useState<ReadonlyMap<number, boolean>>(new Map());
-  const run = tasks.agentRun(id);
-  const folded = run === undefined ? [] : agentViewEntries(run);
-  const entries = withOpened(folded, opened);
-  const layoutOptions = { width: columns, theme, expanded };
-  const lines = layoutTranscript(entries, layoutOptions);
+  const [opened, setOpened] = useState<ReadonlyMap<string, boolean>>(new Map());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `revision` is what says the task recorded more.
+  const run = useMemo(() => tasks.agentRun(id), [tasks, id, revision]);
+  const folded = useMemo(() => (run === undefined ? [] : _agentViewDeps.fold(run)), [run]);
+  const entries = useMemo(() => withOpened(folded, opened), [folded, opened]);
+  const layoutOptions = useMemo(() => ({ width: columns, theme, expanded }), [columns, theme, expanded]);
+  const lines = useMemo(() => _agentViewDeps.layout(entries, layoutOptions), [entries, layoutOptions]);
   const usable = usableFrameRows(rows);
   const height = Math.max(0, usable - AGENT_VIEW_HEADER_ROWS - 1);
   useInput((input, key) => {
@@ -110,7 +98,7 @@ export function AgentView({ tasks, id, columns, rows, theme, mouse, onCopy, onCl
   const toggle = (line: number): void => {
     const after = toggleTranscriptLine(entries, line, layoutOptions);
     const changed = toggledEntry(entries, after);
-    if (changed !== undefined) setOpened((current) => new Map(current).set(changed.index, changed.open));
+    if (changed !== undefined) setOpened((current) => new Map(current).set(changed.key, changed.open));
   };
   const title = run === undefined ? missingAgentTitle(id) : agentViewTitle(run);
   return (
@@ -137,3 +125,6 @@ export function AgentView({ tasks, id, columns, rows, theme, mouse, onCopy, onCl
     </Box>
   );
 }
+
+/** Memoised: a redraw of the chat underneath hands it the same props and costs nothing. */
+export const AgentView = memo(AgentViewBase);

@@ -73,7 +73,7 @@ describe("createTaskEventLog", () => {
 
   test("drops the oldest events past the byte cap, keeping the newest", () => {
     const log = createTaskEventLog();
-    const chunk = "x".repeat(TASK_EVENTS_MAX_BYTES / 4);
+    const chunk = "x".repeat(TASK_EVENTS_MAX_BYTES / 8);
     for (let index = 0; index < 8; index += 1) log.append(toolResultEvent(`c${index}`));
     for (let index = 0; index < 6; index += 1) {
       log.append({ ...toolResultEvent(`big${index}`), preview: chunk });
@@ -89,8 +89,28 @@ describe("createTaskEventLog", () => {
     log.append(textDeltaEvent("a".repeat(TASK_EVENTS_MAX_BYTES)));
     log.append(textDeltaEvent("tail"));
     const [event] = log.snapshot();
-    expect(event?.type === "text_delta" ? event.text.length : 0).toBe(TASK_EVENTS_MAX_BYTES);
+    // Two bytes per UTF-16 code unit: the cap is real heap, not characters.
+    expect(event?.type === "text_delta" ? event.text.length : 0).toBe(TASK_EVENTS_MAX_BYTES / 2);
     expect(event?.type === "text_delta" ? event.text.endsWith("tail") : false).toBe(true);
+  });
+
+  test("size() reports entries and estimated bytes at two bytes per character", () => {
+    const log = createTaskEventLog();
+    log.append(textDeltaEvent("abcd"));
+    const first = log.size();
+    log.append(textDeltaEvent("abcd"));
+    expect(first.entries).toBe(1);
+    expect(log.size()).toEqual({ entries: 1, bytes: first.bytes + 8 });
+  });
+
+  test("evict() empties the log, reports it and ignores later appends", () => {
+    const log = createTaskEventLog();
+    log.append(toolCallEvent("c1"));
+    log.evict();
+    log.append(toolCallEvent("c2"));
+    expect(log.snapshot()).toEqual([]);
+    expect(log.evicted()).toBe(true);
+    expect(log.size()).toEqual({ entries: 0, bytes: 0 });
   });
 
   test("a snapshot is a copy and clear() empties the log", () => {

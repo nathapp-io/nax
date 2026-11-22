@@ -41,9 +41,16 @@ export function agentStateLabel(state: BackgroundTaskState): string {
   return STATE_LABELS[state];
 }
 
-/** The task prompt first, then everything the agent did, folded the way the chat folds a turn. */
+/** What the view says in place of a conversation the registry dropped to stay under its total limit. */
+export const LOG_NOT_RETAINED_NOTICE = "the log of this agent is no longer retained";
+
+/**
+ * The task prompt first, then everything the agent did, folded the way the chat folds a turn. A
+ * finished run whose log was evicted keeps its prompt and says so, rather than showing nothing.
+ */
 export function agentViewEntries(run: BackgroundAgentRun): readonly TranscriptEntry[] {
   const first: readonly TranscriptEntry[] = [{ kind: "user", text: run.prompt }];
+  if (!run.logRetained) return [...first, { kind: "notice", text: LOG_NOT_RETAINED_NOTICE }];
   return run.events.reduce<readonly TranscriptEntry[]>((entries, event) => reduceTranscript(entries, event), first);
 }
 
@@ -68,4 +75,37 @@ export function missingAgentTitle(id: string): StyledLine {
 
 export function agentViewFooter(): StyledLine {
   return [{ text: AGENT_VIEW_HINT, color: "muted" }];
+}
+
+/**
+ * A stable identity for an entry the user can open: a tool card by its call, thinking by its
+ * turn and start. Not the entry's index, which shifts when the oldest events are dropped.
+ */
+export function entryKey(entry: TranscriptEntry): string | undefined {
+  if (entry.kind === "tool") return `tool:${entry.turnId}:${entry.callId}`;
+  if (entry.kind === "thinking") return `thinking:${entry.turnId}:${entry.startedAt}`;
+  return undefined;
+}
+
+/** The entries with the user's click-opened rows applied; the fold alone never opens one. */
+export function withOpened(
+  entries: readonly TranscriptEntry[],
+  opened: ReadonlyMap<string, boolean>,
+): readonly TranscriptEntry[] {
+  if (opened.size === 0) return entries;
+  return entries.map((entry) => {
+    const key = entryKey(entry);
+    return key !== undefined && opened.has(key) ? Object.assign({}, entry, { open: opened.get(key) }) : entry;
+  });
+}
+
+/** The one entry a toggle changed, as its key and new `open`; undefined when nothing keyed changed. */
+export function toggledEntry(
+  before: readonly TranscriptEntry[],
+  after: readonly TranscriptEntry[],
+): { key: string; open: boolean } | undefined {
+  const entry = after.find((candidate, at) => candidate !== before[at]);
+  if (entry === undefined || !("open" in entry)) return undefined;
+  const key = entryKey(entry);
+  return key === undefined ? undefined : { key, open: entry.open === true };
 }

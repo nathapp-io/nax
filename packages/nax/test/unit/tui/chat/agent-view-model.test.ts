@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionEvent } from "@nathapp/nax-agent";
-import { textDeltaEvent, toolCallEvent, toolResultEvent, turnEndEvent } from "@test/helpers";
+import { assertDefined, textDeltaEvent, toolCallEvent, toolResultEvent, turnEndEvent } from "@test/helpers";
 import type { BackgroundAgentRun } from "@/chat/background";
 import {
   AGENT_VIEW_HINT,
@@ -8,12 +8,25 @@ import {
   agentViewEntries,
   agentViewFooter,
   agentViewTitle,
+  entryKey,
+  LOG_NOT_RETAINED_NOTICE,
   missingAgentTitle,
+  toggledEntry,
+  withOpened,
 } from "@/tui/chat/agent-view-model";
 import { plainText } from "@/tui/chat/styled-line";
+import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 
 function run(patch: Partial<BackgroundAgentRun> = {}, events: readonly SessionEvent[] = []): BackgroundAgentRun {
-  return { id: "agent-1a2b3c4d", agent: "reviewer", prompt: "Do the thing", state: "running", events, ...patch };
+  return {
+    id: "agent-1a2b3c4d",
+    agent: "reviewer",
+    prompt: "Do the thing",
+    state: "running",
+    logRetained: true,
+    events,
+    ...patch,
+  };
 }
 
 describe("agentViewEntries", () => {
@@ -33,6 +46,53 @@ describe("agentViewEntries", () => {
     if (base.type !== "turn_end") throw new Error("expected a turn_end event");
     const end: SessionEvent = { ...base, status: "cancelled" };
     expect(agentViewEntries(run({}, [end])).at(-1)).toEqual({ kind: "interrupted" });
+  });
+});
+
+describe("a dropped log", () => {
+  test("keeps the prompt and adds the not-retained notice", () => {
+    expect(agentViewEntries(run({ logRetained: false, state: "succeeded" }, [toolCallEvent("c1")]))).toEqual([
+      { kind: "user", text: "Do the thing" },
+      { kind: "notice", text: LOG_NOT_RETAINED_NOTICE },
+    ]);
+  });
+});
+
+function keyAt(entries: readonly TranscriptEntry[], index: number): string | undefined {
+  const entry = entries[index];
+  assertDefined(entry, `entry ${index}`);
+  return entryKey(entry);
+}
+
+describe("opened rows keep their identity when older entries drop", () => {
+  test("a tool card is keyed by its call, other rows by nothing", () => {
+    const entries = agentViewEntries(run({}, [toolCallEvent("c1"), textDeltaEvent("x")]));
+    expect(entries.map((entry) => entry.kind)).toEqual(["user", "tool", "reply"]);
+    expect(keyAt(entries, 0)).toBeUndefined();
+    expect(keyAt(entries, 1)).toMatch(/^tool:.*:c1$/);
+    expect(keyAt(entries, 2)).toBeUndefined();
+  });
+
+  test("an opened tool card stays opened after an earlier entry disappears", () => {
+    const first = toolCallEvent("c1");
+    const second = toolCallEvent("c2");
+    const full = agentViewEntries(run({}, [first, second]));
+    const key = keyAt(full, 2);
+    assertDefined(key, "key of c2");
+    const opened = new Map([[key, true]]);
+    expect(withOpened(full, opened)[2]).toMatchObject({ callId: "c2", open: true });
+    // The oldest call dropped: c2 moves from index 2 to 1 and must still be the opened one.
+    const after = withOpened(agentViewEntries(run({}, [second])), opened);
+    expect(after[1]).toMatchObject({ callId: "c2", open: true });
+    expect(after[0]).toEqual({ kind: "user", text: "Do the thing" });
+  });
+
+  test("toggledEntry names the toggled card by key", () => {
+    const entries = agentViewEntries(run({}, [toolCallEvent("c1")]));
+    const toggled = entries.map((entry) => (entry.kind === "tool" ? { ...entry, open: true } : entry));
+    const key = keyAt(entries, 1);
+    assertDefined(key, "key of c1");
+    expect(toggledEntry(entries, toggled)).toEqual({ key, open: true });
   });
 });
 
