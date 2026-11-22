@@ -225,6 +225,24 @@ describe("reduceTranscript subagent calls", () => {
     expect(entries[0]).toMatchObject({ kind: "tool", children: [{ callId: "c2", status: "ok" }] });
   });
 
+  test("the agent's own result closes children still running, so a moved run leaves no stuck row", () => {
+    const entries = reduce(
+      toolCall({ callId: "a1", ...AGENT_RUN }),
+      toolCall({ callId: "c2", metadata: { subagentTask: "scan" } }),
+      toolResult({ callId: "a1", at: LATER }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", status: "ok", children: [{ callId: "c2", status: "ok" }] });
+  });
+
+  test("an errored agent result closes its running children as errors", () => {
+    const entries = reduce(
+      toolCall({ callId: "a1", ...AGENT_RUN }),
+      toolCall({ callId: "c2", metadata: { subagentTask: "scan" } }),
+      toolResult({ callId: "a1", at: LATER, isError: true }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", status: "error", children: [{ callId: "c2", status: "error" }] });
+  });
+
   test("adds a top-level tool entry when no running agent has the tagged task", () => {
     const entries = reduce(
       toolCall({ callId: "a1", ...AGENT_RUN }),

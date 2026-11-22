@@ -27,7 +27,16 @@ import {
   type SubagentModelSource,
   subagentModelLabel,
 } from "./subagent-model";
+import {
+  deliverActivity,
+  foregroundRoute,
+  moveRouteToTask,
+  type RunRoute,
+  taskRoute,
+  untrackedRoute,
+} from "./subagent-route";
 import { runSubagent } from "./subagent-session";
+import { createNestedSpend } from "./subagent-spend";
 import { mapSubagentTools } from "./subagent-tools";
 
 export const _subagentRunsDeps = { runSubagent };
@@ -60,8 +69,14 @@ export interface SubagentRunsDeps {
 }
 
 export interface SubagentRuns {
-  /** Run one agent task for the chat session; wires asks, usage, cost and tool events. */
+  /**
+   * Run one agent task for the chat session; wires asks, usage, cost and tool events. While it
+   * runs in the foreground, the chat's `ctrl+b` moves it to the background: the call then
+   * returns at once with the task it was adopted as, and the run keeps going under the registry.
+   */
   run(agent: AgentResource, task: string, signal?: AbortSignal, model?: string): Promise<ToolResult>;
+  /** True when `runInBackground` can adopt a run now: the chat has a background task registry. */
+  backgroundAvailable(): boolean;
   /**
    * Start `agent` in the background and return at once with the task it was adopted as.
    *
@@ -182,31 +197,57 @@ function noBackgroundRuns(): ToolResult {
 interface RunEntry {
   readonly controller: AbortController;
   session?: AgentSession;
+  /** Set when the host cancelled the run through its open session; a cancelled run is never moved. */
+  cancelled?: boolean;
 }
 
 /** What one nested run was started with, beyond the agent and task. */
 interface NestedTarget {
   readonly entry: RunEntry;
   readonly override?: string;
-  /** Set for a background run: its tool calls go to the task log, never the transcript. */
-  readonly background?: BackgroundAgentSink;
+  /** Where the run's events go; a background run (or one moved to the background) records on its task. */
+  readonly route: RunRoute;
 }
 
 /** Where one nested run's usage, spend and tool activity go. */
 interface ActivityRouting {
   readonly current: SubagentRunsCurrent;
   readonly model: string;
-  /** The parent turn's listener; absent for a background run. */
+  /** The parent turn's listener; absent for a run that started in the background. */
   readonly forward?: (event: SessionEvent) => void;
-  /** A background run's log: each `tool_call` appends one line. */
-  readonly onToolCall?: (name: string) => void;
-  /** The parent turn that started a background run; its spend is ineligible until a later turn. */
-  readonly backgroundTurn?: number;
+  readonly route: RunRoute;
 }
 
 /** A finished background run's end state: an error result and a plain one differ in the outcome alone. */
 function endOf(result: ToolResult): BackgroundAgentEnd {
   return { outcome: result.isError === true ? "failed" : "succeeded", text: result.content };
+}
+
+/** What `withMoveToBackground` needs to hand a running foreground call to the registry. */
+interface MovableRun {
+  readonly tasks: ChatBackgroundTasks;
+  readonly agent: AgentResource;
+  readonly task: string;
+  readonly model: string | undefined;
+  readonly entry: RunEntry;
+  readonly route: RunRoute;
+  readonly promise: Promise<ToolResult>;
+  /** Cut the run's ties to the parent turn: its abort link and its `inFlight` slot. */
+  readonly detach: () => void;
+}
+
+/** What a run is adopted as a task with. */
+interface AdoptInput {
+  readonly agent: AgentResource;
+  readonly task: string;
+  readonly model: string;
+  readonly entry: RunEntry;
+}
+
+interface AdoptedRun {
+  readonly sink: BackgroundAgentSink;
+  /** Settle the task from the run's outcome, and keep the run reachable by `closeAll`. */
+  track(run: Promise<ToolResult>): void;
 }
 
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
@@ -216,16 +257,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const inFlight = new Map<Promise<unknown>, RunEntry>();
   /** Every background run in flight: not the turn's to cancel, but the chat's to tear down. */
   const background = new Map<Promise<unknown>, RunEntry>();
-  /** This turn's foreground nested spend, dropped when a send ends without persisting it. */
-  let spentUsd = 0;
-  /** Parent-turn sequence, captured before a background run starts any async work. */
-  let turnNumber = 0;
-  /** Spend from background runs started this turn; ineligible even if they finish early. */
-  let deferredBackgroundUsd = 0;
-  /** Eligible background spend no metadata write has carried yet; it outlives every turn. */
-  let pendingBackgroundUsd = 0;
-  /** The background spend `costForTurn` reported, retired only once its write persisted. */
-  let accountedUsd = 0;
+  const spend = createNestedSpend();
 
   function resolveFor(agent: AgentResource, current: SubagentRunsCurrent, override?: string) {
     const requested = override ?? agent.model;
@@ -293,50 +325,83 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         );
       nested.previousAt = event.at;
     } else if (event.type === "turn_end") {
-      // A background run cannot charge its starting turn, regardless of when it finishes.
-      if (routing.backgroundTurn === undefined) spentUsd += event.costUsd;
-      else if (routing.backgroundTurn === turnNumber) deferredBackgroundUsd += event.costUsd;
-      else pendingBackgroundUsd += event.costUsd;
-    } else if (event.type === "tool_call") {
-      routing.onToolCall?.(event.name);
-      routing.forward?.(event);
-    } else if (event.type === "tool_result") routing.forward?.(event);
+      // A run that belongs to a task cannot charge its starting turn, regardless of when it finishes.
+      const { backgroundTurn, sink } = routing.route;
+      if (sink === undefined || backgroundTurn === undefined) spend.chargeForeground(event.costUsd);
+      else spend.chargeBackground(backgroundTurn, event.costUsd);
+    }
+    deliverActivity(event, routing.route, routing.forward);
   }
 
-  /** Run under a controller the host can abort, linked to the tool's own signal. */
+  /**
+   * Run under a controller the host can abort, linked to the tool's own signal. With a
+   * background registry the run is also offered to `ctrl+b`: moving it detaches it from the
+   * parent turn and returns the tool call at once, with the run still going as a task.
+   */
   function run(agent: AgentResource, task: string, signal?: AbortSignal, model?: string): Promise<ToolResult> {
     const entry: RunEntry = { controller: new AbortController() };
+    const tasks = deps.backgroundTasks?.();
+    // Only a run a registry can adopt needs the event log its move would replay.
+    const route = tasks === undefined ? untrackedRoute() : foregroundRoute();
     const onParentAbort = () => entry.controller.abort();
     if (signal?.aborted) onParentAbort();
     else signal?.addEventListener("abort", onParentAbort, { once: true });
-    const promise = runNested(agent, task, { entry, ...(model !== undefined ? { override: model } : {}) }).finally(
-      () => {
-        signal?.removeEventListener("abort", onParentAbort);
-        inFlight.delete(promise);
-      },
-    );
+    const target: NestedTarget = { entry, route, ...(model !== undefined ? { override: model } : {}) };
+    const promise = runNested(agent, task, target).finally(() => {
+      signal?.removeEventListener("abort", onParentAbort);
+      inFlight.delete(promise);
+    });
     inFlight.set(promise, entry);
-    return promise;
+    if (tasks === undefined) return promise;
+    const detach = () => {
+      // A moved run is no longer the parent turn's: its signal and `settle` must not reach it.
+      signal?.removeEventListener("abort", onParentAbort);
+      inFlight.delete(promise);
+    };
+    return withMoveToBackground({ tasks, agent, task, model, entry, route, promise, detach });
+  }
+
+  /** Offer a running foreground run to `ctrl+b`; resolves with the run's result, or with the move's. */
+  function withMoveToBackground(input: MovableRun): Promise<ToolResult> {
+    const { tasks, agent, task, entry, route, promise } = input;
+    const released = Promise.withResolvers<ToolResult>();
+    let settled = false;
+    let moved = false;
+    let unregister: () => void = () => {};
+    unregister = tasks.foreground({
+      command: `${agent.qualifiedName}: ${task.split(/\r?\n/)[0] ?? ""}`,
+      moveToBackground() {
+        // A run already cancelled is ending: reporting it as moved would hand the model a task
+        // that is about to be reported stopped.
+        if (settled || moved || entry.cancelled === true || entry.controller.signal.aborted) return;
+        moved = true;
+        unregister();
+        input.detach();
+        const model = resolveFor(agent, deps.current(), input.model).model;
+        const adopted = adoptRun(tasks, { agent, task, model, entry });
+        moveRouteToTask(route, adopted.sink, spend.turn());
+        adopted.track(promise);
+        released.resolve({ isError: false, content: `moved to the background as ${adopted.sink.id}` });
+      },
+    });
+    const done = promise.finally(() => {
+      settled = true;
+      unregister();
+    });
+    return Promise.race([done, released.promise]);
   }
 
   async function runNested(agent: AgentResource, task: string, target: NestedTarget): Promise<ToolResult> {
-    const { entry, override, background } = target;
+    const { entry, override, route } = target;
     const current = deps.current();
     // Late nested tool events belong to the send that started this run, never a later one.
-    // A background run has no turn to belong to: its activity is its task log alone.
-    const listener = background === undefined ? deps.turnListener() : undefined;
+    // A run that started in the background has no turn to belong to: its activity is its task alone.
+    const listener = route.sink === undefined ? deps.turnListener() : undefined;
     const forward =
       listener === undefined ? undefined : (event: SessionEvent) => listener(taggedActivity(event, agent, task));
     const { model, source } = resolveFor(agent, current, override);
     if (refused(override, source)) return unknownModelRefusal(override);
-    const routing: ActivityRouting = {
-      current,
-      model,
-      ...(forward !== undefined ? { forward } : {}),
-      ...(background !== undefined
-        ? { backgroundTurn: turnNumber, onToolCall: (name: string) => background.appendLine(`[tool] ${name}`) }
-        : {}),
-    };
+    const routing: ActivityRouting = { current, model, route, ...(forward !== undefined ? { forward } : {}) };
     const { allowedTools } = mapSubagentTools(agent.tools);
     const memoryIndex = deps.memoryIndex?.();
     let nested: AgentSession | undefined;
@@ -376,27 +441,21 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   }
 
   /**
-   * Start a run that outlives the turn that started it and adopt it as a chat task.
+   * Adopt a run as a chat task and return its sink plus the tracker that settles the task.
    *
-   * The run is deliberately absent from `inFlight`: nothing the parent turn does — ending,
-   * Esc, its tool batch being abandoned — may cancel it. Its own controller is linked to no
-   * parent signal, and it ends only when it finishes or its task (or the chat) is stopped.
-   * `ended` always resolves: an error result and a thrown error are both failures, and a
-   * stop wins over whatever the run does afterwards. The promise itself is tracked in
-   * `background` until `runNested` has released its session, so the chat can still reach a
-   * run whose task already reported itself stopped.
+   * `ended` always resolves: an error result and a thrown error are both failures, and a stop
+   * wins over whatever the run does afterwards. The run's promise is tracked in `background`
+   * until `runNested` has released its session, so the chat can still reach a run whose task
+   * already reported itself stopped.
    */
-  async function runInBackground(agent: AgentResource, task: string, model?: string): Promise<ToolResult> {
-    const tasks = deps.backgroundTasks?.();
-    if (tasks === undefined) return noBackgroundRuns();
-    const { source } = resolveFor(agent, deps.current(), model);
-    if (refused(model, source)) return unknownModelRefusal(model);
-    const entry: RunEntry = { controller: new AbortController() };
+  function adoptRun(tasks: ChatBackgroundTasks, input: AdoptInput): AdoptedRun {
+    const { agent, task, model, entry } = input;
     const ended = Promise.withResolvers<BackgroundAgentEnd>();
     let stopped = false;
     const handle: BackgroundAgentHandle = {
       agent: agent.qualifiedName,
       task,
+      model,
       ended: ended.promise,
       stop() {
         if (stopped) return;
@@ -414,17 +473,36 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       },
     };
     const sink = tasks.adoptAgent(handle);
-    const promise = runNested(agent, task, {
-      entry,
-      background: sink,
-      ...(model !== undefined ? { override: model } : {}),
-    }).then(
-      (result) => ended.resolve(endOf(result)),
-      (cause: unknown) => ended.resolve({ outcome: "failed", text: errorMessage(cause) }),
-    );
-    background.set(promise, entry);
-    void promise.then(() => background.delete(promise));
-    return { isError: false, content: `started in the background as ${sink.id}` };
+    return {
+      sink,
+      track(run) {
+        const promise = run.then(
+          (result) => ended.resolve(endOf(result)),
+          (cause: unknown) => ended.resolve({ outcome: "failed", text: errorMessage(cause) }),
+        );
+        background.set(promise, entry);
+        void promise.then(() => background.delete(promise));
+      },
+    };
+  }
+
+  /**
+   * Start a run that outlives the turn that started it and adopt it as a chat task.
+   *
+   * The run is deliberately absent from `inFlight`: nothing the parent turn does — ending,
+   * Esc, its tool batch being abandoned — may cancel it. Its own controller is linked to no
+   * parent signal, and it ends only when it finishes or its task (or the chat) is stopped.
+   */
+  async function runInBackground(agent: AgentResource, task: string, model?: string): Promise<ToolResult> {
+    const tasks = deps.backgroundTasks?.();
+    if (tasks === undefined) return noBackgroundRuns();
+    const resolved = resolveFor(agent, deps.current(), model);
+    if (refused(model, resolved.source)) return unknownModelRefusal(model);
+    const entry: RunEntry = { controller: new AbortController() };
+    const adopted = adoptRun(tasks, { agent, task, model: resolved.model, entry });
+    const route = taskRoute(adopted.sink, spend.turn());
+    adopted.track(runNested(agent, task, { entry, route, ...(model !== undefined ? { override: model } : {}) }));
+    return { isError: false, content: `started in the background as ${adopted.sink.id}` };
   }
 
   const runs: SubagentRuns = {
@@ -440,33 +518,18 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       return { model, label: subagentModelLabel(source, override !== undefined) };
     },
     sessionFor: (requestId) => owners.get(requestId),
-    takeCost() {
-      const taken = spentUsd;
-      spentUsd = 0;
-      return taken;
-    },
-    beginTurn() {
-      turnNumber += 1;
-      pendingBackgroundUsd += deferredBackgroundUsd;
-      deferredBackgroundUsd = 0;
-    },
-    costForTurn() {
-      // Snapshot the eligible background share before handing the total over: a run that finishes
-      // while the write is in flight then stays pending for the next turn, instead of being
-      // retired as if this write had carried it.
-      accountedUsd = pendingBackgroundUsd;
-      return runs.takeCost() + accountedUsd;
-    },
-    commitCost() {
-      pendingBackgroundUsd -= accountedUsd;
-      accountedUsd = 0;
-    },
+    takeCost: spend.takeCost,
+    beginTurn: spend.beginTurn,
+    costForTurn: spend.costForTurn,
+    commitCost: spend.commitCost,
+    backgroundAvailable: () => deps.backgroundTasks?.() !== undefined,
     cancelAll() {
-      for (const { controller, session } of inFlight.values()) {
+      for (const entry of inFlight.values()) {
         // A run whose session is not open yet is cancelled through its signal; one with a
         // session is cancelled on the session, whose turn then ends `cancelled`.
-        if (session === undefined) controller.abort();
-        else session.cancel();
+        entry.cancelled = true;
+        if (entry.session === undefined) entry.controller.abort();
+        else entry.session.cancel();
       }
     },
     async settle() {

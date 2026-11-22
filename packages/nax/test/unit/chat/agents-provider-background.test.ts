@@ -1,13 +1,14 @@
 /**
- * `runInBackground` on `nax-agents__run`: the input schema, the exact description
- * sentence, the validation order and the dispatch between the foreground and the
- * background callback.
+ * `runInBackground` on `nax-agents__run`: the input schema, the description, the validation
+ * order and the dispatch between the foreground and the background callback. A call with no
+ * flag starts in the background wherever the chat can; only an explicit `false` is foreground.
  */
 import { describe, expect, mock, test } from "bun:test";
 import type { ToolProvider, ToolResult, ToolRunContext } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
 import { createAgentsProvider } from "@/chat/agents-provider";
 import { generalAgent } from "@/chat/builtin-agent";
+import * as prompts from "@/prompts";
 import { type AgentResource, buildResourceCatalog, type ResourceOrigin, type ResourcePackage } from "@/resources";
 
 const projectOrigin = { kind: "claude-project" } as const;
@@ -46,7 +47,7 @@ function catalogOf(...agents: AgentResource[]) {
 const foregroundResult: ToolResult = { content: "done", audit: { executed: ["x"] } };
 const backgroundResult: ToolResult = { content: "started in the background as agent-0123abcd" };
 
-function setup(agents: AgentResource[], opts: { background?: boolean } = {}) {
+function setup(agents: AgentResource[], opts: { background?: boolean; available?: boolean } = {}) {
   const run = mock(
     async (_agent: AgentResource, _task: string, _signal: AbortSignal | undefined, _model?: string) => foregroundResult,
   );
@@ -55,6 +56,7 @@ function setup(agents: AgentResource[], opts: { background?: boolean } = {}) {
     catalog: catalogOf(...agents),
     run,
     ...(opts.background === false ? {} : { runInBackground }),
+    ...(opts.available === undefined ? {} : { backgroundAvailable: () => opts.available === true }),
   });
   return { run, runInBackground, provider };
 }
@@ -86,11 +88,20 @@ describe("createAgentsProvider runInBackground schema and description", () => {
     expect(tool.inputSchema.additionalProperties).toBe(false);
   });
 
-  test("AC-2 the description states the background contract and still ends with the explore sentence", async () => {
+  test("AC-2 the description states the background default and when to pass false, and ends with the explore sentence", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
     assertDefined(tool, "tool");
-    expect(tool.description).toContain('Set "runInBackground": true to return at once with a task id');
+    expect(tool.description).toContain(prompts.BACKGROUND_DEFAULT_SENTENCE);
+    expect(tool.description).toContain("Pass runInBackground: false only when you need the agent's answer");
     expect(tool.description.endsWith(EXPLORE_SENTENCE)).toBe(true);
+  });
+
+  test("AC-2b the description makes no background claim where the chat cannot start one", async () => {
+    for (const opts of [{ background: false }, { available: false }]) {
+      const tool = (await setup([agent("reviewer")], opts).provider.tools("/w"))[0];
+      assertDefined(tool, "tool");
+      expect(tool.description).not.toContain("background");
+    }
   });
 });
 
@@ -129,6 +140,31 @@ describe("createAgentsProvider runInBackground dispatch", () => {
     );
   });
 
+  test("AC-3b an absent flag starts a background run with exactly the agent and task", async () => {
+    const reviewer = agent("reviewer");
+    const { run, runInBackground, provider } = setup([reviewer]);
+    expect(await runTool(provider, { agent: "reviewer", task: "check it" })).toBe(backgroundResult);
+    expect(runInBackground).toHaveBeenCalledTimes(1);
+    expect(runInBackground.mock.calls[0]).toEqual([reviewer, "check it"]);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-3c an absent flag on a bare task runs the general agent in the background", async () => {
+    const { run, runInBackground, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { task: "check it" });
+    expect(runInBackground.mock.calls[0]?.[0]).toEqual(generalAgent());
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-3d an absent flag falls back to the foreground silently where no registry exists", async () => {
+    for (const opts of [{ background: false }, { available: false }]) {
+      const { run, runInBackground, provider } = setup([agent("reviewer")], opts);
+      expect(await runTool(provider, { agent: "reviewer", task: "check it" })).toBe(foregroundResult);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(runInBackground).not.toHaveBeenCalled();
+    }
+  });
+
   test("AC-6 runInBackground false calls only run with the agent, task and context signal", async () => {
     const reviewer = agent("reviewer");
     const { run, runInBackground, provider } = setup([reviewer]);
@@ -142,6 +178,24 @@ describe("createAgentsProvider runInBackground dispatch", () => {
     expect(call[1]).toBe("check it");
     expect(call[2]).toBe(controller.signal);
     expect(runInBackground).not.toHaveBeenCalled();
+  });
+});
+
+describe("createAgentsProvider unknown agent listing", () => {
+  test("lists the built-in agents first, then the catalog's, without repeating a name", async () => {
+    const { provider } = setup([agent("general"), agent("reviewer")]);
+    expect(await runTool(provider, { agent: "nope", task: "t" })).toEqual({
+      isError: true,
+      content: "unknown agent nope; available: general, explore, reviewer",
+    });
+  });
+
+  test("keeps the cap on the catalog part", async () => {
+    const names = Array.from({ length: 25 }, (_, i) => `agent${String(i).padStart(2, "0")}`);
+    const { provider } = setup(names.map((name) => agent(name)));
+    const result = await runTool(provider, { agent: "nope", task: "t" });
+    const listed = result.content.split("available: ")[1]?.split(", ");
+    expect(listed).toEqual(["general", "explore", ...names.slice(0, 20)]);
   });
 });
 
@@ -165,11 +219,21 @@ describe("createAgentsProvider runInBackground validation", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  test("AC-8b an explicit true is refused when the registry is not available now", async () => {
+    const { run, runInBackground, provider } = setup([agent("reviewer")], { available: false });
+    expect(await runTool(provider, { agent: "reviewer", task: "check it", runInBackground: true })).toEqual({
+      isError: true,
+      content: "[chat] runInBackground is not available in this chat",
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(runInBackground).not.toHaveBeenCalled();
+  });
+
   test("AC-9 an unknown agent is still today's error result and calls neither callback", async () => {
     const { run, runInBackground, provider } = setup([agent("reviewer")]);
     expect(await runTool(provider, { agent: "nope", task: "check it", runInBackground: true })).toEqual({
       isError: true,
-      content: "unknown agent nope; available: reviewer",
+      content: "unknown agent nope; available: general, explore, reviewer",
     });
     expect(run).not.toHaveBeenCalled();
     expect(runInBackground).not.toHaveBeenCalled();
@@ -179,7 +243,7 @@ describe("createAgentsProvider runInBackground validation", () => {
     const { provider } = setup([agent("reviewer")], { background: false });
     expect(await runTool(provider, { agent: "nope", task: "check it", runInBackground: true })).toEqual({
       isError: true,
-      content: "unknown agent nope; available: reviewer",
+      content: "unknown agent nope; available: general, explore, reviewer",
     });
   });
 });

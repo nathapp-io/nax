@@ -401,7 +401,10 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
         maxFileBytes: 1_000_000,
         signal: turn.signal,
       };
-      const pendingRun = tool.run(options.runInput ?? { agent: runAgentName, task: options.task ?? "check it" }, ctx);
+      const pendingRun = tool.run(
+        options.runInput ?? { agent: runAgentName, task: options.task ?? "check it", runInBackground: false },
+        ctx,
+      );
       toolResults.push(
         options.abandonToolOnAbort
           ? await Promise.race([

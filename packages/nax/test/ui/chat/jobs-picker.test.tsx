@@ -97,6 +97,8 @@ function fakeTasks(rows: BackgroundTask[], read: ChatBackgroundTasks["output"] =
       },
       stopAll: async () => {},
       moveForeground: () => false,
+      agentRun: () => undefined,
+      onAgentEvents: () => () => {},
       hasForeground: () => false,
       peekNotice: () => undefined,
       releaseNotice: () => {},

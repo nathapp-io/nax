@@ -234,7 +234,7 @@ function jobEntry(job: ChatJob, nowMs: number): PickerEntry {
 export function taskEntry(task: BackgroundTask, nowMs: number): PickerEntry {
   return {
     value: task.id,
-    label: displayText(`bash ${task.command}`),
+    label: displayText(`${task.kind === "agent" ? "agent" : "bash"} ${task.command}`),
     detail: `${task.state}${ageSuffix(task.startedAt, nowMs)}`,
   };
 }

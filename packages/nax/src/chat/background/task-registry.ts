@@ -6,14 +6,22 @@ import type {
   BackgroundCommandHandle,
   BackgroundCommandSink,
   ForegroundCommand,
+  SessionEvent,
 } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
 import {
+  createTaskEventLog,
+  TASK_EVENTS_TOTAL_MAX_BYTES,
+  TASK_EVENTS_TOTAL_MAX_ENTRIES,
+  type TaskEventLog,
+} from "./task-events";
+import {
   type BackgroundAgentEnd,
   type BackgroundAgentHandle,
+  type BackgroundAgentRun,
   type BackgroundAgentSink,
   type BackgroundTask,
   type BackgroundTaskState,
@@ -69,10 +77,22 @@ export const _backgroundTaskDeps = {
     appendFileSync(path, chunk);
   },
   readLog: readLogTail,
+  /** The limits on events retained across all agent tasks; a seam so a test need not record thousands. */
+  eventLimits: { entries: TASK_EVENTS_TOTAL_MAX_ENTRIES, bytes: TASK_EVENTS_TOTAL_MAX_BYTES },
 };
+
+/** What only an agent task keeps beyond its record: the view's inputs. */
+interface AgentDetail {
+  readonly agent: string;
+  readonly model?: string;
+  readonly prompt: string;
+  readonly events: TaskEventLog;
+}
 
 interface TaskEntry {
   record: BackgroundTask;
+  /** Set for an agent task; its event log goes with the entry when the entry does. */
+  readonly detail?: AgentDetail;
   /** Both a command's and an agent run's handle expose only this to the registry. */
   readonly stop: () => void;
   pending: Promise<void>;
@@ -101,9 +121,14 @@ function isMissingLog(cause: unknown): boolean {
 class BackgroundTasks implements ChatBackgroundTasks {
   private readonly entries = new Map<string, TaskEntry>();
   private readonly listeners = new Set<() => void>();
+  private readonly eventListeners = new Set<(id: string) => void>();
   private readonly foregroundCalls = new Map<symbol, ForegroundCommand>();
   private readonly completions = new Set<Promise<void>>();
   private readonly unnoticed = new Map<string, BackgroundTask>();
+  /** Entries and estimated bytes held by every agent log that has not been evicted. */
+  private retained = { entries: 0, bytes: 0 };
+  /** Finished agent tasks whose log is still held, in the order they finished: the eviction queue. */
+  private readonly finishedLogs: TaskEntry[] = [];
   private notice?: { ids: readonly string[]; text: string };
   private shuttingDown = false;
   constructor(private readonly options: BackgroundTaskOptions) {}
@@ -123,6 +148,81 @@ class BackgroundTasks implements ChatBackgroundTasks {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  onAgentEvents(listener: (id: string) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  agentRun(id: string): BackgroundAgentRun | undefined {
+    const entry = this.entries.get(id);
+    const detail = entry?.detail;
+    if (entry === undefined || detail === undefined) return undefined;
+    return {
+      id,
+      agent: detail.agent,
+      ...(detail.model !== undefined ? { model: detail.model } : {}),
+      prompt: detail.prompt,
+      state: entry.record.state,
+      logRetained: !detail.events.evicted(),
+      events: detail.events.snapshot(),
+    };
+  }
+
+  /**
+   * Keep the events retained across every agent task under the total limits: while over, drop
+   * the log of the oldest FINISHED task that still has one. Its record and state stay; only its
+   * conversation goes. A running task is never evicted, so a chat of running tasks is bounded by
+   * the per-task caps alone.
+   */
+  private enforceEventLimits(): void {
+    const { entries: maxEntries, bytes: maxBytes } = _backgroundTaskDeps.eventLimits;
+    while (this.retained.entries > maxEntries || this.retained.bytes > maxBytes) {
+      const oldest = this.finishedLogs.shift();
+      if (oldest === undefined) return;
+      this.evictLog(oldest);
+    }
+  }
+
+  /** Drop one finished task's log, keep the running totals exact and tell the listeners. */
+  private evictLog(entry: TaskEntry): void {
+    const events = entry.detail?.events;
+    if (events === undefined || events.evicted()) return;
+    this.addRetained(events.size(), -1);
+    events.evict();
+    this.notifyEvents(entry.record.id);
+  }
+
+  private addRetained(size: { readonly entries: number; readonly bytes: number }, sign: 1 | -1): void {
+    this.retained = {
+      entries: this.retained.entries + sign * size.entries,
+      bytes: this.retained.bytes + sign * size.bytes,
+    };
+  }
+
+  private notifyEvents(id: string): void {
+    for (const listener of [...this.eventListeners]) {
+      try {
+        listener(id);
+      } catch (cause) {
+        this.options.logger.warn("chat", "Background task event callback failed", { error: errorMessage(cause) });
+      }
+    }
+  }
+
+  private recordEvent(entry: TaskEntry, event: SessionEvent): void {
+    if (entry.record.state !== "running" || entry.detail === undefined) return;
+    const log = entry.detail.events;
+    const before = log.size();
+    log.append(event);
+    // The totals move by this log's size change alone, so an event costs O(1), not a recount.
+    const after = log.size();
+    this.addRetained({ entries: after.entries - before.entries, bytes: after.bytes - before.bytes }, 1);
+    this.enforceEventLimits();
+    this.notifyEvents(entry.record.id);
   }
 
   foreground(call: ForegroundCommand): () => void {
@@ -231,6 +331,12 @@ class BackgroundTasks implements ChatBackgroundTasks {
     const id = this.newId("agent");
     const first = taskFirstLine(handle.task);
     const entry: TaskEntry = {
+      detail: {
+        agent: handle.agent,
+        ...(handle.model !== undefined ? { model: handle.model } : {}),
+        prompt: handle.task,
+        events: createTaskEventLog(),
+      },
       record: {
         id,
         kind: "agent",
@@ -262,6 +368,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
       appendLine: (line) => {
         if (entry.record.state === "running") this.appendLine(entry, line);
       },
+      record: (event) => this.recordEvent(entry, event),
     };
   }
 
@@ -327,6 +434,9 @@ class BackgroundTasks implements ChatBackgroundTasks {
     };
     if (end.text.trimEnd() !== "") this.appendLine(entry, end.text.trimEnd());
     this.appendLine(entry, `[nax] agent ended: ${end.outcome}`);
+    // This task just became evictable, behind every task that finished before it.
+    this.finishedLogs.push(entry);
+    this.enforceEventLimits();
     if (entry.record.state === "succeeded" || entry.record.state === "failed") {
       this.unnoticed.set(entry.record.id, entry.record);
     }

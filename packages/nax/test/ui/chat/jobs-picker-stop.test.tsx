@@ -89,6 +89,8 @@ function fakeTasks(rows: BackgroundTask[], stopImpl?: StopImpl): TasksFixture {
       stop,
       stopAll: async () => {},
       moveForeground: () => false,
+      agentRun: () => undefined,
+      onAgentEvents: () => () => {},
       hasForeground: () => false,
       peekNotice: () => undefined,
       releaseNotice: () => {},

@@ -68,6 +68,16 @@ describe("buildAgentsInstructions", () => {
     expect(first).toContain("nax-agents__run");
   });
 
+  test("states the background default and when to pass false on the first line only when offered", () => {
+    const withBackground = lines(prompts.buildAgentsInstructions([agent], { background: true }));
+    const without = lines(prompts.buildAgentsInstructions([agent]));
+    expect(withBackground).toHaveLength(without.length);
+    expect(withBackground[0]).toContain("starts in the background by default");
+    expect(withBackground[0]).toContain("runInBackground: false");
+    expect(without[0]).not.toContain("background");
+    expect(withBackground.slice(1)).toEqual(without.slice(1));
+  });
+
   test("AC-13 second line names provider/model, the native example and acp:<agent>; the general-agent line follows", () => {
     const out = lines(prompts.buildAgentsInstructions([agent]));
     expect(out[1]).toBe(

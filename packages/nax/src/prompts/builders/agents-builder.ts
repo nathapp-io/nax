@@ -12,6 +12,19 @@ export const MAX_AGENTS_INDEX_ENTRIES = 150;
  */
 export const EXPLORE_SENTENCE = "For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
 
+/**
+ * The background default: the one source for the `run` tool's description and, appended to the
+ * first instruction line, the agents instructions, so the line count does not move. Offered only
+ * where the chat can start a background run.
+ */
+export const BACKGROUND_DEFAULT_SENTENCE =
+  "A run starts in the background by default: it returns at once with a task id, keeps running after your turn ends, and a notice arrives when it ends. Pass runInBackground: false only when you need the agent's answer before you can continue in this same turn.";
+
+export interface AgentsInstructionsOptions {
+  /** True when a run with no flag starts in the background; false or absent omits the sentence. */
+  readonly background?: boolean;
+}
+
 /** One agents-index entry: the agent file's description and, when it declares any, its tools. */
 export interface AgentsIndexEntry {
   readonly qualifiedName: string;
@@ -42,9 +55,12 @@ function agentEntryLine(entry: AgentsIndexEntry): string {
 }
 
 /** Advertise available agents without inlining their prompts. */
-export function buildAgentsInstructions(entries: readonly AgentsIndexEntry[]): string {
+export function buildAgentsInstructions(
+  entries: readonly AgentsIndexEntry[],
+  options: AgentsInstructionsOptions = {},
+): string {
   const lines = [
-    "When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.",
+    `When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.${options.background === true ? ` ${BACKGROUND_DEFAULT_SENTENCE}` : ""}`,
     "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
     `When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${EXPLORE_SENTENCE}`,
   ];

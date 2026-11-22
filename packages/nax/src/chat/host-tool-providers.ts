@@ -22,6 +22,11 @@ export interface ChatToolProvidersInput {
 /** The provider list one chat session opens with. */
 export function chatToolProviders(input: ChatToolProvidersInput): readonly ToolProvider[] {
   const { catalog, providers, runs } = input;
-  const agents = createAgentsProvider({ catalog, run: runs.run, runInBackground: runs.runInBackground });
+  const agents = createAgentsProvider({
+    catalog,
+    run: runs.run,
+    runInBackground: runs.runInBackground,
+    backgroundAvailable: runs.backgroundAvailable,
+  });
   return [...providers, agents];
 }

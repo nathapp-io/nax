@@ -86,6 +86,7 @@ import { type ChatTheme, resolveChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { turnStatsEntry } from "./turn-stats";
+import { useAgentView, withAgentView } from "./use-agent-view";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useIdleCompact } from "./use-idle-compact";
 import { useImageAttach } from "./use-image-attach";
@@ -389,8 +390,11 @@ export function ChatApp({
   const append = useCallback((entry: TranscriptEntry) => appendAll([entry]), [appendAll]);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
   const interactive = useRef(true);
+  /** The full-screen agent view: the chat stays mounted underneath, hidden and inert, while it is open. */
+  const agentView = useAgentView(host);
   const keys = useChatKeys({
     active: () => interactive.current,
+    takeCtrlC: agentView.closeForCtrlC,
     host,
     running: sending,
     refresh: update,
@@ -398,7 +402,13 @@ export function ChatApp({
     onNotice: (text) => append({ kind: "notice", text }),
   });
   /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
-  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError, show: append });
+  const picker = useChatPicker({
+    host,
+    runControl: keys.runControl,
+    onError: showError,
+    show: append,
+    openAgent: agentView.open,
+  });
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;
@@ -444,7 +454,7 @@ export function ChatApp({
         menus: rows,
       }).regions.menus.rows;
     },
-    active: !keys.locked,
+    active: !agentView.hushes(keys.locked),
     handle: inputHandle,
   });
   const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.draft : EMPTY_DRAFT;
@@ -469,10 +479,10 @@ export function ChatApp({
     menus: menu.open ? menu.rows : mention.view.rows,
     previews: Math.min(MAX_PENDING_PREVIEW_ROWS, steering.length + queued.length),
     working: workingShown,
-    locked: keys.locked,
+    locked: agentView.hushes(keys.locked),
   };
   const frame = allocateChatFrame(frameOptions);
-  interactive.current = frame.surface !== "diagnostic";
+  interactive.current = !agentView.hushes(frame.surface === "diagnostic");
   const { regions, targets } = frame;
   const mentionView = { ...mention.view, rows: Math.min(mention.view.rows, regions.menus.rows) };
   const previewLines = pendingPreviewLines({ steering, queued, budget: regions.previews.rows, columns: size.columns });
@@ -529,7 +539,8 @@ export function ChatApp({
   // (or interrupts it and sends the draft next); escape interrupts only when no bottom surface
   // or control owns it. The hook decides whether a key is theirs to answer.
   useInput((input, key) => {
-    if (frame.surface === "diagnostic") return;
+    // The agent view owns every key while it is open: escape there closes it, never the turn.
+    if (agentView.hushes(frame.surface === "diagnostic")) return;
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
       return;
@@ -1309,7 +1320,9 @@ export function ChatApp({
   useJobsOpener({
     host,
     mouse,
-    blocked: !targets.footer || surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
+    blocked: agentView.hushes(
+      !targets.footer || surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
+    ),
     footer,
     size,
     region: regions.footer,
@@ -1317,10 +1330,11 @@ export function ChatApp({
     open: picker.open,
     note: (text) => append({ kind: "notice", text }),
     showOutput: (entry) => void picker.showOutput(entry),
+    openAgent: agentView.open,
   });
 
-  return (
-    <Box flexDirection="column" width={columns}>
+  const chat = (
+    <Box flexDirection="column" width={columns} display={agentView.display}>
       {header.map((row, index) => (
         <Box
           // biome-ignore lint/suspicious/noArrayIndexKey: positional header regions.
@@ -1464,4 +1478,5 @@ export function ChatApp({
       ) : null}
     </Box>
   );
+  return withAgentView(chat, { view: agentView, host, columns, rows: size.rows, theme, mouse, onCopy });
 }

@@ -46,6 +46,7 @@ describe("buildBackgroundTasksInstructions", () => {
     expect(text).toContain("nax-agents__run");
     expect(text).toContain("runInBackground");
     expect(text).toContain("keeps running after your turn ends");
+    expect(text).toContain("starts in the background unless you pass `runInBackground: false`");
   });
 });
 

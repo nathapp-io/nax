@@ -2,9 +2,9 @@
  * The jobs picker's two gestures that need no slash command: ctrl+g and a left click on the
  * footer's job and task strip. Both read the registries at event time, so a click acts on what
  * runs now rather than on what the frame it was drawn from was counted at. ctrl+g always opens
- * the picker; a click opens the picker too, except when the strip counts exactly one shell and
- * no job — that shell's output is shown straight away, and ctrl+g still reaches the picker for
- * its ctrl+x. An ask card, an open picker or a shown slash menu owns the screen, so both
+ * the picker; a click opens the picker too, except when the strip counts exactly one task and
+ * no job — a shell's output is shown straight away, an agent's full view is opened, and ctrl+g
+ * still reaches the picker for its ctrl+x. An ask card, an open picker or a shown slash menu owns the screen, so both
  * gestures are ignored then.
  */
 
@@ -59,6 +59,8 @@ export interface JobsOpenerInput {
   note(text: string): void;
   /** Append one row's output listing — what Enter on that row of the jobs picker draws. */
   showOutput(entry: PickerEntry): void;
+  /** Open the full-screen view of one background agent task. */
+  openAgent(id: string): void;
 }
 
 /** One cell of a left-button press. */
@@ -78,10 +80,11 @@ function runningJobs(host: ChatHost): number {
 }
 
 /**
- * The one shell a strip click opens directly: exactly one running task and no running job.
- * Anything else — two shells, or one beside a job — leaves the picker as the way in.
+ * The one task a strip click opens directly: exactly one running task and no running job. A
+ * shell lists its output; an agent opens its full view. Anything else — two tasks, or one beside
+ * a job — leaves the picker as the way in.
  */
-function loneShell(host: ChatHost): BackgroundTask | undefined {
+function loneTask(host: ChatHost): BackgroundTask | undefined {
   const tasks = runningTasks(host);
   if (tasks.length !== 1 || runningJobs(host) !== 0) return undefined;
   return tasks[0];
@@ -110,12 +113,17 @@ function stripClicked(input: JobsOpenerInput, pressed: Press, released: Press): 
 }
 
 /**
- * A completed click on the strip: the lone shell's output, or the jobs picker. `markBlocked`
+ * A completed click on the strip: the lone shell's output, the lone agent's view, or the jobs picker. `markBlocked`
  * stands the gesture down at once, so a second click in the same batch opens nothing.
  */
 function openFromStrip(input: JobsOpenerInput, markBlocked: () => void): void {
-  const task = loneShell(input.host);
-  // A lone shell has nothing to choose between, so its output is drawn without the picker.
+  const task = loneTask(input.host);
+  // A lone task has nothing to choose between, so it opens without the picker.
+  if (task?.kind === "agent") {
+    markBlocked();
+    input.openAgent(task.id);
+    return;
+  }
   if (task !== undefined) {
     input.showOutput(taskEntry(task, _pickerDeps.now()));
     return;
