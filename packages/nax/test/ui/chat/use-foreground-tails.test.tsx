@@ -211,6 +211,36 @@ describe("useForegroundTails", () => {
     expect(ui.ui.lastFrame()).toContain("one");
   });
 
+  test.each([false, true])(
+    "AC-4 a newer notification supersedes a queued update (withBashCall=%s)",
+    async (withBashCall) => {
+      const ui = await mount({ withBashCall });
+      ui.setTail(CALL_ID, ["first-output"]);
+      ui.shell.notify(CALL_ID);
+      await Promise.resolve(
+        act(async () => {
+          // Queue a transcript update first, preventing the timer's updater from running eagerly.
+          ui.emit({ type: "tool_call", callId: "c2", name: "Read", input: { path: "src/a.ts" } });
+          const flushed = ui.clock.advance(SHELL_TAIL_REFRESH_MS);
+          // advance fires the timer synchronously, but React has not run its queued updater yet.
+          ui.setTail(CALL_ID, ["newest-output"]);
+          ui.shell.notify(CALL_ID);
+          await flushed;
+        }),
+      );
+      expect(ui.clock.pending()).toBe(1);
+      if (!withBashCall) ui.emit(BASH_CALL);
+      await ui.settle();
+      expect(ui.ui.lastFrame()).toContain("Bash(make)");
+      expect(ui.ui.lastFrame()).not.toContain("newest-output");
+      await ui.advance(SHELL_TAIL_REFRESH_MS - 1);
+      expect(ui.ui.lastFrame()).not.toContain("newest-output");
+      await ui.advance(1);
+      expect(ui.ui.lastFrame()).toContain("newest-output");
+      expect(ui.clock.pending()).toBe(0);
+    },
+  );
+
   test("AC-5 coalesces ten notifications in one window into a single layout of the card", async () => {
     const ui = await mount();
     const rendered = recordLayouts();

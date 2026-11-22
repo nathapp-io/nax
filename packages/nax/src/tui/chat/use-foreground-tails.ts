@@ -94,7 +94,11 @@ interface TailUpdate {
  * entry the update does not touch keeps its object, and a transcript nothing changed is the
  * input array itself, so the layout cache recomputes only the cards the tail moved.
  */
-function applyTails(rows: readonly TranscriptEntry[], ids: ReadonlySet<string>, output: ChatShellOutput): TailUpdate {
+function applyTails(
+  rows: readonly TranscriptEntry[],
+  ids: ReadonlyMap<string, number>,
+  output: ChatShellOutput,
+): TailUpdate {
   let changed = false;
   const matched = new Set<string>();
   const next = rows.map((row) => {
@@ -109,11 +113,20 @@ function applyTails(rows: readonly TranscriptEntry[], ids: ReadonlySet<string>, 
   return { rows: changed ? next : rows, matched };
 }
 
-/** What one coalesced update is handed: the transcript setter, the ids, and the two id sets. */
+/** Snapshot each id's notification generation before its transcript updater is queued. */
+function markGenerations(
+  ids: ReadonlySet<string>,
+  generations: ReadonlyMap<string, number>,
+): ReadonlyMap<string, number> {
+  return new Map([...ids].map((id) => [id, generations.get(id) ?? 0]));
+}
+
+/** What one coalesced update is handed: the transcript setter and generation-stamped ids. */
 interface CommitTailsInput {
   readonly setEntries: SetEntries;
   /** The ids this update draws; a notification that arrives later gets its own update. */
-  readonly marked: ReadonlySet<string>;
+  readonly marked: ReadonlyMap<string, number>;
+  readonly generations: ReadonlyMap<string, number>;
   readonly output: ChatShellOutput;
   /** The ids whose window is spent and whose `Bash` entry the transcript still lacks. */
   readonly waiting: Set<string>;
@@ -126,8 +139,11 @@ interface CommitTailsInput {
  */
 function commitTails(input: CommitTailsInput): void {
   input.setEntries((rows) => {
-    const update = applyTails(rows, input.marked, input.output);
-    for (const id of input.marked) {
+    // React can defer this updater past another notification. Superseded ids belong to that
+    // notification's window: neither draw them nor restore their old waiting state.
+    const current = new Map([...input.marked].filter(([id, generation]) => input.generations.get(id) === generation));
+    const update = applyTails(rows, current, input.output);
+    for (const id of current.keys()) {
       if (update.matched.has(id)) input.waiting.delete(id);
       else input.waiting.add(id);
     }
@@ -147,6 +163,10 @@ export function useForegroundTails(input: UseForegroundTailsInput): void {
   const waiting = useRef<Set<string> | null>(null);
   waiting.current ??= new Set();
   const waitingIds = waiting.current;
+  /** A queued updater may settle an id only while its notification generation is current. */
+  const generations = useRef<Map<string, number> | null>(null);
+  generations.current ??= new Map();
+  const notificationGenerations = generations.current;
   const handle = useRef<TimerHandle | undefined>(undefined);
 
   useEffect(() => {
@@ -159,13 +179,20 @@ export function useForegroundTails(input: UseForegroundTailsInput): void {
       // arms its own timer. The updater is handed the transcript as it is now, not as the
       // notification's render drew it: an id whose `tool_call` entry committed in between is
       // drawn, and the ones the transcript still cannot place start waiting for it to change.
-      const marked = new Set(pendingIds);
+      const marked = markGenerations(pendingIds, notificationGenerations);
       pendingIds.clear();
-      commitTails({ setEntries: setEntries.current, marked, output: shellOutput, waiting: waitingIds });
+      commitTails({
+        setEntries: setEntries.current,
+        marked,
+        generations: notificationGenerations,
+        output: shellOutput,
+        waiting: waitingIds,
+      });
     };
     const unsubscribe = shellOutput.onShellOutput((id) => {
       // Never dropped, even for an id the transcript cannot place yet: the update below checks
       // the entries it is handed, which is the transcript as it is when the update lands.
+      notificationGenerations.set(id, (notificationGenerations.get(id) ?? 0) + 1);
       pendingIds.add(id);
       // A fresh notification reopens the id's window, so the retry below must not draw it before
       // the timer this notification arms.
@@ -181,8 +208,9 @@ export function useForegroundTails(input: UseForegroundTailsInput): void {
       handle.current = undefined;
       pendingIds.clear();
       waitingIds.clear();
+      notificationGenerations.clear();
     };
-  }, [shellOutput, pendingIds, waitingIds]);
+  }, [shellOutput, pendingIds, waitingIds, notificationGenerations]);
 
   // A call whose output arrived before its `tool_call` entry committed: the entry appearing is
   // the moment its tail becomes drawable. Only ids whose refresh window is already spent are
@@ -191,9 +219,15 @@ export function useForegroundTails(input: UseForegroundTailsInput): void {
   // costs nothing; an update that changes nothing hands back the same array, so this settles.
   useEffect(() => {
     if (shellOutput === undefined || waitingIds.size === 0) return;
-    const ready = new Set([...waitingIds].filter((id) => namesRunningBash(input.entries, id)));
+    const ready = new Set([...waitingIds].filter((id) => !pendingIds.has(id) && namesRunningBash(input.entries, id)));
     if (ready.size === 0) return;
     for (const id of ready) waitingIds.delete(id);
-    commitTails({ setEntries: setEntries.current, marked: ready, output: shellOutput, waiting: waitingIds });
-  }, [shellOutput, waitingIds, input.entries]);
+    commitTails({
+      setEntries: setEntries.current,
+      marked: markGenerations(ready, notificationGenerations),
+      generations: notificationGenerations,
+      output: shellOutput,
+      waiting: waitingIds,
+    });
+  }, [shellOutput, waitingIds, pendingIds, notificationGenerations, input.entries]);
 }
