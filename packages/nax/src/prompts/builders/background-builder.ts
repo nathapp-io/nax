@@ -5,7 +5,7 @@ export function buildBackgroundTasksInstructions(): string {
   return [
     "Use `Bash` with `runInBackground` to keep chatting while a command runs.",
     "Inspect background commands with `nax-tasks__list`, read their output with `nax-tasks__output`, and stop a command this chat started with `nax-tasks__stop` (no approval card).",
-    "Use `nax-agents__run` with `runInBackground` for a long subagent task (a review, a broad investigation): it keeps running after your turn ends, it is listed and stopped like a background command, and a [nax-tasks] notice arrives when it ends.",
+    "A `nax-agents__run` call starts in the background unless you pass `runInBackground: false`: it keeps running after your turn ends, it is listed and stopped like a background command, and a [nax-tasks] notice arrives when it ends.",
     "A [nax-tasks] notice arrives when a background command ends; read its output, report the outcome to the user and propose the next step.",
   ].join("\n");
 }
