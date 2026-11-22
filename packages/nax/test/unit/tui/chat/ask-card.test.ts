@@ -166,6 +166,47 @@ describe("askCardModel", () => {
   });
 });
 
+describe("askCardModel summary", () => {
+  test("drops a summary that only restates the command line", () => {
+    const card = approvalCard({
+      command: "git pull --ff-only origin main",
+      summary: "Bash command=git pull --ff-only origin main",
+    });
+    expect(card.command).toBe("git pull --ff-only origin main");
+    expect(card.summary).toBe("");
+  });
+
+  test("drops a restating summary the host cut short", () => {
+    const card = approvalCard({ command: "echo hello world", summary: "Bash command=echo hello" });
+    expect(card.summary).toBe("");
+  });
+
+  test("keeps a summary that carries more than the command", () => {
+    const summary = "Bash command=npm test cwd=packages/nax";
+    expect(approvalCard({ command: "npm test", summary }).summary).toBe(summary);
+  });
+
+  test("keeps a summary for a tool that is not Bash", () => {
+    const summary = "Grep command=npm test";
+    expect(approvalCard({ tool: "Grep", command: "npm test", summary }).summary).toBe(summary);
+  });
+
+  test("keeps a summary when there is no command", () => {
+    const summary = "Edit path=x.ts";
+    expect(approvalCard({ tool: "Edit", command: undefined, summary }).summary).toBe(summary);
+  });
+
+  test("keeps the summary when the command is blank, so the card still names the call", () => {
+    expect(approvalCard({ command: "", summary: "Bash command=" }).summary).toBe("Bash command=");
+    expect(approvalCard({ command: "   ", summary: "Bash command=" }).summary).toBe("Bash command=");
+  });
+
+  test("keeps the withheld-secret summary even when a command is shown", () => {
+    const summary = "Bash [arguments withheld: contains a secret]";
+    expect(approvalCard({ command: "npm test", summary }).summary).toBe(summary);
+  });
+});
+
 describe("askCardModel attribution", () => {
   test("takes the agent tag off the reason", () => {
     expect(approvalCard({ reason: "[agent reviewer] needs to run" }).reason).toBe("needs to run");

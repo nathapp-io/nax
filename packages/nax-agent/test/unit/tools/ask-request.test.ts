@@ -58,7 +58,7 @@ describe("askSummary", () => {
 
 describe("unsandboxedReasonSuffix", () => {
   /** The AC's literal prefix, pinned verbatim rather than read from the source under test. */
-  const PREFIX = " -- runs OUTSIDE the sandbox: ";
+  const PREFIX = "; runs OUTSIDE the sandbox: ";
 
   test("AC-1: a plain reason is rendered after the prefix", () => {
     expect(unsandboxedReasonSuffix({ unsandboxedReason: "needs network" })).toBe(`${PREFIX}needs network`);
@@ -71,7 +71,7 @@ describe("unsandboxedReasonSuffix", () => {
 
   test("a blank reason renders the fallback, never a dangling clause", () => {
     // A string is "a reason the model gave" only if it says something: the
-    // approver must not see ' -- runs OUTSIDE the sandbox: ' with nothing after
+    // approver must not see '; runs OUTSIDE the sandbox: ' with nothing after
     // the colon. Model-authored, so "" and "   " are both reachable (US-006
     // passes the value straight in).
     expect(unsandboxedReasonSuffix({ unsandboxedReason: "" })).toBe(`${PREFIX}no reason given`);
@@ -172,19 +172,19 @@ describe("resolveAskOutcome — unsandboxed metadata (US-004)", () => {
   };
 
   test("AC-5: a real ask rule keeps matchedRule and appends the suffix", async () => {
-    const request = await askRequestFor(askRule, { suffix: " -- S" });
+    const request = await askRequestFor(askRule, { suffix: "; S" });
     expect(request).toMatchObject({
       rule: "Bash(*)",
       matchedRule: "Bash(*)",
       unsandboxed: true,
-      reason: "matches an ask rule -- S",
+      reason: "matches an ask rule; S",
     });
   });
 
   test("AC-6: a synthetic Unsandboxed rule sets the flag, keeps rule, leaves matchedRule unset", async () => {
-    const request = await askRequestFor(converted, { suffix: " -- S" });
+    const request = await askRequestFor(converted, { suffix: "; S" });
     expect(request.rule).toBe("Unsandboxed(Bash)");
-    expect(request.reason).toBe("unsandboxed run requested -- S");
+    expect(request.reason).toBe("unsandboxed run requested; S");
     expect(request).toHaveProperty("unsandboxed", true);
     expect("matchedRule" in request).toBe(false);
   });

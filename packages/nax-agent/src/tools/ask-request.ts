@@ -86,7 +86,7 @@ function summaryScalar(value: unknown): string | undefined {
 }
 
 /** The clause `unsandboxedReasonSuffix` renders, before the reason itself. */
-const UNSANDBOXED_PREFIX = " -- runs OUTSIDE the sandbox: ";
+const UNSANDBOXED_PREFIX = "; runs OUTSIDE the sandbox: ";
 /** What the suffix says when the model gave no usable reason. */
 const NO_REASON = "no reason given";
 /** What the suffix says instead of a reason that cannot be shown safely. */
