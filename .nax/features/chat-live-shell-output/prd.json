@@ -3,7 +3,7 @@
   "feature": "chat-live-shell-output",
   "branchName": "feat/chat-live-shell-output",
   "createdAt": "2026-11-22T09:34:24.748Z",
-  "updatedAt": "2026-11-22T10:54:28.449Z",
+  "updatedAt": "2026-11-22T11:07:57.017Z",
   "userStories": [
     {
       "id": "US-001",
@@ -403,14 +403,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The existing ShellView gains standard React subscriptions, two cancellable timers and key handlers by mirroring AgentView's revision hook; deterministic clock and event fakes make single-session TDD sufficient."
+        "reasoning": "The existing ShellView gains standard React subscriptions, two cancellable timers and key handlers by mirroring AgentView's revision hook; deterministic clock and event fakes make single-session TDD sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ShellView.tsx",
@@ -424,7 +427,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4a6a72a135a63cfe1b6c6484d688cb1a4af32c98"
     },
     {
       "id": "US-008",
