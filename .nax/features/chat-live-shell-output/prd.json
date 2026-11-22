@@ -3,7 +3,7 @@
   "feature": "chat-live-shell-output",
   "branchName": "feat/chat-live-shell-output",
   "createdAt": "2026-11-22T09:34:24.748Z",
-  "updatedAt": "2026-11-22T10:45:05.373Z",
+  "updatedAt": "2026-11-22T10:54:28.449Z",
   "userStories": [
     {
       "id": "US-001",
@@ -339,14 +339,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "New renderer and pure model mirror the existing AgentView/viewport pattern; live lifecycle integration is reserved for the next story."
+        "reasoning": "New renderer and pure model mirror the existing AgentView/viewport pattern; live lifecycle integration is reserved for the next story.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/AgentView.tsx",
@@ -365,7 +368,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "82b8410cc1bb2470da870ced747345b0f12898d4"
     },
     {
       "id": "US-007",
