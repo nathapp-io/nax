@@ -27,13 +27,25 @@ afterEach(() => {
 
 function adoptAgent(tasks: ReturnType<typeof createBackgroundTasks>, name: string) {
   const end = Promise.withResolvers<BackgroundAgentEnd>();
-  const sink = tasks.adoptAgent({ agent: name, task: `task ${name}`, ended: end.promise, stop: mock(() => {}) });
+  const sink = tasks.adoptAgent({
+    agent: name,
+    task: `task ${name}`,
+    ended: end.promise,
+    stop: () => end.resolve({ outcome: "stopped", text: "" }),
+  });
   const finish = async () => {
     end.resolve({ outcome: "succeeded", text: "" });
     await end.promise;
     await Promise.resolve();
   };
-  return { sink, finish };
+  return {
+    sink,
+    finish,
+    settled: async () => {
+      await end.promise;
+      await Promise.resolve();
+    },
+  };
 }
 
 function setup() {
@@ -146,20 +158,79 @@ describe("the total event retention across tasks", () => {
     expect(TASK_EVENTS_TOTAL_MAX_BYTES).toBeGreaterThan(0);
   });
 
-  test("drops the oldest finished task's log first, keeping its record and state", async () => {
-    const tasks = createBackgroundTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
-    const first = adoptAgent(tasks, "first");
-    const second = adoptAgent(tasks, "second");
-    for (let at = 0; at < 3; at += 1) first.sink.record(toolCallEvent(`a${at}`));
-    for (let at = 0; at < 3; at += 1) second.sink.record(toolCallEvent(`b${at}`));
-    await first.finish();
-    await second.finish();
-    const third = adoptAgent(tasks, "third");
-    third.sink.record(toolCallEvent("c0"));
-    expect(tasks.agentRun(first.sink.id)).toMatchObject({ state: "succeeded", logRetained: false, events: [] });
-    expect(tasks.agentRun(second.sink.id)).toMatchObject({ logRetained: true });
-    expect(tasks.agentRun(second.sink.id)?.events).toHaveLength(3);
-    expect(tasks.get(first.sink.id)?.state).toBe("succeeded");
+  const retained = (tasks: ReturnType<typeof createBackgroundTasks>, id: string) => tasks.agentRun(id)?.logRetained;
+  const newTasks = () => {
+    let tick = 0;
+    // A clock that moves on every read, so timestamps can never tie.
+    return createBackgroundTasks({ outputDir: "/o", now: () => new Date(tick++ * 1000), logger: makeLogger() });
+  };
+
+  test("drops the log of the task that finished FIRST, whatever order the tasks started in", async () => {
+    const tasks = newTasks();
+    const a = adoptAgent(tasks, "a");
+    const b = adoptAgent(tasks, "b");
+    for (let at = 0; at < 3; at += 1) a.sink.record(toolCallEvent(`a${at}`));
+    for (let at = 0; at < 3; at += 1) b.sink.record(toolCallEvent(`b${at}`));
+    await b.finish();
+    await a.finish();
+    const c = adoptAgent(tasks, "c");
+    c.sink.record(toolCallEvent("c0"));
+    expect(retained(tasks, b.sink.id)).toBe(false);
+    expect(tasks.agentRun(b.sink.id)).toMatchObject({ state: "succeeded", events: [] });
+    expect(retained(tasks, a.sink.id)).toBe(true);
+    expect(tasks.agentRun(a.sink.id)?.events).toHaveLength(3);
+    expect(tasks.get(b.sink.id)?.state).toBe("succeeded");
+  });
+
+  test("a just-stopped task queues behind older finished ones instead of sorting first", async () => {
+    const tasks = newTasks();
+    const old = adoptAgent(tasks, "old");
+    const stopped = adoptAgent(tasks, "stopped");
+    for (let at = 0; at < 3; at += 1) old.sink.record(toolCallEvent(`o${at}`));
+    for (let at = 0; at < 3; at += 1) stopped.sink.record(toolCallEvent(`s${at}`));
+    await old.finish();
+    tasks.stop(stopped.sink.id);
+    await stopped.settled();
+    const next = adoptAgent(tasks, "next");
+    next.sink.record(toolCallEvent("n0"));
+    expect(retained(tasks, old.sink.id)).toBe(false);
+    expect(retained(tasks, stopped.sink.id)).toBe(true);
+    expect(tasks.get(stopped.sink.id)?.state).toBe("stopped");
+  });
+
+  test("the running totals stay exact across merges, evictions and finishes", async () => {
+    const tasks = newTasks();
+    const a = adoptAgent(tasks, "a");
+    for (let at = 0; at < 3; at += 1) a.sink.record(toolCallEvent(`a${at}`));
+    await a.finish();
+    const b = adoptAgent(tasks, "b");
+    for (let at = 0; at < 3; at += 1) b.sink.record(toolCallEvent(`b${at}`));
+    // Exactly at the limit (6): nothing is evicted, and a text run that merges adds no entry.
+    expect(retained(tasks, a.sink.id)).toBe(true);
+    b.sink.record(textDeltaEvent("x"));
+    b.sink.record(textDeltaEvent("y"));
+    expect(retained(tasks, a.sink.id)).toBe(false);
+    // 3 (b) + 1 merged text = 4 left after a's 3 went: two more fit, the third does not.
+    const c = adoptAgent(tasks, "c");
+    c.sink.record(toolCallEvent("c0"));
+    c.sink.record(toolCallEvent("c1"));
+    await b.finish();
+    expect(retained(tasks, b.sink.id)).toBe(true);
+    c.sink.record(toolCallEvent("c2"));
+    expect(retained(tasks, b.sink.id)).toBe(false);
+    expect(tasks.agentRun(c.sink.id)?.events).toHaveLength(3);
+  });
+
+  test("tells the event listeners which task's log was evicted", async () => {
+    const tasks = newTasks();
+    const a = adoptAgent(tasks, "a");
+    for (let at = 0; at < 4; at += 1) a.sink.record(toolCallEvent(`a${at}`));
+    await a.finish();
+    const seen: string[] = [];
+    tasks.onAgentEvents((id) => seen.push(id));
+    const b = adoptAgent(tasks, "b");
+    for (let at = 0; at < 3; at += 1) b.sink.record(toolCallEvent(`b${at}`));
+    expect(seen).toContain(a.sink.id);
   });
 
   test("never evicts a running task, however far over the limit", () => {

@@ -125,6 +125,10 @@ class BackgroundTasks implements ChatBackgroundTasks {
   private readonly foregroundCalls = new Map<symbol, ForegroundCommand>();
   private readonly completions = new Set<Promise<void>>();
   private readonly unnoticed = new Map<string, BackgroundTask>();
+  /** Entries and estimated bytes held by every agent log that has not been evicted. */
+  private retained = { entries: 0, bytes: 0 };
+  /** Finished agent tasks whose log is still held, in the order they finished: the eviction queue. */
+  private readonly finishedLogs: TaskEntry[] = [];
   private notice?: { ids: readonly string[]; text: string };
   private shuttingDown = false;
   constructor(private readonly options: BackgroundTaskOptions) {}
@@ -176,36 +180,49 @@ class BackgroundTasks implements ChatBackgroundTasks {
    */
   private enforceEventLimits(): void {
     const { entries: maxEntries, bytes: maxBytes } = _backgroundTaskDeps.eventLimits;
-    const logs = [...this.entries.values()].flatMap((entry) => (entry.detail === undefined ? [] : [entry]));
-    const total = () =>
-      logs.reduce(
-        (sum, entry) => {
-          const size = entry.detail?.events.size() ?? { entries: 0, bytes: 0 };
-          return { entries: sum.entries + size.entries, bytes: sum.bytes + size.bytes };
-        },
-        { entries: 0, bytes: 0 },
-      );
-    const evictable = logs
-      .filter((entry) => entry.record.state !== "running" && entry.detail?.events.evicted() === false)
-      .sort((a, b) => (a.record.endedAt ?? "").localeCompare(b.record.endedAt ?? ""));
-    for (const entry of evictable) {
-      const now = total();
-      if (now.entries <= maxEntries && now.bytes <= maxBytes) return;
-      entry.detail?.events.evict();
+    while (this.retained.entries > maxEntries || this.retained.bytes > maxBytes) {
+      const oldest = this.finishedLogs.shift();
+      if (oldest === undefined) return;
+      this.evictLog(oldest);
+    }
+  }
+
+  /** Drop one finished task's log, keep the running totals exact and tell the listeners. */
+  private evictLog(entry: TaskEntry): void {
+    const events = entry.detail?.events;
+    if (events === undefined || events.evicted()) return;
+    this.addRetained(events.size(), -1);
+    events.evict();
+    this.notifyEvents(entry.record.id);
+  }
+
+  private addRetained(size: { readonly entries: number; readonly bytes: number }, sign: 1 | -1): void {
+    this.retained = {
+      entries: this.retained.entries + sign * size.entries,
+      bytes: this.retained.bytes + sign * size.bytes,
+    };
+  }
+
+  private notifyEvents(id: string): void {
+    for (const listener of [...this.eventListeners]) {
+      try {
+        listener(id);
+      } catch (cause) {
+        this.options.logger.warn("chat", "Background task event callback failed", { error: errorMessage(cause) });
+      }
     }
   }
 
   private recordEvent(entry: TaskEntry, event: SessionEvent): void {
     if (entry.record.state !== "running" || entry.detail === undefined) return;
-    entry.detail.events.append(event);
+    const log = entry.detail.events;
+    const before = log.size();
+    log.append(event);
+    // The totals move by this log's size change alone, so an event costs O(1), not a recount.
+    const after = log.size();
+    this.addRetained({ entries: after.entries - before.entries, bytes: after.bytes - before.bytes }, 1);
     this.enforceEventLimits();
-    for (const listener of [...this.eventListeners]) {
-      try {
-        listener(entry.record.id);
-      } catch (cause) {
-        this.options.logger.warn("chat", "Background task event callback failed", { error: errorMessage(cause) });
-      }
-    }
+    this.notifyEvents(entry.record.id);
   }
 
   foreground(call: ForegroundCommand): () => void {
@@ -417,7 +434,8 @@ class BackgroundTasks implements ChatBackgroundTasks {
     };
     if (end.text.trimEnd() !== "") this.appendLine(entry, end.text.trimEnd());
     this.appendLine(entry, `[nax] agent ended: ${end.outcome}`);
-    // This task just became evictable.
+    // This task just became evictable, behind every task that finished before it.
+    this.finishedLogs.push(entry);
     this.enforceEventLimits();
     if (entry.record.state === "succeeded" || entry.record.state === "failed") {
       this.unnoticed.set(entry.record.id, entry.record);
