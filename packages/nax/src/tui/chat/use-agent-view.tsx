@@ -1,11 +1,14 @@
 /**
- * The chat screen's side of the full-screen agent view: which agent task is open, how that
+ * The chat screen's side of the full-screen task view: which background task is open, how that
  * silences the chat underneath, and how the view is mounted over it.
  *
- * The chat stays mounted while a view is open — hidden with `display: none`, never unmounted —
- * so its transcript, scroll position, input draft and message queue are exactly where the user
- * left them when escape closes the view. What "silenced" means is one fact, `hushes`: every key
- * and click handler of the chat consults it, so nothing behind the view can act.
+ * One view state serves both kinds of background task, because the two views behave the same way
+ * from the chat's side: an agent task opens the run's conversation (`AgentView`), and a shell
+ * task opens its live output (`ShellView`) on a host that reports shell output. The chat stays
+ * mounted while either is open — hidden with `display: none`, never unmounted — so its
+ * transcript, scroll position, input draft and message queue are exactly where the user left them
+ * when escape closes the view. What "silenced" means is one fact, `hushes`: every key and click
+ * handler of the chat consults it, so nothing behind the view can act.
  *
  * Kept out of `ChatApp`, whose cognitive complexity is at the gate's limit.
  */
@@ -13,10 +16,11 @@ import { type ReactElement, useCallback, useEffect, useRef, useState } from "rea
 import type { ChatHost } from "@/chat";
 import { AgentView } from "./AgentView";
 import type { MouseEvents } from "./mouse-input";
+import { ShellView } from "./ShellView";
 import type { ChatTheme } from "./theme";
 
 export interface AgentViewControl {
-  /** The agent task being viewed, or undefined while the chat is showing. */
+  /** The background task being viewed, or undefined while the chat is showing. */
   readonly id: string | undefined;
   /** `display` for the chat's root: hidden while a view is open. */
   readonly display: "flex" | "none";
@@ -67,15 +71,49 @@ export interface AgentViewMount {
   readonly onCopy?: (text: string) => void;
 }
 
-/** The chat alone, or the chat (hidden) beside the view of the open agent task. */
+/**
+ * True when choosing the background task `id` opens its full-screen view rather than its output
+ * listing: an agent task always does, and a shell task does on a host that reports shell output.
+ * A job row — one no task registry knows — keeps the listing, so `host.tasks` is what tells a
+ * shell task row from a job row, not whether the host has shell output at all.
+ */
+export function opensTaskView(host: ChatHost, id: string): boolean {
+  const task = host.tasks?.get(id);
+  if (task === undefined) return false;
+  return task.kind === "agent" || host.shellOutput !== undefined;
+}
+
+/** The chat alone, or the chat (hidden) beside the view of the open background task. */
 export function withAgentView(chat: ReactElement, input: AgentViewMount): ReactElement {
   const { view, host } = input;
   if (view.id === undefined || host.tasks === undefined) return chat;
+  const { tasks } = host;
+  const shells = host.shellOutput;
+  // A shell task gets the live view where the host reports shell output; everywhere else — an
+  // agent task, and a shell on a host that reports none — keeps the agent view, as before.
+  if (tasks.get(view.id)?.kind !== "agent" && shells !== undefined) {
+    return (
+      <>
+        {chat}
+        <ShellView
+          shells={shells}
+          tasks={tasks}
+          id={view.id}
+          columns={input.columns}
+          rows={input.rows}
+          theme={input.theme}
+          mouse={input.mouse}
+          onCopy={input.onCopy}
+          onClose={view.close}
+        />
+      </>
+    );
+  }
   return (
     <>
       {chat}
       <AgentView
-        tasks={host.tasks}
+        tasks={tasks}
         id={view.id}
         columns={input.columns}
         rows={input.rows}

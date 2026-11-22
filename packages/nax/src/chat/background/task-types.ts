@@ -20,6 +20,24 @@ export interface BackgroundTask {
 
 export const TASK_ID_PATTERN = /^(bash|agent)-[0-9a-f]{8}$/;
 
+/** The bounded lines of one shell's output, as the live tail and the shell view read them. */
+export interface ShellTailView {
+  /** Newest lines, oldest first; the current partial line, if any, is last. */
+  readonly lines: readonly string[];
+  /** True when older output was dropped from the tail, or the whole tail was evicted. */
+  readonly truncated: boolean;
+}
+
+/** Display-only shell output tails; nothing here reaches the model. */
+export interface ChatShellOutput {
+  /** The tail of the background shell task `id`; undefined for an unknown id or an agent task. */
+  taskTail(id: string): ShellTailView | undefined;
+  /** The tail of the running foreground call `callId`; undefined once it ended or moved, or when no call carries that id. */
+  foregroundTail(callId: string): ShellTailView | undefined;
+  /** Told the task id or call id whose tail changed; returns the unsubscribe. */
+  onShellOutput(listener: (id: string) => void): () => void;
+}
+
 export type BackgroundAgentOutcome = "succeeded" | "failed" | "stopped";
 
 export interface BackgroundAgentEnd {

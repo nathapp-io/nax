@@ -1,5 +1,17 @@
 export { createHostTasks } from "./host-tasks";
 export {
+  createShellTail,
+  SHELL_TAIL_MAX_BYTES,
+  SHELL_TAIL_MAX_LINES,
+  SHELL_TAIL_REFRESH_MS,
+} from "./shell-tail";
+export {
+  createShellTails,
+  SHELL_TAIL_TOTAL_MAX_BYTES,
+  type ShellTails,
+  type ShellTailsOptions,
+} from "./shell-tails";
+export {
   createTaskEventLog,
   TASK_EVENTS_MAX_BYTES,
   TASK_EVENTS_MAX_ENTRIES,
@@ -23,6 +35,8 @@ export type {
   BackgroundTask,
   BackgroundTaskState,
   ChatBackgroundTasks,
+  ChatShellOutput,
+  ShellTailView,
   TaskOutputOptions,
 } from "./task-types";
 export { TASK_ID_PATTERN } from "./task-types";

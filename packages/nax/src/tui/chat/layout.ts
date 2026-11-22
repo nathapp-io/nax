@@ -53,6 +53,7 @@ import {
   SOURCE_LINE_BREAK,
   SPACE,
   type SpanStyle,
+  singleRow,
   styled,
   textLines,
   wrappedSource,
@@ -62,10 +63,11 @@ import { listingLines } from "./layout-listing";
 import { userTextSpans } from "./layout-mentions";
 import { interruptedLines, statusLines, turnStatsLines, welcomeLines } from "./layout-status";
 import { renderMarkdown } from "./markdown";
-import { MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatTheme } from "./theme";
 import { type CardLine, type DiffLine, secondsBetween, type ToolCardModel, toolCardModel } from "./tool-card";
 import type { TranscriptEntry } from "./transcript-model";
+import { elideSpansEnd } from "./wrap";
 
 /** An empty line, re-exported so a view can pad a short screen the way the layout separates entries. */
 export { EMPTY_LINE } from "./layout-lines";
@@ -215,13 +217,32 @@ function summaryColor(tone: CardLine["tone"]): ChatColorToken | undefined {
   return tone === "plain" ? undefined : tone;
 }
 
+/** What a clipped row ends in when its text did not fit the columns left to it. */
+const CLIP_MARK = "…";
+
+/**
+ * One clipped card row: the text as a single row whatever it carries, cut to the columns left
+ * behind the card's prefix with a trailing ellipsis. A live tail's line is a terminal's own
+ * output, so it is clipped rather than wrapped — one very long line would otherwise grow the
+ * card by a paragraph and push the transcript off the screen. `singleRow` strips the control
+ * sequences first, on the same path every other tool text takes.
+ */
+function clippedRow(text: string, prefix: string, style: SpanStyle, context: LayoutContext): readonly StyledLine[] {
+  const columns = Math.max(0, context.width - displayWidth(prefix));
+  const spans = elideSpansEnd([styled(singleRow(text), style)], columns, styled(CLIP_MARK, style));
+  return [line([styled(prefix, style), ...spans])];
+}
+
 /** The result summary: the glyph opens the first row, five blank columns every other. */
 function toolSummaryLines(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
   const head = resultPrefix(context.theme);
   const rest = cardIndent(context.theme);
-  return model.summary.flatMap((line, index) =>
-    cardRows(line.text, { head: index === 0 ? head : rest, rest }, { color: summaryColor(line.tone) }, context),
-  );
+  return model.summary.flatMap((line, index) => {
+    const prefix = index === 0 ? head : rest;
+    const style = { color: summaryColor(line.tone) };
+    if (line.clip === true) return clippedRow(line.text, prefix, style, context);
+    return cardRows(line.text, { head: prefix, rest }, style, context);
+  });
 }
 
 /**

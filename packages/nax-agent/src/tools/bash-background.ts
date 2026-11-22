@@ -24,13 +24,20 @@ export interface BackgroundCommandSink {
 }
 export interface ForegroundCommand {
   readonly command: string;
+  /** The tool call this command runs for, when the runtime knew it. */
+  readonly callId?: string;
   moveToBackground(): void;
+  /** Observe output chunks as they arrive, until the call ends or moves; returns the unsubscribe. */
+  onOutput?(listener: (stream: BackgroundStream, chunk: Uint8Array) => void): () => void;
 }
 export interface BackgroundCommandPort {
   adopt(handle: BackgroundCommandHandle): BackgroundCommandSink;
   /** Register a foreground call; the returned function unregisters it. */
   foreground(call: ForegroundCommand): () => void;
 }
+
+/** One live observer of a foreground call's output (US-001). */
+type ForegroundOutputListener = (stream: BackgroundStream, chunk: Uint8Array) => void;
 
 export type BackgroundLaunchOptions = Pick<RunArgvOptions, "signal" | "releaseDeadline" | "onOutput">;
 
@@ -47,6 +54,8 @@ interface BashExecutionRequest<T extends LaunchResult> {
   readonly command: string;
   readonly description: unknown;
   readonly signal?: AbortSignal;
+  /** The tool call this command runs for, when the caller knew it. */
+  readonly callId?: string;
   readonly launch: (options?: BackgroundLaunchOptions, isForeground?: () => boolean) => Promise<T>;
 }
 
@@ -113,14 +122,38 @@ function foregroundControl<T extends LaunchResult>(
   const released = Promise.withResolvers<BackgroundResult>();
   const ended = Promise.withResolvers<BackgroundCommandEnd>();
   const output = outputReplay();
+  const observers = new Set<ForegroundOutputListener>();
   let settled = false;
   let moved = false;
   const cancel = () => controller.abort();
   const detach = () => request.signal?.removeEventListener("abort", cancel);
   request.signal?.addEventListener("abort", cancel, { once: true });
   if (request.signal?.aborted === true) cancel();
+  /**
+   * Observers are told BEFORE the replay buffer takes the chunk, and only
+   * while the call is still foreground: once it moves, the chunk belongs to
+   * the adopted sink, and once it settles there is no call left to observe.
+   *
+   * Each observer gets its own copy. Observation is non-invasive: a listener
+   * that writes into the array it was handed must not be able to corrupt the
+   * bytes the replay buffer retains or another listener's view of them.
+   */
+  const append = (stream: BackgroundStream, chunk: Uint8Array) => {
+    if (!moved && !settled) {
+      for (const listener of [...observers]) {
+        try {
+          listener(stream, Uint8Array.from(chunk));
+        } catch {
+          // An observer is extra, never load-bearing: its failure must cost
+          // neither the replay buffer this chunk nor the other observers theirs.
+        }
+      }
+    }
+    output.append(stream, chunk);
+  };
   const call: ForegroundCommand = {
     command: request.command,
+    ...(request.callId !== undefined ? { callId: request.callId } : {}),
     moveToBackground() {
       if (settled || moved) return;
       moved = true;
@@ -136,11 +169,17 @@ function foregroundControl<T extends LaunchResult>(
       output.replay(sink);
       released.resolve({ content: `moved to the background as ${sink.id}`, isError: false });
     },
+    onOutput(listener) {
+      observers.add(listener);
+      return () => {
+        observers.delete(listener);
+      };
+    },
   };
   return {
     call,
     released: released.promise,
-    options: { signal: controller.signal, releaseDeadline: releaseDeadline.signal, onOutput: output.append },
+    options: { signal: controller.signal, releaseDeadline: releaseDeadline.signal, onOutput: append },
     isForeground: () => !moved,
     finish(end: BackgroundCommandEnd) {
       settled = true;

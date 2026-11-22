@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CARD_TAIL_LINE_MAX_CHARS,
+  CARD_TAIL_LINES,
   type CardLine,
   CHILD_PREVIEW_LINES,
   DIFF_PREVIEW_LINES,
@@ -597,5 +599,56 @@ describe("toolCardModel ok collapsing", () => {
     const model = card({ name: "Edit", input: { path: "z.ts", old_string: "a", new_string: "b" } });
     expect(model.diff).toEqual([]);
     expect(model.hiddenLines).toBe(0);
+  });
+});
+
+describe("toolCardModel live tail (US-005)", () => {
+  /** A running Bash call carrying `lines` as its live tail. */
+  function tailCard(lines: readonly string[], overrides: Partial<ToolEntry> = {}): ToolCardModel {
+    return card({ name: "Bash", input: { command: "make" }, liveTail: lines, ...overrides });
+  }
+
+  test("AC-13 draws a running Bash call's live tail as muted clipped lines", () => {
+    expect(tailCard(["a", "b"]).summary).toEqual([
+      { text: "a", tone: "muted", clip: true },
+      { text: "b", tone: "muted", clip: true },
+    ]);
+  });
+
+  test("AC-14 keeps at most CARD_TAIL_LINE_MAX_CHARS characters of one tail line", () => {
+    const summary = tailCard(["x".repeat(600)]).summary;
+    expect(summary[0]?.text).toHaveLength(CARD_TAIL_LINE_MAX_CHARS);
+  });
+
+  test("AC-14 cuts a tail line at the cap and leaves a shorter one whole", () => {
+    const summary = tailCard(["y".repeat(CARD_TAIL_LINE_MAX_CHARS + 1), "z"]).summary;
+    expect(summary.map((line) => line.text.length)).toEqual([CARD_TAIL_LINE_MAX_CHARS, 1]);
+  });
+
+  test("AC-15 has an empty summary for a running Bash call with an empty live tail", () => {
+    expect(tailCard([]).summary).toEqual([]);
+  });
+
+  test("keeps the newest CARD_TAIL_LINES tail lines", () => {
+    const lines = ["l1", "l2", "l3", "l4", "l5", "l6", "l7"];
+    expect(tailCard(lines).summary.map((line) => line.text)).toEqual(lines.slice(-CARD_TAIL_LINES));
+  });
+
+  test("AC-16 ignores a live tail on a Bash call that already succeeded", () => {
+    const plain = okCard({ name: "Bash", input: { command: "make" }, preview: "done" });
+    const tailed = okCard({ name: "Bash", input: { command: "make" }, preview: "done", liveTail: ["a"] });
+    expect(tailed).toEqual(plain);
+  });
+
+  test("AC-17 ignores a live tail on a running RunCommand call", () => {
+    const input = { argv: ["bun", "test"] };
+    expect(card({ name: "RunCommand", input, liveTail: ["a", "b"] })).toEqual(card({ name: "RunCommand", input }));
+  });
+
+  test("ignores a live tail on a Bash call that failed", () => {
+    const failed = { status: "error" as const, preview: "boom" };
+    expect(card({ name: "Bash", input: { command: "make" }, liveTail: ["a"], ...failed })).toEqual(
+      card({ name: "Bash", input: { command: "make" }, ...failed }),
+    );
   });
 });

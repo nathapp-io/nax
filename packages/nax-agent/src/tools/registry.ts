@@ -134,6 +134,12 @@ export interface ToolRunContext {
   readonly protectedPaths?: ProtectedPathsPolicy;
   /** Host-owned path rules (S3-2 port). Absent: no owned-path refusals. */
   readonly ownedPaths?: OwnedPathsPolicy;
+  /**
+   * US-001: the model tool call this run serves, when the caller knew it.
+   * Threaded down so a long-running tool can hand the host something to
+   * address its live output by (Bash registers it on the foreground call).
+   */
+  readonly toolCallId?: string;
 }
 
 export interface CodingTool {

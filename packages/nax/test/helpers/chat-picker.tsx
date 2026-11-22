@@ -39,6 +39,11 @@ interface MountOptions {
   readonly tasks?: ChatHost["tasks"];
   readonly jobs?: ChatHost["jobs"];
   readonly runAsks?: ChatHost["runAsks"];
+  /**
+   * The host's shell output tails, for a case that watches a running shell (US-005). Absent —
+   * every caller written before it — mounts exactly the host it mounted then, with no tails.
+   */
+  readonly shellOutput?: ChatHost["shellOutput"];
   /** The host's consecutive task-notice turn limit; absent leaves the screen's default. */
   readonly taskNoticeTurns?: number;
   readonly send?: ChatHost["send"];
@@ -93,6 +98,7 @@ export function mount(options: MountOptions = {}) {
     tasks: options.tasks,
     jobs: options.jobs,
     runAsks: options.runAsks,
+    ...(options.shellOutput === undefined ? {} : { shellOutput: options.shellOutput }),
     ...(options.steer === undefined ? {} : { steer: options.steer }),
     ...(options.taskNoticeTurns === undefined ? {} : { taskNoticeTurns: options.taskNoticeTurns }),
     cancel: mock(() => {}),

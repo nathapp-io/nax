@@ -25,7 +25,7 @@ import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
 import type { AcpCatalog, AcpRefreshResult } from "./acp";
 import type { ChatAskController } from "./ask-controller";
-import type { ChatBackgroundTasks } from "./background";
+import type { ChatBackgroundTasks, ChatShellOutput } from "./background";
 import type { ChatAgentRow } from "./chat-agents-listing";
 import type { EffortLevel } from "./chat-effort";
 import type { ChatMode } from "./chat-mode";
@@ -70,6 +70,8 @@ export interface ChatHost {
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
+  /** The shell output tails; the same registry object as `tasks`, read for display only. */
+  readonly shellOutput?: ChatShellOutput;
   /** Task-notice turns in a row that may wake the agent before a user turn (`interaction.defaults.chatTaskNoticeTurns`). */
   readonly taskNoticeTurns?: number;
   readonly confirmBeforeClose?: () => Promise<boolean>;

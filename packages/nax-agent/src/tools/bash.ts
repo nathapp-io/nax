@@ -432,6 +432,10 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
           command,
           description: input.description,
           signal: ctx.signal,
+          // US-001: the tool call this command runs for, so the host can
+          // address the registered foreground call. `undefined` is left to the
+          // consumer, which omits the member entirely when unknown.
+          callId: ctx.toolCallId,
           launch: (backgroundLaunch, isForeground) => launchIntercepted({ ...request, backgroundLaunch, isForeground }),
         });
         if ("content" in result) return result;

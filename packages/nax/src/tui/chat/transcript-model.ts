@@ -52,6 +52,12 @@ export type TranscriptEntry =
       model?: string;
       /** Where that model came from — `override`, `inherited`, `agent file`, … — when named. */
       modelSource?: string;
+      /**
+       * A running Bash call's newest output lines, kept current by `useForegroundTails` while
+       * the call runs (US-005). Display only: it never reaches the model, and a finished entry
+       * drops it — the result's preview is the whole story then.
+       */
+      liveTail?: readonly string[];
       endedAt?: string;
       children: readonly ToolChild[];
     }
@@ -204,6 +210,16 @@ function findChildParent(
   });
 }
 
+/**
+ * A finished tool entry: everything it carried while running except its live tail, which the
+ * result's preview replaces — a tail left behind would draw output the card already reports.
+ */
+function finished(entry: ToolEntry): ToolEntry {
+  if (entry.liveTail === undefined) return entry;
+  const { liveTail: _liveTail, ...rest } = entry;
+  return rest;
+}
+
 function applyToolResult(
   entries: readonly TranscriptEntry[],
   event: EventOf<"tool_result">,
@@ -212,7 +228,7 @@ function applyToolResult(
   const tool = findTool(entries, (entry) => entry.turnId === event.turnId && entry.callId === event.callId);
   if (tool) {
     return replaceIn(entries, tool.index, {
-      ...tool.entry,
+      ...finished(tool.entry),
       // A nested call whose own result never came (the run moved to the background mid-call)
       // ends with the agent card, so no child row is left running.
       children: tool.entry.children.map((child) => (child.status === "running" ? { ...child, status } : child)),
