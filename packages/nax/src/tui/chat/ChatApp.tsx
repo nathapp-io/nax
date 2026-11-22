@@ -88,6 +88,7 @@ import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { turnStatsEntry } from "./turn-stats";
 import { useAgentView, withAgentView } from "./use-agent-view";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useForegroundTails } from "./use-foreground-tails";
 import { useIdleCompact } from "./use-idle-compact";
 import { useImageAttach } from "./use-image-attach";
 import { useJobPanels } from "./use-job-panels";
@@ -1226,6 +1227,8 @@ export function ChatApp({
   });
 
   useJobPanels({ host, entries, setEntries, turnRunning });
+  // The running Bash card's live tail: display only, and only on a host that keeps shell tails.
+  useForegroundTails({ host, entries, setEntries });
 
   // A job leaves the chat idle for a long time (US-007), so its history is compacted once per
   // job after the configured delay — through the screen's own `/compact` path, so the working

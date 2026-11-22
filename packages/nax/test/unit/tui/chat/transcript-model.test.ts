@@ -194,6 +194,15 @@ describe("reduceTranscript tool results", () => {
     const after = reduceTranscript(before, toolResult({ callId: "c9" }));
     expect(after).toBe(before);
   });
+
+  test("AC-18 drops the live tail of a running Bash entry its result finishes", () => {
+    const running: readonly TranscriptEntry[] = reduce(toolCall({ callId: "c1", name: "Bash" })).map((entry) =>
+      entry.kind === "tool" ? { ...entry, liveTail: ["one", "two"] } : entry,
+    );
+    const done = reduceTranscript(running, toolResult({ callId: "c1", preview: "one" }));
+    expect(done[0]).toMatchObject({ kind: "tool", status: "ok", preview: "one" });
+    expect("liveTail" in (done[0] ?? {})).toBe(false);
+  });
 });
 
 describe("reduceTranscript subagent calls", () => {

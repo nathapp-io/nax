@@ -22,6 +22,11 @@ const MILLIS_PER_SECOND = 1000;
 export interface CardLine {
   readonly text: string;
   readonly tone: "plain" | "muted" | "danger";
+  /**
+   * The line is one row whatever its length: the layout clips it at the row's width with a
+   * trailing ellipsis instead of wrapping it. Only a running Bash call's live tail sets it.
+   */
+  readonly clip?: boolean;
 }
 
 export interface DiffLine {
@@ -49,6 +54,10 @@ export const BASH_PREVIEW_LINES = 3;
 export const DIFF_PREVIEW_LINES = 12;
 /** A running agent card previews this many of its nested tool calls. */
 export const CHILD_PREVIEW_LINES = 3;
+/** How many of a running Bash call's newest live-tail lines its card shows. */
+export const CARD_TAIL_LINES = 5;
+/** The most characters of one live-tail line the card model keeps; the layout clips the rest. */
+export const CARD_TAIL_LINE_MAX_CHARS = 512;
 
 /** The elision mark. Theme-independent on purpose: an argument is data, not decoration. */
 const ELLIPSIS = "…";
@@ -209,6 +218,24 @@ function nonResultSummary(entry: ToolEntry, tone: ToolCardModel["tone"]): readon
   if (tone === "danger") return [danger(firstNonEmptyLine(entry.preview) ?? FAILED)];
   if (tone === "running" && entry.name === AGENT_RUN_TOOL) return childSummary(entry.children);
   return [];
+}
+
+/** One clipped row of a live tail: muted, and one row whatever its length. */
+function liveTailLine(text: string): CardLine {
+  const kept = text.length > CARD_TAIL_LINE_MAX_CHARS ? text.slice(0, CARD_TAIL_LINE_MAX_CHARS) : text;
+  return { text: kept, tone: "muted", clip: true };
+}
+
+/**
+ * The live tail of a running Bash call — its newest `CARD_TAIL_LINES` lines, each a clipped
+ * muted row — or undefined for every other entry, and for one whose tail has no lines yet.
+ * Only `Bash` shows a tail: `RunCommand` runs nax's own commands, which report nothing live.
+ */
+function liveTailSummary(entry: ToolEntry): Capped<CardLine> | undefined {
+  if (entry.name !== "Bash" || entry.status !== "running") return undefined;
+  const lines = entry.liveTail;
+  if (lines === undefined || lines.length === 0) return undefined;
+  return { shown: lines.slice(-CARD_TAIL_LINES).map(liveTailLine), hidden: 0 };
 }
 
 /** Lines a card would show but withholds, and the count of the ones a collapse leaves out. */
@@ -394,7 +421,9 @@ export function toolCardModel(entry: ToolEntry, options: { expanded: boolean }):
   const arg = toolArg(entry.name, entry.input, entry);
   const tone = toolTone(entry.status);
   const succeeded = tone === "success";
-  const summary = succeeded ? okSummary(entry, options.expanded) : { shown: nonResultSummary(entry, tone), hidden: 0 };
+  const summary = succeeded
+    ? okSummary(entry, options.expanded)
+    : (liveTailSummary(entry) ?? { shown: nonResultSummary(entry, tone), hidden: 0 });
   const diff = succeeded ? okDiff(entry, options.expanded) : NOTHING;
   return {
     title: toolTitle(entry.name),
