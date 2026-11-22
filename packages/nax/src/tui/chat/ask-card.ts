@@ -59,6 +59,8 @@ const DIFF_TOOL = "Edit";
 /** The host's tag for an ask a subagent raised: `[agent <name>] ` before its own reason. */
 const AGENT_REASON = /^\[agent ([^\]\n]+)\] /;
 const TITLE_SEPARATOR = " · ";
+/** The tool whose summary the host builds as `Bash command=<command>`, the line the card already draws bold. */
+const COMMAND_TOOL = "Bash";
 
 export interface AskCardOptions {
   /** Whether the ask may be remembered for the session — `controller.canRemember(ask)`, not re-derived here. */
@@ -165,6 +167,17 @@ function attribution(reason: string): Attribution {
   return { reason: reason.slice(match[0].length), tag: `[agent ${match[1]}]` };
 }
 
+/**
+ * The summary the card draws under the command: nothing when it only restates it. The host
+ * builds a Bash summary as `Bash command=<command>`, cut to a length limit, so a summary that
+ * is that text (or a cut prefix of it) adds nothing to the bold command line. Any other
+ * summary (more fields, another tool, no command, the withheld-secret form) stays.
+ */
+function askSummaryText(tool: string, command: string | undefined, summary: string): string {
+  if (command === undefined || tool !== COMMAND_TOOL) return summary;
+  return `${tool} command=${command}`.startsWith(summary) && summary.startsWith(`${tool} command=`) ? "" : summary;
+}
+
 /** The options in the order they are offered; the session option only while it is allowed. */
 function askOptions(canRemember: boolean): readonly AskOption[] {
   const yes: AskOption = { index: 1, label: ASK_YES, choice: "allow_once" };
@@ -197,12 +210,13 @@ export function askCardModel(ask: ChatPendingAsk, options: AskCardOptions): AskC
   }
   const tool = sanitizeText(ask.tool);
   const said = attribution(sanitizeText(ask.reason));
+  const command = ask.command === undefined ? undefined : sanitizeText(ask.command);
   return {
     kind: "approval",
     title: askTitle(ask, tool),
     ...(said.tag === undefined ? {} : { tag: said.tag }),
-    ...(ask.command === undefined ? {} : { command: sanitizeText(ask.command) }),
-    summary: sanitizeText(ask.summary),
+    ...(command === undefined ? {} : { command }),
+    summary: askSummaryText(tool, command, sanitizeText(ask.summary)),
     reason: said.reason,
     border: ask.unsandboxed === true ? "danger" : "warning",
     options: askOptions(options.canRemember),

@@ -305,7 +305,7 @@ describe("callTool — a human deny on an unsandboxed ask", () => {
     const request = asked.requests[0];
     assertDefined(request, "the ask request");
     expect(request.unsandboxed).toBe(true);
-    expect(request.reason).toBe(`${verdict.reason} -- runs OUTSIDE the sandbox: needs network`);
+    expect(request.reason).toBe(`${verdict.reason}; runs OUTSIDE the sandbox: needs network`);
     expect(request.matchedRule).toBe("Bash");
   });
 });
@@ -408,7 +408,7 @@ describe("callTool — only a boolean true is an escape request", () => {
 const ESCAPE = { command: "curl x", unsandboxed: true };
 
 /** The suffix every converted ask's reason carries, pinned verbatim from the story. */
-const SANDBOX_CLAUSE = " -- runs OUTSIDE the sandbox: ";
+const SANDBOX_CLAUSE = "; runs OUTSIDE the sandbox: ";
 
 /** The reason a converted allow carries, before the suffix. */
 const ESCAPE_REASON = "unsandboxed run requested";
