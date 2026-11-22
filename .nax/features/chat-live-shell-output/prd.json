@@ -1,0 +1,489 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-live-shell-output",
+  "branchName": "feat/chat-live-shell-output",
+  "createdAt": "2026-11-22T09:34:24.748Z",
+  "updatedAt": "2026-11-22T09:34:24.748Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Expose foreground Bash call ids and live output observers",
+      "description": "**Goal** — Thread the model tool-call id into foreground Bash registration and expose a non-invasive live output observer in nax-agent.\n\n**Motivation** — A foreground Bash call shows nothing until it ends, so during a long build or test run the user cannot tell progress from a hang (#3022).\n\n**Approach** — `ToolRunContext` (`packages/nax-agent/src/tools/registry.ts:95`). Target: adds `readonly toolCallId?: string`, set by `runTool` from `context?.toolCallId` when present.\n\nBoth new members are optional so existing implementers and test fakes keep compiling. The call `runMovableForeground` registers always carries `onOutput`, and carries `callId` when the Bash tool's `ToolRunContext` had one. The replay buffer and ctrl+b replay are unchanged; the listener is an extra observer.\n\n`ToolRunContext` gains `toolCallId` from the call's `ToolCallContext`; the Bash tool passes it into `runBashWithBackground`; the `ForegroundCommand` that `runMovableForeground` registers carries `callId` and `onOutput`, which forwards each chunk the launch reports while the call is in the foreground (the listener is notified before `output.append`'s moved-sink short-circuit returns, so it stops receiving once the call moves). The replay buffer and ctrl+b behaviour are unchanged.\n\n`runMovableForeground` registers `port.foreground(control.call)` and launches with `onOutput: output.append`; on ctrl+b `moveToBackground()` calls `port.adopt({ origin: \"moved\", ... })` and `output.replay(sink)` appends every retained chunk (up to `FOREGROUND_REPLAY_BYTES`, 1 MiB) to the new sink before forwarding live output. So a moved command's background task receives its earlier output through the ordinary sink `append` path; no tail needs moving.\n\nWhen an `onOutput` listener throws (nax-agent), the chunk is still retained for ctrl+b replay and still reaches the other listeners. Preserve the launch and result path; an unsubscribed listener receives no subsequent chunks. Omit callId entirely when unknown. Notify observers only while the call is neither moved nor settled; the moved-sink forwarding path must not notify foreground observers.\n\n**Scope** — In: tools/registry.ts, tools/runtime.ts, tools/bash.ts and tools/bash-background.ts; new runtime-to-observer tests. Out: registry-owned tails (US-002–004), card/view rendering (US-005–008), model-facing result changes. Any change to the tool result the model receives for a Bash call. Existing fakes in bash-background-move.test.ts and task-registry-notices.test.ts remain untouched.\n\n**Interface** — Target ForegroundCommand, verbatim:\n```ts\nexport interface ForegroundCommand {\n  readonly command: string;\n  /** The tool call this command runs for, when the runtime knew it. */\n  readonly callId?: string;\n  moveToBackground(): void;\n  /** Observe output chunks as they arrive, until the call ends or moves; returns the unsubscribe. */\n  onOutput?(listener: (stream: BackgroundStream, chunk: Uint8Array) => void): () => void;\n}\n```\nToolRunContext addition: `readonly toolCallId?: string`.\n\nTest setup: the runtime is `createCodingToolRuntime({ extraTools: [createBashTool({ background: port })], policy })` with a policy that grants Bash, built as after-tool-truncation.test.ts builds one. The fake port records foreground(call); only `_bashToolDeps.runArgv` is stubbed to report chunks through onOutput and wait on a test-controlled gate before resolving.",
+      "acceptanceCriteria": [
+        "[unit] runtime.callTool(\"Bash\", { command: \"build\" }, { toolCallId: \"c1\" }) registers a ForegroundCommand whose callId is \"c1\".",
+        "[unit] When runtime.callTool(\"Bash\", { command: \"build\" }, { toolCallId: \"c1\" }) registers a ForegroundCommand, that command's command property is \"build\".",
+        "[unit] runtime.callTool(\"Bash\", { command: \"build\" }) with no call context registers a ForegroundCommand that has no callId member.",
+        "[unit] When runtime.callTool(\"Bash\", { command: \"build\" }) runs without call context, its registered call-id-less ForegroundCommand still has an onOutput function.",
+        "[unit] A listener subscribed through the registered call's onOutput receives each chunk the launch reports, in order, with its stream (stdout or stderr).",
+        "[unit] After the listener's unsubscribe is called, later chunks are not delivered to it.",
+        "[unit] After moveToBackground(), chunks reported later reach the background sink and not the onOutput listener.",
+        "[unit] (control) After moveToBackground(), the background sink first receives every chunk reported before the move, in order.",
+        "[unit] (control) The tool result of a Bash call that runs to completion in the foreground is the same text whether or not an onOutput listener is subscribed.",
+        "[unit] When an onOutput listener throws on a chunk, a later moveToBackground() still replays that chunk to the background sink.",
+        "[unit] When one of two onOutput listeners throws on a chunk, the other still receives it."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "bash",
+        "streaming"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four existing tool modules need additive optional-field plumbing and an observer set around the existing foreground lifecycle; gated runArgv tests can validate replay and listener isolation in one TDD session."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/bash-background.ts",
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax-agent/src/tools/runtime.ts",
+        "packages/nax-agent/src/tools/registry.ts",
+        "packages/nax-agent/test/unit/tools/after-tool-truncation.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/tools/bash-background-output.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement a bounded UTF-8 shell output tail",
+      "description": "**Goal** — Add a pure line-aware tail with exact UTF-8 byte accounting and bounded newest-output retention.\n\n**Motivation** — A foreground Bash call shows nothing until it ends, so during a long build or test run the user cannot tell progress from a hang (#3022).\n\n**Approach** — `packages/nax/src/chat/background/shell-tail.ts` (pure, one tail): `createShellTail(limits?: { maxLines: number; maxBytes: number })` returns `{ append(chunk: Uint8Array): void; view(): ShellTailView; bytes(): number; evict(): void }`. A streaming UTF-8 decoder (malformed bytes become U+FFFD); `\\n` ends a line, and `\\r\\n` ends one line even when the `\\r` and the `\\n` arrive in different chunks; a `\\r` followed by anything other than `\\n` clears the current partial line so the next text replaces it; blank lines are kept; the last line without a newline is the partial line and counts toward both caps; a line's bytes are its UTF-8 text without the newline. Caps: `SHELL_TAIL_MAX_LINES = 2000` and `SHELL_TAIL_MAX_BYTES = 256 * 1024` (UTF-8 bytes of the retained lines), dropping oldest lines first; a line (partial or complete) longer than the byte cap keeps only its newest bytes, cut on a character boundary. One tail serves both stdout and stderr in arrival order, with one decoder and one partial line. The module also exports `SHELL_TAIL_REFRESH_MS`. Any drop sets `truncated`. `evict()` empties the tail and sets `truncated`.\n\nConstants: `SHELL_TAIL_REFRESH_MS = 100` in `shell-tail.ts`, the most often a consumer redraws for tail changes (the registry notifies per append; consumers coalesce). The ShellTailView type goes in task-types.ts; export the type, createShellTail and all three constants through src/chat/background/index.ts. The module is new; the barrel only gains exports, and existing tests need no rewrites.\n\n**Scope** — In: pure tail module, ShellTailView type/barrel and unit tests. Out: registry table/aggregate budget and event delivery (US-003–004), timers/UI rendering (US-005–008), durable persistence and ANSI colour rendering. Separate stdout and stderr tails: one tail interleaves both streams in arrival order, so a multibyte character or partial line split across the two streams may join or show U+FFFD.\n\n**Interface** — Verbatim type and function contract:\n```ts\nexport interface ShellTailView {\n  /** Newest lines, oldest first; the current partial line, if any, is last. */\n  readonly lines: readonly string[];\n  /** True when older output was dropped from the tail, or the whole tail was evicted. */\n  readonly truncated: boolean;\n}\n```\n`createShellTail(limits?: { maxLines: number; maxBytes: number })` returns `{ append(chunk: Uint8Array): void; view(): ShellTailView; bytes(): number; evict(): void }`.\n\nFor tests, append means tail.append(bytes) with the UTF-8 encoding of the text shown; split multibyte/invalid-byte cases use raw bytes.",
+      "acceptanceCriteria": [
+        "[unit] Appending \"a\\nb\\n\" gives view().lines equal to [\"a\", \"b\"].",
+        "[unit] After appending \"a\\nb\\n\", view().truncated is false.",
+        "[unit] Appending \"a\\nb\" gives view().lines equal to [\"a\", \"b\"], the partial line last.",
+        "[unit] Appending \"a\\nb\" then \"c\\n\" gives view().lines equal to [\"a\", \"bc\"].",
+        "[unit] Appending \"x\\r\\ny\\r\\n\" gives view().lines equal to [\"x\", \"y\"].",
+        "[unit] Appending \"x\\r\" then \"\\ny\\n\" gives view().lines equal to [\"x\", \"y\"], the same as the unsplit input.",
+        "[unit] Appending \"10%\\r50%\\r\" then \"100%\\n\" gives view().lines equal to [\"100%\"].",
+        "[unit] Appending \"a\\n\\nb\\n\" gives view().lines equal to [\"a\", \"\", \"b\"].",
+        "[unit] Appending the bytes of \"é\" split across two append calls gives view().lines equal to [\"é\"].",
+        "[unit] Appending the invalid byte 0xff followed by \"\\n\" gives view().lines equal to [\"�\"].",
+        "[unit] With the default limits, appending 2001 lines \"l1\\n\" to \"l2001\\n\" gives view().lines equal to \"l2\" through \"l2001\".",
+        "[unit] With default limits, after appending the 2001 lines l1 through l2001, each followed by a newline, view().truncated is true.",
+        "[unit] With the default limits, appending lines whose UTF-8 bytes total more than 262144 leaves bytes() at most 262144.",
+        "[unit] createShellTail({ maxLines: 2, maxBytes: 1024 }) keeps only [\"b\", \"c\"] of \"a\\nb\\nc\\n\".",
+        "[unit] With limits { maxLines: 1000, maxBytes: 4 }, appending \"abc\\ndef\\n\" keeps [\"def\"].",
+        "[unit] With limits { maxLines: 1000, maxBytes: 4 }, appending \"abcdefgh\" with no newline keeps the partial line \"efgh\".",
+        "[unit] With limits { maxLines: 1000, maxBytes: 4 }, appending \"abcdefgh\\n\" in one chunk keeps the complete line \"efgh\".",
+        "[unit] With limits { maxLines: 1000, maxBytes: 4 }, appending \"ab\\ncd\\n\" keeps both lines: newlines do not count toward bytes().",
+        "[unit] With limits { maxLines: 2, maxBytes: 1024 }, appending \"a\\nb\\nc\" keeps [\"b\", \"c\"]: the partial line counts toward the line cap.",
+        "[unit] After evict(), view().lines is empty and view().truncated is true.",
+        "[unit] After evict(), bytes() is 0.",
+        "[unit] Appending an empty chunk leaves view() unchanged.",
+        "[unit] With default limits, when appended UTF-8 text exceeds the 262144-byte per-tail cap, view().truncated is true."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "bash",
+        "buffer"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A self-contained pure decoding/line-retention algorithm with additive type/barrel wiring and no external lifecycle integration."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/background/task-events.ts",
+        "packages/nax/src/chat/background/task-types.ts",
+        "packages/nax/src/chat/background/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/background/shell-tail.ts",
+        "packages/nax/test/unit/chat/background/shell-tail.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Retain background shell tails and expose host shell output",
+      "description": "**Goal** — Feed background sink output into registry-owned bounded tails and expose the same registry as ChatHost.shellOutput.\n\n**Motivation** — A background shell opens as a one-shot collapsed listing (`showOutput` in `packages/nax/src/tui/chat/useChatPicker.ts`), so following it means clicking again and again. Background subagents got a live full-screen view in #3018; shells did not (#3023).\n\n**Approach** — `packages/nax/src/chat/background/shell-tails.ts` (one per registry): the table of tails keyed by background task id and by foreground call id, the listener set behind `onShellOutput`, and the total-budget eviction. Exports `createShellTails(options)` and `SHELL_TAIL_TOTAL_MAX_BYTES = 4 * 1024 * 1024`; the registry delegates `taskTail`, `foregroundTail` and `onShellOutput` to it. The registry's `finalize` tells it a task ended through `endTask(id)`. Eviction runs after every append and every `endTask`, and removes finished background tasks' tails, oldest-ended first, until the total is at most the limit; running tasks' and foreground calls' tails are never evicted. The total limit is injectable through `_backgroundTaskDeps.shellTailTotalMaxBytes` so a test need not write 4 MiB.\n\nThe registry's `adopt` sink appends also feed the task's tail, `finalize` calls `endTask`, and the registry implements `ChatShellOutput` by delegating to `shell-tails.ts`. `createBackgroundTasks` returns `ChatBackgroundTasks & ChatShellOutput`; `createHostTasks` returns `{ tasks: ChatBackgroundTasks & ChatShellOutput; provider: ToolProvider }`, and `ChatHost.shellOutput` is set to that same tasks registry.\n\n`ChatHost` gains `readonly shellOutput?: ChatShellOutput`, set by the host to the same registry object as `tasks`. `createBackgroundTasks(options)` and `createHostTasks(options)` return `ChatBackgroundTasks & ChatShellOutput` / `{ tasks: ChatBackgroundTasks & ChatShellOutput; ... }`, so chat-host.ts can set shellOutput from the same object it sets tasks from. The barrel packages/nax/src/chat/background/index.ts exports ChatShellOutput, ShellTailView, createShellTail, SHELL_TAIL_MAX_LINES, SHELL_TAIL_MAX_BYTES, SHELL_TAIL_REFRESH_MS and SHELL_TAIL_TOTAL_MAX_BYTES.\n\n`ChatBackgroundTasks` is unchanged, so its test fakes are untouched; the registry class implements both interfaces. Listener errors are logged at warn and the other listeners and the append still run. Unknown ids and agent tasks have no taskTail; ended shell output is ignored. An evicted shell retains an empty view with truncated true. Running/foreground tails can keep the total over its limit when no finished tail can be evicted. Keep the registry thin enough for its source limit and retain existing disk logging, completion notices and task tool behavior.\n\n**Scope** — In: new aggregate tail owner; task-types/index exports; task-registry.ts, host-tasks.ts, chat-host-types.ts and chat-host.ts wiring; sink/listener/budget/host tests. Out: foreground observer registration (US-004), UI consumers (US-005–008), persistent tails and reading additional log-file output in the shell view. Keeping tails across a chat restart: tails are in memory only; the log file stays the durable record.\n\n**Interface** — Verbatim:\n```ts\n/** Display-only shell output tails; nothing here reaches the model. */\nexport interface ChatShellOutput {\n  /** The tail of the background shell task `id`; undefined for an unknown id or an agent task. */\n  taskTail(id: string): ShellTailView | undefined;\n  /** The tail of the running foreground call `callId`; undefined once it ended or moved, or when no call carries that id. */\n  foregroundTail(callId: string): ShellTailView | undefined;\n  /** Told the task id or call id whose tail changed; returns the unsubscribe. */\n  onShellOutput(listener: (id: string) => void): () => void;\n}\n```\nNew owner exports `createShellTails(options)`, `SHELL_TAIL_TOTAL_MAX_BYTES` and exposes `endTask(id)` to the registry. Foreground lookup may return undefined until US-004 connects subscriptions. Tests build the real registry as existing registry tests do, stubbing log writes through _backgroundTaskDeps; the seam test drives adopt's returned sink, not a direct internal tail append. Verify the host uses this exact same object.",
+      "acceptanceCriteria": [
+        "[unit] After adopt(handle) returns sink s for task bash-00000001, s.append(\"stdout\", the UTF-8 bytes of \"hi\\n\") makes taskTail(\"bash-00000001\") return lines [\"hi\"].",
+        "[unit] taskTail returns undefined for an id the registry does not list.",
+        "[unit] taskTail returns undefined for the id of an agent task.",
+        "[unit] Output appended after the task ended does not change its tail.",
+        "[unit] Each sink append notifies every onShellOutput listener with the task id.",
+        "[unit] The unsubscribe onShellOutput returned stops further notifications to that listener.",
+        "[unit] An onShellOutput listener that throws is logged at warn, and the other listeners are still notified for the same append.",
+        "[unit] A moved command's background task, adopted with origin: \"moved\" and fed the replayed chunks \"a\\n\" and \"b\\n\" through its sink, shows [\"a\", \"b\"] in taskTail(id).",
+        "[unit] With _backgroundTaskDeps.shellTailTotalMaxBytes set to 8, when two finished tasks hold 6 bytes of tail each, the tail of the one that ended earlier is evicted: its taskTail(id).lines is empty.",
+        "[unit] With _backgroundTaskDeps.shellTailTotalMaxBytes set to 8 and two finished tasks holding 6 bytes each, the earlier-ended task's taskTail(id).truncated is true after its tail is evicted.",
+        "[unit] With _backgroundTaskDeps.shellTailTotalMaxBytes set to 8, a running task's tail is never evicted, even while the total stays over the limit.",
+        "[unit] SHELL_TAIL_TOTAL_MAX_BYTES equals 4194304.",
+        "[unit] A chat host built with a task registry exposes host.shellOutput, and a task adopted through host.tasks is readable through host.shellOutput.taskTail: after its sink appends the UTF-8 bytes of \"hi\\n\", host.shellOutput.taskTail(sink.id).lines equals [\"hi\"].",
+        "[unit] When an onShellOutput listener throws during a sink append of the UTF-8 bytes of \"hi\\n\", taskTail(sink.id).lines still equals [\"hi\"]."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "background-tasks",
+        "streaming"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New shared tail-owner abstraction plus aggregate eviction, listener isolation and multi-file host/factory wiring."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/background/task-registry.ts",
+        "packages/nax/src/chat/background/host-tasks.ts",
+        "packages/nax/src/chat/background/index.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/background/shell-tail.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/background/shell-tails.ts",
+        "packages/nax/test/unit/chat/background/shell-tails.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Track foreground shell tails by tool call id",
+      "description": "**Goal** — Subscribe the real task registry to ForegroundCommand output and release its call-id tail when the registration ends or moves.\n\n**Motivation** — `nax-agent` already receives the foreground output as it arrives (`runMovableForeground` passes `onOutput` into the launch and keeps the newest 1 MiB in `outputReplay`, `packages/nax-agent/src/tools/bash-background.ts`), but the buffer is private: `ForegroundCommand` carries only `command` and `moveToBackground()`.\n\n**Approach** — `foreground(call)` subscribes through `call.onOutput` and keeps a tail under `call.callId` in `shell-tails.ts`; the unregister function drops it.\n\n`runMovableForeground` registers `port.foreground(control.call)` and launches with `onOutput: output.append`; on ctrl+b `moveToBackground()` calls `port.adopt({ origin: \"moved\", ... })` and `output.replay(sink)` appends every retained chunk (up to `FOREGROUND_REPLAY_BYTES`, 1 MiB) to the new sink before forwarding live output. So a moved command's background task receives its earlier output through the ordinary sink `append` path; no tail needs moving.\n\nA foreground call carries no callId: its output is still observed, but foregroundTail cannot address it and no card shows it. The foreground call ends or moves: its foreground tail is dropped; foregroundTail(callId) returns undefined. Calls without onOutput register exactly as today. Preserve symbol-keyed foreground registration, hasForeground(), newest-call moveForeground() and existing lifecycle notification behavior. Subscribe once even without a call id; release the subscription and retained accounting on unregister. Foreground tails are never evicted by the total budget.\n\n**Scope** — In: task-registry.ts foreground lifecycle, shell-tails.ts foreground ownership and new unit/integration tests. Out: modifying the agent observer contract (US-001), background sink/log wiring (US-003), card/view display (US-005–008), and manually transferring a foreground tail on ctrl+b. Live output of a subagent's own Bash calls, in the agent view or anywhere else: subagent sessions are opened without the background-command port. Shell output of ACP-backed agents (claude, codex and others): their shells are not run by nax-agent.\n\n**Interface** — Consume the upstream ForegroundCommand optional members verbatim:\n```ts\nreadonly callId?: string;\nonOutput?(listener: (stream: BackgroundStream, chunk: Uint8Array) => void): () => void;\n```\nThe registry continues to implement `foreground(call: ForegroundCommand): () => void`, and exposes `foregroundTail(callId: string): ShellTailView | undefined` and `onShellOutput(listener: (id: string) => void): () => void`.\n\nThe foreground fake records its onOutput listener and an unsubscribe call. The cross-package seam test runs the real Bash tool created with the real registry as its background port, with only _bashToolDeps.runArgv stubbed (imported from @nathapp/nax-agent/internal, as bash-intercept.test.ts already does), and reads foregroundTail while the gated launch runs and after it completes. No existing call-id-less fakes require edits.",
+      "acceptanceCriteria": [
+        "[unit] foreground(call) with a foreground fake carrying callId \"c1\" subscribes through call.onOutput once.",
+        "[unit] A chunk \"x\\n\" the foreground fake's listener receives makes foregroundTail(\"c1\") return lines [\"x\"].",
+        "[unit] When the foreground fake registered with callId \"c1\" delivers the UTF-8 chunk \"x\\n\", onShellOutput listeners receive \"c1\".",
+        "[unit] Calling the unregister function foreground(call) returned calls the fake's unsubscribe.",
+        "[unit] After calling the unregister function returned by foreground(call) for callId \"c1\", foregroundTail(\"c1\") returns undefined.",
+        "[unit] foreground(call) with a call that has no onOutput registers it as today: hasForeground() is true and foregroundTail(\"c1\") returns undefined.",
+        "[unit] foreground(call) with a call that has onOutput but no callId still subscribes through onOutput, and foregroundTail returns undefined for every id.",
+        "[unit] (control) When a call with callId and onOutput is registered, moveForeground() invokes that registered call's moveToBackground(), as today.",
+        "[integration] The Bash tool created with createBashTool({ background: registry }), run with a ToolRunContext whose toolCallId is \"c1\" and with _bashToolDeps.runArgv stubbed to report \"line one\\n\" and then wait, makes registry.foregroundTail(\"c1\")?.lines equal [\"line one\"] while it runs.",
+        "[integration] Once that stubbed launch resolves and the Bash call returns, registry.foregroundTail(\"c1\") returns undefined.",
+        "[unit] With _backgroundTaskDeps.shellTailTotalMaxBytes set to 8 and a foreground tail of 10 bytes, the foreground tail is not evicted.",
+        "[integration] When a real foreground Bash call carrying toolCallId \"c1\" moves to the background and its foreground registration unregisters, registry.foregroundTail(\"c1\") returns undefined."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "bash",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two registry modules consume contracts already supplied by US-001 and US-003; subscription/unregister plumbing reuses the existing foreground lifecycle and is directly testable through the sanctioned runArgv seam."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/background/task-registry.ts",
+        "packages/nax/src/chat/background/shell-tails.ts",
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax/test/unit/tools/bash-intercept.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/background/shell-tails-foreground.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Render a coalesced five-line tail in running Bash cards",
+      "description": "**Goal** — Keep running Bash transcript entries current with the foreground tail and render its newest five lines as clipped muted rows.\n\n**Motivation** — A foreground Bash call shows nothing until it ends, so during a long build or test run the user cannot tell progress from a hang (#3022).\n\n**Approach** — `useForegroundTails({ host, entries, setEntries })`, called from `ChatApp.tsx` beside `useJobPanels` (which takes the same `entries` / `setEntries`), subscribes to `host.shellOutput.onShellOutput`. When notified for a call id that names a running `Bash` entry of the transcript, it schedules one update at most `SHELL_TAIL_REFRESH_MS` later (further notifications in that window join it); the update re-checks inside the `setEntries` updater that the id still names a running `Bash` entry (returning the same array when not), and replaces that entry with a copy whose `liveTail` is `host.shellOutput.foregroundTail(callId)?.lines` (or no `liveTail` when that is undefined). Replacing the entry object is what makes `cachedLines` lay the card out again, and the click-to-row mapping (`transcript-click.ts`, `ChatApp.tsx`) reads the same entries, so card height and click targets stay in step. A host without `shellOutput` gets no updates. The hook's timer is reached through `_foregroundTailsDeps.schedule(callback, ms)` / `_foregroundTailsDeps.cancel(handle)`, which tests drive with `makeFakeClock()`.\n\nThe tool transcript entry gains `liveTail?: readonly string[]`. `applyToolResult` returns the finished entry without `liveTail`. For `toolCardModel(entry, options)`: for a `Bash` entry with `status: \"running\"` and a non-empty `liveTail`, the summary is the last `CARD_TAIL_LINES` lines of `liveTail`, each cut to `CARD_TAIL_LINE_MAX_CHARS` characters, muted, and marked `clip: true`; every other entry is unchanged. `CardLine` gains `readonly clip?: boolean`; `toolSummaryLines` in `layout.ts` draws a clipped line as exactly one row (`singleRow`, then cut to the row's width with a trailing `…`) instead of wrapping it. Constants: `CARD_TAIL_LINES = 5` in `tool-card.ts`; `CARD_TAIL_LINE_MAX_CHARS = 512` in `tool-card.ts`, the most of one tail line the card model keeps.\n\nTimer seams: every `schedule(callback, ms)` returns a handle and `cancel(handle)` clears it; tests adapt `makeFakeClock()`'s `setTimeout` / `clearTimeout` to them. Cancel scheduled work and unsubscribe on unmount. Preserve terminal control neutralisation using existing sanitizeText/singleRow paths and column-aware clipping. New logic belongs in the hook, not ChatApp, which gets call-site edits only.\n\n`MountOptions` of `mountChatPicker` gains an optional `shellOutput` that the fake host exposes as `host.shellOutput`. The invariant: every existing caller passes no `shellOutput` and mounts exactly the host it mounts today.\n\n**Scope** — In: use-foreground-tails.ts, transcript-model.ts, tool-card.ts, layout.ts, ChatApp.tsx call site, additive chat-picker helper option and behavioral tests. Out: tail storage/agent observation (US-001–004), ShellView/opening (US-006–008), RunCommand tails and ANSI colour rendering. A live tail on `RunCommand` cards: only `Bash` cards show one. Rendering ANSI colours in shell output: control sequences are neutralised by the existing `sanitizeText`, colours are not drawn.\n\n**Interface** — `useForegroundTails({ host, entries, setEntries })`; tool entry addition `liveTail?: readonly string[]`; CardLine addition `readonly clip?: boolean`; seams `_foregroundTailsDeps.schedule(callback, ms)` / `_foregroundTailsDeps.cancel(handle)`.\n\nMount through mountChatPicker's default held turn. After submit(), emit `{ type: \"tool_call\", callId: \"c1\", name: \"Bash\", input: { command: \"make\" } }`, keeping the turn running until finish(). The shellOutput fake returns c1's tail and notifies on demand; adapt the shared fake clock to the named seams. Count `_layoutDeps.layoutEntry` calls for that entry to prove burst coalescing. Add pure model/reducer assertions in existing matching unit tests; create the mounted hook test listed in expectedFiles.",
+      "acceptanceCriteria": [
+        "[integration] With a \"c1\" tail of lines [\"one\", \"two\"] and a notification for \"c1\", after SHELL_TAIL_REFRESH_MS both lines appear in the running Bash card.",
+        "[integration] With a tail of 8 lines \"l1\" to \"l8\", the running card shows \"l4\" to \"l8\" and not \"l3\".",
+        "[integration] After the tail gains \"three\" and the fake notifies \"c1\", the card shows \"three\" once SHELL_TAIL_REFRESH_MS has passed.",
+        "[integration] Before SHELL_TAIL_REFRESH_MS has passed after a notification, the card does not yet show the new line.",
+        "[integration] Ten notifications for \"c1\" within one SHELL_TAIL_REFRESH_MS window lay out the \"c1\" card once, counted through _layoutDeps.layoutEntry calls for that entry.",
+        "[integration] A 300-character tail line in a 80-column chat occupies exactly one row of the card, ending in ….",
+        "[integration] After the turn emits the tool_result for \"c1\", the card shows the result preview as today and no tail line absent from that preview.",
+        "[integration] With no shellOutput on the host, the running Bash card renders as today (header only).",
+        "[integration] A notification for an id that names no running Bash entry replaces no transcript entry.",
+        "[integration] Clicking the header row of a running Bash card that shows a 5-line tail toggles that card's expansion and no other entry's.",
+        "[integration] A tail line holding the bytes \\u001b[?1049l is drawn with that control sequence neutralised, as other tool output is.",
+        "[integration] Unmounting the chat while a tail update is scheduled leaves no pending timer on the fake clock.",
+        "[unit] toolCardModel for a running Bash entry with liveTail [\"a\", \"b\"] returns a summary of two muted lines \"a\" and \"b\", each with clip true.",
+        "[unit] toolCardModel for a running Bash entry with a liveTail line of 600 characters returns that line cut to CARD_TAIL_LINE_MAX_CHARS characters.",
+        "[unit] toolCardModel for a running Bash entry with an empty liveTail returns an empty summary.",
+        "[unit] toolCardModel for a Bash entry with status ok returns the same model with and without liveTail.",
+        "[unit] toolCardModel for a running RunCommand entry returns the same model with and without liveTail.",
+        "[unit] reduceTranscript applying the tool_result for a Bash entry that had liveTail returns an entry with no liveTail member."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "react",
+        "streaming"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinates coalesced React updates, transcript identity/cache invalidation, rendering geometry and result cleanup across multiple modules."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/use-job-panels.ts",
+        "packages/nax/test/ui/chat/chat-app.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/use-foreground-tails.ts",
+        "packages/nax/test/ui/chat/use-foreground-tails.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/chat-picker.tsx",
+          "reason": "`MountOptions` gains an optional `shellOutput` that the fake host returns as `host.shellOutput`. The invariant: every existing caller passes no `shellOutput` and mounts exactly the host it mounts today."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Render the full-screen shell view and pure view model",
+      "description": "**Goal** — Build a memoized full-screen shell renderer with pure header/footer/body models over the shared in-memory tail.\n\n**Motivation** — A background shell opens as a one-shot collapsed listing (`showOutput` in `packages/nax/src/tui/chat/useChatPicker.ts`), so following it means clicking again and again. Background subagents got a live full-screen view in #3018; shells did not (#3023).\n\n**Approach** — `packages/nax/src/tui/chat/ShellView.tsx` and `packages/nax/src/tui/chat/shell-view-model.ts`: the full-screen shell view, structured like `AgentView.tsx` / `agent-view-model.ts`.\n\n`shell-view-model.ts` exports (pure): `shellViewTitle(task: BackgroundTask | undefined, id: string, nowMs: number): StyledLine` (header row; `<id> is no longer listed` when `task` is undefined), `shellViewFooter(task: BackgroundTask | undefined, error?: string): StyledLine` (hint or error), and `shellViewBody(view: ShellTailView | undefined, logPath: string | undefined): readonly StyledLine[]` (truncated notice first, every line passed through `sanitizeText`).\n\n`ShellView` takes `{ shells: ChatShellOutput, tasks: ChatBackgroundTasks, id, columns, rows, theme, mouse?, onCopy?, onClose }`:\n- Header row: the command (and description when present), the state (`running`, `succeeded`, `failed`, `stopped`), the elapsed time (`formatDuration`) while running, refreshed every `SHELL_VIEW_TICK_MS` even when no output arrives, or the duration once ended, the exit code once ended (`exit 2`), and the task id; then a rule row, as the agent view draws.\n- Body: `TranscriptViewport` over the tail lines (sanitised like every span), so scrolling and following the newest line behave as in the agent view. When the tail is `truncated`, the first body line reads `earlier output dropped; full log: <logPath>`.\n- Footer hint: `esc to return · k to stop` while running, `esc to return` once ended; an error from stopping replaces the hint with the error message.\n- An id `tasks.get` does not return: the header reads `<id> is no longer listed` and the body is empty (a defensive path: the registry never deletes entries today).\n\nTime is read through `_shellViewDeps.now()` and timers through `_shellViewDeps.schedule` / `_shellViewDeps.cancel`; `_shellViewDeps.rendered()` is called once per render, as `_agentViewDeps.rendered` is. Timer seams: every `schedule(callback, ms)` returns a handle and `cancel(handle)` clears it; tests adapt `makeFakeClock()`'s `setTimeout` / `clearTimeout` to them. `_shellViewDeps.now()` returns epoch milliseconds. Constant: `SHELL_VIEW_TICK_MS = 1000` in `ShellView.tsx`, the elapsed-time tick of a running shell's view header. Define the seams and constant here; live tick/subscriptions/keys are implemented by US-007.\n\nUse the existing frame geometry (two header rows and one footer) and viewport mouse/copy plumbing. Memoize the component so an unchanged-props parent redraw does not call rendered(). For unlisted ids do not display a stale shell tail. Use formatDuration rather than introducing another formatter. No existing tests need modification for this new view.\n\n**Scope** — In: ShellView.tsx, pure shell-view-model.ts, rendering/model tests and injectable seams. Out: live event/timer lifecycle and ESC/k behavior (US-007), shared mounting and opening gestures (US-008), extra log reads, ANSI colours and new scrolling behaviour. Reading the task log file beyond the in-memory tail in the shell view: a truncated view names the log path instead. Rendering ANSI colours in shell output: control sequences are neutralised by the existing `sanitizeText`, colours are not drawn. New scrolling behaviour: the shell view uses `TranscriptViewport` as the agent view does.\n\n**Interface** — Verbatim pure signatures:\n```ts\nshellViewTitle(task: BackgroundTask | undefined, id: string, nowMs: number): StyledLine\nshellViewFooter(task: BackgroundTask | undefined, error?: string): StyledLine\nshellViewBody(view: ShellTailView | undefined, logPath: string | undefined): readonly StyledLine[]\n```\nProps: `{ shells: ChatShellOutput, tasks: ChatBackgroundTasks, id, columns, rows, theme, mouse?, onCopy?, onClose }`.\n\nRender against ChatShellOutput and ChatBackgroundTasks fakes listing bash-00000001 with command npm test. Fix now() to epoch milliseconds and use the fake clock seams; pure tests assert data rows, and mounted tests assert the actual frame and memoization.",
+      "acceptanceCriteria": [
+        "[integration] For a running task, the header row shows npm test and running.",
+        "[integration] The header row shows the task id bash-00000001.",
+        "[integration] For a running task started 75 seconds before _shellViewDeps.now(), the header shows 1m 15s.",
+        "[integration] For a task that ended with state failed and exit code 2, the header shows failed and exit 2.",
+        "[integration] For a task with a description, the header shows the description beside the command.",
+        "[integration] The body shows the tail lines of taskTail(\"bash-00000001\").",
+        "[integration] When the tail view is truncated, the first body line reads \"earlier output dropped; full log: \" followed by the task's logPath.",
+        "[integration] A body line holding the bytes \\u001b[?1049l is drawn with that control sequence neutralised.",
+        "[integration] For a running task, the footer reads esc to return · k to stop.",
+        "[integration] For an ended task, the footer reads esc to return.",
+        "[integration] For id bash-00000009, which the tasks fake does not list, the header reads bash-00000009 is no longer listed.",
+        "[integration] For that unlisted id, the body is empty.",
+        "[integration] A redraw of the parent with the same props does not re-render the view, counted through _shellViewDeps.rendered.",
+        "[unit] shellViewTitle for a task with state: \"stopped\" names the state stopped.",
+        "[unit] shellViewFooter(task, \"boom\") returns a row reading boom.",
+        "[unit] shellViewBody(undefined, undefined) returns no lines."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "react",
+        "shell-view"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "New renderer and pure model mirror the existing AgentView/viewport pattern; live lifecycle integration is reserved for the next story."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/AgentView.tsx",
+        "packages/nax/src/tui/chat/agent-view-model.ts",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/duration.ts",
+        "packages/nax/test/ui/chat/agent-view.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/ShellView.tsx",
+        "packages/nax/src/tui/chat/shell-view-model.ts",
+        "packages/nax/test/ui/chat/shell-view.test.tsx",
+        "packages/nax/test/unit/tui/chat/shell-view-model.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Make the shell view live and implement stop/return keys",
+      "description": "**Goal** — Refresh ShellView from shell/task events and elapsed-time ticks, with safe stop/return behavior and complete cleanup.\n\n**Motivation** — A background shell opens as a one-shot collapsed listing (`showOutput` in `packages/nax/src/tui/chat/useChatPicker.ts`), so following it means clicking again and again. Background subagents got a live full-screen view in #3018; shells did not (#3023).\n\n**Approach** — `ShellView` subscribes to `onShellOutput` (coalesced to `SHELL_TAIL_REFRESH_MS`) and `tasks.onChange`, ticks the elapsed time every `SHELL_VIEW_TICK_MS` while the task runs, handles ESC and `k`, shows a stop error in the footer, and unsubscribes and cancels its timers on unmount.\n\n- Keys: ESC calls `onClose`; `k` while the task runs calls `tasks.stop(id)` and the view stays open; `k` once ended does nothing.\n- Redraws for tail changes coalesce to at most one per `SHELL_TAIL_REFRESH_MS`. The view also subscribes to `tasks.onChange`, as `AgentView` does, so a task that ends while the view is open updates its header and footer at once. Unmounting unsubscribes every listener and cancels every pending timer.\n- Time is read through `_shellViewDeps.now()` and timers through `_shellViewDeps.schedule` / `_shellViewDeps.cancel`; `_shellViewDeps.rendered()` is called once per render, as `_agentViewDeps.rendered` is.\n\nTimer seams: every `schedule(callback, ms)` returns a handle and `cancel(handle)` clears it; tests adapt `makeFakeClock()`'s `setTimeout` / `clearTimeout` to them. `_shellViewDeps.now()` returns epoch milliseconds. `SHELL_TAIL_REFRESH_MS = 100` is the most often a consumer redraws for tail changes (the registry notifies per append; consumers coalesce); `SHELL_VIEW_TICK_MS = 1000` is the elapsed-time tick of a running shell's view header.\n\nHeader row: the command (and description when present), the state (`running`, `succeeded`, `failed`, `stopped`), the elapsed time (`formatDuration`) while running, refreshed every `SHELL_VIEW_TICK_MS` even when no output arrives, or the duration once ended, the exit code once ended (`exit 2`), and the task id; then a rule row, as the agent view draws. Footer hint: `esc to return · k to stop` while running, `esc to return` once ended; an error from stopping replaces the hint with the error message.\n\nWhen tasks.stop(id) throws from the view, the view stays open and shows the error message in its footer row. Ignore tail notifications for other ids and avoid state refreshes unrelated to the viewed task. Keep output coalescing and elapsed timers independently cancellable, and prevent callbacks after disposal. Preserve the memoized static view/model from US-006. Ctrl+c will close via the existing shared controller when US-008 mounts the view; do not reinterpret it as stopping the process.\n\n**Scope** — In: extend ShellView.tsx subscriptions, timer lifecycle, ESC/k handling and error display; add live view integration tests. Out: rebuilding the static model/chrome (US-006), chat mounting and entry gestures/ctrl+c integration (US-008), shell stdin and new scrolling behaviour. Input to a running shell (stdin): the view is output only. New scrolling behaviour: the shell view uses `TranscriptViewport` as the agent view does.\n\n**Interface** — Consume `onShellOutput(listener: (id: string) => void): () => void`, `tasks.onChange`, `tasks.stop(id)` and the existing props `{ shells: ChatShellOutput, tasks: ChatBackgroundTasks, id, columns, rows, theme, mouse?, onCopy?, onClose }`; use `_shellViewDeps.now()`, `_shellViewDeps.schedule(callback, ms)`, `_shellViewDeps.cancel(handle)` and `_shellViewDeps.rendered()`.\n\nTests use the US-006 shell/task fakes and fixed starting epoch, then advance makeFakeClock() through the seams. Assert immediate terminal-state updates separately from scheduled output/elapsed updates, rendered() counts for unrelated ids, stop exceptions, and every post-unmount source.",
+      "acceptanceCriteria": [
+        "[integration] When the fake clock advances SHELL_VIEW_TICK_MS with no output, a header that read 1m 15s reads 1m 16s.",
+        "[integration] When the tail gains a line and the fake notifies bash-00000001, the body shows the new line as its last visible line once SHELL_TAIL_REFRESH_MS has passed.",
+        "[integration] A notification for a different id does not re-render the view, counted through _shellViewDeps.rendered.",
+        "[integration] When the task ends while the view is open and the tasks fake fires onChange, the header shows the ended state without waiting for a tick.",
+        "[integration] When the viewed task ends while ShellView is open and tasks.onChange fires, the footer reads esc to return without waiting for a tick.",
+        "[integration] When the viewed task has ended and tasks.onChange has fired, pressing k does not call tasks.stop.",
+        "[integration] Pressing ESC calls onClose once.",
+        "[integration] Pressing k while the task runs calls tasks.stop(\"bash-00000001\") once.",
+        "[integration] Pressing k while the task runs does not call onClose.",
+        "[integration] When tasks.stop throws NaxError with message boom, the footer row shows boom.",
+        "[integration] When tasks.stop throws, onClose is not called.",
+        "[integration] After the view unmounts, the fake clock has no pending timer.",
+        "[integration] After the view unmounts, a notification for bash-00000001 causes no render.",
+        "[integration] After the view unmounts, an onChange from the tasks fake causes no render.",
+        "[integration] When tasks.get(id) returns undefined for the open view, pressing ESC still calls onClose once."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "react",
+        "shell-view",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The existing ShellView gains standard React subscriptions, two cancellable timers and key handlers by mirroring AgentView's revision hook; deterministic clock and event fakes make single-session TDD sufficient."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ShellView.tsx",
+        "packages/nax/src/tui/chat/AgentView.tsx",
+        "packages/nax/test/ui/chat/agent-view.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/shell-view-live.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Open shell views from the footer strip and jobs picker",
+      "description": "**Goal** — Route shell task gestures to ShellView using the existing shared view controller while preserving hidden-chat state and legacy-host listings.\n\n**Motivation** — A background shell opens as a one-shot collapsed listing (`showOutput` in `packages/nax/src/tui/chat/useChatPicker.ts`), so following it means clicking again and again. Background subagents got a live full-screen view in #3018; shells did not (#3023).\n\n**Approach** — The open view is held by the existing `useAgentView` state. `withAgentView` mounts `AgentView` when `host.tasks.get(id)?.kind === \"agent\"`, `ShellView` otherwise when `host.shellOutput` is defined, and `AgentView` (as today) for a non-agent id on a host without `shellOutput`; so `hushes`, `display: none`, the ask-closes-the-view effect and `closeForCtrlC` apply to both unchanged.\n\nEntry points, on a host whose `shellOutput` is defined: `openFromStrip` opens the view for a lone running shell (as it already does for a lone agent), and `useChatPicker`'s `choose` opens the view for any shell row of the jobs picker, running or ended. On a host without `shellOutput`, both keep today's `showOutput` listing. Job rows always keep `showOutput`.\n\nThe chat stays mounted and hidden, ESC or ctrl+c returns to it, and `k` stops a running shell. The chat transcript, scroll/input draft and queued state must not reset; every chat input handler remains hushed while the view is open. When an ask card arrives while the view is open, the view closes (existing useAgentView behaviour). Keep ctrl+g as the picker gesture, preserve multiple-task/no-lone-task picker routing, and distinguish job rows from shell task rows using host.tasks rather than merely the presence of shellOutput. The footer direct-open path requires one running task and no running job.\n\n`withAgentView` mounts `ShellView` for a non-agent id on a host with `shellOutput`; `openFromStrip` and the jobs picker's `choose` open the shell view on such a host; hosts without `shellOutput` and job rows keep `showOutput`.\n\nEvery existing test that asserts the shell output listing (jobs-opener.test.tsx, footer-shells.test.tsx, jobs-picker.test.tsx, agent-view.test.tsx \"a lone shell still lists its output instead of opening a view\" and \"Enter on a shell row still lists its output\") mounts a host without shellOutput, which keeps the listing. Do not rewrite those regression expectations. Use the optional shellOutput helper option created in US-005 for new cases. New logic belongs in use-agent-view.tsx/use-jobs-opener.ts/useChatPicker.ts, not in ChatApp.\n\n**Scope** — In: shared mount selection, footer/picker routing and new mounted chat tests. Out: agent/shell output production (US-001–004), card updates (US-005), view model and live key/timer implementation (US-006–007), and changes to nax run job panels or job-row listings. Changes to `nax run` job panels and to job rows of the jobs picker, which keep the existing output listing.\n\n**Interface** — Preserve `useAgentView(host)` (`id`, `display`, `open`, `close`, `hushes`, `closeForCtrlC`; a pending ask closes the view) and `withAgentView(chat, mount)`. Mount ShellView with `{ shells: ChatShellOutput, tasks: ChatBackgroundTasks, id, columns, rows, theme, mouse?, onCopy?, onClose }`, forwarding host.shellOutput, host.tasks and the existing close callback.\n\nMount ChatApp through mountChatPicker with tasks and shellOutput fakes sharing running bash-00000001, command npm test, unless a criterion overrides it. Exercise actual footer mouse clicks and ctrl+g/Enter picker choices; assert full-screen header/input visibility, draft restoration, asks and suppressed hidden typing, not just a mocked open call.",
+      "acceptanceCriteria": [
+        "[integration] A left click on the footer strip with that lone running shell and no job opens the shell view: the frame shows the view's header with npm test and no longer shows the chat input.",
+        "[integration] ESC in the opened shell view brings back the chat with its input draft as it was before the view opened.",
+        "[integration] ctrl+c in the opened shell view closes the view and the chat input reappears.",
+        "[integration] Enter on the shell row of the jobs picker (opened with ctrl+g) closes the picker and opens the shell view for bash-00000001.",
+        "[integration] Enter on the row of a shell task that has ended opens the shell view for it, showing its ended state.",
+        "[integration] On a host without shellOutput, a strip click on the lone running shell appends the output listing as today.",
+        "[integration] On a host without shellOutput, Enter on a shell row appends the output listing as today.",
+        "[integration] (control) Enter on a job row of the jobs picker appends the job's output listing as today.",
+        "[integration] (control) A strip click with one lone running agent task opens the agent view as today.",
+        "[integration] With two running shells, a strip click opens the jobs picker, not a view.",
+        "[integration] An ask card arriving while the shell view is open closes the view and shows the card.",
+        "[integration] While the shell view is open, typed characters do not reach the chat input."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "react",
+        "integration"
+      ],
+      "dependencies": [
+        "US-005",
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing view/picker modules need conditional routing to the completed ShellView; draft preservation, ctrl+c and input suppression already belong to useAgentView and mounted chat helpers exercise the added branches."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/use-agent-view.tsx",
+        "packages/nax/src/tui/chat/use-jobs-opener.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/ShellView.tsx",
+        "packages/nax/test/helpers/chat-picker.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/shell-view-open.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Document live Bash output and the shell view",
+      "description": "**Goal** — Add the chat shell guide and a documentation-index link describing the delivered live output behavior.\n\n**Motivation** — A foreground Bash call shows nothing until it ends, so during a long build or test run the user cannot tell progress from a hang (#3022).\n\n**Approach** — The chat guide describes live shell output. Documentation only: a new guide and one new row in docs/README.md.\n\nCreate docs/guides/chat-shells.md with sections `Live output` and `Shell view`. State that a running Bash card shows the last 5 lines of output and that this is display only. Name the two opening paths (a strip click on a lone shell, and Enter on a shell row of the jobs picker opened with ctrl+g) and keys ESC, ctrl+c and `k`. State the tail limits (2000 lines or 256 KiB per shell, 4 MiB in total) and that a truncated view names the log file path. Add a row linking guides/chat-shells.md in docs/README.md. Explain that ESC/ctrl+c returns without destroying the chat, k stops a running shell, and output is display-only; keep the existing physical-terminal resize guide unchanged.\n\n**Scope** — In: the new guide and one documentation table row. Out: runtime changes and behavioral tests (US-001–008); no changes to the PTY regression instructions. This binding documentation-only story is explicitly retained. Input to a running shell (stdin): the view is output only.\n\n**Interface** — No runtime API; public documentation paths are `docs/guides/chat-shells.md` and the `guides/chat-shells.md` link in `docs/README.md`.\n\nState explicitly that the shell view is output only and does not accept stdin. No-test: documentation only. Verify the four review criteria directly against the resulting guide and index, including the truncation failure case.",
+      "acceptanceCriteria": [
+        "[review] docs/guides/chat-shells.md has a section Live output stating that a running Bash card shows the last 5 lines of output and that this is display only.",
+        "[review] docs/guides/chat-shells.md has a section Shell view naming the two ways to open it (a strip click on a lone shell, and Enter on a shell row of the jobs picker opened with ctrl+g) and its keys ESC, ctrl+c and k.",
+        "[review] docs/guides/chat-shells.md states the tail limits (2000 lines or 256 KiB per shell, 4 MiB in total) and, for the failure case where output is truncated, states that a truncated view names the log file path.",
+        "[review] docs/README.md has a row linking guides/chat-shells.md."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "documentation"
+      ],
+      "dependencies": [
+        "US-008"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "Two Markdown edits document the already implemented feature and require no behavioral test execution.",
+        "noTestJustification": "The binding US-009 is documentation only: a new guide and index row, with no runtime behavior change; all four criteria, including the truncation failure case, are verified by review."
+      },
+      "contextFiles": [
+        "docs/guides/chat-layout-pty.md",
+        "docs/README.md"
+      ],
+      "expectedFiles": [
+        "docs/guides/chat-shells.md"
+      ],
+      "workdirSource": "defaulted"
+    }
+  ],
+  "analysis": "Goal and delivery: close #3022 and #3023 with one PR containing exactly US-001 through US-009. This is an enhancement of the existing native chat shell path, not a new execution transport. A running foreground Bash card displays the newest five lines; background shells open a live full-screen output-only view. All output is display-only, bounded and in memory; the existing model-facing Bash result and durable task log retain their current behavior. The binding dependency graph has two roots (US-001 agent observer contract and US-002 pure tail), joins in US-004, and parallel card/view branches converge in US-008; US-009 documents the result. US-009 spans root documentation and intentionally omits workdir. All other workdirs match the binding table.\n\nExploration: codebase-memory MCP is not exposed in this session, so direct Read/Grep/Glob navigation was used against the supplied repository root. Source was inspected rather than assuming the spec's historical line numbers remain exact. Architecture guidance is docs/architecture/ARCHITECTURE.md:11 (focused standards index), :141 (workspace dependency direction), and :153 (limits and seams). Use Bun/React/Ink and bun:test in nax, Node-compatible TypeScript in nax-agent, dependency injection for external calls, shared helpers and deterministic clocks. No implementation or validation commands were run during PRD drafting; only the PRD artifact is being authored.\n\nUS-001, existing flow and modifications: packages/nax-agent/src/tools/types.ts:201 already defines optional ToolCallContext.toolCallId; native/session/turn-tool-batch.ts:234 supplies the model call id. session/session-interaction.ts:229 passes an optional id into the runtime context. tools/runtime.ts:443 defines runTool and :463-474 constructs the context for target.run; add optional toolCallId conditionally here, not a synthesized identifier or an undefined-valued member. tools/registry.ts:95 defines ToolRunContext without that field today. tools/bash.ts:429 invokes runBashWithBackground and :439 onward frames the model result; thread ctx.toolCallId to the execution request without changing that framing/truncation. tools/bash-background.ts:25 defines ForegroundCommand, :63 defines outputReplay, :108 defines foregroundControl and :153 defines runMovableForeground. Existing outputReplay retains 1 MiB and forwards to an adopted sink after replay; runMovableForeground unregisters in finally, including after a move. Add optional callId and onOutput on the public foreground shape, always supply the observer method on real movable calls, and isolate each listener exception. Notification must happen only while foreground and before replay's moved-sink early return; observers must never prevent replay retention or another listener's delivery. Preserve signal/deadline handling and the existing launch-versus-release race. Existing embedders and fakes supply only command/moveToBackground and must remain compatible. ForegroundCommand and ToolRunContext already appear in packages/nax-agent/api/nax-agent.api.txt:137 and :351; inspect the actual API gate before changing its snapshot (the current grep shows exported names, not a need to add new exported names). Do not add underscore seams to the public entry. Agent code must not import nax or use Bun APIs; tests in nax access _bashToolDeps through @nathapp/nax-agent/internal, not a cross-package source path. Existing tests to mirror: packages/nax-agent/test/unit/tools/after-tool-truncation.test.ts:29-43 imports the real runtime/tool and restores the runArgv seam; test/unit/tools/bash-background-move.test.ts pins replay/move. Write new bash-background-output.test.ts using the real runtime, a granting policy, recorded ForegroundCommand and gated runArgv output. This is output metadata/observation, not a change to authorization or session identity.\n\nUS-002, pure tail: packages/nax/src/chat/background/task-types.ts:3 defines lifecycle states, :6 defines BackgroundTask, and :72 defines ChatBackgroundTasks. Add ShellTailView beside those types without expanding ChatBackgroundTasks. task-events.ts:110 provides a bounded pure-log precedent but charges estimated UTF-16/event bytes; do NOT copy that accounting for shell tails, which must count UTF-8 text bytes excluding newlines. Create shell-tail.ts with one streaming decoder and one shared partial line for arrival-ordered stdout/stderr. CRLF split across chunks must terminate once, a lone CR must replace the current partial line when subsequent non-LF text arrives, blank lines persist, partial lines consume line/byte limits, invalid UTF-8 becomes U+FFFD, and overlong lines keep a newest character-boundary suffix. Eviction empties retained text and sets truncated. Distinguish complete final lines from a phantom empty partial after a trailing LF. Constants are 2000 lines, 256*1024 bytes and 100 ms consumer refresh. Export through background/index.ts:1-29. New pure tests use tiny injected limits for cap boundaries and real byte chunks for decoder cases.\n\nUS-003, host ownership and registry integration: packages/nax/src/chat/background/task-registry.ts:121 implements ChatBackgroundTasks; :125 keeps symbol-keyed foregroundCalls, :153 supplies onAgentEvents, :180-213 shows finished-oldest eviction/accounting and isolated warn logging. adopt at :294 returns a sink at :327-333 that ignores writes after state ceases to be running. Feed process chunks into the shell tail at that guarded sink boundary, independently of private disk append at :391: disk log failure or its 50 MiB cap must not define the display-tail lifecycle. finalize at :411 records termination, writes log metadata and emits state; call endTask(id) there. Do not misclassify agent appendLine output or registry exit metadata as process bytes. New shell-tails.ts owns display tails, listeners, aggregate accounting and eviction after every append/endTask. Only finished background tails are evictable, oldest-ended first; retain empty truncated views after eviction and protect all running/foreground tails even when the total cannot be brought under 4 MiB. Add _backgroundTaskDeps.shellTailTotalMaxBytes beside the existing seams at :69. Keep the existing 496-line registry below its 600-line hard limit by delegating. host-tasks.ts:7-12 returns a wrapper, not the registry itself: createBackgroundTasks returns ChatBackgroundTasks & ChatShellOutput, while createHostTasks returns { tasks: ChatBackgroundTasks & ChatShellOutput; provider: ToolProvider }. Add optional ChatHost.shellOutput in chat-host-types.ts:61-77; widen the concrete tasks property at chat-host.ts:79 and set shellOutput to the exact instance assigned at :212. The chat session receives that port at :319; subagent-session.ts:233/:266 does not, so no origin filter or subagent-session change is needed. Verify real host-to-registry wiring, not just assignability. Existing task-registry.test.ts:24-59 demonstrates restored log seams and completion gates; task-registry-agent-run.test.ts, task-registry-agents.test.ts and tasks-provider.test.ts protect agent/task/provider behavior. Keep task tools, notices, log output and markSeen semantics unchanged. All five spec-listed contextFiles are retained; task-types.ts and chat-host-types.ts remain explicit implementation files in the description and this analysis.\n\nUS-004, foreground bridge: packages/nax/src/chat/background/task-registry.ts:228-235 registers calls with a symbol and emits lifecycle changes; :241-246 moves the newest call. Attach the upstream observer to the upstream shell-tail owner without changing those lifecycle rules. Missing onOutput keeps hasForeground/moveForeground behavior; missing callId is still observed but unaddressable. Unregister unsubscribes, drops the call-id lookup and releases accounting on end/move. The real moved call already replays retained bytes into its new background sink; never manually transfer a tail. foregroundTail returns ShellTailView | undefined, so assert foregroundTail(\"c1\")?.lines equals [\"line one\"], not that the view object itself equals an array. packages/nax/test/unit/chat/background/task-registry-notices.test.ts:189-220 pins compatibility and :246-259 pins lifecycle notifications/idempotence. packages/nax/test/unit/tools/bash-intercept.test.ts:37 imports the sanctioned @nathapp/nax-agent/internal seam; :56-61 stubs runArgv. The real Bash tool and real registry must be connected with only that launch seam stubbed so the test observes actual cross-package call-id flow. Cleanup after a moved call is observed after its returned unregister has run, not synchronously inside moveForeground().\n\nUS-005, transcript/model/layout/UI: packages/nax/src/tui/chat/transcript-model.ts:40 defines tool entries and :207-225 applies tool_result by spreading the existing entry; adding liveTail requires explicitly omitting it from the finished entry, not setting it undefined. tool-card.ts:22 defines CardLine and :393-408 constructs the pure model; add clip and the 5/512 constants and alter only running Bash summaries. layout.ts:219-225 currently wraps all summary lines through cardRows; add a single-row sanitized, display-column-aware ellipsis path for clip. layout-lines.ts:1-17 documents Unicode-column measurement and terminal-control sanitization; reuse singleRow and existing span/width utilities. layout.ts:357 caches by entry identity, so the hook must replace the running entry object and preserve untouched identities; mutating a liveTail array or local view state alone will not invalidate layout or update click mapping. use-job-panels.ts:133-149 demonstrates functional setEntries rechecks while a turn streams; :271 onward uses refs to avoid stale render values. New use-foreground-tails.ts subscribes only when host.shellOutput exists, batches notifications through schedule/cancel at 100 ms, verifies running Bash membership again inside the updater, removes a now-unavailable tail, and cancels/unsubscribes on cleanup. Avoid stale timers resurrecting live output after tool_result. ChatApp.tsx:1228 calls useJobPanels; add only an import/call-site beside it because this file is already 1482 lines at its cognitive gate. test/helpers/chat-picker.tsx:36-63 defines MountOptions, :90-113 builds the fake host, and :139-156 provides emit/finish for a held turn. Its helper is exported as mountChatPicker; add an optional shellOutput without changing the default host contract. Reuse @test/helpers toolCallEvent/makeFakeClock; count _layoutDeps.layoutEntry for batching and use mounted click tests to verify added rows do not break header selection. Existing chat-app.test.tsx, tool-card unit tests and transcript reducer tests are regression context.\n\nUS-006/007, view architecture: packages/nax/src/tui/chat/AgentView.tsx:30-44 defines props, :47-53 exposes rendered(), :60-95 subscribes/coalesces/state-filters, and :98-143 renders memoized header/rule/TranscriptViewport/footer chrome. Mirror the pattern, not its agent-specific reducer/event fold or its direct timers. agent-view-model.ts:19-21 defines 2 header rows/3 chrome rows; :62-85 illustrates styled/singleRow headers. ShellView uses pure shell-view-model.ts for command/description, exact state names including succeeded (not the agent label done), duration/exit/id, missing-id header, sanitized body and stop-error footer. duration.ts:33-43 is the single formatter for 1m 15s and longer durations. Reuse usableFrameRows and TranscriptViewport for scrolling/follow/mouse/copy; do not add file polling, file reads or another scroll policy. A missing task forces an empty body even if a stale tail lookup exists. Keep React.memo so unchanged parent props do not render the view; call _shellViewDeps.rendered once per actual render. US-006 creates the rendering/model and the named seams; US-007 supplies subscriptions, coalescing, lifecycle immediacy, timer-driven elapsed time and keys. Tail notifications for other ids must do no work. Task end must update header/footer immediately through onChange rather than waiting for output or the 1000 ms tick. Maintain separate cancellable timer responsibilities for output refresh and elapsed ticks, read epoch milliseconds through now(), and release every listener/timer on unmount or relevant prop changes. k only stops running tasks, stays in the view, and reports an exception's message in the footer. ESC closes; ctrl+c is handled at the shared chat view controller rather than becoming a shell kill. Tests use makeFakeClock adapted to schedule/cancel, restore seams and avoid sleeps. Existing test/ui/chat/agent-view.test.tsx:48-100 shows mutable registry/listener fakes and :128-154 mounts/clicks a view. New view tests are split into model, static view and live view files in the spec.\n\nUS-008, shared mount/entry points and compatibility: packages/nax/src/tui/chat/use-agent-view.tsx:34-65 owns id, hidden-chat display, ask-closes-view and closeForCtrlC; :78-89 currently always mounts AgentView. Retain this single controller and select AgentView for agent kind, ShellView otherwise when shellOutput is present, and the current AgentView fallback for non-agent ids without shellOutput. ChatApp.tsx:394-410 supplies the controller to ctrl+c/picker handling, :457/:482/:485/:543/:1323 consult hushes, :1337 hides the chat and :1481 wraps with withAgentView. Reusing these avoids draft/scroll/queue resets and hidden input leaks. use-jobs-opener.ts:87-91 chooses a lone running task only if there are no running jobs; :119-134 currently opens an agent or calls showOutput for a shell. With shellOutput, open the same controller for a shell and block a duplicate batched gesture. Multiple tasks or any job still open the picker. useChatPicker.ts:192-205 closes the jobs picker and routes agent rows versus showOutput; inspect host.tasks.get(entry.value) so only task rows with shellOutput open ShellView, including finished shells; jobs remain listings. No tasks-get match must not accidentally route a job into the shell view. Existing jobs-opener.test.tsx, footer-shells.test.tsx, jobs-picker.test.tsx and agent-view.test.tsx listing assertions mount hosts without shellOutput and must remain unchanged; the additive helper option ensures they still do. New mounted tests exercise both real entry gestures, ESC/ctrl+c draft preservation, ask interruption and suppressed typing.\n\nUS-009, documentation: docs/guides/chat-layout-pty.md:1-24 is an existing chat-specific guide but concerns physical resize, not general shell usage; read for placement/style and leave its testing instructions unchanged. docs/README.md:16-37 is the Using nax guide table. Create docs/guides/chat-shells.md with Live output and Shell view sections, entry gestures/keys, display-only contract, 2000-line/256-KiB per-shell limits, 4-MiB aggregate policy and log-path notice. Add one guide table row. This explicitly binding documentation story overrides the generic prohibition on documentation stories and uses no-test with review ACs.\n\nRisk, migration and fidelity decisions: new ForegroundCommand members and ChatHost.shellOutput are optional; ChatBackgroundTasks is unchanged and factory intersection returns remain assignable to existing consumers. No config migration, storage migration, dependency addition, package version bump or release is needed. Do not edit generated agent instruction files or production .nax configuration. The PRD itself is the requested .nax planning artifact. The detailed supplied SPEC is authoritative over older prose in docs/superpowers/specs/2026-11-22-nax-chat-live-shell-output-design.md: specifically, notify per append with consumer-side coalescing, rebuild moved tails from existing replay rather than transferring them, and preserve listing fallback on hosts without shellOutput. ACs are authoritative over contradictory prose. Refine-pass AC audit: all 121 numbered spec criteria remain in their declared stories and their original order; the first N entries of each acceptanceCriteria array correspond one-to-one to that story's N spec criteria. US-001 N=11: 1 callId, 2 command, 3 absent id, 4 id-less observer, 5 ordered streamed chunks, 6 unsubscribe, 7 post-move sink only, 8 control replay order, 9 control unchanged result, 10 throwing observer retains replay, 11 throwing observer does not block another. US-002 N=22: 1 complete lines, 2 not truncated, 3 partial line, 4 completed partial, 5 CRLF, 6 split CRLF same as unsplit, 7 carriage-return replacement, 8 blanks, 9 split UTF-8, 10 invalid UTF-8, 11 newest 2000 lines, 12 truncated on line overflow, 13 byte bound, 14 injected line cap, 15 oldest-byte eviction, 16 overlong partial, 17 overlong complete, 18 newline bytes excluded, 19 partial counts as line, 20 evicted view, 21 evicted bytes, 22 empty append. US-003 N=13: 1 real adopt sink, 2 unknown id, 3 agent id, 4 ended output ignored, 5 per-append listeners, 6 unsubscribe, 7 warn/continue on listener error, 8 moved replay, 9 oldest-ended eviction, 10 evicted truncated, 11 running protected even over limit, 12 4194304 constant, 13 host/tasks/output bridge. US-004 N=11: 1 subscribe once, 2 foreground lines, 3 call-id notification, 4 unsubscribe cleanup, 5 lookup dropped, 6 legacy call still registers as today, 7 id-less observer unaddressable, 8 control move as today, 9 real Bash/registry launch bridge, 10 dropped on return, 11 foreground budget protection. US-005 N=18: 1 first live lines, 2 last five, 3 next line, 4 refresh delay, 5 one layout per burst, 6 single-row ellipsis, 7 result preview as today, 8 no-output-host header as today, 9 unrelated notification no replacement, 10 correct click mapping, 11 controls neutralised as other tool output, 12 timer cleanup, 13 muted clipped model, 14 512-character bound, 15 empty live summary, 16 completed model unchanged, 17 RunCommand unchanged, 18 result removes liveTail member. US-006 N=16: 1 command/state, 2 id, 3 duration, 4 failed/exit, 5 description, 6 tail body, 7 truncated log notice, 8 neutralised controls, 9 running hint, 10 ended hint, 11 unknown-id header, 12 unknown-id empty body, 13 memoization, 14 stopped state, 15 error footer, 16 absent tail. US-007 N=14: 1 no-output tick, 2 live last line, 3 unrelated id no render, 4 immediate end header, 5 end footer, 6 ended k ignored, 7 ESC once, 8 running stop once, 9 stop stays open, 10 stop-error footer, 11 stop-error stays open, 12 timer cleanup, 13 output unsubscribe, 14 state unsubscribe. US-008 N=12: 1 strip opens shell, 2 ESC draft preserved as before, 3 ctrl+c closes, 4 picker Enter, 5 ended shell, 6 legacy strip listing as today, 7 legacy picker listing as today, 8 control job listing as today, 9 control agent view as today, 10 multiple-shell picker, 11 ask closes view, 12 hidden input suppression. US-009 N=4: 1 Live output/display-only, 2 Shell view/openers/keys, 3 limits and truncation log path, 4 index link. All control/as-today/same-as-unsplit/as-other-output qualifiers remain with their assertions. No deprecated file-check tags were present. Corrected US-004 AC-9 to assert ShellTailView.lines rather than equating the view object to an array; retained the intended real Bash data flow. Corrected US-003 AC-1 to feed Uint8Array bytes to the actual sink. Replaced ambiguous That/After that references where needed with concrete setup. Four explicit failure-table assertions follow the preserved numbered criteria: US-002 AC-23 byte-overflow truncation, US-003 AC-14 append retained despite listener exception, US-004 AC-12 disappeared lookup after move/unregister, US-007 AC-15 ESC with a missing id. Total revised AC count is 125; no spec AC was deleted, moved, merged or replaced with a quality gate. Failure rows otherwise map to US-002 invalid UTF-8/per-tail bounds, US-003 total eviction/listener isolation, US-001 observer exceptions, US-004 id-less/unregistered calls, US-005/008 optional-host fallback, US-006 missing ids, US-007 stop errors and US-008 asks. Runtime work is not authentication/access-control/session-contract work: no security policy is modified; use complexity-based TDD routing, while explicitly preserving sanitization and existing grants. Commands must run from the story workdir with explicit test paths, never bare bun test or bun run nax. Regression tests must fail before implementation where applicable; control ACs already pass and serve as anchors. Package gates run in the pipeline; coverage must not be run from a sandboxed nax agent session. Shared helper changes must be additive, _deps must be restored, and no tests should use wall-clock sleeps.\n\nRefine-pass scope/routing audit: negative paths are explicit in US-001 AC-10/11 (observer exceptions), US-002 AC-10/23 (malformed/over-limit bytes), US-003 AC-2/3/7/14 (unknown/wrong-kind/listener failure), US-004 AC-5/6/7 (removed or optional observer/id), US-005 AC-8/9/11 (missing capability/unrelated id/control bytes), US-006 AC-11/12/15/16 (missing task/error/missing tail), US-007 AC-10/11/15 (stop failure/missing task), US-008 AC-6/7/10/11 (legacy host/multiple tasks/ask interruption), and US-009 AC-3 (documented truncation failure). US-009 remains documentation-only and uses review, not artificial runtime failure tests. The twelve top-level exclusions were checked one-for-one against the supplied SPEC and kept verbatim, with nearby boundaries echoed in story scopes; no story-local deferral was hoisted. ContextFiles now exactly follow every spec-recommended list, including restoring US-003's index.ts, all within five entries; only upstream-created files appear before their own implementation stories. ExpectedFiles match the spec's Creates lists, including the sanctioned mixed unit/integration foreground bridge test path. No dependency or workdir in the binding structure was altered; every referenced id exists. US-001, US-004, US-007 and US-008 now use medium/tdd-simple because they reuse existing lifecycle/controller patterns; US-002 and US-006 retain medium/tdd-simple; US-003 and US-005 retain complex/three-session-tdd-lite for new shared ownership/eviction and cross-module transcript/layout integration respectively; US-009 stays simple/no-test. Existing compatibility/control assertions remain in place, and source changes do not touch authorization or session security decisions.",
+  "outOfScope": [
+    "Live output of a subagent's own Bash calls, in the agent view or anywhere else: subagent sessions are opened without the background-command port.",
+    "Shell output of ACP-backed agents (claude, codex and others): their shells are not run by nax-agent.",
+    "Input to a running shell (stdin): the view is output only.",
+    "Reading the task log file beyond the in-memory tail in the shell view: a truncated view names the log path instead.",
+    "Rendering ANSI colours in shell output: control sequences are neutralised by the existing `sanitizeText`, colours are not drawn.",
+    "Changes to `nax run` job panels and to job rows of the jobs picker, which keep the existing output listing.",
+    "Keeping tails across a chat restart: tails are in memory only; the log file stays the durable record.",
+    "Any change to the tool result the model receives for a Bash call.",
+    "New scrolling behaviour: the shell view uses `TranscriptViewport` as the agent view does.",
+    "A live tail on `RunCommand` cards: only `Bash` cards show one.",
+    "Separate stdout and stderr tails: one tail interleaves both streams in arrival order, so a multibyte character or partial line split across the two streams may join or show U+FFFD.",
+    "A `.nax/` change: none is needed."
+  ],
+  "routingProfile": "native-codex-dsm"
+}
