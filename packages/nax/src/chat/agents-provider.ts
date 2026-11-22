@@ -1,18 +1,10 @@
 /** The `nax-agents` provider: validated, named-agent invocation for a chat session. */
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
-import { buildAgentsInstructions, EXPLORE_SENTENCE } from "@/prompts";
+import { BACKGROUND_DEFAULT_SENTENCE, buildAgentsInstructions, EXPLORE_SENTENCE } from "@/prompts";
 import type { AgentResource, ResourceCatalog } from "@/resources";
 import { agentNamed, EXPLORE_AGENT_NAME, GENERAL_AGENT_NAME, generalAgent } from "./builtin-agent";
 
 const MAX_AVAILABLE_AGENTS = 20;
-
-/**
- * The background-dispatch sentences, kept whole so the description stays readable at its call
- * site. A run is a background run unless the call opts out: only a task whose answer the very
- * next step needs is worth blocking the turn for.
- */
-const BACKGROUND_SENTENCE =
-  'The run starts in the background by default and returns at once with a task id; the agent keeps running after your turn ends and a notice arrives when it ends. Pass "runInBackground": false only when you need the agent\'s answer before you can continue in this same turn.';
 
 const BACKGROUND_PLACEHOLDER = "{background}";
 const RUN_DESCRIPTION = `Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${BACKGROUND_PLACEHOLDER}${EXPLORE_SENTENCE}`;
@@ -82,7 +74,10 @@ function targetOf(input: Record<string, unknown>): RunTarget {
 
 /** The description, naming the background default only where the chat can honour it. */
 function runDescription(options: AgentsProviderOptions): string {
-  return RUN_DESCRIPTION.replace(BACKGROUND_PLACEHOLDER, backgroundOffered(options) ? `${BACKGROUND_SENTENCE} ` : "");
+  return RUN_DESCRIPTION.replace(
+    BACKGROUND_PLACEHOLDER,
+    backgroundOffered(options) ? `${BACKGROUND_DEFAULT_SENTENCE} ` : "",
+  );
 }
 
 /** True when a call that names no flag would start a background run. */

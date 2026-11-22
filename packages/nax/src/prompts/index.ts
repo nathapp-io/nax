@@ -11,6 +11,7 @@ export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-
 export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./builders/agents-builder";
 // Agents prompt builder — agent discovery index, nested-session instructions and ACP subagent instructions.
 export {
+  BACKGROUND_DEFAULT_SENTENCE,
   buildAcpSubagentInstructions,
   buildAgentsInstructions,
   buildExploreAgentPrompt,

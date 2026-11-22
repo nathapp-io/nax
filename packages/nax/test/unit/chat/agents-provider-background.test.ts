@@ -8,6 +8,7 @@ import type { ToolProvider, ToolResult, ToolRunContext } from "@nathapp/nax-agen
 import { assertDefined } from "@test/helpers";
 import { createAgentsProvider } from "@/chat/agents-provider";
 import { generalAgent } from "@/chat/builtin-agent";
+import * as prompts from "@/prompts";
 import { type AgentResource, buildResourceCatalog, type ResourceOrigin, type ResourcePackage } from "@/resources";
 
 const projectOrigin = { kind: "claude-project" } as const;
@@ -90,8 +91,8 @@ describe("createAgentsProvider runInBackground schema and description", () => {
   test("AC-2 the description states the background default and when to pass false, and ends with the explore sentence", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
     assertDefined(tool, "tool");
-    expect(tool.description).toContain("starts in the background by default and returns at once with a task id");
-    expect(tool.description).toContain('Pass "runInBackground": false only when you need the agent\'s answer');
+    expect(tool.description).toContain(prompts.BACKGROUND_DEFAULT_SENTENCE);
+    expect(tool.description).toContain("Pass runInBackground: false only when you need the agent's answer");
     expect(tool.description.endsWith(EXPLORE_SENTENCE)).toBe(true);
   });
 
