@@ -360,7 +360,7 @@ ACs marked **(control)** already pass on the baseline code and pin behaviour tha
 
 "The registry" is `ChatBackgroundTasks` built as the existing registry tests build it, with its log writes stubbed through `_backgroundTaskDeps`.
 
-1. [unit] After `adopt(handle)` returns sink `s` for task `bash-00000001`, `s.append("stdout", "hi\n")` makes `taskTail("bash-00000001")` return lines `["hi"]`.
+1. [unit] After `adopt(handle)` returns sink `s` for task `bash-00000001`, `s.append("stdout", the UTF-8 bytes of "hi\n")` makes `taskTail("bash-00000001")` return lines `["hi"]`.
 2. [unit] `taskTail` returns undefined for an id the registry does not list.
 3. [unit] `taskTail` returns undefined for the id of an agent task.
 4. [unit] Output appended after the task ended does not change its tail.
@@ -386,7 +386,7 @@ ACs marked **(control)** already pass on the baseline code and pin behaviour tha
 6. [unit] `foreground(call)` with a call that has no `onOutput` registers it as today: `hasForeground()` is true and `foregroundTail("c1")` returns undefined.
 7. [unit] `foreground(call)` with a call that has `onOutput` but no `callId` still subscribes through `onOutput`, and `foregroundTail` returns undefined for every id.
 8. [unit] (control) `moveForeground()` moves a registered call that has `callId` and `onOutput`, as today.
-9. [integration] The Bash tool created with `createBashTool({ background: registry })`, run with a `ToolRunContext` whose `toolCallId` is `"c1"` and with `_bashToolDeps.runArgv` stubbed to report `"line one\n"` and then wait, makes `registry.foregroundTail("c1")` return `["line one"]` while it runs.
+9. [integration] The Bash tool created with `createBashTool({ background: registry })`, run with a `ToolRunContext` whose `toolCallId` is `"c1"` and with `_bashToolDeps.runArgv` stubbed to report `"line one\n"` and then wait, makes `registry.foregroundTail("c1")?.lines` equal `["line one"]` while it runs.
 10. [integration] Once that stubbed launch resolves and the Bash call returns, `registry.foregroundTail("c1")` returns undefined.
 11. [unit] With `_backgroundTaskDeps.shellTailTotalMaxBytes` set to 8 and a foreground tail of 10 bytes, the foreground tail is not evicted.
 
