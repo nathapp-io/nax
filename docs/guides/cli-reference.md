@@ -107,6 +107,12 @@ nax features resolve user-auth --json --profile cross-agent
 
 Flags: `--json` (machine-readable output), `-d, --dir <path>`, `--profile <name>` (comma-separated or repeated, as for `run` and `plan`). Exit codes: `0` resolved, `2` needs a human decision (ambiguous, missing, or unknown feature), `1` hard error / not a nax repo.
 
+With no name, nax lists the features under `.nax/features/` that have a `prd.json` or `spec.md`. One feature resolves directly. With several, nax picks the one whose `prd.json` `branchName` is the checked-out branch and adds `"matchedBy": "branch"` to the JSON. No match (or a detached HEAD) returns `ambiguous` with every candidate; several features on the same branch return `ambiguous` with just those.
+
+```bash
+nax features resolve --json      # on feat/user-auth -> {"status":"ok","featureName":"user-auth","matchedBy":"branch",...}
+```
+
 The config is loaded under the same profile chain `nax run` would use: `--profile` > `NAX_PROFILE` > the PRD's `routingProfile`. A project whose config only validates under the profile its PRD was planned with therefore resolves cleanly.
 
 ---

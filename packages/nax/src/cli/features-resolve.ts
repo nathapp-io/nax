@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { featureDir as configFeatureDir, findProjectDir, loadConfig } from "../config";
 import { resolveTestFilePatterns } from "../test-runners";
 import { validateFeatureName } from "../utils/feature-name";
+import { gitWithTimeout } from "../utils/git";
 import { resolveRunProfileOverride } from "./resolve-run-profile";
 
 export type ResolveStatus = "ok" | "ambiguous" | "missing" | "feature-not-found" | "not-a-nax-repo";
@@ -43,8 +44,26 @@ export interface ResolveResult {
   testPatterns?: TestPatternResolution;
   candidates?: string[];
   checked?: string[];
+  /** Set when no name was given and the feature was picked by its PRD `branchName`. */
+  matchedBy?: "branch";
+  /** The checked-out branch, when it narrowed the auto-discovered candidates (an `ok` match or several matches). */
+  branch?: string;
   message: string;
 }
+
+/** Injectable dependencies (`_deps` pattern) for tests. */
+export const _featuresResolveDeps = {
+  /** The checked-out branch; "" on a detached HEAD, outside a git repo, or on any git failure. */
+  readCurrentBranch: async (dir: string): Promise<string> => {
+    try {
+      const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], dir);
+      return exitCode === 0 ? stdout.trim() : "";
+    } catch {
+      // No branch to match on: auto-discovery falls back to listing every candidate.
+      return "";
+    }
+  },
+};
 
 /** Profile sources for `resolveFeatureSpec` — mirrors the run's own resolution. */
 export interface FeatureSpecResolveOptions {
@@ -300,31 +319,83 @@ export async function resolveFeatureSpec(
     };
   }
   if (candidates.length > 1) {
+    return resolveByBranch(candidates, { naxDir, repoRoot, workdir, opts });
+  }
+  return resolveDiscovered(candidates[0], { naxDir, repoRoot, workdir, opts });
+}
+
+interface DiscoverContext {
+  naxDir: string;
+  repoRoot: string;
+  workdir: string;
+  opts?: FeatureSpecResolveOptions;
+}
+
+/** The PRD's `branchName`, or undefined when there is no PRD or it cannot be read. */
+async function readPrdBranch(naxDir: string, name: string): Promise<string | undefined> {
+  // Plain join, not configFeatureDir(): that throws on a directory name that is not a valid
+  // feature id, and auto-discovery lists such stray directories as candidates.
+  const prdPath = join(naxDir, "features", name, "prd.json");
+  try {
+    const prd: unknown = JSON.parse(await Bun.file(prdPath).text());
+    if (typeof prd !== "object" || prd === null || !("branchName" in prd)) return undefined;
+    return typeof prd.branchName === "string" ? prd.branchName : undefined;
+  } catch {
+    // A missing or unreadable PRD cannot claim the branch; the feature stays an unmatched candidate.
+    return undefined;
+  }
+}
+
+/**
+ * Several candidates: pick the one whose PRD `branchName` is the branch checked out in `workdir`.
+ * No match (or a detached HEAD) keeps every candidate; several matches narrow the list to them.
+ */
+async function resolveByBranch(candidates: string[], ctx: DiscoverContext): Promise<ResolveResult> {
+  const branch = await _featuresResolveDeps.readCurrentBranch(ctx.workdir);
+  const branches = branch ? await Promise.all(candidates.map((c) => readPrdBranch(ctx.naxDir, c))) : [];
+  const matches = candidates.filter((_, i) => branches[i] === branch);
+  if (matches.length === 1) {
+    const result = await resolveDiscovered(matches[0], ctx);
     return {
-      status: "ambiguous",
-      candidates,
-      message: `multiple features found — pass one explicitly: ${candidates.join(", ")}`,
+      ...result,
+      matchedBy: "branch",
+      branch,
+      message: `${result.message} (feature on current branch ${branch})`,
     };
   }
+  if (matches.length > 1) {
+    return {
+      status: "ambiguous",
+      candidates: matches,
+      branch,
+      message: `multiple features on current branch ${branch} — pass one explicitly: ${matches.join(", ")}`,
+    };
+  }
+  return {
+    status: "ambiguous",
+    candidates,
+    message: `multiple features found — pass one explicitly: ${candidates.join(", ")}`,
+  };
+}
 
-  // Exactly one — resolve its spec source
-  const onlyName = candidates[0];
-  const { source, checked } = await searchSpecSource(naxDir, repoRoot, onlyName);
+/** Resolve the spec source of an auto-discovered feature. */
+async function resolveDiscovered(name: string, ctx: DiscoverContext): Promise<ResolveResult> {
+  const { source, checked } = await searchSpecSource(ctx.naxDir, ctx.repoRoot, name);
   if (source) {
-    const configOverrides = await resolveConfigOverrides(onlyName, workdir, repoRoot, opts);
+    const configOverrides = await resolveConfigOverrides(name, ctx.workdir, ctx.repoRoot, ctx.opts);
     return {
       status: "ok",
-      featureName: onlyName,
+      featureName: name,
       specSource: source,
-      testPatterns: await resolveTestPatterns(workdir, configOverrides),
+      testPatterns: await resolveTestPatterns(ctx.workdir, configOverrides),
       message: `resolved spec: ${source.path}`,
     };
   }
   return {
     status: "missing",
-    featureName: onlyName,
+    featureName: name,
     specSource: null,
     checked,
-    message: `no spec found for feature "${onlyName}"`,
+    message: `no spec found for feature "${name}"`,
   };
 }
