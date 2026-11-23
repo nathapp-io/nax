@@ -235,9 +235,10 @@ async function uniquelyLocated(
 ): Promise<boolean> {
   const cache = new Map<string, string | undefined>();
   for (const file of files) {
+    // Reject unreadable paths before treating a null old path as an absent side.
+    if (file.unreadable) return false;
     // A file whose only change is its mode carries no window; a created one replaces no block at all.
     if (file.hunks.length === 0 || file.oldPath === null) continue;
-    if (file.unreadable) return false;
     const text = await readBlob(run, dir, range.base, file.oldPath, cache);
     if (text === undefined) return false;
     if (file.hunks.some((hunk) => occurrencesIn(text, replacedWindow(hunk)) !== 1)) return false;

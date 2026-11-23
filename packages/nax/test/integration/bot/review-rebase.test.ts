@@ -163,22 +163,26 @@ describe("makePatchEquivalent", () => {
   // B2: the same added line moved from one branch of a function into an identical branch. Function
   // scope and the three lines either side of it match at both places, so only asking whether the window
   // locates the change at all can tell the two apart.
-  test("B2 answers false when the change's window fits more than one place in the file", async () => {
-    await git(["checkout", "-b", "ctx-base", base]);
-    await write("f.js", BRANCHES.join("\n"));
-    const ctxBase = await commit("branches");
-    await git(["checkout", "-b", "ctx-first", ctxBase]);
-    await write("f.js", bypassInBranch(GAMMA_IN_FIRST));
-    const inFirstBranch = await commit("bypass in the first branch");
-    // The later base changed another file; the same insertion now sits in the second branch.
-    await git(["checkout", "-b", "ctx-later", ctxBase]);
-    await write("b.txt", "b\nlater branches base\n");
-    const ctxLaterBase = await commit("later branches base");
-    await write("f.js", bypassInBranch(GAMMA_IN_SECOND));
-    const inSecondBranch = await commit("bypass in the second branch");
-    const equivalent = makePatchEquivalent(botGit);
-    expect(
-      await equivalent(repo, { base: ctxBase, head: inFirstBranch }, { base: ctxLaterBase, head: inSecondBranch }),
-    ).toBe(false);
-  });
+  // Include a tab so git quotes the path: an unreadable old path must not be mistaken for a new file.
+  test.each(["f.js", "f\t.js"])(
+    "B2 answers false when the change's window fits more than one place in %j",
+    async (filename) => {
+      await git(["checkout", "-b", "ctx-base", base]);
+      await write(filename, BRANCHES.join("\n"));
+      const ctxBase = await commit("branches");
+      await git(["checkout", "-b", "ctx-first", ctxBase]);
+      await write(filename, bypassInBranch(GAMMA_IN_FIRST));
+      const inFirstBranch = await commit("bypass in the first branch");
+      // The later base changed another file; the same insertion now sits in the second branch.
+      await git(["checkout", "-b", "ctx-later", ctxBase]);
+      await write("b.txt", "b\nlater branches base\n");
+      const ctxLaterBase = await commit("later branches base");
+      await write(filename, bypassInBranch(GAMMA_IN_SECOND));
+      const inSecondBranch = await commit("bypass in the second branch");
+      const equivalent = makePatchEquivalent(botGit);
+      expect(
+        await equivalent(repo, { base: ctxBase, head: inFirstBranch }, { base: ctxLaterBase, head: inSecondBranch }),
+      ).toBe(false);
+    },
+  );
 });
