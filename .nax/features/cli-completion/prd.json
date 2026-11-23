@@ -1,0 +1,284 @@
+{
+  "project": "nax-monorepo",
+  "feature": "cli-completion",
+  "branchName": "feat/cli-completion",
+  "createdAt": "2026-11-23T11:41:02.112Z",
+  "updatedAt": "2026-11-23T12:23:10.718Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Discover feature and profile names for completion",
+      "description": "**Goal** — Add project-aware feature and profile name sources and create the completion directory barrel.\n\n**Motivation** — Today every name is typed by hand, and a typo only fails once the command runs.\n\n**Approach** — **Value sources (US-001)** — `values.ts`:\n\nThe project root is the parent of `findProjectDir(startDir)`. Feature names are every directory entry under the features directory except names starting with `.`; this follows `nax features list` (which lists every directory; skipping dot-directories is this feature's own choice) rather than `features resolve`'s candidate filter (directories holding `prd.json` or `spec.md`), because `nax plan -f <name>` names a feature before it has a `prd.json`. Outside a project, `listFeatureNames` returns `[]` and `listProfileNames` passes `startDir` to `listProfiles`, so only global profiles are found.\n\nCompletion lives in a new directory module `packages/nax/src/cli/completion/` with a barrel `index.ts`, re-exported from the `src/cli` barrel. There is no `src/cli/completion.ts`, so the one-module-per-name rule holds. Files inside `src/cli/completion/` import each other relatively and import config symbols from the `@/config` barrel; they never import `@/cli` (that barrel re-exports completion, which would close an import cycle).\n\nAll candidate lists are sorted with the default `Array.prototype.sort()` (UTF-16 code-unit order) and de-duplicated.\n\nIntegration contracts: `findProjectDir(startDir: string): string | null` returns the nearest project .nax directory holding config.json, excluding the global config directory; take its parent. `featuresDir(root: string): string` is the required SSOT for the feature path; never join `\".nax\", \"features\"` by hand. `listProfiles(projectRoot: string): Promise<ProfileEntry[]>` scans global and project profile directories for .json names and skips directories it cannot read; reuse it without changing its shape. `globalConfigDir()` honours `NAX_GLOBAL_CONFIG_DIR`. A project without a features directory returns []; a missing global profiles directory still permits project profiles.\n\n**Scope** — In: create src/cli/completion/values.ts and index.ts exporting both functions, with source tests in test/unit/cli/completion/values.test.ts. Out: commander walking and value-prefix filtering (US-002), shell scripts (US-003), command registration and the existing src/cli barrel/entrypoint integration (US-004); loading profile contents is not part of these read-only name sources. Caching feature or profile lists between Tab presses; every Tab runs `nax __complete` afresh, which costs one nax start (about 0.2 s warm on macOS, up to about 1 s cold).\n\n**Interface** — verbatim signatures:\n```ts\n/** Names of the directories under featuresDir(<project root found from startDir>). */\nexport function listFeatureNames(startDir: string): Promise<string[]>;\n/** De-duplicated names from listProfiles(<project root found from startDir, else startDir>). */\nexport function listProfileNames(startDir: string): Promise<string[]>;\n```\n\nUse bun:test with real isolated directory fixtures and shared temp helpers. Isolate and restore NAX_GLOBAL_CONFIG_DIR following config-profile.test.ts, await fixture writes, and do not touch real-home config. The source barrel is created here so dependent stories can add their exports without creating a competing completion.ts module.\n\nSecurity: candidates are inserted into the user's command line as shell text and a cloned repo can contain hostile directory or profile names. listFeatureNames keeps only names validateFeatureName (src/utils/feature-name.ts) accepts; listProfileNames keeps only names matching ^[A-Za-z0-9][A-Za-z0-9._-]*$.",
+      "acceptanceCriteria": [
+        "[unit] listFeatureNames(root) resolves [\"alpha\", \"beta\"] for a temp project containing .nax/config.json and directories .nax/features/beta and .nax/features/alpha.",
+        "[unit] listFeatureNames(<root>/src/deep) resolves [\"alpha\", \"beta\"] when src/deep is a nested subdirectory of that project.",
+        "[unit] listFeatureNames(root) still resolves [\"alpha\", \"beta\"] after a regular file .nax/features/notes.md and a directory .nax/features/.cache are added.",
+        "[unit] listFeatureNames(startDir) resolves [] for a temp directory with no .nax/config.json in it or any ancestor.",
+        "[unit] listFeatureNames(root) resolves [] for a project containing .nax/config.json but no .nax/features directory.",
+        "[unit] listProfileNames(root) resolves [\"g1\", \"p1\", \"shared\"] when NAX_GLOBAL_CONFIG_DIR points to a temp global directory containing profiles/g1.json and profiles/shared.json, and the project contains .nax/profiles/p1.json and .nax/profiles/shared.json.",
+        "[unit] listProfileNames(root) still resolves [\"g1\", \"p1\", \"shared\"] after profiles/g1.env is added to that global profiles directory.",
+        "[unit] listProfileNames(startDir) resolves only the global names [\"g1\", \"shared\"] for a temp directory outside any nax project.",
+        "[unit] listProfileNames(<root>/src/deep) resolves [\"g1\", \"p1\", \"shared\"] when called from a nested subdirectory of that project.",
+        "[unit] listProfileNames(root) resolves [\"p1\", \"shared\"] when NAX_GLOBAL_CONFIG_DIR points to a temp directory with no profiles/ directory and the project has p1.json and shared.json profiles.",
+        "[unit] listFeatureNames(root) still resolves [\"alpha\", \"beta\"] after a directory named `x;touch pwned` is added to .nax/features beside alpha and beta (names validateFeatureName rejects are never offered).",
+        "[unit] listProfileNames(root) still resolves [\"g1\", \"p1\", \"shared\"] after a file `bad name$x.json` is added to the project .nax/profiles (profile names must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ to be offered)."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "completion",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three additive files using existing project-path and profile-listing APIs; filesystem fixtures and de-duplication are standard patterns without changes to credential or permission behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/profile.ts",
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/src/cli/features-resolve.ts",
+        "packages/nax/test/unit/cli/config-profile.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/completion/values.ts",
+        "packages/nax/src/cli/completion/index.ts",
+        "packages/nax/test/unit/cli/completion/values.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c00d7c2855b8e6b8b6bf862c48212bd417e028cf"
+    },
+    {
+      "id": "US-002",
+      "title": "Complete words from the commander command tree",
+      "description": "**Goal** — Add a commander-tree completion engine that selects visible command/flag candidates and project-aware feature/profile values.\n\n**Motivation** — nax uses commander 13, which has no built-in shell completion, and nothing in the repo provides one.\n\n**Approach** — **Engine (US-002)** — `engine.ts`:\n\n`words` are the shell words after `nax`; the last element is the word under the cursor (possibly `\"\"`). The result holds only candidates that start with the current word. Rules, in order:\n\n1. **Walk** every word except the last, starting at `program`, tracking a pending option. If an option is pending, the word is its value and the option stops pending. Otherwise: a word equal to the name of a visible subcommand of the current command descends into it; a word equal to the short or long flag of a value-taking option (`required || optional`) of the current command or an ancestor makes that option pending (an option whose value is optional, such as `chat --resume [id]`, does not take a following word that starts with `-`; that word is walked normally); any other word starting with `-` is skipped; any other word is skipped and marks the walk stuck, after which no further descent happens.\n2. **Project directory**: the start directory for sources is the value of the last `--dir` option (long flag `--dir`, any short flag) seen during the walk. A value of `~` becomes `sources.home()`, and a leading `~/` is replaced by `sources.home()` plus `/`. A relative value is then resolved against `sources.cwd()`. With no `--dir`, the start directory is `sources.cwd()`.\n3. **Option value**: if an option with a required value is still pending when the walk ends, or one with an optional value is pending and the current word does not start with `-`, complete its value by long flag: `--feature` -> `sources.features(startDir)`; `--profile` -> `sources.profiles(startDir)`, comma-aware (below); any other option -> `[]`.\n4. **Flags**: else, if the current word starts with `-`, return every short and long flag of `visibleOptions(reached command)`.\n5. **Subcommands**: else, if the reached command has visible subcommands and the walk is not stuck, return their names, excluding the implicit `help` command.\n6. **Positional values**: else, if the walk is not stuck, by the reached command's path from the root: `features resolve` -> features; `config profile show` and `config profile use` -> profiles. Anything else -> `[]`.\n\nComma-aware profiles: when the current word contains a comma, the prefix is everything up to and including the last comma, the partial name is the rest, names already listed in the prefix are excluded, and each candidate is `prefix + name`. So `fast,s` with profiles `cheap, fast, slow` yields `fast,slow`. bash's default `COMP_WORDBREAKS` has no comma and zsh treats the word whole, so both shells see the full `fast,slow`.\n\nAll candidate lists are sorted with the default `Array.prototype.sort()` (UTF-16 code-unit order) and de-duplicated.\n\nIntegration metadata: commander 13.1.0: `Command.commands`, `Command.options`, `Command.name()`, `Command.parent`, and `program.createHelp().visibleCommands(cmd)` / `.visibleOptions(cmd)`. `visibleCommands` omits commands registered `{ hidden: true }` but adds the implicit `help` command on a command that has subcommands; `visibleOptions` omits options marked `.hideHelp()` (for example `run`'s `--chat-asks`) and includes `-h, --help` (and `-V, --version` on the root). `Option.long`, `Option.short`, `Option.required` (value required) and `Option.optional` (value optional) say whether an option consumes the next word. A command parsed as `__complete -- run -f \"\"` receives `[\"run\", \"-f\", \"\"]` as its variadic argument; nothing after `--` is read as an option.\n\nKeep the engine a pure function over the supplied commander program and injected sources; do not import bin/nax.ts, run command actions, read cwd/home directly, or maintain a second command list. Files inside src/cli/completion import siblings relatively, never @/cli, and config imports use @/config.\n\n**Scope** — In: create src/cli/completion/engine.ts, export completeWords and CompletionSources from the existing completion barrel, and add fixture-program unit tests. Out: filesystem source implementation (US-001), script generation (US-003), hidden/visible command registration and real entrypoint integration (US-004); The `--option=value` form (`--feature=acc<Tab>`); only the separate-word form `--feature acc<Tab>` completes values. Value completion for options other than `--feature` and `--profile` (for example `--agent`, `--model`, `--gate`); those values get no nax candidates and fall back to file completion. Expanding a `--dir` value beyond a leading `~`: quoted values, `$VAR` and `~user` forms are taken literally. Positional completion for `features create <name>`, `plan [description]` and every other positional argument not named in the Design's positional-value rule. Command aliases; nax registers none, and the walk matches subcommand names only. Words after the cursor: a `-d <dir>` typed after the word being completed is not seen, so the start directory falls back to the current directory. Replacing or upgrading commander.\n\n**Interface** — verbatim signatures:\n```ts\nexport interface CompletionSources {\n  cwd: () => string;\n  home: () => string;\n  features: (startDir: string) => Promise<string[]>;\n  profiles: (startDir: string) => Promise<string[]>;\n}\nexport function completeWords(program: Command, words: readonly string[], sources: CompletionSources): Promise<string[]>;\n```\n\nTest fixture: run has -f, --feature <name>, --profile <name>, -d, --dir <path>, --from <spec-path>, and --secret-opt <x> hidden with .hideHelp(); plan has --resume [id]; init has boolean -f, --force; features has create <name>, list, resolve [name]; config has profile with show <name> and use <name>; secret is registered { hidden: true }. Sources return cwd /w, home /home/u, features [\"alpha\", \"beta\"], profiles [\"cheap\", \"fast\", \"slow\"]. Assert exact results and injected source arguments without invoking nax. Optional pending options must relinquish a flag-shaped next word both within the walk and at the current word; stuck state must not prevent a later flag or pending option value from being completed.",
+      "acceptanceCriteria": [
+        "[unit] completeWords(program, [\"\"], sources) resolves [\"config\", \"features\", \"init\", \"plan\", \"run\"], excluding secret and implicit help.",
+        "[unit] completeWords(program, [\"features\", \"\"], sources) resolves [\"create\", \"list\", \"resolve\"].",
+        "[unit] completeWords(program, [\"run\", \"-f\", \"\"], sources) resolves [\"alpha\", \"beta\"].",
+        "[unit] completeWords(program, [\"run\", \"--feature\", \"be\"], sources) resolves [\"beta\"].",
+        "[unit] completeWords(program, [\"init\", \"-f\", \"\"], sources) resolves [] without calling sources.features, because init's -f is boolean --force.",
+        "[unit] completeWords(program, [\"run\", \"--profile\", \"\"], sources) resolves [\"cheap\", \"fast\", \"slow\"].",
+        "[unit] completeWords(program, [\"run\", \"--profile\", \"fast,\"], sources) resolves [\"fast,cheap\", \"fast,slow\"].",
+        "[unit] completeWords(program, [\"run\", \"--profile\", \"fast,s\"], sources) resolves [\"fast,slow\"].",
+        "[unit] completeWords(program, [\"run\", \"--fe\"], sources) resolves [\"--feature\"].",
+        "[unit] completeWords(program, [\"run\", \"-\"], sources) resolves [\"--dir\", \"--feature\", \"--from\", \"--help\", \"--profile\", \"-d\", \"-f\", \"-h\"], excluding --secret-opt.",
+        "[unit] completeWords(program, [\"features\", \"resolve\", \"\"], sources) resolves [\"alpha\", \"beta\"].",
+        "[unit] completeWords(program, [\"config\", \"profile\", \"use\", \"f\"], sources) resolves [\"fast\"].",
+        "[unit] completeWords(program, [\"run\", \"--from\", \"\"], sources) resolves [].",
+        "[unit] completeWords(program, [\"run\", \"--profile\", \"fast\", \"-f\", \"\"], sources) resolves [\"alpha\", \"beta\"], consuming the profile value rather than reading it as a subcommand.",
+        "[unit] completeWords(program, [\"run\", \"--from\", \"-f\", \"\"], sources) resolves [] without calling sources.features, because -f is consumed as the value of --from.",
+        "[unit] completeWords(program, [\"features\", \"bogus\", \"\"], sources) resolves [].",
+        "[unit] completeWords(program, [\"run\", \"-d\", \"/tmp/x\", \"-f\", \"\"], sources) calls sources.features with \"/tmp/x\".",
+        "[unit] completeWords(program, [\"run\", \"-d\", \"sub\", \"-f\", \"\"], sources) calls sources.features with \"/w/sub\".",
+        "[unit] completeWords(program, [\"run\", \"-d\", \"~/proj\", \"-f\", \"\"], sources) calls sources.features with \"/home/u/proj\".",
+        "[unit] completeWords(program, [\"run\", \"-f\", \"\"], sources) calls sources.features with \"/w\", the sources.cwd() result.",
+        "[unit] completeWords(program, [\"features\", \"resolve\", \"alpha\", \"\"], sources) resolves [] without calling sources.features.",
+        "[unit] completeWords(program, [\"plan\", \"--resume\", \"-\"], sources) resolves [\"--help\", \"--resume\", \"-h\"], because an optional-value option does not take a word starting with '-'."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "completion",
+        "commander"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded pure engine in one source file plus its fixture tests and barrel export follows the fully specified walk using existing commander metadata and injected sources; required/optional consumption needs focused TDD, not a new parser architecture or isolated multi-session strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/completion/index.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/cli/gates.ts",
+        "packages/nax/src/cli/chat.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/completion/engine.ts",
+        "packages/nax/test/unit/cli/completion/engine.test.ts"
+      ],
+      "suggestedCriteria": [
+        "completeWords(program, [\"config\", \"profile\", \"show\", \"s\"], sources) resolves [\"slow\"].",
+        "completeWords(program, [\"run\", \"--dir\", \"first\", \"-d\", \"second\", \"-f\", \"\"], sources) calls sources.features with \"/w/second\".",
+        "completeWords(program, [\"run\", \"--dir\", \"~\", \"-f\", \"\"], sources) calls sources.features with \"/home/u\".",
+        "completeWords(program, [\"run\", \"-f\", \"\"], sources) resolves [\"alpha\", \"beta\"] when sources.features returns [\"beta\", \"alpha\", \"alpha\"].",
+        "completeWords(program, [\"run\", \"--profile\", \"fast,cheap,s\"], sources) resolves [\"fast,cheap,slow\"].",
+        "completeWords(program, [\"features\", \"bogus\", \"-\"], sources) resolves [\"--help\", \"-h\"] despite the stuck positional walk.",
+        "completeWords(program, [\"plan\", \"--resume\", \"--resume\", \"-\"], sources) resolves [\"--help\", \"--resume\", \"-h\"], walking the second flag instead of consuming it as an optional value.",
+        "Given a fixture with a required --feature option on the root, completeWords(program, [\"run\", \"--feature\", \"be\"], sources) resolves [\"beta\"] when run has no local --feature option."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b6d4cac177200d2254edec81723d11c4bb91da13"
+    },
+    {
+      "id": "US-003",
+      "title": "Generate portable bash and zsh completion scripts",
+      "description": "**Goal** — Generate bash and zsh scripts that call the hidden completion protocol and fall back to shell file completion.\n\n**Motivation** — Today every name is typed by hand, and a typo only fails once the command runs.\n\n**Approach** — **Shell scripts (US-003)** — `scripts.ts`:\n\nThe bash script defines `_nax_complete`, which runs `nax __complete -- \"${COMP_WORDS[@]:1:COMP_CWORD}\" 2>/dev/null`, reads the output line by line into `COMPREPLY` (skipping empty lines), and is registered with `complete -o default -F _nax_complete nax` (so an empty reply falls back to file names). Worked skeleton:\n\n```bash\n_nax_complete() {\n  local line\n  COMPREPLY=()\n  while IFS= read -r line; do\n    [[ -n $line ]] && COMPREPLY+=(\"$line\")\n  done < <(nax __complete -- \"${COMP_WORDS[@]:1:COMP_CWORD}\" 2>/dev/null)\n}\ncomplete -o default -F _nax_complete nax\n```\n\nReading line by line (not `COMPREPLY=($(...))`) keeps a candidate from being glob-expanded; `mapfile` is avoided because macOS ships bash 3.2.\n\nThe zsh script defines `_nax`, which runs `nax __complete -- \"${(@)words[2,CURRENT]}\" 2>/dev/null`, splits the output on newlines, drops empty lines, and passes the candidates to `compadd`; with no candidates it calls `_files`. It registers with `compdef _nax nax` when `compdef` is defined; when it is not (compinit not loaded) it prints a one-line hint to stderr containing `autoload -Uz compinit && compinit` and returns 0, rather than loading compinit itself (which writes `~/.zcompdump`). Worked skeleton:\n\n```zsh\n_nax() {\n  local -a candidates\n  candidates=(\"${(@f)$(nax __complete -- \"${(@)words[2,CURRENT]}\" 2>/dev/null)}\")\n  candidates=(${candidates:#})\n  if (( ${#candidates} )); then compadd -- \"${candidates[@]}\"; else _files; fi\n}\nif (( $+functions[compdef] )); then\n  compdef _nax nax\nelse\n  print -u2 \"nax completion: add 'autoload -Uz compinit && compinit' before this line in ~/.zshrc\"\nfi\n```\n\n**Scope** — In: create src/cli/completion/scripts.ts with completionScript, SUPPORTED_SHELLS and CompletionShell, export all three from the existing completion barrel, and evaluate generated scripts in real bash/zsh with a stub nax. Out: value discovery (US-001), candidate selection and sorting (US-002), actual __complete/completion actions, install help text and bin wiring (US-004); automatic compinit initialization is not part of script generation. fish, PowerShell and other shells; only bash and zsh scripts are generated. Descriptions next to candidates in the zsh menu; candidates are plain names. Editing the user's `~/.zshrc` or `~/.bashrc`; the user adds the `eval` line by hand. Completing the local build invoked as `bun bin/nax.ts`; the scripts complete only the command name `nax`.\n\n**Interface** — verbatim signatures:\n```ts\nexport const SUPPORTED_SHELLS: readonly [\"bash\", \"zsh\"];\nexport type CompletionShell = (typeof SUPPORTED_SHELLS)[number];\nexport function completionScript(shell: CompletionShell): string;\n```\n\nTesting: evaluate completionScript(shell) in bash --norc --noprofile or zsh -f with a temporary directory first on PATH containing an executable stub named nax. Record its arguments one per line to preserve evidence of the empty current word and print configurable candidates. Skip each shell's tests if that shell is unavailable on PATH. Never spawn the real nax in this story. In zsh stub compdef, compadd and _files to record calls without loading compinit. Pin the exact argv protocol __complete, --, followed by words after nax through the cursor; suppress nax stderr. Bash registration and empty COMPREPLY together establish native file fallback; zsh explicitly calls _files. The scripts transport candidate lines without changing their ordering or splitting/glob-expanding them.",
+      "acceptanceCriteria": [
+        "[unit] After completionScript(\"bash\") is evaluated in bash, complete -p nax exits 0 and names the function _nax_complete in its output.",
+        "[unit] After completionScript(\"bash\") is evaluated in bash, complete -p nax includes the option -o default in its output.",
+        "[unit] In bash, when a stub nax prints alpha and beta on separate lines, COMP_WORDS=(nax run -f a) and COMP_CWORD=3, calling _nax_complete sets COMPREPLY to exactly [\"alpha\", \"beta\"].",
+        "[unit] In bash with a stub nax printing alpha and beta on separate lines, COMP_WORDS=(nax run -f a) and COMP_CWORD=3, calling _nax_complete sends the stub nax exactly the arguments __complete, --, run, -f, a.",
+        "[unit] In bash, with COMP_WORDS=(nax run -f \"\") and COMP_CWORD=3, calling _nax_complete sends five arguments to the stub nax, with the last argument being the empty string.",
+        "[unit] In bash, with a stub nax that writes boom to stderr and prints alpha, calling _nax_complete leaves the bash process's stderr empty and COMPREPLY equal to [\"alpha\"].",
+        "[unit] In zsh with a stub compdef function that records its arguments, evaluating completionScript(\"zsh\") calls compdef with exactly _nax and nax.",
+        "[unit] In zsh -f with no compdef defined, evaluating completionScript(\"zsh\") exits 0 and writes a stderr line containing autoload -Uz compinit && compinit.",
+        "[unit] In zsh with recording compdef, compadd and _files stubs, a stub nax printing alpha and beta, words=(nax run -f a) and CURRENT=4, calling _nax passes alpha and beta to compadd as its candidates.",
+        "[unit] In zsh with recording compdef, compadd and _files stubs, a stub nax printing alpha and beta, words=(nax run -f a) and CURRENT=4, calling _nax sends the stub nax exactly the arguments __complete, --, run, -f, a.",
+        "[unit] In zsh with a stub nax printing nothing, calling _nax calls _files once without calling compadd.",
+        "[unit] In zsh with a stub nax that writes boom to stderr and prints alpha, calling _nax leaves the zsh process's stderr empty and passes alpha to compadd.",
+        "[unit] SUPPORTED_SHELLS equals [\"bash\", \"zsh\"].",
+        "[unit] In bash with a stub nax printing nothing, calling _nax_complete leaves COMPREPLY empty, permitting the registered -o default file-completion fallback.",
+        "[unit] In zsh with recording compdef, compadd and _files stubs and a stub nax printing alpha and beta, the recorded compadd arguments for _nax do not include -Q (zsh quotes inserted candidates)."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "completion",
+        "bash",
+        "zsh"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Bounded script templates and barrel additions use standard shell completion patterns; tests exercise real shells with controlled stubs, with no new runtime subsystem or authentication behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/completion/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/completion/scripts.ts",
+        "packages/nax/test/unit/cli/completion/scripts.test.ts"
+      ],
+      "suggestedCriteria": [
+        "In bash with a stub nax printing a candidate containing a space and a candidate containing '*', calling _nax_complete preserves each candidate as one literal COMPREPLY element even when matching files exist.",
+        "In zsh with words=(nax run -f \"\") and CURRENT=4, calling _nax sends five arguments to the stub nax with the last argument empty.",
+        "In zsh with recording compadd and _files stubs and a stub nax printing blank lines around alpha, calling _nax passes only alpha as its candidate and does not call _files.",
+        "In bash with COMP_WORDS=(nax run -f a ignored) and COMP_CWORD=3, calling _nax_complete sends only __complete, --, run, -f, a to the stub nax."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ef096c8e04a0287a2bd4f7f285bc67066016cdda"
+    },
+    {
+      "id": "US-004",
+      "title": "Register completion commands and wire the real CLI",
+      "description": "**Goal** — Expose script installation and silent candidate lookup through the actual nax CLI with injected process dependencies.\n\n**Motivation** — Today every name is typed by hand, and a typo only fails once the command runs.\n\n**Approach** — **Commands (US-004)** — `register.ts`:\n\n`_completionCliDeps` writes to `process.stdout` / `process.stderr`, exits with `process.exit`, and uses sources `cwd: () => process.cwd()`, `home: () => os.homedir()`, `features: listFeatureNames`, `profiles: listProfileNames`. `registerCompletionCommand` registers two commands:\n\n- `__complete [words...]`, `{ hidden: true }`. The action awaits `completeWords(program, words, deps.sources)` and writes the candidates joined by `\\n` plus a trailing `\\n` in one `deps.write` call; with no candidates it writes nothing. It never writes to stderr and never exits non-zero: a thrown error yields no output.\n- `completion <shell>`, visible. For a shell in `SUPPORTED_SHELLS` it writes `completionScript(shell)` in one `deps.write` call. For any other value it writes `unsupported shell \"<shell>\" (supported: <SUPPORTED_SHELLS joined by \", \">)` to `deps.writeErr`, calls `deps.exit(1)`, and returns without writing to stdout. Its help text (added with commander's `addHelpText(\"after\", ...)`) shows the two install lines: `eval \"$(nax completion zsh)\"` for `~/.zshrc` and `eval \"$(nax completion bash)\"` for `~/.bashrc`.\n\n`bin/nax.ts` calls `registerCompletionCommand(program)` once, after every other command is registered and before `parseAsync`.\n\n**Testing note.** `.nax/rules/forbidden-patterns-tests.md` discourages spawning the full `nax` process. Importing `bin/nax.ts` runs the CLI, so the only way to prove `bin/nax.ts` wires `registerCompletionCommand` is to spawn it. US-004 limits spawning to its seam ACs (8-11), following the existing `spawnNax` helper in `test/unit/cli/run-publish-override.test.ts` (with `NAX_GLOBAL_CONFIG_DIR` set to a temp dir and its 30 s `CLI_PROCESS_TIMEOUT_MS`). Every other US-004 AC uses injected `deps`. The US-003 shell tests spawn `bash` / `zsh`, never `nax`: a stub script named `nax` stands in for it.\n\nCompletion lives in a new directory module `packages/nax/src/cli/completion/` with a barrel `index.ts`, re-exported from the `src/cli` barrel. There is no `src/cli/completion.ts`, so the one-module-per-name rule holds. Files inside `src/cli/completion/` import each other relatively and import config symbols from the `@/config` barrel; they never import `@/cli` (that barrel re-exports completion, which would close an import cycle).\n\n**Scope** — In: create register.ts, unit action tests and the integration seam tests; add registerCompletionCommand, CompletionCliDeps and _completionCliDeps to the completion barrel, export the completion barrel's public symbols from src/cli/index.ts, import registerCompletionCommand through ../src/cli in bin/nax.ts and register once after all commands. Out: source implementation (US-001), engine implementation (US-002), shell template implementation (US-003). Editing the user's `~/.zshrc` or `~/.bashrc`; the user adds the `eval` line by hand. Caching feature or profile lists between Tab presses; every Tab runs `nax __complete` afresh, which costs one nax start (about 0.2 s warm on macOS, up to about 1 s cold). Replacing or upgrading commander. Preserve existing public APIs, bootstrap, parsing, run actions and regression assertions.\n\n**Interface** — verbatim declarations:\n```ts\nexport interface CompletionCliDeps {\n  write: (text: string) => void;    // stdout\n  writeErr: (text: string) => void; // stderr\n  exit: (code: number) => void;\n  sources: CompletionSources;\n}\nexport const _completionCliDeps: CompletionCliDeps;\nexport function registerCompletionCommand(program: Command, deps?: CompletionCliDeps): void;\n```\n\nProtocol behavior: nax completion bash/zsh writes the corresponding script with empty stderr and exit 0; any unsupported shell writes only the exact unsupported-shell diagnostic to stderr and exits 1; nax __complete -- <words> writes one candidate per line or nothing, empty stderr and exit 0. The -- separator must preserve all following words, including flags and the empty current word, as the variadic words argument. Explicit completion commands must route to their own actions rather than the default chat command. Do not invoke target command actions or run prechecks during completion.\n\nUnit setup for ACs 1-7: build a new commander program with run taking -f, --feature <name> and --from <spec-path>, call registerCompletionCommand(program, deps) with recording write/writeErr/exit, and await program.parseAsync(args, { from: \"user\" }). Unless specified otherwise features resolves [\"alpha\", \"beta\"]. Capture completion command help through configureOutput({ writeOut }) and outputHelp(), since addHelpText output is not part of helpInformation().\n\nSeams: default features/profiles must use US-001's real functions; the parsed __complete action must await US-002's completeWords on the same registered program; completion zsh must write US-003's completionScript result. The four real CLI seam ACs live in test/integration/cli/cli-completion.test.ts and use isolated temp project/global directories, no source stubs, concurrent pipe draining and CLI_PROCESS_TIMEOUT_MS = 30_000. Preserve existing async parse/catch behavior pinned by bin-nax-parse-async.test.ts. Non-empty candidate lists must be written atomically in one write with one trailing newline; rejected sources must be swallowed without stdout, stderr or a failing exit.",
+      "acceptanceCriteria": [
+        "[unit] When registerCompletionCommand(program, deps) is followed by parsing [\"__complete\", \"--\", \"run\", \"-f\", \"\"], deps.write is called once with \"alpha\nbeta\n\".",
+        "[unit] When deps.sources.features rejects and [\"__complete\", \"--\", \"run\", \"-f\", \"\"] is parsed, completion produces no deps.write call, no deps.writeErr call and no deps.exit call with a non-zero code.",
+        "[unit] When [\"__complete\", \"--\", \"run\", \"--from\", \"\"] is parsed, deps.write is not called.",
+        "[unit] When [\"completion\", \"zsh\"] is parsed, deps.write is called once with completionScript(\"zsh\").",
+        "[unit] When [\"completion\", \"fish\"] is parsed, the observed result is deps.writeErr text containing unsupported shell \"fish\" (supported: bash, zsh), deps.exit(1), and no deps.write call.",
+        "[unit] The registered completion command's outputHelp() text includes a zsh install line that evals the output of nax completion zsh and names ~/.zshrc.",
+        "[unit] The registered completion command's outputHelp() text includes a bash install line that evals the output of nax completion bash and names ~/.bashrc.",
+        "[cli] Spawning bun bin/nax.ts __complete -- run -d <tmp> -f \"\", where <tmp> is a temp project containing .nax/config.json and feature directories alpha and beta, produces exit 0, stdout \"alpha\nbeta\n\" and empty stderr.",
+        "[cli] Spawning bun bin/nax.ts __complete -- run -d <tmp> --profile \"\", with NAX_GLOBAL_CONFIG_DIR set to a temp directory containing profiles/fast.json and <tmp> a project containing .nax/config.json but no .nax/profiles/, produces exit 0 and stdout \"fast\n\".",
+        "[cli] In the command list printed by spawning bun bin/nax.ts --help, no line's first word is __complete.",
+        "[cli] In the command list printed by spawning bun bin/nax.ts --help, one line's first word is completion."
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "completion",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The new registration module composes completed upstream APIs using the existing registerGatesCommand dependency-injection pattern; barrel/import/call additions and four bounded CLI seam checks add no new lifecycle or architectural abstraction, so single-session TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/completion/engine.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/cli/gates.ts",
+        "packages/nax/src/cli/index.ts",
+        "packages/nax/test/unit/cli/run-publish-override.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/completion/register.ts",
+        "packages/nax/test/unit/cli/completion/register.test.ts",
+        "packages/nax/test/integration/cli/cli-completion.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When [\"completion\", \"bash\"] is parsed with injected dependencies, deps.write is called once with completionScript(\"bash\").",
+        "When [\"__complete\", \"--\", \"run\", \"--profile\", \"\"] is parsed and deps.sources.profiles rejects, completion produces no stdout or stderr writes and no non-zero exit.",
+        "When [\"__complete\", \"--\", \"run\", \"-f\", \"zz\"] is parsed with features resolving [\"alpha\", \"beta\"], deps.write is not called."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7605572aab16fdac687d324089b2a9181eaaccd0"
+    }
+  ],
+  "analysis": "This is an additive enhancement to the existing Bun/TypeScript CLI, not a greenfield application. Exploration used direct file reads and text search because codebase-memory MCP is not exposed in this session. The checked-in specification is .nax/features/cli-completion/spec.md:1. All four binding stories run in packages/nax. The binding dependency arrays are US-001: []; US-002: [US-001]; US-003: [US-001]; US-004: [US-001, US-002, US-003]. These binding edges are retained exactly, including US-004's explicit direct dependency on US-001. No work is needed in nax-agent, nax-agent-acp or nax-ai, no new dependency is required, and no existing public symbol changes shape. packages/nax/package.json:91 declares commander ^13.1.0; packages/nax/package.json:11 builds bin/nax.ts into the Bun CLI. Completion must read the actual commander tree rather than duplicate command and option inventories.\n\nExisting sources and consumers: packages/nax/src/config/paths/index.ts:61 implements globalConfigDir() with NAX_GLOBAL_CONFIG_DIR; :143 implements featuresDir(root); :235 implements findProjectDir(startDir), which walks upward looking for .nax/config.json and explicitly excludes the global config directory, including symlink-equivalent paths through isGlobalConfigDir at :219. findProjectDir returns the .nax directory, not the project root, so completion sources must take its parent. These functions are already exported by packages/nax/src/config/index.ts:29. packages/nax/src/config/profile.ts:304 implements listProfiles(projectRoot), scanning global and project profiles for .json suffixes and ignoring unreadable/missing directories. It returns scope-specific entries, so the new listProfileNames must map to names, de-duplicate and use default sort(). The existing internal listAvailableProfileNames at :294 demonstrates that transformation, but is private; do not change its visibility or duplicate its scanning policy. listProfiles is already public through packages/nax/src/config/index.ts:47. Completion lists names only: it must not load/validate profile JSON, evaluate environment substitutions, access credentials, or initialize runtime/agents.\n\nFeature listing semantics matter: packages/nax/src/cli/features-resolve.ts:202 discoverCandidates filters directories to ones containing prd.json or spec.md; that is deliberately NOT the completion policy. packages/nax/bin/nax.ts:643 lists all directory entries for features list, including features without a PRD. The new feature source follows directory-only listing with its own additional exclusion of dot-prefixed directories; it uses featuresDir(root) rather than hand-joining .nax/features. Missing project/config yields no features. Missing features directory yields no features. Profile lookup passes the discovered project root, or startDir if no project is found, to listProfiles. Temp fixtures for the outside-project cases must actually be outside any ancestor nax project. Do not broaden this feature into refactoring existing feature path joins or feature validation.\n\nArchitecture and impact: create only src/cli/completion/{values,engine,scripts,register,index}.ts and their specified test files. packages/nax/src/cli/index.ts:1 is the existing public CLI barrel; it currently has no completion export, and no completion.ts or completion directory was found. US-001 creates the directory barrel, US-002 and US-003 add exports to it, and US-004 adds registration exports plus an export block in the existing CLI barrel. Internal completion imports must be relative, with config symbols imported through @/config; importing @/cli from within completion would create a cycle when that barrel re-exports completion. packages/nax/src/cli/gates.ts:44 and :55 model injectable process dependencies; :349 models registerXCommand(program, deps = _deps). Follow the same injection boundary while preserving the completion contract's raw write/writeErr rather than console logging, since stdout is a newline-delimited machine protocol. Repository standards are indexed at docs/architecture/ARCHITECTURE.md:1: small functions, external dependency injection, strict types, Bun-native runtime APIs, and bounded file sizes. This PRD does not change source files or run validation; implementation agents must follow those standards when writing code.\n\nEntrypoint wiring: packages/nax/bin/nax.ts:43 imports the public CLI barrel, :145 constructs one Command, :147 sets name/version, and :148 registers default chat. packages/nax/src/cli/chat.ts:472 confirms chat uses isDefault: true and :474 has optional --resume [id]. run's required -f/--feature begins at packages/nax/bin/nax.ts:234; :253 hides --chat-asks; :258 defines -d/--dir and :261 starts --profile. The boolean -f/--force on init at :177 must never trigger feature completion. features resolve is registered at :672 and config profile show/use at :922 and :937. Register completion once after all other registrations, before the final parseAsync at :1673, importing registerCompletionCommand through ../src/cli. Preserve existing configureNaxCredentials() bootstrap and parseAsync try/catch at :1671. Completion tree walking must never parse or execute the target command's action: a request containing run must not trigger its required-option validation, prechecks, trust prompts, configuration load, or run. The entrypoint has pre-command forge identity capture at :135 and credentials bootstrap at :1671; these remain unchanged and are a potential source of process-boundary noise, so tests use hermetic environment/config fixtures. The __complete action catches source failures before the entrypoint's generic error handler can print them.\n\nEngine decisions: words exclude nax and include the current word as their final element, even if empty. Walk only words before the cursor; distinguish boolean, required-value and optional-value options from commander metadata, including options defined on ancestors. Required option values consume even a flag-shaped word; optional values do not consume a word starting with '-'. Unknown positional words make the walk stuck, prohibiting later command descent or positional completions but not flag or pending option-value completion. Last consumed --dir wins; expand only ~ and ~/ and resolve relative paths against injected cwd. Candidate flag visibility comes from createHelp().visibleOptions(reached command); command visibility comes from visibleCommands, excluding implicit help and hidden commands. Do not invent ancestor flag suggestions beyond the specified reached-command visibleOptions behavior. Default UTF-16 sort and de-duplication apply to every result, followed by prefix filtering. Match value sources by the option's long flag, never short spelling alone. Profiles preserve everything through the last comma, exclude names already present in that prefix, and prefix candidates accordingly. Positional sources apply only to features resolve and config profile show/use while not stuck. Unknown value kinds return [], allowing shell file fallback.\n\nShell contracts and risks: output scripts must preserve argv boundaries, empty current words and literal candidate strings. Bash 3.2 compatibility rules out mapfile; line-by-line reads avoid command-substitution word splitting and glob expansion. complete -o default supplies native file fallback. Zsh newline splitting must remove empty candidates and compadd (without -Q, so zsh quotes inserted text) must receive candidate elements without expansion; with no candidates use _files. Missing compdef prints a hint but succeeds and must not invoke compinit or write ~/.zcompdump. Both shell functions discard nax stderr. Every Tab starts nax afresh; no cache or latency redesign is planned. Names containing spaces or glob syntax are worth hardening tests, but newline-delimited protocol and listed feature exclusions must not be expanded into an escaping redesign. No installer modifies shell rc files.\n\nTest placement and seams: new bun:test units mirror src/cli/completion under test/unit/cli/completion. packages/nax/test/unit/cli/config-profile.test.ts:35 shows temporary NAX_GLOBAL_CONFIG_DIR setup and restoration at :45; use shared temp helpers and await fixture writes. packages/nax/test/unit/cli/run-publish-override.test.ts:98 shows spawnNax using Bun.spawn and concurrent stdout/stderr draining, and :114 defines the 30_000 ms CLI_PROCESS_TIMEOUT_MS. US-004 ACs 8-11 alone may spawn bin/nax.ts, in new test/integration/cli/cli-completion.test.ts, proving real barrel/entrypoint wiring and real feature/profile sources without stubs. All other registration tests build a fixture program, inject recording dependencies, and await parseAsync(..., { from: 'user' }). Capture completion help using configureOutput({ writeOut }) plus outputHelp(), because addHelpText is not in helpInformation(). US-003 tests spawn only bash --norc --noprofile or zsh -f with an executable nax stub first on PATH; skip an unavailable shell. packages/nax/test/unit/cli/bin-nax-parse-async.test.ts:36 preserves async parsing and existing exception wrapping; it also has later symlink regression assertions, none of which require modification. .nax/rules/forbidden-patterns-tests.md:20 discourages full nax spawning; the spec's seam-only exception is deliberate, not a general license. Pipeline commands run within packages/nax, never bare bun test or bun run nax; automatic lint/typecheck/tests are not story acceptance criteria.\n\nCompatibility and migration: the only existing production files modified are src/cli/index.ts and bin/nax.ts (including the new import and registration call); the spec's 'Modifies None' describes no pre-existing assertion changes, not literally zero edits. Existing config path/profile implementations and their consumers remain untouched. Existing users opt in by adding the documented eval line; there is no schema migration, release bump, lockfile change or package upgrade. The visible help list gains completion, while __complete stays hidden. The wire protocol is zero or more candidate lines, exactly one write for a non-empty list with one trailing newline, no diagnostics and successful exit on source failure. An unsupported completion shell instead has explicit stderr and exit 1. Principal regressions to prevent are default chat interception, hidden-command/option leakage, mistaken -f force completion, option values treated as subcommands, project discovery from nested directories, profile-name duplication, accidental global-home access in tests, shell splitting/globbing, and unwanted output on Tab. All failure-table rows are represented in their owning stories, including an explicit empty-reply bash fallback assertion in US-003.\n\nRefine-pass fidelity audit: all 56 numbered spec ACs are retained in their original stories at the same array positions; no assertion or qualifying clause was removed. Enumeration (each number maps to that story's same-number acceptanceCriteria entry): US-001: 1 root feature names sorted; 2 nested-directory feature names; 3 file/dot-directory exclusions still leave the same names; 4 outside-project features []; 5 missing features directory []; 6 merged global/project names de-duplicated; 7 .env addition still leaves the same profile names; 8 outside-project global profiles only; 9 nested-directory profile lookup; 10 missing global profiles directory still yields project names. US-002: 1 visible root commands without secret/help; 2 nested features commands; 3 short feature flag values; 4 long feature flag prefix; 5 boolean init -f returns [] without calling features because it is --force; 6 profile names; 7 comma suffix with duplicate exclusion; 8 comma prefix filtering; 9 long-flag prefix; 10 all visible short/long flags without secret-opt; 11 features resolve positional names; 12 config profile use positional names; 13 unknown --from value source []; 14 consumed profile value is not a subcommand; 15 required --from consumes flag-shaped -f without calling features; 16 unknown subcommand []; 17 absolute -d source directory; 18 relative -d source directory; 19 ~/ expansion; 20 injected cwd fallback; 21 consumed feature positional stops further positional completion without calling features; 22 optional --resume does not consume a flag-shaped current word. US-003: 1 bash function registration with successful complete -p; 2 bash default fallback registration; 3 exact two-element COMPREPLY; 4 exact bash protocol argv; 5 empty bash current argument preserved; 6 bash stderr suppression while retaining alpha; 7 zsh compdef registration; 8 missing compdef succeeds with the compinit hint; 9 zsh candidates passed to compadd; 10 exact zsh protocol argv; 11 empty zsh candidates call _files once without compadd; 12 zsh stderr suppression while retaining alpha; 13 exact supported-shell tuple. US-004: 1 parsed __complete performs one newline-delimited write; 2 rejected source produces no writes or failing exit; 3 unsupported option values produce no write; 4 parsed completion zsh writes completionScript's result once; 5 fish diagnostic/exit 1/no stdout; 6 zsh install help with eval and ~/.zshrc; 7 bash install help with eval and ~/.bashrc; 8 real feature seam exit/stdout/stderr; 9 real profile seam exit/stdout with isolated global profile and absent project profiles; 10 hidden __complete absent from help; 11 visible completion present in help. Regression qualifiers including 'still', boolean --force, not reading consumed values as subcommands, not calling sources, visibility exclusions, and the no-project-profiles precondition remain attached to their assertions. All ACs are observable through returned arrays, recording source/dependency calls, captured help, shell state, process argv, stdout/stderr or exit status; no quality gate is an AC.\n\nFailure-table audit by row: outside-project sources -> US-001 ACs 4/8; absent feature directory -> US-001 AC 5; absent global profiles -> US-001 AC 10; unknown subcommand -> US-002 AC 16, with the flag/value exceptions specified in its algorithm; throwing source -> US-004 AC 2; empty candidates -> US-003 ACs 2/11/14 and US-004 AC 3; unknown shell -> US-004 AC 5; missing compdef -> US-003 AC 8; nax stderr on Tab -> US-003 ACs 6/12. Every story therefore already has a negative path; no invented mandatory AC is needed. US-003 AC 14 is the explicit bash-empty-reply assertion from the failure table, not an extra feature requirement.\n\nScope/dependency/context audit: retain exactly the binding story IDs, workdirs and dependency arrays. All expectedFiles are new outputs; contextFiles are existing files or upstream outputs, never the current story's own new files. US-004's five context slots now prioritize the consumed engine, actual entrypoint, registration/deps example, public CLI barrel and process-test precedent; the simple completion barrel is the one omitted spec-recommended context due to the five-file cap, and remains explicitly identified in its description. All four stories use medium/tdd-simple routing: source scanning, a fully specified pure walk, standard shell templates, and established command-registration glue do not introduce a cross-cutting runtime abstraction. Existing root help remains exposed while the internal command stays hidden, pinned by US-004 ACs 10/11; run/plan/chat actions and existing APIs remain untouched. No helper extraction, signature extension or replacement of a warning/stub is proposed. The existing spawnNax is a local example, not an importable shared helper: follow its pattern and retain stdout as well as stderr for these seam assertions.\n\nOut-of-scope audit: the twelve top-level exclusions were compared item-by-item to the spec and remain verbatim: other shells; caching; --option=value; other option value sources; expansion beyond leading ~; zsh descriptions; rc-file edits; other positionals; aliases; words after the cursor; bun bin/nax.ts shell registration; commander replacement/upgrades. There are no story-local exclusion blocks to hoist. Descriptions retain the spec's interfaces/algorithms, distinguish other stories' responsibilities from feature exclusions, and agree with each story's ACs.",
+  "outOfScope": [
+    "fish, PowerShell and other shells; only bash and zsh scripts are generated.",
+    "Caching feature or profile lists between Tab presses; every Tab runs `nax __complete` afresh, which costs one nax start (about 0.2 s warm on macOS, up to about 1 s cold).",
+    "The `--option=value` form (`--feature=acc<Tab>`); only the separate-word form `--feature acc<Tab>` completes values.",
+    "Value completion for options other than `--feature` and `--profile` (for example `--agent`, `--model`, `--gate`); those values get no nax candidates and fall back to file completion.",
+    "Expanding a `--dir` value beyond a leading `~`: quoted values, `$VAR` and `~user` forms are taken literally.",
+    "Descriptions next to candidates in the zsh menu; candidates are plain names.",
+    "Editing the user's `~/.zshrc` or `~/.bashrc`; the user adds the `eval` line by hand.",
+    "Positional completion for `features create <name>`, `plan [description]` and every other positional argument not named in the Design's positional-value rule.",
+    "Command aliases; nax registers none, and the walk matches subcommand names only.",
+    "Words after the cursor: a `-d <dir>` typed after the word being completed is not seen, so the start directory falls back to the current directory.",
+    "Completing the local build invoked as `bun bin/nax.ts`; the scripts complete only the command name `nax`.",
+    "Replacing or upgrading commander."
+  ],
+  "routingProfile": "native-codex-dsm"
+}
