@@ -7,4 +7,5 @@
  */
 
 export { type CompletionSources, completeWords } from "./engine";
+export { type CompletionShell, completionScript, SUPPORTED_SHELLS } from "./scripts";
 export { listFeatureNames, listProfileNames } from "./values";
