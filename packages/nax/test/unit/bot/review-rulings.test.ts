@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
 import { CallerRecordingError } from "@/bot/caller-rulings";
-import { readReviewRulings } from "@/bot/review-rulings";
+import type { PrCheckout } from "@/bot/checkout";
+import type { PatchEquivalent } from "@/bot/review-rebase";
+import { readReviewRulings, reviewRange } from "@/bot/review-rulings";
 import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
 import { resolveWorkflowConfig } from "@/config";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
-import { initLogger, resetLogger } from "@/logger";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 
 const config = makeNaxConfig();
@@ -174,5 +176,90 @@ describe("readReviewRulings", () => {
       });
       expect(result.callerRulings).toEqual(progress);
     });
+  });
+});
+
+const REVIEWED_HEAD = "a".repeat(40);
+const REVIEWED_BASE = "b".repeat(40);
+const HEAD = "c".repeat(40);
+const checkout: PrCheckout = {
+  worktree: "/checkout",
+  baseSha: "base",
+  mergeBase: "d".repeat(40),
+  snapshotDir: "/snapshot",
+  hasBaseNax: true,
+  changedFiles: [],
+  dispose: async () => {},
+};
+const index = { keys: [], reviewedHead: REVIEWED_HEAD, reviewedBase: REVIEWED_BASE };
+/** The head no longer descends from the reviewed head, but the reviewed base is contained. */
+const rebasedAncestry = async (_dir: string, ancestor: string): Promise<boolean> => ancestor === REVIEWED_BASE;
+const full = { rangeBase: checkout.mergeBase };
+
+describe("reviewRange", () => {
+  test("AC-1 conversation-only rebased range when the patch is unchanged", async () => {
+    const equivalent = mock<PatchEquivalent>(async () => true);
+    expect(await reviewRange({ index, checkout, head: HEAD }, rebasedAncestry, equivalent)).toEqual({
+      rangeBase: checkout.mergeBase,
+      conversationOnly: true,
+      rebasedFrom: REVIEWED_HEAD,
+    });
+  });
+
+  test("AC-2 compares the reviewed range with this head's own range", async () => {
+    const equivalent = mock<PatchEquivalent>(async () => true);
+    await reviewRange({ index, checkout, head: HEAD }, rebasedAncestry, equivalent);
+    expect(equivalent).toHaveBeenCalledTimes(1);
+    expect(equivalent.mock.calls[0]).toEqual([
+      checkout.worktree,
+      { base: REVIEWED_BASE, head: REVIEWED_HEAD },
+      { base: checkout.mergeBase, head: HEAD },
+    ]);
+  });
+
+  test("AC-3 a changed patch keeps the full range and names no rebase", async () => {
+    const result = await reviewRange({ index, checkout, head: HEAD }, rebasedAncestry, async () => false);
+    expect(result).toEqual(full);
+    expect(Object.hasOwn(result, "rebasedFrom")).toBe(false);
+  });
+
+  test("AC-4 a reviewed base outside the merge base reviews everything and compares no patch", async () => {
+    const equivalent = mock<PatchEquivalent>(async () => true);
+    expect(await reviewRange({ index, checkout, head: HEAD }, async () => false, equivalent)).toEqual(full);
+    expect(equivalent).not.toHaveBeenCalled();
+  });
+
+  test("AC-5 a rejected patch comparison warns and keeps the full range", async () => {
+    const warnings: LogEntry[] = [];
+    const stop = addSink((entry) => warnings.push(entry));
+    try {
+      const result = await reviewRange({ index, checkout, head: HEAD }, rebasedAncestry, async () => {
+        throw new Error("git diff failed");
+      });
+      expect(result).toEqual(full);
+    } finally {
+      stop();
+    }
+    expect(warnings.some((entry) => entry.level === "warn" && entry.message.includes("patch"))).toBe(true);
+  });
+
+  test("AC-6 two arguments never compare patches and keep the full range", async () => {
+    expect(await reviewRange({ index, checkout, head: HEAD }, rebasedAncestry)).toEqual(full);
+  });
+
+  test("AC-7 a head that descends from the reviewed head stays incremental and compares no patch", async () => {
+    const equivalent = mock<PatchEquivalent>(async () => true);
+    expect(await reviewRange({ index, checkout, head: HEAD }, async () => true, equivalent)).toEqual({
+      rangeBase: REVIEWED_HEAD,
+    });
+    expect(equivalent).not.toHaveBeenCalled();
+  });
+
+  test("AC-20 an ancestry check that throws reviews everything", async () => {
+    expect(
+      await reviewRange({ index, checkout, head: HEAD }, async () => {
+        throw new Error("missing object HEAD~1");
+      }),
+    ).toEqual(full);
   });
 });

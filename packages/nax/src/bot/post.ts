@@ -83,6 +83,8 @@ export interface BotReviewArtifact {
   readonly callerRulings?: CallerRulingsReport;
   /** What the review actually covered (nax#2667); optional to every earlier reader. */
   readonly scope?: BotReviewScope;
+  /** US-003: the reviewed head this review's patch was rebased from. */
+  readonly rebasedFrom?: string;
   readonly incrementalSince?: string;
   readonly checks?: BotChecks | null;
   readonly events?: readonly BotReviewEvent[];
@@ -122,6 +124,8 @@ export interface PostReviewInput {
   readonly callerRulings?: CallerRulingsReport;
   /** What the review actually covered (nax#2667); absent when the caller does not classify it. */
   readonly scope?: BotReviewScope;
+  /** US-003: the reviewed head a rebased review's patch came from. */
+  readonly rebasedFrom?: string;
   /** The already-reviewed head an incremental review starts after. */
   readonly incrementalSince?: string;
   readonly login?: string;
@@ -362,6 +366,7 @@ async function persistArtifact(input: PostReviewInput, reviewId: string | undefi
     ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
     ...(input.callerRulings === undefined ? {} : { callerRulings: input.callerRulings }),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
+    ...(input.rebasedFrom === undefined ? {} : { rebasedFrom: input.rebasedFrom }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     checks: input.staticMode ? null : (input.checks ?? null),
     events: withdrawalEvents(input),
@@ -528,6 +533,7 @@ async function postSummary(
     // the agreed findings that hold readiness beside it.
     blockingCount: blockingFindingCount(input),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
+    ...(input.rebasedFrom === undefined ? {} : { rebasedFrom: input.rebasedFrom }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,
     quality: reviewQuality(input.scope, input.verdict.quality),

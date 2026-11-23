@@ -41,6 +41,7 @@ import { advanceAfterReview } from "./review-advance";
 import { reviewCarry } from "./review-carry";
 import { reviewConvergence, reviewPushFacts } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
+import { rebasedField } from "./review-rebase";
 import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
@@ -372,6 +373,7 @@ async function reviewEnvironment(
     head: info.headSha,
     load: _botReviewDeps.loadLatestCarry,
     isAncestor: _botReviewDeps.isAncestor,
+    patchEquivalent: _botReviewDeps.patchEquivalent,
   });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
@@ -431,6 +433,7 @@ async function reviewEnvironment(
       ...reviewConvergence({ comments: rawComments, writers: triaged.writers, config: ctx.config }),
       scope,
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
+      ...rebasedField(range),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
       carriedFindings: carried,

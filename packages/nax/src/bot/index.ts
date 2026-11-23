@@ -107,6 +107,7 @@ export {
 } from "./render-comments";
 export { type AdvanceAfterReviewInput, advanceAfterReview } from "./review-advance";
 export { type ReviewCarryInput, reviewCarry } from "./review-carry";
+export { makePatchEquivalent, type PatchEquivalent, type PatchRange, patchIdentity } from "./review-rebase";
 export {
   _botReviewDeps,
   BOT_REVIEW_GRAPH,

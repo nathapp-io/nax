@@ -17,7 +17,8 @@ import { getLogger } from "@/logger";
 import type { ItemIndex } from "../workflow/item-threads";
 import { type CarriedFinding, earlierCarriedFindings, type LoadCarry } from "./carried-findings";
 import type { PrCheckout } from "./checkout";
-import { type BotReviewScope, reviewRange, reviewScopeOf } from "./review-rulings";
+import type { PatchEquivalent } from "./review-rebase";
+import { type BotReviewScope, type ReviewRange, reviewRange, reviewScopeOf } from "./review-rulings";
 
 export interface ReviewCarryInput {
   readonly outputDir: string;
@@ -31,23 +32,29 @@ export interface ReviewCarryInput {
   readonly head: string;
   readonly load: LoadCarry;
   readonly isAncestor: (dir: string, ancestor: string, head: string) => Promise<boolean>;
+  /** US-003: absent never recognises a rebase, which is what a caller without git access wants. */
+  readonly patchEquivalent?: PatchEquivalent;
 }
 
 export interface ReviewCarry {
-  readonly range: { readonly rangeBase: string };
+  readonly range: ReviewRange;
   readonly scope: BotReviewScope;
   readonly carried: readonly CarriedFinding[];
 }
 
-function scopeOf(range: { readonly rangeBase: string }, mergeBase: string): BotReviewScope {
+function scopeOf(range: ReviewRange, mergeBase: string): BotReviewScope {
   return reviewScopeOf({ ...range, mergeBase });
 }
 
 export async function reviewCarry(input: ReviewCarryInput): Promise<ReviewCarry> {
-  const full = { rangeBase: input.checkout.mergeBase };
+  const full: ReviewRange = { rangeBase: input.checkout.mergeBase };
   const range = input.full
     ? full
-    : await reviewRange({ index: input.index, checkout: input.checkout, head: input.head }, input.isAncestor);
+    : await reviewRange(
+        { index: input.index, checkout: input.checkout, head: input.head },
+        input.isAncestor,
+        input.patchEquivalent,
+      );
   const scope = scopeOf(range, input.checkout.mergeBase);
   const carry = await earlierCarriedFindings({
     outputDir: input.outputDir,
@@ -57,6 +64,7 @@ export async function reviewCarry(input: ReviewCarryInput): Promise<ReviewCarry>
     rangeBase: range.rangeBase,
     own: input.own,
     load: input.load,
+    ...(range.rebasedFrom === undefined ? {} : { rebasedFrom: range.rebasedFrom }),
   });
   if (!carry.widen) return { range, scope, carried: carry.findings };
   getLogger().warn("bot", "Carried findings incomplete or unreadable; reviewing the full range", {

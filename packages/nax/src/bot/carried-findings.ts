@@ -85,6 +85,8 @@ export interface EarlierCarriedInput {
   readonly index?: ItemIndex | undefined;
   readonly scope: BotReviewScope;
   readonly rangeBase: string;
+  /** US-003: the reviewed head this range was rebased from, absent when the head merely descends. */
+  readonly rebasedFrom?: string;
   /** The bot's own comments on the PR, where the durable record lives (B1). */
   readonly own: readonly OwnComment[];
   readonly load: LoadCarry;

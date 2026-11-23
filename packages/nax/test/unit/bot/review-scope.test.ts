@@ -36,6 +36,11 @@ describe("reviewScopeOf", () => {
   test("AC-4 reports conversation-only ahead of the range comparison", () => {
     expect(reviewScopeOf({ rangeBase: "r", mergeBase: "m", conversationOnly: true })).toBe("conversation-only");
   });
+  test("AC-8 reports a rebased review ahead of every other rule", () => {
+    expect(reviewScopeOf({ rangeBase: "m", mergeBase: "m", conversationOnly: true, rebasedFrom: "a".repeat(40) })).toBe(
+      "rebased",
+    );
+  });
 });
 
 describe("buildBotPrReviewPrompt incremental note", () => {

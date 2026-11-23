@@ -61,6 +61,9 @@ export function makeBotReviewDeps(input: {
     readHeadCi: async () => ({ outcome: "green", detail: "ok" }),
     advanceReviewedHead: async () => ({ kind: "unchanged" }),
     loadLatestCarry: async () => ({ findings: [], widen: false }),
+    // Hermetic: no test in this helper's users reaches git to compare patches, so a non-ancestor head
+    // keeps the full range it had before US-003.
+    patchEquivalent: async () => false,
     writeJson: async () => {},
   };
 }

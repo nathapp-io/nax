@@ -26,6 +26,7 @@ import { readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
 import { openBotLog } from "./log";
 import { postPrReview } from "./post";
+import { makePatchEquivalent } from "./review-rebase";
 import { runPrReview } from "./review-step";
 import { advanceReviewedHead } from "./reviewed-head";
 import { recordPrRulings } from "./rulings";
@@ -60,6 +61,8 @@ export const _botReviewDeps = {
   ensureProjectTrusted,
   forge: defaultForgeDeps,
   resolvePrRef,
+  /** US-003: whether a reviewed range and this head carry the same patch across a rebase. */
+  patchEquivalent: makePatchEquivalent(botGit),
   readPrInfo,
   classifyPrTrust,
   readCurrentUser,
