@@ -3,7 +3,7 @@
   "feature": "cli-completion",
   "branchName": "feat/cli-completion",
   "createdAt": "2026-11-23T11:41:02.112Z",
-  "updatedAt": "2026-11-23T12:02:30.134Z",
+  "updatedAt": "2026-11-23T12:14:01.190Z",
   "userStories": [
     {
       "id": "US-001",
@@ -168,14 +168,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Bounded script templates and barrel additions use standard shell completion patterns; tests exercise real shells with controlled stubs, with no new runtime subsystem or authentication behavior."
+        "reasoning": "Bounded script templates and barrel additions use standard shell completion patterns; tests exercise real shells with controlled stubs, with no new runtime subsystem or authentication behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/completion/index.ts"
@@ -194,7 +197,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ef096c8e04a0287a2bd4f7f285bc67066016cdda"
     },
     {
       "id": "US-004",
