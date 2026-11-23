@@ -283,3 +283,13 @@ describe("FIELD_DESCRIPTIONS memory.koda (US-012)", () => {
     expect(FIELD_DESCRIPTIONS["memory.provider"]).toContain("koda");
   });
 });
+
+describe("FIELD_DESCRIPTIONS bot.blockingTriggers (bot-trigger-classes AC-22)", () => {
+  test("names the seven trigger classes and the default", () => {
+    expect(
+      FIELD_DESCRIPTIONS["bot.blockingTriggers"]?.startsWith(
+        'Finding trigger classes that can hold readiness: "normal", "off-contract", "version-skew", "backend-fault", "own-concurrency", "adversarial" or "manual" (default ["normal", "own-concurrency"]).',
+      ),
+    ).toBe(true);
+  });
+});

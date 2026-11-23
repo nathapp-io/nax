@@ -9,6 +9,16 @@ const parse = (extra: Record<string, unknown> = {}) =>
   parsePrReviewReply(JSON.stringify({ ...base, ...extra }), ["T1", "T2"], ["C1"]);
 
 describe("parsePrReviewReply", () => {
+  test("bot-trigger-classes AC-10 keeps a version-skew trigger", () => {
+    const reply = JSON.stringify({
+      intent: "pass",
+      quality: "changes",
+      findings: [{ kind: "quality", severity: "important", issue: "bug", trigger: "version-skew" }],
+      threads: [],
+      comments: [],
+    });
+    expect(parsePrReviewReply(reply, [], [])?.findings[0]?.trigger).toBe("version-skew");
+  });
   const earlier = { id: "E1", status: "fixed", reason: "done" } satisfies PrEarlierVerdict;
   const withExtra = (value: Record<string, unknown>, extra = { earlierIds: ["E1"], decisionIds: ["D-1"] }) =>
     parsePrReviewReply(JSON.stringify({ ...base, ...value }), [], [], extra);

@@ -207,3 +207,29 @@ describe("postPrReview residual findings (US-003)", () => {
     expect(summaryBody()).not.toContain("blocking review findings");
   });
 });
+
+describe("postPrReview new trigger classes (bot-trigger-classes US-001)", () => {
+  const offContract: PrFinding = {
+    ...adversarial,
+    trigger: "off-contract",
+    triggerEvidence: "a subclass breaks the schema",
+  };
+
+  test("AC-18 posts no inline comment for an important off-contract finding under the default set", async () => {
+    await bot.postPrReview(blocking([offContract]));
+    expect(callsTo(INLINE)).toHaveLength(0);
+  });
+
+  test("AC-19 lists it under Residual findings with its trigger", async () => {
+    await bot.postPrReview(blocking([offContract]));
+    const body = summaryBody();
+    const residual = body.slice(body.indexOf("### Residual findings (not blocking)"));
+    const line = residual.split("\n").find((l) => l.startsWith("- **Important** `a.ts`:3:"));
+    expect(line).toContain("(trigger off-contract");
+  });
+
+  test("AC-20 posts it inline when the blocking set names off-contract", async () => {
+    await bot.postPrReview(blocking([offContract], { blockingTriggers: ["normal", "off-contract"] }));
+    expect(callsTo(INLINE)).toHaveLength(1);
+  });
+});

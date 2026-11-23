@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import type { AgreedItem, BotFixEnv } from "@/bot";
 import { hasPushWorthyItem, reviewBlockingTriggers } from "@/bot/review-blocking";
-import type { FindingOrigin } from "@/workflow/blocking-findings";
+import type { FindingOrigin, FindingTrigger } from "@/workflow/blocking-findings";
 
 /** The newer review of the same head: conversation-only, so it read no code and raised nothing itself. */
 function conversationOnly(base: BotFixEnv): BotFixEnv["review"] {
@@ -39,7 +39,7 @@ describe("reviewBlockingTriggers", () => {
 });
 
 /** The only agreed item a fix session would act on: one normal important finding with one origin. */
-function findingItem(origin: FindingOrigin): AgreedItem {
+function findingItem(origin: FindingOrigin, trigger: FindingTrigger = "normal"): AgreedItem {
   return {
     key: "f-0",
     kind: "finding",
@@ -47,7 +47,7 @@ function findingItem(origin: FindingOrigin): AgreedItem {
     issue: "Lock leaks",
     file: "src/a.ts",
     line: 12,
-    trigger: "normal",
+    trigger,
     origin,
   };
 }
@@ -59,5 +59,15 @@ describe("hasPushWorthyItem", () => {
 
   test("AC-18 counts a fix-regression finding as worth a fix session", () => {
     expect(hasPushWorthyItem(makeBotFixEnv([findingItem("fix-regression")]))).toBe(true);
+  });
+
+  test("AC-21 does not count an important backend-fault finding under the default set", () => {
+    const item = findingItem("pr", "backend-fault");
+    const env = makeBotFixEnv([item]);
+    const scoped: BotFixEnv = {
+      ...env,
+      review: { ...env.review, agreed: [item], blockingTriggers: ["normal", "own-concurrency"] },
+    };
+    expect(hasPushWorthyItem(scoped)).toBe(false);
   });
 });

@@ -1,0 +1,63 @@
+import { describe, expect, test } from "bun:test";
+import type { BotPrReviewPromptInput } from "@/prompts";
+import * as prompts from "@/prompts";
+
+const base: BotPrReviewPromptInput = {
+  packagePath: "/p.diff",
+  range: "m..HEAD",
+  staticMode: false,
+  pr: { number: 42, title: "Title", body: "Adds X", author: "alice" },
+  issues: [],
+  threads: [],
+  comments: [],
+};
+
+function taskLines(input: BotPrReviewPromptInput): string[] {
+  const prompt = prompts.buildBotPrReviewPrompt(input);
+  return prompt.slice(prompt.lastIndexOf("## Your task")).split("\n");
+}
+
+const OFF =
+  "off-contract: needs a caller, subclass or configuration value that breaks a type, schema or documented contract of this repository.";
+const SKEW = "version-skew: needs two versions of the product running together, or data written by an earlier version.";
+const FAULT = "backend-fault: needs a store, network or clock failure between two steps of one operation.";
+const EVIDENCE =
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use.';
+
+describe("buildBotPrReviewPrompt trigger classes (bot-trigger-classes US-001)", () => {
+  const lines = taskLines(base);
+  test.each([
+    ["AC-11", "off-contract:", OFF],
+    ["AC-12", "version-skew:", SKEW],
+    ["AC-13", "backend-fault:", FAULT],
+  ])("%s defines %s on exactly one line", (_ac, prefix, definition) => {
+    expect(lines.filter((l) => l.startsWith(prefix))).toEqual([definition]);
+  });
+  test("AC-14 the line after normal: states the normal evidence", () => {
+    const at = lines.findIndex((l) => l.startsWith("normal:"));
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(lines[at + 1]).toBe(EVIDENCE);
+  });
+  test("AC-15 the seven class lines appear in order", () => {
+    const order = [
+      "normal:",
+      "off-contract:",
+      "version-skew:",
+      "backend-fault:",
+      "own-concurrency:",
+      "adversarial:",
+      "manual:",
+    ];
+    const at = order.map((p) => lines.findIndex((l) => l.startsWith(p)));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+  test("AC-16 the finding shape names the seven classes", () => {
+    expect(lines.join("\n")).toContain(
+      '"trigger": "normal|off-contract|version-skew|backend-fault|own-concurrency|adversarial|manual", "triggerEvidence": "..."',
+    );
+  });
+  test("AC-17 a conversation-only review gets the off-contract line", () => {
+    expect(taskLines({ ...base, conversationOnly: true })).toContain(OFF);
+  });
+});

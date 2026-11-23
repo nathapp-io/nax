@@ -66,7 +66,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "bot.gateRepairRounds": "Maximum bot gate repair rounds (defaults to 1); zero disables repair",
   "bot.costLimit": "Bot run cost limit in USD (defaults to 5)",
   "bot.blockingTriggers":
-    'Finding trigger classes that can hold readiness: "normal", "own-concurrency", "adversarial" or "manual" (default ["normal", "own-concurrency"]). A critical or important finding whose trigger is outside the set is listed as residual in the review summary instead of opening an inline thread. A collaborator can override the set for one PR with a top-level comment whose first line is "blocking triggers: <class>[, <class>...]"',
+    'Finding trigger classes that can hold readiness: "normal", "off-contract", "version-skew", "backend-fault", "own-concurrency", "adversarial" or "manual" (default ["normal", "own-concurrency"]). A critical or important finding whose trigger is outside the set is listed as residual in the review summary instead of opening an inline thread. A collaborator can override the set for one PR with a top-level comment whose first line is "blocking triggers: <class>[, <class>...]"',
   "bot.chainNoticeGeneration":
     "Finding generation at which the fix summary reports that the findings are chasing their own fixes (default 2)",
   "bot.models": "Per-role model overrides for bot commands; --model takes precedence",
