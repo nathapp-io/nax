@@ -76,6 +76,11 @@ function commandsOf(checks: BotChecks): string[] {
   return checks.preRun.map((step) => step.command);
 }
 
+/** Element-wise, including length: a command may itself contain the separator a join would add. */
+function sameCommands(saved: readonly string[], fresh: readonly string[]): boolean {
+  return saved.length === fresh.length && saved.every((command, index) => command === fresh[index]);
+}
+
 /**
  * The install re-resolved from the base tip, when it is worth a second attempt: a non-empty `preRun`
  * whose commands differ from the saved ones. A resolve that rejects is logged and answers `undefined`
@@ -99,7 +104,7 @@ async function freshInstall(
   if (fresh.preRun.length === 0) return undefined;
   const savedCommands = commandsOf(saved);
   const freshCommands = commandsOf(fresh);
-  if (savedCommands.join("\n") === freshCommands.join("\n")) return undefined;
+  if (sameCommands(savedCommands, freshCommands)) return undefined;
   getLogger()?.info("bot-fix", "Saved install failed; retrying with the install resolved from the base tip", {
     pr: env.ref.number,
     saved: savedCommands,

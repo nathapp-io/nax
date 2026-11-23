@@ -253,6 +253,27 @@ describe("runBotFix saved install retry", () => {
     expect(gates.mock.calls[0]?.[1].map(({ command }) => command)).not.toContain(FRESH_GATE);
   });
 
+  test("F1: command lists that only look equal once joined still retry", async () => {
+    const joined = { command: `${SAVED_INSTALL.command}\n${FRESH_INSTALL.command}`, timeoutSeconds: 600 };
+    savedHead(
+      { ...savedChecks(), preRun: [joined] },
+      mock<typeof _botFixDeps.resolveBotChecks>(async () => ({
+        ...freshChecks(),
+        preRun: [SAVED_INSTALL, FRESH_INSTALL],
+      })),
+    );
+    // `${SAVED_INSTALL.command}\n${FRESH_INSTALL.command}` === the fresh list joined by "\n": only an
+    // element-wise comparison tells the two lists apart, and the retry must still happen.
+    const preRun = installs([joined.command]);
+    stopAfterFix();
+
+    const result = await runBotFix(input);
+
+    expect(result).not.toMatchObject({ outcome: "setup-failed" });
+    expect(preRun).toHaveBeenCalledTimes(2);
+    expect(preRun.mock.calls[1]?.[0]).toEqual({ steps: [SAVED_INSTALL, FRESH_INSTALL], workdir: "/worktree" });
+  });
+
   test("AC-6: an identical fresh install is not retried", async () => {
     savedHead(
       savedChecks(),
