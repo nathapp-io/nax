@@ -3,7 +3,7 @@
   "feature": "bot-setup-rebase",
   "branchName": "feat/bot-setup-rebase",
   "createdAt": "2026-11-23T06:19:46.443Z",
-  "updatedAt": "2026-11-23T06:57:30.002Z",
+  "updatedAt": "2026-11-23T07:19:19.697Z",
   "userStories": [
     {
       "id": "US-001",
@@ -180,14 +180,17 @@
         "patch-identity"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds SHA-256 patch equivalence and ancestry-dependent review elision across several typed seams; strict isolation applies to the hashing/cryptography override and provenance-sensitive decision."
+        "reasoning": "Adds SHA-256 patch equivalence and ancestry-dependent review elision across several typed seams; strict isolation applies to the hashing/cryptography override and provenance-sensitive decision.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-rulings.ts",
@@ -213,7 +216,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b63c56baec8ee4b8322b4c317eb9e760cd393413"
     },
     {
       "id": "US-004",
