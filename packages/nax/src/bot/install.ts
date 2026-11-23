@@ -31,12 +31,19 @@ function attemptedCommand(failure: NaxError, steps: readonly PreRunStepConfig[])
 }
 
 /**
- * The checks to run the rest of the command with: unchanged when the setup that
- * ran is the one they already name, so a command that needed no fallback keeps
- * the checks object its steps came from.
+ * The checks to run and report the rest of the command with.
+ *
+ * Unchanged when the setup that ran is the one they already name, so a command that needed no fallback
+ * keeps the checks object its steps came from. When a fallback ran instead, `preRun` reports it — and
+ * the `install` derivation that produced the *other* command goes with it: its lockfile names an
+ * install these checks no longer run, and its candidate list still holds the fallback that just
+ * succeeded, so keeping it would make a persisted roll-forward run that command twice and explain a
+ * setup failure with the wrong lockfile (B3). What stays is only what the checks can vouch for.
  */
 export function withRanSteps(checks: BotChecks, ran: readonly PreRunStepConfig[]): BotChecks {
-  return ran === checks.preRun ? checks : { ...checks, preRun: ran };
+  if (ran === checks.preRun) return checks;
+  const { install: _replaced, ...rest } = checks;
+  return { ...rest, preRun: ran };
 }
 
 /**

@@ -1,9 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import * as bot from "@/bot";
+import { buildSetupHint } from "@/bot/fix-setup";
+import { withRanSteps } from "@/bot/install";
 import { resolveWorkflowConfig } from "@/config";
+import { NaxError } from "@/errors";
+import type { runPreRunSteps } from "@/execution/lifecycle/pre-run-steps";
 import type { PrRef } from "@/forge";
 import { workflowBranchFixOp } from "@/operations";
 import * as workflow from "@/workflow";
@@ -99,6 +103,46 @@ describe("loadLatestReview", () => {
     const only = temp();
     await writeReview(only, "broken", { ...artifact("h1"), agreed: "leak" }, 200);
     expect(await bot.loadLatestReview(only, REF, "h1")).toBeNull();
+  });
+  // B3: what a review persists after a fallback is what the next `nax bot fix` runs, so the round trip
+  // must yield one attempt naming only the install that ran — not the derivation the fallback replaced.
+  test("B3 round-trips a fallback install into one fix attempt without the replaced derivation", async () => {
+    const dir = temp();
+    const primary = { command: "bun install --frozen-lockfile", timeoutSeconds: 600 };
+    const fallback = { command: "npm ci", timeoutSeconds: 600 };
+    // Exactly what `prepareReviewChecks` hands the post node once the derived install failed.
+    const persisted = withRanSteps(
+      {
+        source: "detected",
+        gates: [],
+        preRun: [primary],
+        install: { lockfile: "bun.lock", reason: "lockfile-order", fallbacks: [fallback] },
+      },
+      [fallback],
+    );
+    await writeReview(dir, "only", { ...artifact("h1"), version: 3, checks: persisted }, 100);
+    const loaded = await bot.loadLatestReview(dir, REF, "h1");
+    const checks = loaded?.checks;
+    if (checks == null) throw new Error("expected the review's saved checks");
+    const run = mock<typeof runPreRunSteps>(async () => {});
+    expect(await bot.runBotInstall(checks, dir, run)).toEqual({ ran: [fallback] });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toEqual({ steps: [fallback], workdir: dir });
+    // A fallback that fails again is not retried against itself: one attempt, then setup-failed.
+    const failure = new NaxError("[bot] install failed", "PRE_RUN_FAILED", { stage: "bot", command: fallback.command });
+    const failing = mock<typeof runPreRunSteps>(async () => {
+      throw failure;
+    });
+    await expect(bot.runBotInstall(checks, dir, failing)).rejects.toBe(failure);
+    expect(failing).toHaveBeenCalledTimes(1);
+    // A setup failure is not explained by a lockfile the persisted checks no longer install from.
+    const hint = buildSetupHint({
+      checks,
+      error: new NaxError("[bot] install failed", "PRE_RUN_FAILED", { stage: "bot", command: fallback.command }),
+      pr: 42,
+    });
+    expect(hint).not.toContain("bun.lock");
+    expect(hint).toContain("Set execution.preRun in the base branch's .nax/config.json");
   });
   test("saved-checks round trip keeps a command list with blank entries", async () => {
     const dir = temp();

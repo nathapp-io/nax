@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { BotChecks, BotInstallChoice } from "@/bot";
-import { runBotInstall } from "@/bot/install";
+import { runBotInstall, withRanSteps } from "@/bot/install";
 import type { PreRunStepConfig } from "@/config/runtime-types-execution";
 import { NaxError } from "@/errors";
 import type { runPreRunSteps } from "@/execution/lifecycle/pre-run-steps";
@@ -88,5 +88,22 @@ describe("runBotInstall", () => {
     expect(await runBotInstall(checks(preRun, CHOICE), WORKDIR, run)).toEqual({ ran: preRun });
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]?.[0]).toEqual({ steps: preRun, workdir: WORKDIR });
+  });
+});
+
+describe("withRanSteps", () => {
+  test("keeps the resolved checks by identity when the derived install is the one that ran", () => {
+    const preRun = [A];
+    const resolved = checks(preRun, CHOICE);
+    expect(withRanSteps(resolved, preRun)).toBe(resolved);
+  });
+
+  // B3: a fallback replaced the derived install, so the derivation that named the first command —
+  // its lockfile and its candidate list — no longer describes what the checks report or persist.
+  test("drops a derivation the fallback that ran replaced", () => {
+    const applied = withRanSteps(checks([A], CHOICE), [B]);
+    expect(applied.preRun).toEqual([B]);
+    expect(applied.source).toBe("detected");
+    expect(applied).not.toHaveProperty("install");
   });
 });
