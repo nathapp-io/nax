@@ -3,7 +3,7 @@
   "feature": "bot-setup-rebase",
   "branchName": "feat/bot-setup-rebase",
   "createdAt": "2026-11-23T06:19:46.443Z",
-  "updatedAt": "2026-11-23T06:38:10.155Z",
+  "updatedAt": "2026-11-23T06:57:30.002Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,14 +117,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Five production files use existing resolver/deps, NaxError and rendering patterns for a single bounded retry plus optional schema validation; standard unit and command-seam TDD is sufficient."
+        "reasoning": "Five production files use existing resolver/deps, NaxError and rendering patterns for a single bounded retry plus optional schema validation; standard unit and command-seam TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -141,7 +144,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9f03e2f9a3d5d26b3e808847f4bcdecf03305551"
     },
     {
       "id": "US-003",
