@@ -43,6 +43,10 @@ Set "decision" on a finding only when it breaks a listed project decision. The "
 Severity: "critical" = unsafe behaviour or lost data a user or caller can reach; "important" = other wrong behaviour a user or caller can reach, a changed behaviour no test would catch, or a break of a listed project rule; "minor" = worth noting.
 Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
 normal: reachable in ordinary use of the product, as this repository documents or configures it.
+For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use.
+off-contract: needs a caller, subclass or configuration value that breaks a type, schema or documented contract of this repository.
+version-skew: needs two versions of the product running together, or data written by an earlier version.
+backend-fault: needs a store, network or clock failure between two steps of one operation.
 own-concurrency: needs two of the tool's own processes or sessions interleaving.
 adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).
 manual: needs a human acting on the checkout or state mid-operation.
@@ -50,7 +54,7 @@ Reply with only one JSON object:
 {
   "intent": "pass | fail | n/a",
   "quality": "approved | changes",
-  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..." }],
+  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|off-contract|version-skew|backend-fault|own-concurrency|adversarial|manual", "triggerEvidence": "..." }],
   "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
   "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
   "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],
@@ -534,7 +538,9 @@ describe("buildBotPrReviewPrompt finding trigger contract (US-001)", () => {
     .buildBotPrReviewPrompt(base)
     .slice(prompts.buildBotPrReviewPrompt(base).lastIndexOf("## Your task"));
   test("AC-8 asks for a trigger class and its evidence in the finding shape", () => {
-    expect(contract).toContain('"trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..."');
+    expect(contract).toContain(
+      '"trigger": "normal|off-contract|version-skew|backend-fault|own-concurrency|adversarial|manual", "triggerEvidence": "..."',
+    );
   });
   test.each([
     ["normal", "normal: reachable in ordinary use of the product, as this repository documents or configures it."],

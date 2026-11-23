@@ -16,7 +16,15 @@
 import type { PrComment } from "@/forge";
 import type { WorkflowSeverity } from "@/operations";
 
-export const FINDING_TRIGGERS = ["normal", "own-concurrency", "adversarial", "manual"] as const;
+export const FINDING_TRIGGERS = [
+  "normal",
+  "off-contract",
+  "version-skew",
+  "backend-fault",
+  "own-concurrency",
+  "adversarial",
+  "manual",
+] as const;
 
 export type FindingTrigger = (typeof FINDING_TRIGGERS)[number];
 

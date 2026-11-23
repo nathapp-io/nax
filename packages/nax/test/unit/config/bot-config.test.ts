@@ -124,6 +124,12 @@ describe("bot blocking vocabulary (US-002)", () => {
     expect(config.BotConfigSchema.safeParse({ blockingTriggers: [] }).success).toBe(false);
   });
 
+  test("bot-trigger-classes AC-8 accepts version-skew as a blocking trigger", () => {
+    const parsed = config.BotConfigSchema.safeParse({ blockingTriggers: ["normal", "version-skew"] });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.blockingTriggers).toEqual(["normal", "version-skew"]);
+  });
+
   test("US-002 AC-3 rejects an unknown blocking trigger", () => {
     expect(config.BotConfigSchema.safeParse({ blockingTriggers: ["normal", "race"] }).success).toBe(false);
   });

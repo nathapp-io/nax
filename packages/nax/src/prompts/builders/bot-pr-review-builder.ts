@@ -263,6 +263,10 @@ const SEVERITY_SCALE_LINE =
 const TRIGGER_CLASS_LINES = [
   'Name each finding\'s class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:',
   "normal: reachable in ordinary use of the product, as this repository documents or configures it.",
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use.',
+  "off-contract: needs a caller, subclass or configuration value that breaks a type, schema or documented contract of this repository.",
+  "version-skew: needs two versions of the product running together, or data written by an earlier version.",
+  "backend-fault: needs a store, network or clock failure between two steps of one operation.",
   "own-concurrency: needs two of the tool's own processes or sessions interleaving.",
   "adversarial: needs a deliberate actor (forged metadata, input the threat model excludes, shadowed builtins).",
   "manual: needs a human acting on the checkout or state mid-operation.",
@@ -277,7 +281,7 @@ const ORIGIN_CLASS_LINES = [
 ];
 
 const FINDING_SHAPE =
-  '  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|own-concurrency|adversarial|manual", "triggerEvidence": "..."';
+  '  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>", "trigger": "normal|off-contract|version-skew|backend-fault|own-concurrency|adversarial|manual", "triggerEvidence": "..."';
 const FINDING_ORIGIN_SHAPE = ', "origin": "pr|fix-regression|fix-gap", "originEvidence": "..."';
 
 const REPLY_SHAPE_TAIL = [

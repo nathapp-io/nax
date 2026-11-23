@@ -292,3 +292,44 @@ describe("configuredChainNoticeGeneration", () => {
     expect(configuredChainNoticeGeneration({ bot: { chainNoticeGeneration: 4 } })).toBe(4);
   });
 });
+
+describe("bot trigger classes (bot-trigger-classes US-001)", () => {
+  const DEFAULT_SET: readonly FindingTrigger[] = ["normal", "own-concurrency"];
+  test("AC-1 FINDING_TRIGGERS lists the seven classes in order", () => {
+    expect([...FINDING_TRIGGERS]).toEqual([
+      "normal",
+      "off-contract",
+      "version-skew",
+      "backend-fault",
+      "own-concurrency",
+      "adversarial",
+      "manual",
+    ]);
+  });
+  test("AC-2 DEFAULT_BLOCKING_TRIGGERS is unchanged", () => {
+    expect([...DEFAULT_BLOCKING_TRIGGERS]).toEqual(["normal", "own-concurrency"]);
+  });
+  test("AC-3 parseFindingTrigger accepts off-contract", () => {
+    expect(parseFindingTrigger("off-contract")).toBe("off-contract");
+  });
+  test("AC-4 an important off-contract finding does not block under the default set", () => {
+    expect(isBlockingFinding({ severity: "important", trigger: "off-contract" }, DEFAULT_SET)).toBe(false);
+  });
+  test("AC-5 a critical version-skew finding does not block under the default set", () => {
+    expect(isBlockingFinding({ severity: "critical", trigger: "version-skew" }, DEFAULT_SET)).toBe(false);
+  });
+  test("AC-6 an important off-contract finding blocks when the set names it", () => {
+    expect(isBlockingFinding({ severity: "important", trigger: "off-contract" }, ["normal", "off-contract"])).toBe(
+      true,
+    );
+  });
+  test("AC-7 readFindingThreadFacts reads a backend-fault trigger", () => {
+    const body =
+      "**Important** (quality): Marker lost\n\nTrigger: backend-fault - the marker write fails after the body write";
+    expect(readFindingThreadFacts(body).trigger).toBe("backend-fault");
+  });
+  test("AC-9 a writer comment can add backend-fault to the effective set", () => {
+    const result = effective([comment({ id: "c1", body: "blocking triggers: normal, backend-fault" })]);
+    expect(result.triggers).toEqual(["normal", "backend-fault"]);
+  });
+});
