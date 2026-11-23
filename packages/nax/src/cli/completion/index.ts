@@ -6,4 +6,5 @@
  * barrel and would close an import cycle.
  */
 
+export { type CompletionSources, completeWords } from "./engine";
 export { listFeatureNames, listProfileNames } from "./values";
