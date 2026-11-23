@@ -50,6 +50,18 @@ export {
   registerChatCommand,
 } from "./chat";
 export {
+  _completionCliDeps,
+  type CompletionCliDeps,
+  type CompletionShell,
+  type CompletionSources,
+  completeWords,
+  completionScript,
+  listFeatureNames,
+  listProfileNames,
+  registerCompletionCommand,
+  SUPPORTED_SHELLS,
+} from "./completion";
+export {
   type ConfigCommandOptions,
   type ConfigJsonOptions,
   type ConfigJsonReport,

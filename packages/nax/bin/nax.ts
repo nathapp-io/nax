@@ -61,6 +61,7 @@ import {
   registerApprovalsCommand,
   registerBotCommand,
   registerChatCommand,
+  registerCompletionCommand,
   registerCostCommand,
   registerGatesCommand,
   registerMemoryCommand,
@@ -1662,6 +1663,12 @@ plugins
       process.exit(1);
     }
   });
+
+// Shell completion — registered last, so the hidden `__complete` engine walks the
+// finished command tree, and before `parseAsync`, so neither command can be
+// shadowed by one registered later. Both commands route to their own actions:
+// `chat` is the default command, and a Tab press must never open a session.
+registerCompletionCommand(program);
 
 // BUG-15: parse() ignores the promise of async action handlers — a rejection
 // becomes an unhandled rejection with a raw stack trace. parseAsync observes
