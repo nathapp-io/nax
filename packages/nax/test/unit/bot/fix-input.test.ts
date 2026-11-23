@@ -85,6 +85,29 @@ test.each([
   expect(await bot.loadLatestReview("/o", REF, "h")).toBeNull();
 });
 
+/** US-002: the persisted install choice is validated as strictly as the rest of the checks. */
+describe("loadLatestReview saved install", () => {
+  const saved = {
+    source: "detected",
+    gates: [{ name: "test", command: "bun run test" }],
+    preRun: [{ command: "bun install --frozen-lockfile", timeoutSeconds: 600 }],
+  };
+  function head(checks: unknown): void {
+    bot._fixInputDeps.glob = async () => ["review"];
+    bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", pr: REF, checks });
+    bot._fixInputDeps.mtimeMs = async () => 1;
+  }
+  test("AC-17 ignores an artifact whose install names an unknown reason", async () => {
+    head({ ...saved, install: { lockfile: "bun.lock", reason: "other", fallbacks: [] } });
+    expect(await bot.loadLatestReview("/o", REF, "h")).toBeNull();
+  });
+  test("AC-18 reads an artifact whose install is a valid lockfile choice", async () => {
+    const install = { lockfile: "bun.lock", reason: "lockfile-order", fallbacks: [] };
+    head({ ...saved, install });
+    expect(await bot.loadLatestReview("/o", REF, "h")).toMatchObject({ headSha: "h", checks: { ...saved, install } });
+  });
+});
+
 describe("loadLatestReview code-only selection (US-001)", () => {
   const code: BotReviewArtifact = {
     version: 3,
@@ -118,6 +141,13 @@ describe("loadLatestReview code-only selection (US-001)", () => {
   test("AC-11 without the option the newest artifact wins", async () => {
     oneHead();
     expect(await bot.loadLatestReview("/o", REF, "h")).toEqual(conversation);
+  });
+  test("AC-7 US-004: a rebased artifact is a code review, so codeOnly keeps it", async () => {
+    const rebased: BotReviewArtifact = { ...code, scope: "rebased", rebasedFrom: "b".repeat(40), agreed: [] };
+    bot._fixInputDeps.glob = async () => ["rebased"];
+    bot._fixInputDeps.readText = async () => JSON.stringify(rebased);
+    bot._fixInputDeps.mtimeMs = async () => 1;
+    expect(await bot.loadLatestReview("/o", REF, "h", { codeOnly: true })).toEqual(rebased);
   });
 });
 

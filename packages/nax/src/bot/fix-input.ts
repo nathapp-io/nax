@@ -27,10 +27,17 @@ const commandSchema = z.union([
     message: "list command has no runnable entry",
   }),
 ]);
+/** US-002: the persisted install choice is validated like the rest of the checks it travels with. */
+const installSchema = z.object({
+  lockfile: z.string().trim().min(1),
+  reason: z.enum(["package-manager", "lockfile-order"]),
+  fallbacks: z.array(z.object({ command: z.string().trim().min(1), timeoutSeconds: z.number().positive().finite() })),
+});
 const checksSchema = z.object({
   source: z.enum(["config", "agents-md", "claude-md", "detected", "none"]),
   gates: z.array(z.object({ name: z.string().min(1), command: commandSchema, setup: commandSchema.optional() })),
   preRun: z.array(z.object({ command: z.string().trim().min(1), timeoutSeconds: z.number().positive().finite() })),
+  install: installSchema.optional(),
 });
 
 async function readReview(path: string): Promise<BotReviewArtifact | null> {

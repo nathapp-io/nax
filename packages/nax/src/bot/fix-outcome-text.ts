@@ -88,8 +88,11 @@ export function outcomeText(state: BotFixState, repoRoot: string | undefined): s
           stage: "bot-fix",
         });
       return `Cost limit reached: ${state.costSpentUsd.toFixed(2)} of ${state.costLimitUsd.toFixed(2)} USD; nothing pushed.`;
-    case "setup-failed":
-      return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
+    case "setup-failed": {
+      const sentence = `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
+      // US-002: what the install was derived from, and the two ways to choose the install instead.
+      return state.setupHint === undefined ? sentence : `${sentence}\n${state.setupHint}`;
+    }
     case "pushed":
       return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
     case "nothing":

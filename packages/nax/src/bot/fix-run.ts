@@ -7,18 +7,17 @@ import { NaxError } from "@/errors";
 import { hasNaxWorkflowMarker, ownComments } from "@/forge";
 import type { InteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
-import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
-import { _workflowDeps } from "../workflow/step-context";
 import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
 import { withCarriedFixFindings } from "./fix-carried";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
+import { buildSetupHint, failedCommand, resolveFixChecks, retrySavedInstall, savedFixChecks } from "./fix-setup";
 import {
   type BotFixEnv,
   type BotFixState,
@@ -29,6 +28,7 @@ import {
   pushStep,
 } from "./fix-steps";
 import { botGit } from "./git";
+import { runBotInstall, withRanSteps } from "./install";
 import { ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
 import { checkBotModelOverride } from "./models";
@@ -282,39 +282,86 @@ async function runFixBuild(env: BotFixEnv): Promise<void> {
   }
 }
 
-async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixInput): Promise<BotFixState> {
-  if (input.readyOnly) return { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" };
-  let initial: BotFixState = env.checkout.inPlace
-    ? { step: "fix", timings: {} }
-    : await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
+interface FixSetup {
+  /** The state to start the graph from; absent when the setup succeeded. */
+  readonly failed?: BotFixState;
+  /** The checks the graph runs with — the install that actually ran. */
+  readonly checks: BotChecks;
+}
+
+function setupFailedState(setupFailed: string, setupHint?: string): BotFixState {
+  return {
+    step: "report",
+    timings: {},
+    outcome: "setup-failed",
+    setupFailed,
+    ...(setupHint === undefined ? {} : { setupHint }),
+  };
+}
+
+/** The `--in-place` checkout must be as clean after the install as before it. */
+async function inPlaceDirty(worktree: string): Promise<boolean> {
+  const status = await _botFixDeps.runGit(["status", "--porcelain", "--untracked-files=all"], worktree);
+  return status.exitCode !== 0 || status.stdout.trim() !== "";
+}
+
+/**
+ * What runs once an install succeeded: the `--in-place` cleanliness check, or the fresh checkout's
+ * build. The install that ran is the one the fix reports (US-001).
+ */
+async function afterInstall(env: BotFixEnv, checks: BotChecks): Promise<FixSetup> {
+  if (!env.checkout.inPlace) {
+    await runFixBuild({ ...env, checks });
+    return { checks };
+  }
+  if (!(await inPlaceDirty(env.checkout.worktree))) return { checks };
+  // No hint: the install did not fail, the tree it left is what failed.
+  return { failed: setupFailedState("in-place checkout not clean after setup"), checks: env.checks };
+}
+
+/** US-002: a setup failure explains what the install was derived from and how to choose another. */
+function failedSetup(env: BotFixEnv, checks: BotChecks, failure: NaxError): FixSetup {
+  const command = failedCommand(failure, checks);
+  getLogger()?.warn("bot-fix", "Fix setup failed", { pr: env.ref.number, command, error: errorMessage(failure) });
+  return {
+    failed: setupFailedState(command, buildSetupHint({ checks, error: failure, pr: env.ref.number })),
+    // A failed setup keeps the checks it resolved: nothing derived from a fallback ran.
+    checks: env.checks,
+  };
+}
+
+/**
+ * US-001: the derived install, then the build. A `PRE_RUN_FAILED` setup fails the run as before; a
+ * successful one reports the install that ran, which may be a frozen-lockfile fallback.
+ *
+ * US-002: a failed install of *saved* checks gets one retry with the install the current base tip
+ * resolves — a saved review can name an install the base has since replaced.
+ */
+async function fixSetup(env: BotFixEnv): Promise<FixSetup> {
   try {
-    await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
-    if (env.checkout.inPlace) {
-      const status = await _botFixDeps.runGit(
-        ["status", "--porcelain", "--untracked-files=all"],
-        env.checkout.worktree,
-      );
-      if (status.exitCode !== 0 || status.stdout.trim())
-        initial = {
-          step: "report",
-          timings: {},
-          outcome: "setup-failed",
-          setupFailed: "in-place checkout not clean after setup",
-        };
-    } else {
-      await runFixBuild(env);
-    }
+    const { ran } = await runBotInstall(env.checks, env.checkout.worktree, _botFixDeps.runPreRunSteps);
+    return await afterInstall(env, withRanSteps(env.checks, ran));
   } catch (error) {
     if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
-    const setupFailed = typeof error.context?.command === "string" ? error.context.command : "unknown";
-    getLogger()?.warn("bot-fix", "Fix setup failed", {
-      pr: env.ref.number,
-      command: setupFailed,
-      error: errorMessage(error),
-    });
-    initial = { step: "report", timings: {}, outcome: "setup-failed", setupFailed };
+    const retried = await retrySavedInstall({ env, deps: _botFixDeps });
+    if (retried.kind === "none") return failedSetup(env, env.checks, error);
+    if (retried.kind === "failed") return failedSetup(env, retried.checks, retried.error);
+    return afterInstall(env, retried.checks);
   }
-  return initial;
+}
+
+async function initialFixState(
+  env: BotFixEnv,
+  outputDir: string,
+  input: BotFixInput,
+): Promise<{ state: BotFixState; checks: BotChecks }> {
+  if (input.readyOnly)
+    return { state: { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" }, checks: env.checks };
+  const initial: BotFixState = env.checkout.inPlace
+    ? { step: "fix", timings: {} }
+    : await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
+  const setup = await fixSetup(env);
+  return { state: setup.failed ?? initial, checks: setup.checks };
 }
 
 async function executeFix(
@@ -322,11 +369,11 @@ async function executeFix(
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
   input: BotFixInput,
 ): Promise<BotFixResult> {
-  const initial = await initialFixState(env, runtime.outputDir, input);
+  const { state: initial, checks } = await initialFixState(env, runtime.outputDir, input);
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
-    env,
+    { ...env, checks },
     initial,
     { persist: (value) => _botFixDeps.writeJson(join(stateDir, "bot-state.json"), value) },
     {
@@ -345,21 +392,10 @@ const SHORT_SHA_LENGTH = 7;
 async function fixChecks(
   env: Pick<BotFixEnv, "repoRoot" | "checkout" | "config" | "ctx" | "review">,
 ): Promise<BotChecks> {
-  const { repoRoot, checkout, config, ctx, review } = env;
   // Saved checks belong to this reviewed head, even if the base has since moved.
-  if (review.version >= 2 && review.checks != null) return review.checks;
-  return _botFixDeps.resolveBotChecks({
-    repoRoot,
-    baseSha: checkout.baseSha,
-    snapshotDir: checkout.snapshotDir,
-    hasBaseNax: checkout.hasBaseNax,
-    config,
-    extract: (input) =>
-      _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, {
-        ...input,
-        model: config.bot?.models.checks,
-      }),
-  });
+  const saved = savedFixChecks(env.review);
+  if (saved !== undefined) return saved;
+  return resolveFixChecks(env, _botFixDeps);
 }
 
 function finishFix(result: BotFixResult, log: BotLog): BotFixResult {

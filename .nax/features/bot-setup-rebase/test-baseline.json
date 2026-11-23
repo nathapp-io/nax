@@ -1,0 +1,16 @@
+{
+  "kind": "captured",
+  "source": "preflight",
+  "capturedAt": "2026-11-23T06:21:56.967Z",
+  "baseRef": "8eed1a60368b4a6e24d647201a1f5c8c8970034f",
+  "packageDirs": [
+    "packages/nax"
+  ],
+  "entries": [
+    {
+      "file": "test/ui/chat/agent-view.test.tsx",
+      "testName": "the agent strip click > two tasks leave the jobs picker as the way in, and Enter on the agent row opens the view",
+      "packageDir": "packages/nax"
+    }
+  ]
+}

@@ -85,6 +85,8 @@ export interface EarlierCarriedInput {
   readonly index?: ItemIndex | undefined;
   readonly scope: BotReviewScope;
   readonly rangeBase: string;
+  /** US-003: the reviewed head this range was rebased from, absent when the head merely descends. */
+  readonly rebasedFrom?: string;
   /** The bot's own comments on the PR, where the durable record lives (B1). */
   readonly own: readonly OwnComment[];
   readonly load: LoadCarry;
@@ -140,13 +142,19 @@ export function carriedFromArtifact(agreed: unknown): CarriedRead {
  *
  * Nothing is carried when neither holds a record — the workflow's own publish wrote that head, so no bot
  * review has anything to say about it — which is the behaviour before this carry existed.
+ *
+ * US-004: a rebased review's range base is this head's merge base, so the head it skips is not its range
+ * base but the head its patch was rebased from. It carries exactly when that is the reviewed head, under
+ * the same record and widening rules an incremental review reads.
  */
 export async function earlierCarriedFindings(input: EarlierCarriedInput): Promise<CarriedRead> {
   const reviewedHead = input.index?.reviewedHead;
   if (reviewedHead === undefined) return NO_CARRY;
-  if (input.scope === "full" || input.rangeBase !== reviewedHead) return NO_CARRY;
+  if (input.scope === "full") return NO_CARRY;
+  const skippedHead = input.scope === "rebased" ? input.rebasedFrom : input.rangeBase;
+  if (skippedHead !== reviewedHead) return NO_CARRY;
   if (pendingCarryWidenComments(input.own).length > 0) return { findings: [], widen: true };
-  if (input.scope !== "incremental") return NO_CARRY;
+  if (input.scope !== "incremental" && input.scope !== "rebased") return NO_CARRY;
   const record = readRecord(input.own, reviewedHead);
   if (record.kind === "usable") return { findings: record.findings, widen: false };
   if (record.kind === "unusable") return { findings: [], widen: true };

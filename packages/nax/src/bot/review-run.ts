@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
+import type { PreRunStepConfig } from "@/config/runtime-types-execution";
 import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
@@ -21,6 +22,7 @@ import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
 import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
+import { canonicalChecks, runBotInstall, setupSteps, withRanSteps } from "./install";
 import { featureIntentPaths } from "./intent";
 import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
@@ -39,6 +41,7 @@ import { advanceAfterReview } from "./review-advance";
 import { reviewCarry } from "./review-carry";
 import { reviewConvergence, reviewPushFacts } from "./review-convergence";
 import { _botReviewDeps } from "./review-deps";
+import { rebasedField } from "./review-rebase";
 import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
@@ -206,13 +209,17 @@ async function prepareReviewChecks(
   const { checkout } = prepared;
   const checks = await resolveReviewChecks(prepared, ctx);
   getLogger().info("bot", "Checks resolved", { source: checks.source, commands: checkCommands(checks) });
+  let ran: readonly PreRunStepConfig[];
   try {
-    await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
+    ({ ran } = await runBotInstall(checks, checkout.worktree, _botReviewDeps.runPreRunSteps));
   } catch (err) {
     const failed = preRunFailedCommand(err, "Install step failed");
     return { checks, buildRan: [], ...(failed === undefined ? {} : { preRunFailed: failed }) };
   }
-  return { checks, ...(await runReviewBuild(prepared, checks)) };
+  // The checks the rest of the review runs with name the install that ran, so the prompt and the
+  // summary report it. A failed setup keeps the checks it resolved.
+  const applied = withRanSteps(checks, ran);
+  return { checks: applied, ...(await runReviewBuild(prepared, applied)) };
 }
 
 async function resolveReviewChecks(prepared: PreparedReview, ctx: PrStepContext): Promise<BotChecks> {
@@ -269,10 +276,11 @@ async function runReviewBuild(prepared: PreparedReview, checks: BotChecks): Prom
 /**
  * What the checkout state reports nax ran: the install commands, then whatever
  * build commands were attempted — including the ones after a build step that
- * failed, since the review's prompt describes the setup it asked for.
+ * failed, since the review's prompt describes the setup it asked for. A frozen
+ * fallback that replaced the derived install is the one it ran, not the derivation.
  */
 function setupCommands(preparation: ReviewPreparation): string[] {
-  const install = preparation.checks?.preRun.map((step) => step.command) ?? [];
+  const install = preparation.checks === null ? [] : setupSteps(preparation.checks).map((step) => step.command);
   return [...install, ...preparation.buildRan];
 }
 
@@ -366,6 +374,7 @@ async function reviewEnvironment(
     head: info.headSha,
     load: _botReviewDeps.loadLatestCarry,
     isAncestor: _botReviewDeps.isAncestor,
+    patchEquivalent: _botReviewDeps.patchEquivalent,
   });
   // The bot's own push record: the whole ledger for the post node, the range's subset for the prompt.
   const push = await reviewPushFacts({
@@ -402,6 +411,9 @@ async function reviewEnvironment(
     },
     post: {
       ...preparation,
+      // B3: the artifact keeps the canonical derivation — the whole candidate set and its lockfile — while
+      // what this run's setup actually ran is reported by the prompt, never persisted.
+      checks: canonicalChecks(preparation.checks),
       ref,
       info,
       ...triaged,
@@ -425,6 +437,7 @@ async function reviewEnvironment(
       ...reviewConvergence({ comments: rawComments, writers: triaged.writers, config: ctx.config }),
       scope,
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
+      ...rebasedField(range),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
       carriedFindings: carried,

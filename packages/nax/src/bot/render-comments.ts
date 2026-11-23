@@ -56,6 +56,8 @@ export interface ReviewSummaryInput {
   readonly headSha: string;
   /** What this review covered (nax#2667); absent keeps the plain head line. */
   readonly scope?: BotReviewScope;
+  /** US-003: the reviewed head a rebased review's patch came from. */
+  readonly rebasedFrom?: string;
   readonly incrementalSince?: string;
   readonly intent: PrIntent;
   /** `not-reviewed` when the review read no code (US-001). */
@@ -346,8 +348,15 @@ function readinessLines(input: ReviewSummaryInput): string[] {
 }
 
 /** Name the scope the review actually had, so a narrowed review is never read as a full one. */
-function scopeSuffix(scope: BotReviewScope | undefined, incrementalSince: string | undefined): string {
+function scopeSuffix(
+  scope: BotReviewScope | undefined,
+  incrementalSince: string | undefined,
+  rebasedFrom: string | undefined,
+): string {
   if (scope === "conversation-only") return " (conversation only)";
+  // US-003: the patch is the same one earlier reviews read, so only the conversation is new.
+  if (scope === "rebased" && rebasedFrom !== undefined)
+    return ` (rebase of ${safeText(rebasedFrom, SHORT_SHA_LENGTH)}, code review carried)`;
   if (scope !== "incremental" || incrementalSince === undefined) return "";
   return ` (incremental since ${safeText(incrementalSince, SHORT_SHA_LENGTH)})`;
 }
@@ -355,7 +364,7 @@ function scopeSuffix(scope: BotReviewScope | undefined, incrementalSince: string
 /** Render the ordered review summary, dropping list tails before exceeding the forge budget. */
 export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
-    `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince)}: intent ${input.intent}, quality ${input.quality}.`,
+    `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince, input.rebasedFrom)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
     ...itemStatusLines(input.itemStatus, input.blockingCount),
     ...readinessLines(input),

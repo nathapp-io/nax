@@ -280,6 +280,7 @@ describe("resolveBotChecks detected tier", () => {
       source: "detected",
       gates: [trustedGate("lint", "bun run lint"), trustedGate("test", "bun run test")],
       preRun: [{ command: "bun install --frozen-lockfile", timeoutSeconds: 600 }],
+      install: { lockfile: "bun.lock", reason: "lockfile-order", fallbacks: [] },
     });
     expect(_botChecksDeps.runGit).toHaveBeenCalledWith(["show", "base-sha:package.json"], "/repo");
   });
@@ -313,6 +314,8 @@ describe("resolveBotChecks detected tier", () => {
       source: "detected",
       gates: [trustedGate("lint", `${prefix} lint`)],
       preRun: install ? [{ command: install, timeoutSeconds: 600 }] : [],
+      // Only a lockfile with a frozen install carries install metadata (US-001).
+      ...(install === null ? {} : { install: { lockfile, reason: "lockfile-order", fallbacks: [] } }),
     });
   });
   test.each(["not json", "{}", '{"scripts":null}', '{"scripts":[]}', "null"])(
@@ -444,5 +447,139 @@ test.each([false, true])("git warnings distinguish stderr and timeout (%s)", asy
   await resolveBotChecks(input);
   expect(warn.mock.calls[0]?.[2]).toMatchObject({
     error: expect.stringContaining(timedOut ? "git timed out" : "bad revision base-sha"),
+  });
+});
+
+/**
+ * US-001: a repo can carry more than one lockfile — this one has a stale
+ * `bun.lock` beside its `package-lock.json`. `package.json`'s `packageManager`
+ * picks which frozen install runs first; the rest become ordered fallbacks.
+ */
+describe("US-001 lockfile choice", () => {
+  const NPM_CI = { command: "npm ci", timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS };
+  const BUN_FROZEN = {
+    command: "bun install --frozen-lockfile",
+    timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS,
+  };
+  function manifest(extra: Record<string, unknown> = {}): void {
+    files["package.json"] = JSON.stringify({ scripts: { lint: "eslint ." }, ...extra });
+  }
+  function bothLockfiles(): void {
+    files["bun.lock"] = "";
+    files["package-lock.json"] = "";
+  }
+  /** The base `package.json` read fails, which is not the same as the file being absent. */
+  function failShow(path: string): void {
+    const runGit = _botChecksDeps.runGit;
+    _botChecksDeps.runGit = mock(async (args, cwd) =>
+      args[0] === "show" && args[1] === `base-sha:${path}`
+        ? { exitCode: 128, stdout: "", stderr: "unreadable" }
+        : runGit(args, cwd),
+    );
+  }
+
+  test("AC-1/2/3: packageManager picks the npm install, the npm prefix and the bun fallback", async () => {
+    bothLockfiles();
+    manifest({ packageManager: "npm@10.9.0" });
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([NPM_CI]);
+    expect(checks.gates.map(({ command }) => command)).toEqual(["npm run lint"]);
+    expect(checks.install).toEqual({
+      lockfile: "package-lock.json",
+      reason: "package-manager",
+      fallbacks: [BUN_FROZEN],
+    });
+  });
+  test("AC-4: no packageManager falls back to lockfile order with the npm fallback", async () => {
+    bothLockfiles();
+    manifest();
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([BUN_FROZEN]);
+    expect(checks.install).toEqual({ lockfile: "bun.lock", reason: "lockfile-order", fallbacks: [NPM_CI] });
+  });
+  test("AC-5: a packageManager with no lockfile falls back to lockfile order", async () => {
+    bothLockfiles();
+    manifest({ packageManager: "pnpm@9.0.0" });
+    const checks = await resolveBotChecks(input);
+    expect(checks.install?.reason).toBe("lockfile-order");
+    expect(checks.preRun).toEqual([BUN_FROZEN]);
+  });
+  test("AC-6: a yarn packageManager picks the first lockfile that has a frozen install", async () => {
+    files["yarn.lock"] = "";
+    files["package-lock.json"] = "";
+    manifest({ packageManager: "yarn@4.1.0" });
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([NPM_CI]);
+    expect(checks.install).toEqual({ lockfile: "package-lock.json", reason: "lockfile-order", fallbacks: [] });
+  });
+  test("AC-7: two bun lockfiles expose no fallback", async () => {
+    files["bun.lock"] = "";
+    files["bun.lockb"] = "";
+    manifest();
+    const checks = await resolveBotChecks(input);
+    expect(checks.install).toEqual({ lockfile: "bun.lock", reason: "lockfile-order", fallbacks: [] });
+  });
+  test("AC-8: a configured preRun carries no install metadata", async () => {
+    configGates();
+    bothLockfiles();
+    manifest({ packageManager: "npm@10.9.0" });
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "make deps", timeoutSeconds: 60 }] } });
+    const checks = await resolveBotChecks(input);
+    expect(checks.preRun).toEqual([{ command: "make deps", timeoutSeconds: 60 }]);
+    expect("install" in checks).toBe(false);
+  });
+  test("AC-9: an unparseable package.json is ignored and the config tier keeps its derived install", async () => {
+    configGates();
+    bothLockfiles();
+    files["package.json"] = "{ not json";
+    const checks = await resolveBotChecks(input);
+    expect(checks.source).toBe("config");
+    expect(checks.preRun).toEqual([BUN_FROZEN]);
+    expect(checks.install?.fallbacks).toEqual([NPM_CI]);
+  });
+  test("AC-10: a non-string packageManager is ignored", async () => {
+    configGates();
+    bothLockfiles();
+    manifest({ packageManager: 42 });
+    expect((await resolveBotChecks(input)).install?.reason).toBe("lockfile-order");
+  });
+  test("AC-11: a base with no package.json keeps lockfile order", async () => {
+    configGates();
+    bothLockfiles();
+    expect((await resolveBotChecks(input)).install?.reason).toBe("lockfile-order");
+  });
+  test("AC-12: a detected-tier configured preRun carries no install metadata", async () => {
+    input.hasBaseNax = true;
+    input.config = makeNaxConfig({ execution: { preRun: [{ command: "make deps", timeoutSeconds: 60 }] } });
+    files["bun.lock"] = "";
+    manifest();
+    const checks = await resolveBotChecks(input);
+    expect(checks.source).toBe("detected");
+    expect(checks.preRun).toEqual([{ command: "make deps", timeoutSeconds: 60 }]);
+    expect("install" in checks).toBe(false);
+  });
+  test("AC-24: a later lockfile's inspection failure still fails the derivation", async () => {
+    bothLockfiles();
+    manifest();
+    const runGit = _botChecksDeps.runGit;
+    _botChecksDeps.runGit = mock(async (args, cwd) =>
+      args[0] === "ls-tree" && args[5] === "package-lock.json"
+        ? { exitCode: 128, stdout: "", stderr: "bad ref" }
+        : runGit(args, cwd),
+    );
+    expect(await resolveBotChecks(input)).toEqual(none);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+  test("AC-24: a package.json read failure in the config tier keeps the gates and drops the install", async () => {
+    configGates();
+    bothLockfiles();
+    manifest();
+    failShow("package.json");
+    const checks = await resolveBotChecks(input);
+    expect(checks.source).toBe("config");
+    expect(checks.gates).toEqual([{ name: "lint", command: "bun run lint" }]);
+    expect(checks.preRun).toEqual([]);
+    expect("install" in checks).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

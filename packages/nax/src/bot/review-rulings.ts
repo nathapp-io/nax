@@ -14,6 +14,7 @@ import {
 import type { PrCheckout } from "./checkout";
 import type { PostReviewInput } from "./post";
 import { earlierIssue } from "./post-earlier";
+import type { PatchEquivalent, PatchRange } from "./review-rebase";
 import { rulingModelReader } from "./ruling-reader";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
 
@@ -182,7 +183,15 @@ export function rulingEarlier(outcome: RecordRulingsOutcome, login: string): PrT
 }
 
 /** What a bot review actually has to look at: everything, the range since an earlier review, or talk only. */
-export type BotReviewScope = "full" | "incremental" | "conversation-only";
+export type BotReviewScope = "full" | "incremental" | "conversation-only" | "rebased";
+
+/** The range one review runs over, and whether it reads code or only the conversation. */
+export interface ReviewRange {
+  readonly rangeBase: string;
+  readonly conversationOnly?: boolean;
+  /** The already-reviewed head this review's patch was rebased from (US-003). */
+  readonly rebasedFrom?: string;
+}
 
 /**
  * Classify a review from the same inputs `runPrReview` receives (nax#2667). The
@@ -193,32 +202,85 @@ export function reviewScopeOf(input: {
   readonly rangeBase?: string;
   readonly mergeBase: string;
   readonly conversationOnly?: boolean;
+  readonly rebasedFrom?: string;
 }): BotReviewScope {
+  // A rebased review is conversation-only by construction, so it is named before that rule (US-003).
+  if (input.rebasedFrom !== undefined) return "rebased";
   if (input.conversationOnly === true) return "conversation-only";
   if (input.rangeBase !== undefined && input.rangeBase !== input.mergeBase) return "incremental";
   return "full";
+}
+
+/** The two shas an earlier review recorded, or `undefined` when the index names none it could trust. */
+function reviewedShas(index: ItemIndex | undefined): { reviewedHead: string; reviewedBase: string } | undefined {
+  const reviewedHead = index?.reviewedHead;
+  const reviewedBase = index?.reviewedBase;
+  if (!reviewedHead || !reviewedBase) return undefined;
+  if (!/^[a-fA-F0-9]{40}$/.test(reviewedHead) || !/^[a-fA-F0-9]{40}$/.test(reviewedBase)) return undefined;
+  return { reviewedHead, reviewedBase };
+}
+
+interface RebaseProbe {
+  readonly checkout: PrCheckout;
+  readonly head: string;
+  readonly reviewedHead: string;
+  readonly reviewedBase: string;
+  /** Whether the merge base contains the reviewed base at all. */
+  readonly baseContained: boolean;
+}
+
+/**
+ * US-003: the range a reviewed head that this head no longer descends still earns. An unchanged patch
+ * rebased onto a later base is the same code the earlier review read, so this review talks only and its
+ * code review is carried. A changed patch, a reviewed base outside the merge base and a comparison that
+ * cannot run all leave the full range in place.
+ *
+ * The comparison's type is spelled inline: Biome's `useAwaitThenable` cannot infer through the
+ * `PatchEquivalent` alias here and reports the awaited call as a non-promise.
+ */
+async function rebasedRange(
+  probe: RebaseProbe,
+  patchEquivalent: ((dir: string, a: PatchRange, b: PatchRange) => Promise<boolean>) | undefined,
+): Promise<ReviewRange | undefined> {
+  if (!probe.baseContained || patchEquivalent === undefined) return undefined;
+  const { checkout, head, reviewedHead, reviewedBase } = probe;
+  try {
+    const same = await patchEquivalent(
+      checkout.worktree,
+      { base: reviewedBase, head: reviewedHead },
+      { base: checkout.mergeBase, head },
+    );
+    if (!same) return undefined;
+    return { rangeBase: checkout.mergeBase, conversationOnly: true, rebasedFrom: reviewedHead };
+  } catch (error) {
+    getLogger().warn("bot", "Could not compare the reviewed patch with this head; reviewing full range", {
+      error: errorMessage(error),
+    });
+    return undefined;
+  }
 }
 
 /** Only the privileged recorder's validated provenance can narrow a code review. */
 export async function reviewRange(
   input: { index?: ItemIndex; checkout: PrCheckout; head: string },
   isAncestor: (dir: string, ancestor: string, head: string) => Promise<boolean>,
-): Promise<{ rangeBase: string; conversationOnly?: boolean }> {
+  patchEquivalent?: PatchEquivalent,
+): Promise<ReviewRange> {
   const { index, checkout, head } = input;
-  const full = { rangeBase: checkout.mergeBase };
-  const reviewedHead = index?.reviewedHead;
-  const reviewedBase = index?.reviewedBase;
-  if (
-    !reviewedHead ||
-    !reviewedBase ||
-    !/^[a-fA-F0-9]{40}$/.test(reviewedHead) ||
-    !/^[a-fA-F0-9]{40}$/.test(reviewedBase)
-  )
-    return full;
+  const full: ReviewRange = { rangeBase: checkout.mergeBase };
+  const reviewed = reviewedShas(index);
+  if (reviewed === undefined) return full;
   try {
-    if (!(await isAncestor(checkout.worktree, reviewedHead, head))) return full;
-    if (!(await isAncestor(checkout.worktree, reviewedBase, checkout.mergeBase))) return full;
-    return reviewedHead === head ? { rangeBase: reviewedHead, conversationOnly: true } : { rangeBase: reviewedHead };
+    const descends = await isAncestor(checkout.worktree, reviewed.reviewedHead, head);
+    const baseContained = await isAncestor(checkout.worktree, reviewed.reviewedBase, checkout.mergeBase);
+    if (!descends) {
+      const rebased = await rebasedRange({ checkout, head, ...reviewed, baseContained }, patchEquivalent);
+      return rebased ?? full;
+    }
+    if (!baseContained) return full;
+    return reviewed.reviewedHead === head
+      ? { rangeBase: reviewed.reviewedHead, conversationOnly: true }
+      : { rangeBase: reviewed.reviewedHead };
   } catch (error) {
     getLogger().warn("bot", "Could not check reviewed ancestry; reviewing full range", { error: errorMessage(error) });
     return full;
