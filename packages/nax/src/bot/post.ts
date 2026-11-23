@@ -203,12 +203,14 @@ export const BOT_REVIEW_FILENAME = "bot-review.json";
 /**
  * What a review may honestly report about code quality (US-001). A conversation-only review read no code,
  * so it reports `not-reviewed` rather than the verdict's own quality, which its prompt could not have earned.
+ * US-004: a rebased review reads only the conversation too — the earlier review's code review is carried —
+ * so it makes the same claim rather than carrying that verdict's quality to this head.
  */
 export function reviewQuality(
   scope: BotReviewScope | undefined,
   quality: PrReviewVerdict["quality"],
 ): BotReviewArtifact["quality"] {
-  return scope === "conversation-only" ? "not-reviewed" : quality;
+  return scope === "conversation-only" || scope === "rebased" ? "not-reviewed" : quality;
 }
 
 export const _postDeps = {

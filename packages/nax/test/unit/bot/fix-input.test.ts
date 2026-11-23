@@ -142,6 +142,13 @@ describe("loadLatestReview code-only selection (US-001)", () => {
     oneHead();
     expect(await bot.loadLatestReview("/o", REF, "h")).toEqual(conversation);
   });
+  test("AC-7 US-004: a rebased artifact is a code review, so codeOnly keeps it", async () => {
+    const rebased: BotReviewArtifact = { ...code, scope: "rebased", rebasedFrom: "b".repeat(40), agreed: [] };
+    bot._fixInputDeps.glob = async () => ["rebased"];
+    bot._fixInputDeps.readText = async () => JSON.stringify(rebased);
+    bot._fixInputDeps.mtimeMs = async () => 1;
+    expect(await bot.loadLatestReview("/o", REF, "h", { codeOnly: true })).toEqual(rebased);
+  });
 });
 
 describe("loadLatestReview writer-checked artifact versions", () => {

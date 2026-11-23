@@ -3,9 +3,12 @@ import {
   COVERAGE_RECORD_KEY,
   type CoverageRecord,
   parseCoverageRecord,
+  recordsCodeReview,
   renderCoverageRecord,
 } from "@/bot/coverage-record";
-import { withNaxBotMarker } from "@/forge";
+import type { PostReviewInput } from "@/bot/post";
+import type { BotReviewScope } from "@/bot/review-rulings";
+import { NAX_WORKFLOW_PR_MARKER, withNaxBotMarker } from "@/forge";
 
 /** A reviewed head, as the forge reports it. */
 const HEAD = "3f786850e387550fdab836ed7e6dc881de23001b";
@@ -93,5 +96,62 @@ describe("parseCoverageRecord", () => {
 describe("COVERAGE_RECORD_KEY", () => {
   test("AC-6 names the marker key the record is posted under", () => {
     expect(COVERAGE_RECORD_KEY).toBe("w-coverage");
+  });
+});
+
+describe("recordsCodeReview", () => {
+  /** A trusted review of a workflow PR; only the fields this predicate reads are given real values. */
+  function review(scope: BotReviewScope | undefined): PostReviewInput {
+    return {
+      scope,
+      staticMode: false,
+      ref: { forge: "github", host: "github.test", repo: "o/r", number: 7 },
+      info: {
+        number: 7,
+        title: "PR",
+        body: NAX_WORKFLOW_PR_MARKER,
+        url: "url",
+        state: "open",
+        draft: true,
+        author: { login: "writer" },
+        baseRef: "main",
+        headRef: "topic",
+        headSha: HEAD,
+        crossRepo: false,
+      },
+      verdict: {
+        intent: "pass",
+        quality: "approved",
+        findings: [],
+        threads: [],
+        comments: [],
+        cannotVerify: [],
+        inspectedFiles: [],
+      },
+      threads: [],
+      comments: [],
+      own: [],
+      sensitive: [],
+      stateDir: "/state",
+      deps: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }), readText: async () => null },
+      cwd: "/state",
+    };
+  }
+
+  test("AC-6 US-004: a rebased review of a trusted workflow PR counts as a code review", () => {
+    expect(recordsCodeReview(review("rebased"))).toBe(true);
+  });
+
+  test("a conversation-only review records no coverage", () => {
+    expect(recordsCodeReview(review("conversation-only"))).toBe(false);
+  });
+
+  test("a static (untrusted) review records no coverage, whatever its scope", () => {
+    expect(recordsCodeReview({ ...review("rebased"), staticMode: true })).toBe(false);
+  });
+
+  test("a PR without the workflow marker records no coverage", () => {
+    const input = review("rebased");
+    expect(recordsCodeReview({ ...input, info: { ...input.info, body: "plain" } })).toBe(false);
   });
 });

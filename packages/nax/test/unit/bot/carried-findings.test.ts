@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { carriedFromArtifact, earlierCarriedFindings, type LoadCarry } from "@/bot/carried-findings";
-import { type CarriedEntry, carriedRecordBody, carriedRecordKey, parseCarriedRecord } from "@/bot/carried-record";
+import {
+  type CarriedEntry,
+  carriedRecordBody,
+  carriedRecordKey,
+  carryWidenReviewKey,
+  parseCarriedRecord,
+} from "@/bot/carried-record";
 import type { BotReviewArtifact } from "@/bot/post";
 import { type OwnComment, type PrRef, withNaxBotMarker } from "@/forge";
 
@@ -109,6 +115,61 @@ describe("where a review reads an earlier review's carried findings (B1)", () =>
   test("carries nothing when the index names no reviewed head", async () => {
     expect(await carry({ index: { reviewedBase: mergeBase, keys: [] } })).toEqual({ findings: [], widen: false });
     expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe("a carry for a rebased review (US-004)", () => {
+  /** A rebased review: its range base is this head's merge base, and it names the head it was rebased from. */
+  function rebased(overrides: Partial<Parameters<typeof earlierCarriedFindings>[0]> = {}) {
+    return carry({ scope: "rebased", rangeBase: mergeBase, rebasedFrom: reviewedHead, ...overrides });
+  }
+
+  test("AC-1 carries the reviewed head's record, without widening", async () => {
+    const read = await rebased({ own: [recordComment([leak])] });
+    expect(read).toEqual({ findings: [{ kind: "finding", ...leak }], widen: false });
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("AC-2 widens when the reviewed head's record does not parse", async () => {
+    const corrupt = recordComment([leak]);
+    const damaged: OwnComment = {
+      ...corrupt,
+      comment: {
+        ...corrupt.comment,
+        body: withNaxBotMarker("Carried blocking findings", carriedRecordKey(reviewedHead)),
+      },
+    };
+    expect(await rebased({ own: [damaged] })).toEqual({ findings: [], widen: true });
+  });
+
+  test("AC-3 widens when a carry-widen comment is pending", async () => {
+    const key = carryWidenReviewKey(reviewedHead, "r1");
+    const pending: OwnComment = {
+      key,
+      comment: { id: "c2", kind: "comment", author: "bot", body: withNaxBotMarker("Incomplete", key), createdAt: "t" },
+    };
+    expect(await rebased({ own: [recordComment([leak]), pending] })).toEqual({ findings: [], widen: true });
+  });
+
+  test("AC-4 carries nothing, and does not widen, when rebasedFrom is not the reviewed head", async () => {
+    const read = await rebased({ rebasedFrom: "b".repeat(40), own: [recordComment([leak])] });
+    expect(read).toEqual({ findings: [], widen: false });
+    expect(load).not.toHaveBeenCalled();
+    // The same record does carry when `rebasedFrom` is the reviewed head, so the guard decided, not the record.
+    expect((await rebased({ own: [recordComment([leak])] })).findings.map(({ key }) => key)).toEqual([leak.key]);
+  });
+
+  test("a rebased review with no rebasedFrom carries nothing", async () => {
+    expect(await rebased({ rebasedFrom: undefined, own: [recordComment([leak])] })).toEqual({
+      findings: [],
+      widen: false,
+    });
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  test("a rebased review of an unrecorded head reads this machine's artifact", async () => {
+    expect((await rebased()).findings.map(({ key }) => key)).toEqual([leak.key]);
+    expect(load).toHaveBeenCalledWith("/output", ref, reviewedHead);
   });
 });
 
