@@ -42,6 +42,22 @@ const FUNCTIONS = "function first() {\n  return 1;\n}\n\nfunction second() {\n  
 const BYPASS_IN_FIRST = FUNCTIONS.replace("  return 1;", "  bypass();\n  return 1;");
 const BYPASS_IN_SECOND = FUNCTIONS.replace("  return 2;", "  bypass();\n  return 2;");
 
+/**
+ * Two branches of one function holding the same six lines, so a single three-line window fits both of
+ * them: the insertion text, its hunk header and its function scope are identical wherever it sits (B2).
+ */
+const BRANCH_BODY = ["    alpha();", "    beta();", "    gamma();", "    seed();", "    stepA();", "    stepB();"];
+const BRANCHES = ["function choose(flag) {", "  if (flag) {", ...BRANCH_BODY, "  } else {", ...BRANCH_BODY, "  }", ""];
+const GAMMA_IN_FIRST = BRANCHES.indexOf("    gamma();");
+const GAMMA_IN_SECOND = BRANCHES.indexOf("    gamma();", GAMMA_IN_FIRST + 1);
+
+/** `BRANCHES` with the same `bypass()` inserted after the branch body's third line. */
+function bypassInBranch(gammaLine: number): string {
+  const lines = [...BRANCHES];
+  lines.splice(gammaLine + 1, 0, "    bypass();");
+  return lines.join("\n");
+}
+
 let base: string;
 let reviewedHead: string;
 let laterBase: string;
@@ -129,5 +145,40 @@ describe("makePatchEquivalent", () => {
     const inSecond = await commit("bypass in second");
     const equivalent = makePatchEquivalent(botGit);
     expect(await equivalent(repo, { base: fnBase, head: inFirst }, { base: fnLaterBase, head: inSecond })).toBe(false);
+  });
+
+  // A patch that creates a file replaces nothing, so its path alone locates the change: there is no
+  // window to check and the patch still counts as equivalent.
+  test("B2 treats the same new file in both ranges as the same patch", async () => {
+    await git(["checkout", "-b", "add-topic", base]);
+    await write("added.txt", "alpha\nbeta\n");
+    const addedHead = await commit("add a file");
+    await git(["checkout", "-b", "add-rebased", laterBase]);
+    await write("added.txt", "alpha\nbeta\n");
+    const addedRebased = await commit("add the same file");
+    const equivalent = makePatchEquivalent(botGit);
+    expect(await equivalent(repo, { base, head: addedHead }, { base: laterBase, head: addedRebased })).toBe(true);
+  });
+
+  // B2: the same added line moved from one branch of a function into an identical branch. Function
+  // scope and the three lines either side of it match at both places, so only asking whether the window
+  // locates the change at all can tell the two apart.
+  test("B2 answers false when the change's window fits more than one place in the file", async () => {
+    await git(["checkout", "-b", "ctx-base", base]);
+    await write("f.js", BRANCHES.join("\n"));
+    const ctxBase = await commit("branches");
+    await git(["checkout", "-b", "ctx-first", ctxBase]);
+    await write("f.js", bypassInBranch(GAMMA_IN_FIRST));
+    const inFirstBranch = await commit("bypass in the first branch");
+    // The later base changed another file; the same insertion now sits in the second branch.
+    await git(["checkout", "-b", "ctx-later", ctxBase]);
+    await write("b.txt", "b\nlater branches base\n");
+    const ctxLaterBase = await commit("later branches base");
+    await write("f.js", bypassInBranch(GAMMA_IN_SECOND));
+    const inSecondBranch = await commit("bypass in the second branch");
+    const equivalent = makePatchEquivalent(botGit);
+    expect(
+      await equivalent(repo, { base: ctxBase, head: inFirstBranch }, { base: ctxLaterBase, head: inSecondBranch }),
+    ).toBe(false);
   });
 });

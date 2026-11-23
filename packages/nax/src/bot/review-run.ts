@@ -22,7 +22,7 @@ import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
 import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
-import { runBotInstall, withRanSteps } from "./install";
+import { canonicalChecks, runBotInstall, setupSteps, withRanSteps } from "./install";
 import { featureIntentPaths } from "./intent";
 import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
@@ -276,10 +276,11 @@ async function runReviewBuild(prepared: PreparedReview, checks: BotChecks): Prom
 /**
  * What the checkout state reports nax ran: the install commands, then whatever
  * build commands were attempted — including the ones after a build step that
- * failed, since the review's prompt describes the setup it asked for.
+ * failed, since the review's prompt describes the setup it asked for. A frozen
+ * fallback that replaced the derived install is the one it ran, not the derivation.
  */
 function setupCommands(preparation: ReviewPreparation): string[] {
-  const install = preparation.checks?.preRun.map((step) => step.command) ?? [];
+  const install = preparation.checks === null ? [] : setupSteps(preparation.checks).map((step) => step.command);
   return [...install, ...preparation.buildRan];
 }
 
@@ -410,6 +411,9 @@ async function reviewEnvironment(
     },
     post: {
       ...preparation,
+      // B3: the artifact keeps the canonical derivation — the whole candidate set and its lockfile — while
+      // what this run's setup actually ran is reported by the prompt, never persisted.
+      checks: canonicalChecks(preparation.checks),
       ref,
       info,
       ...triaged,

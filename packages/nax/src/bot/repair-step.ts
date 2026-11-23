@@ -6,6 +6,7 @@ import type { StepResult } from "@/step-graph";
 import { listCiConfigFiles } from "./checkout-state";
 import { barCommands } from "./checks";
 import { _fixStepsDeps, type BotFixEnv, type BotFixState } from "./fix-steps";
+import { setupSteps } from "./install";
 import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 
@@ -32,7 +33,7 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
       phase: "after-fix",
       pinnedBase: env.checkout.inPlace !== true,
       headSha: env.info.headSha,
-      setup: env.checks.preRun.map((step) => step.command),
+      setup: setupSteps(env.checks).map((step) => step.command),
       ciFiles: await listCiConfigFiles(env.checkout.worktree),
     }),
     reportPath: env.ctx.reportPath,

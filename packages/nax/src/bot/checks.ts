@@ -44,6 +44,14 @@ export interface BotChecks {
    * an instruction file, whose fallbacks nothing derived.
    */
   readonly install?: BotInstallChoice;
+  /**
+   * The setup steps a run actually ran, when a frozen fallback replaced the derived install. `preRun`
+   * stays the canonical derivation, so the whole candidate set — and the lockfile it was derived from —
+   * survives into the artifact the next `nax bot fix` reloads: a fallback that ran is not evidence the
+   * candidates after it are wrong, and dropping them made a later fix fail without trying them (B3).
+   * This field is what a command *reports*; it is never persisted.
+   */
+  readonly ranInstall?: readonly PreRunStepConfig[];
 }
 
 export const DERIVED_INSTALL_TIMEOUT_SECONDS = 600;

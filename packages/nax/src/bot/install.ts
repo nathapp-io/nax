@@ -34,16 +34,30 @@ function attemptedCommand(failure: NaxError, steps: readonly PreRunStepConfig[])
  * The checks to run and report the rest of the command with.
  *
  * Unchanged when the setup that ran is the one they already name, so a command that needed no fallback
- * keeps the checks object its steps came from. When a fallback ran instead, `preRun` reports it — and
- * the `install` derivation that produced the *other* command goes with it: its lockfile names an
- * install these checks no longer run, and its candidate list still holds the fallback that just
- * succeeded, so keeping it would make a persisted roll-forward run that command twice and explain a
- * setup failure with the wrong lockfile (B3). What stays is only what the checks can vouch for.
+ * keeps the checks object its steps came from. When a fallback ran instead, `ranInstall` records it for
+ * the prompt, while `preRun` and `install` stay the derivation they were: the candidate list is the only
+ * record of what else is worth trying, and dropping it made the next fix — which reloads these checks
+ * from the artifact — fail on a command with a working candidate still behind it (B3). What a run
+ * persisted therefore stays canonical, and reporting what this run ran is `ranInstall`'s job.
  */
 export function withRanSteps(checks: BotChecks, ran: readonly PreRunStepConfig[]): BotChecks {
   if (ran === checks.preRun) return checks;
-  const { install: _replaced, ...rest } = checks;
-  return { ...rest, preRun: ran };
+  return { ...checks, ranInstall: ran };
+}
+
+/** The setup steps to report: the fallback that actually ran, else the install the checks derive. */
+export function setupSteps(checks: BotChecks): readonly PreRunStepConfig[] {
+  return checks.ranInstall ?? checks.preRun;
+}
+
+/**
+ * The checks as an artifact persists them: the derivation, without what this run's setup happened to
+ * run. A reloaded `ranInstall` would claim a command the next run does not run first.
+ */
+export function canonicalChecks(checks: BotChecks | null): BotChecks | null {
+  if (checks === null || checks.ranInstall === undefined) return checks;
+  const { ranInstall: _ran, ...rest } = checks;
+  return rest;
 }
 
 /**

@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { patchIdentity } from "@/bot/review-rebase";
+import { describe, expect, mock, test } from "bun:test";
+import type { botGit } from "@/bot/git";
+import { makePatchEquivalent, patchIdentity } from "@/bot/review-rebase";
 
 /** One `git diff` text, with the two facts a rebase always rewrites. */
 function diff(index: string, header: string, added: string): string {
@@ -67,5 +68,92 @@ describe("patchIdentity", () => {
     const here = ["@@ -1,3 +1,4 @@", " first();", "+added();", " second();", " third();"].join("\n");
     const elsewhere = ["@@ -1,3 +1,4 @@", " moved();", "+added();", " second();", " third();"].join("\n");
     expect(patchIdentity(here)).not.toBe(patchIdentity(elsewhere));
+  });
+});
+
+const RANGE_A = { base: "a".repeat(40), head: "b".repeat(40) };
+const RANGE_B = { base: "c".repeat(40), head: "d".repeat(40) };
+
+/** One insertion, with git's three lines of context on each side and accurate hunk counts. */
+const INSERTION = [
+  "diff --git a/f.js b/f.js",
+  "index 1111111..2222222 100644",
+  "--- a/f.js",
+  "+++ b/f.js",
+  "@@ -3,6 +3,7 @@ function choose(flag) {",
+  "     alpha();",
+  "     beta();",
+  "     gamma();",
+  "+    bypass();",
+  "     seed();",
+  "     stepA();",
+  "     stepB();",
+].join("\n");
+
+/** The file the hunk's window occurs in once: one branch, so the replaced block fits one place. */
+const ONE_BRANCH = [
+  "function choose(flag) {",
+  "  if (flag) {",
+  "    alpha();",
+  "    beta();",
+  "    gamma();",
+  "    seed();",
+  "    stepA();",
+  "    stepB();",
+  "  }",
+  "}",
+  "",
+].join("\n");
+
+/** The same window twice: the second branch repeats the first, so the hunk fits both of them (B2). */
+const TWO_BRANCHES = [
+  "function choose(flag) {",
+  "  if (flag) {",
+  "    alpha();",
+  "    beta();",
+  "    gamma();",
+  "    seed();",
+  "    stepA();",
+  "    stepB();",
+  "  } else {",
+  "    alpha();",
+  "    beta();",
+  "    gamma();",
+  "    seed();",
+  "    stepA();",
+  "    stepB();",
+  "  }",
+  "}",
+  "",
+].join("\n");
+
+/** A git stand-in that answers `diff` with the patch and `show` with the file the hunk replaced. */
+function rebaseRun(shown: {
+  readonly stdout: string;
+  readonly exitCode: number;
+}): ReturnType<typeof mock<typeof botGit>> {
+  return mock<typeof botGit>(async (args: string[]) =>
+    args[0] === "show" ? { ...shown, stderr: "" } : { stdout: INSERTION, stderr: "", exitCode: 0 },
+  );
+}
+
+describe("makePatchEquivalent", () => {
+  test("B2 treats the patch as equivalent when its window locates the change once", async () => {
+    const run = rebaseRun({ stdout: ONE_BRANCH, exitCode: 0 });
+    expect(await makePatchEquivalent(run)("dir", RANGE_A, RANGE_B)).toBe(true);
+    expect(run.mock.calls.some(([args]) => args[0] === "show")).toBe(true);
+  });
+
+  // B2: two ranges whose hunk text matches still describe different changes when that text fits the
+  // file more than once — the change may have moved from one copy to the other.
+  test("B2 reviews in full when the window fits more than one place in the file", async () => {
+    const run = rebaseRun({ stdout: TWO_BRANCHES, exitCode: 0 });
+    expect(await makePatchEquivalent(run)("dir", RANGE_A, RANGE_B)).toBe(false);
+  });
+
+  // An unreadable blob leaves the location unverified: the full review is the safe answer.
+  test("B2 reviews in full when the change's file cannot be read", async () => {
+    const run = rebaseRun({ stdout: "", exitCode: 1 });
+    expect(await makePatchEquivalent(run)("dir", RANGE_A, RANGE_B)).toBe(false);
   });
 });

@@ -21,6 +21,7 @@ import { findingFactLines, type LineagePushFact, lineagePushFacts, outsideDeclar
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
+import { setupSteps } from "./install";
 import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
@@ -185,7 +186,7 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
       phase: "fresh",
       pinnedBase: env.checkout.inPlace !== true,
       headSha: env.info.headSha,
-      setup: env.checks.preRun.map((step) => step.command),
+      setup: setupSteps(env.checks).map((step) => step.command),
       ciFiles: await listCiConfigFiles(env.checkout.worktree),
     }),
     reportPath: env.ctx.reportPath,

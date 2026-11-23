@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { BotChecks, BotInstallChoice } from "@/bot";
-import { runBotInstall, withRanSteps } from "@/bot/install";
+import { canonicalChecks, runBotInstall, setupSteps, withRanSteps } from "@/bot/install";
 import type { PreRunStepConfig } from "@/config/runtime-types-execution";
 import { NaxError } from "@/errors";
 import type { runPreRunSteps } from "@/execution/lifecycle/pre-run-steps";
@@ -98,12 +98,27 @@ describe("withRanSteps", () => {
     expect(withRanSteps(resolved, preRun)).toBe(resolved);
   });
 
-  // B3: a fallback replaced the derived install, so the derivation that named the first command —
-  // its lockfile and its candidate list — no longer describes what the checks report or persist.
-  test("drops a derivation the fallback that ran replaced", () => {
-    const applied = withRanSteps(checks([A], CHOICE), [B]);
-    expect(applied.preRun).toEqual([B]);
-    expect(applied.source).toBe("detected");
-    expect(applied).not.toHaveProperty("install");
+  // B3: a fallback ran, but the derivation is still the record of what else to try — so it is reported
+  // separately from what ran and kept whole.
+  test("reports the fallback that ran and keeps the derivation intact", () => {
+    const resolved = checks([A], CHOICE);
+    const applied = withRanSteps(resolved, [B]);
+    expect(applied.preRun).toEqual([A]);
+    expect(applied.install).toEqual(CHOICE);
+    expect(setupSteps(applied)).toEqual([B]);
+  });
+
+  // B3: dropping the derivation also dropped every candidate behind the fallback that ran, so a later
+  // fix reloaded checks naming only `B` and could not reach `C` when `B` failed too.
+  test("keeps the candidates behind the fallback that ran", async () => {
+    const choice: BotInstallChoice = { lockfile: "package-lock.json", reason: "package-manager", fallbacks: [B, C] };
+    const applied = withRanSteps(checks([A], choice), [B]);
+    const run = failingRun([A.command, B.command]);
+    expect(await runBotInstall(applied, WORKDIR, run)).toEqual({ ran: [C] });
+  });
+
+  test("persists the derivation without what this run's setup ran", () => {
+    const resolved = checks([A], CHOICE);
+    expect(canonicalChecks(withRanSteps(resolved, [B]))).toEqual(resolved);
   });
 });
