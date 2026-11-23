@@ -3,7 +3,7 @@
   "feature": "cli-completion",
   "branchName": "feat/cli-completion",
   "createdAt": "2026-11-23T11:41:02.112Z",
-  "updatedAt": "2026-11-23T11:53:21.158Z",
+  "updatedAt": "2026-11-23T12:02:30.134Z",
   "userStories": [
     {
       "id": "US-001",
@@ -98,14 +98,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded pure engine in one source file plus its fixture tests and barrel export follows the fully specified walk using existing commander metadata and injected sources; required/optional consumption needs focused TDD, not a new parser architecture or isolated multi-session strategy."
+        "reasoning": "A bounded pure engine in one source file plus its fixture tests and barrel export follows the fully specified walk using existing commander metadata and injected sources; required/optional consumption needs focused TDD, not a new parser architecture or isolated multi-session strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/completion/index.ts",
@@ -131,7 +134,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b6d4cac177200d2254edec81723d11c4bb91da13"
     },
     {
       "id": "US-003",
