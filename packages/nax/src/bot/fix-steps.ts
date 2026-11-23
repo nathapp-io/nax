@@ -73,6 +73,8 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly repairMode?: "repair" | "prepare";
   readonly repairSkippedForCost?: boolean;
   readonly setupFailed?: string;
+  /** US-002: what the install was derived from and how to choose it, on the line after `setupFailed`. */
+  readonly setupHint?: string;
   readonly changed?: readonly string[];
   readonly protectedFiles?: readonly string[];
   readonly failingGates?: readonly string[];
