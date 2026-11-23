@@ -26,9 +26,11 @@ export {
   type BotCheck,
   type BotCheckSource,
   type BotChecks,
+  type BotInstallChoice,
   barCommands,
   checkCommands,
   DERIVED_INSTALL_TIMEOUT_SECONDS,
+  type InstallReason,
   REVIEW_BUILD_TIMEOUT_SECONDS,
   resolveBotChecks,
   reviewBuildSteps,
@@ -77,6 +79,7 @@ export {
 } from "./fix-steps";
 export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 export { BOT_GIT_HOOKS_OFF, botGit, NAX_BOT_CREDENTIAL_HELPER } from "./git";
+export { runBotInstall } from "./install";
 export { featureIntentPaths } from "./intent";
 export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";

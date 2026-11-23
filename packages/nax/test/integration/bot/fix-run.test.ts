@@ -419,6 +419,40 @@ describe("runBotFix", () => {
     expect(fix).not.toHaveBeenCalled();
     expect(events.slice(-3)).toEqual(["context-close", "runtime-close", "checkout-close"]);
   });
+  test("US-001 AC-22/23: a fallback install runs before the fix and the prompt names the install that ran", async () => {
+    const fallback = { command: "bun install --frozen-lockfile", timeoutSeconds: 600 };
+    env = {
+      ...env,
+      checks: {
+        ...env.checks,
+        install: { lockfile: "package-lock.json", reason: "package-manager", fallbacks: [fallback] },
+      },
+      review: { ...env.review, agreed: [{ kind: "finding", key: "f1", issue: "fix me", severity: "important" }] },
+    };
+    latest.mockImplementation(async () => env.review);
+    preRun.mockImplementation(async ({ steps }) => {
+      events.push("pre-run");
+      if (steps.some(({ command }) => command === "npm ci"))
+        throw new NaxError("[bot] install failed", "PRE_RUN_FAILED", { stage: "execution", command: "npm ci" });
+    });
+    const session = mock<typeof _fixStepsDeps.runBranchFix>(async () => ({ dirty: false, autoCommitted: false }));
+    const steps = { ..._fixStepsDeps };
+    _fixStepsDeps.runBranchFix = session;
+    _fixStepsDeps.readHead = async () => "fixed-head";
+    Object.assign(_botFixDeps, {
+      fixStep,
+      checkStep: async () => ({ patch: { changed: [], outcome: "no-change" }, exit: "no-change" }),
+    });
+    try {
+      expect(await runBotFix(input)).toMatchObject({ outcome: "no-change" });
+      expect(session).toHaveBeenCalledTimes(1);
+      const prompt = session.mock.calls[0]?.[1].prompt ?? "";
+      expect(prompt).toContain(`Setup nax ran: ${fallback.command} — all succeeded`);
+      expect(prompt).not.toContain("npm ci");
+    } finally {
+      Object.assign(_fixStepsDeps, steps);
+    }
+  });
   test("AC-18/19 fix failure cleans up in order", async () => {
     const failure = new Error("fix failed");
     fix.mockImplementation(async () => {

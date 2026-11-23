@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
+import type { PreRunStepConfig } from "@/config/runtime-types-execution";
 import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
@@ -21,6 +22,7 @@ import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
 import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
+import { runBotInstall, withRanSteps } from "./install";
 import { featureIntentPaths } from "./intent";
 import { computeLineage } from "./lineage";
 import type { BotLog } from "./log";
@@ -206,13 +208,17 @@ async function prepareReviewChecks(
   const { checkout } = prepared;
   const checks = await resolveReviewChecks(prepared, ctx);
   getLogger().info("bot", "Checks resolved", { source: checks.source, commands: checkCommands(checks) });
+  let ran: readonly PreRunStepConfig[];
   try {
-    await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
+    ({ ran } = await runBotInstall(checks, checkout.worktree, _botReviewDeps.runPreRunSteps));
   } catch (err) {
     const failed = preRunFailedCommand(err, "Install step failed");
     return { checks, buildRan: [], ...(failed === undefined ? {} : { preRunFailed: failed }) };
   }
-  return { checks, ...(await runReviewBuild(prepared, checks)) };
+  // The checks the rest of the review runs with name the install that ran, so the prompt and the
+  // summary report it. A failed setup keeps the checks it resolved.
+  const applied = withRanSteps(checks, ran);
+  return { checks: applied, ...(await runReviewBuild(prepared, applied)) };
 }
 
 async function resolveReviewChecks(prepared: PreparedReview, ctx: PrStepContext): Promise<BotChecks> {

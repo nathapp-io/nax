@@ -22,10 +22,28 @@ export interface BotCheck {
    */
   readonly stallDetection?: GateStallPolicy;
 }
+
+export type InstallReason = "package-manager" | "lockfile-order";
+
+/** The frozen install derived from one lockfile, and the others worth trying (US-001). */
+export interface BotInstallChoice {
+  /** The lockfile the install was derived from, e.g. "bun.lock". */
+  readonly lockfile: string;
+  readonly reason: InstallReason;
+  /** Frozen installs of the other lockfiles present on the base, in LOCKFILE_COMMANDS order, deduplicated by command. */
+  readonly fallbacks: readonly PreRunStepConfig[];
+}
+
 export interface BotChecks {
   readonly source: BotCheckSource;
   readonly gates: readonly BotCheck[];
   readonly preRun: readonly PreRunStepConfig[];
+  /**
+   * Set only when `preRun` is the single step derived from a lockfile — never
+   * for a configured `execution.preRun` and never for an install extracted from
+   * an instruction file, whose fallbacks nothing derived.
+   */
+  readonly install?: BotInstallChoice;
 }
 
 export const DERIVED_INSTALL_TIMEOUT_SECONDS = 600;
@@ -90,9 +108,15 @@ async function readBaseFile(input: ResolveBotChecksInput, fileName: string): Pro
   return result.stdout;
 }
 
-function selectPreRun(input: ResolveBotChecksInput, install?: string): readonly PreRunStepConfig[] {
+function configuredPreRun(input: ResolveBotChecksInput): readonly PreRunStepConfig[] | undefined {
   const configured = input.hasBaseNax ? input.config.execution.preRun : undefined;
-  if (configured?.length) return configured.map((step) => ({ ...step }));
+  if (!configured?.length) return undefined;
+  return configured.map((step) => ({ ...step }));
+}
+
+function selectPreRun(input: ResolveBotChecksInput, install?: string): readonly PreRunStepConfig[] {
+  const configured = configuredPreRun(input);
+  if (configured !== undefined) return configured;
   return install ? [{ command: install, timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS }] : [];
 }
 
@@ -178,18 +202,112 @@ async function instructionChecks(input: ResolveBotChecksInput): Promise<BotCheck
 
 // Root JS package scripts only; other languages/workspaces use the explicit tiers.
 const LOCKFILE_COMMANDS = [
-  { path: "bun.lock", prefix: "bun run", install: "bun install --frozen-lockfile" },
-  { path: "bun.lockb", prefix: "bun run", install: "bun install --frozen-lockfile" },
-  { path: "package-lock.json", prefix: "npm run", install: "npm ci" },
-  { path: "pnpm-lock.yaml", prefix: "pnpm run", install: "pnpm install --frozen-lockfile" },
-  { path: "yarn.lock", prefix: "yarn", install: undefined },
+  { path: "bun.lock", manager: "bun", prefix: "bun run", install: "bun install --frozen-lockfile" },
+  { path: "bun.lockb", manager: "bun", prefix: "bun run", install: "bun install --frozen-lockfile" },
+  { path: "package-lock.json", manager: "npm", prefix: "npm run", install: "npm ci" },
+  { path: "pnpm-lock.yaml", manager: "pnpm", prefix: "pnpm run", install: "pnpm install --frozen-lockfile" },
+  { path: "yarn.lock", manager: "yarn", prefix: "yarn", install: undefined },
 ] as const;
 
-async function lockfileCommands(input: ResolveBotChecksInput): Promise<{ prefix: string; install?: string }> {
+type LockfileEntry = (typeof LOCKFILE_COMMANDS)[number];
+
+/** What the base's lockfiles say about which install to run first, and what else to try (US-001). */
+interface LockfileChoice {
+  readonly prefix: string;
+  readonly install?: string;
+  readonly lockfile?: string;
+  readonly reason?: InstallReason;
+  readonly fallbacks: readonly PreRunStepConfig[];
+}
+
+const NO_LOCKFILE_PREFIX = "npm run";
+
+/**
+ * Every entry is inspected, not only up to the first present one: a repo can
+ * carry more than one lockfile, and an inspection or read failure on any of
+ * them fails the derivation rather than being skipped.
+ */
+async function presentLockfiles(input: ResolveBotChecksInput): Promise<LockfileEntry[]> {
+  const present: LockfileEntry[] = [];
   for (const entry of LOCKFILE_COMMANDS) {
-    if ((await readBaseFile(input, entry.path)) !== null) return entry;
+    if ((await readBaseFile(input, entry.path)) !== null) present.push(entry);
   }
-  return { prefix: "npm run" };
+  return present;
+}
+
+/** `"npm@10.9.0"` -> `"npm"`; an empty name declares nothing. */
+function managerOf(packageManager: string): string | undefined {
+  const at = packageManager.indexOf("@");
+  const name = at === -1 ? packageManager : packageManager.slice(0, at);
+  return name === "" ? undefined : name;
+}
+
+/**
+ * The package manager the base `package.json` declares. A missing file, an
+ * unparseable one or a non-string `packageManager` is ignored — only a read or
+ * inspection *failure* fails the derivation, and `readBaseFile` throws that.
+ */
+async function declaredManager(input: ResolveBotChecksInput): Promise<string | undefined> {
+  const text = await readBaseFile(input, "package.json");
+  if (text === null) return undefined;
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(text);
+  } catch {
+    // An unparseable base package.json declares no manager; lockfile order decides.
+    return undefined;
+  }
+  if (!isRecord(manifest) || typeof manifest.packageManager !== "string") return undefined;
+  return managerOf(manifest.packageManager);
+}
+
+/** The other frozen installs present, in LOCKFILE_COMMANDS order, never the chosen one, never twice. */
+function frozenFallbacks(present: readonly LockfileEntry[], chosen: LockfileEntry): PreRunStepConfig[] {
+  const commands = new Set<string>();
+  const fallbacks: PreRunStepConfig[] = [];
+  for (const entry of present) {
+    const command = entry.install;
+    if (command === undefined || command === chosen.install || commands.has(command)) continue;
+    commands.add(command);
+    fallbacks.push({ command, timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS });
+  }
+  return fallbacks;
+}
+
+async function lockfileCommands(input: ResolveBotChecksInput): Promise<LockfileChoice> {
+  const present = await presentLockfiles(input);
+  if (present.length === 0) return { prefix: NO_LOCKFILE_PREFIX, fallbacks: [] };
+  // Choosing between lockfiles is the only thing the declared manager decides, so a repo with
+  // one lockfile never reads `package.json`.
+  const manager = present.length > 1 ? await declaredManager(input) : undefined;
+  const byManager =
+    manager === undefined
+      ? undefined
+      : present.find((entry) => entry.manager === manager && entry.install !== undefined);
+  const chosen = byManager ?? present[0];
+  return {
+    prefix: chosen.prefix,
+    ...(chosen.install === undefined ? {} : { install: chosen.install }),
+    lockfile: chosen.path,
+    reason: byManager === undefined ? "lockfile-order" : "package-manager",
+    fallbacks: frozenFallbacks(present, chosen),
+  };
+}
+
+/**
+ * The setup a lockfile choice contributes: a configured `execution.preRun` wins
+ * outright and carries no install metadata. Otherwise the chosen frozen install
+ * is the single step, and its fallbacks travel with it.
+ */
+function derivedSetup(input: ResolveBotChecksInput, choice: LockfileChoice): Pick<BotChecks, "preRun" | "install"> {
+  const configured = configuredPreRun(input);
+  if (configured !== undefined) return { preRun: configured };
+  const { install, lockfile, reason, fallbacks } = choice;
+  if (install === undefined || lockfile === undefined || reason === undefined) return { preRun: [] };
+  return {
+    preRun: [{ command: install, timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS }],
+    install: { lockfile, reason, fallbacks },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -212,10 +330,10 @@ async function detectedChecks(input: ResolveBotChecksInput): Promise<BotChecks |
     if (text === null) return null;
     const manifest: unknown = JSON.parse(text);
     if (!isRecord(manifest) || !isRecord(manifest.scripts)) return null;
-    const { prefix, install } = await lockfileCommands(input);
+    const choice = await lockfileCommands(input);
     const policy = trustedPolicy(input);
-    const gates = scriptGates(manifest.scripts, prefix).map((gate) => ({ ...gate, stallDetection: policy }));
-    return gates.length ? { source: "detected", gates, preRun: selectPreRun(input, install) } : null;
+    const gates = scriptGates(manifest.scripts, choice.prefix).map((gate) => ({ ...gate, stallDetection: policy }));
+    return gates.length ? { source: "detected", gates, ...derivedSetup(input, choice) } : null;
   } catch (cause) {
     getSafeLogger()?.warn("bot", "Skipping base detected checks", {
       baseSha: input.baseSha,
@@ -231,8 +349,8 @@ export async function resolveBotChecks(input: ResolveBotChecksInput): Promise<Bo
   if (!checks) return { source: "none", gates: [], preRun: [] };
   if (checks.preRun.length || checks.source === "detected") return checks;
   try {
-    const { install } = await lockfileCommands(input);
-    return { ...checks, preRun: selectPreRun(input, install) };
+    const choice = await lockfileCommands(input);
+    return { ...checks, ...derivedSetup(input, choice) };
   } catch (cause) {
     getSafeLogger()?.warn("bot", "Skipping base lockfile install", {
       baseSha: input.baseSha,

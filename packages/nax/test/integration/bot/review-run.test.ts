@@ -513,6 +513,24 @@ describe("runBotReview", () => {
     expect(preRun).toHaveBeenCalledTimes(1);
     expect(review).toHaveBeenCalledTimes(1);
   });
+  test("US-001 AC-20/21: a successful fallback install posts no failure line and reports the install that ran", async () => {
+    const fallback = { command: "bun install --frozen-lockfile", timeoutSeconds: 600 };
+    resolveChecks.mockResolvedValueOnce({
+      ...checks,
+      install: { lockfile: "package-lock.json", reason: "package-manager", fallbacks: [fallback] },
+    });
+    preRun.mockImplementationOnce(async ({ steps }) => {
+      const failed = steps.find(({ command }) => command === "npm ci");
+      if (failed)
+        throw new NaxError("[bot] install failed", "PRE_RUN_FAILED", { stage: "execution", command: "npm ci" });
+    });
+    expect(await runBotReview(input)).toMatchObject({ outcome: "posted" });
+    expect(preRun).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[0]?.[0].preRunFailed).toBeUndefined();
+    const state = review.mock.calls[0]?.[1].checkoutState ?? "";
+    expect(state).toContain(`Setup nax ran: ${fallback.command} — all succeeded`);
+    expect(state).not.toContain("npm ci");
+  });
   test.each([
     new NaxError("[bot] trust refused", "PROJECT_UNTRUSTED", { stage: "execution" }),
     new Error("unexpected install failure"),
