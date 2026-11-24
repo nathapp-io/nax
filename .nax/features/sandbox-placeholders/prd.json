@@ -3,7 +3,7 @@
   "feature": "sandbox-placeholders",
   "branchName": "feat/sandbox-placeholders",
   "createdAt": "2026-11-24T11:27:31.990Z",
-  "updatedAt": "2026-11-24T12:13:56.747Z",
+  "updatedAt": "2026-11-24T13:21:40.102Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,14 +117,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Private trusted persistence and process-wide lifecycle bookkeeping authorize later filesystem deletion; security-critical trust checks and exit behavior require strict test isolation."
+        "reasoning": "Private trusted persistence and process-wide lifecycle bookkeeping authorize later filesystem deletion; security-critical trust checks and exit behavior require strict test isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/placeholder-deps.ts",
@@ -146,7 +149,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "096f919839cba75cebade9ab96b0fb470401ade9"
     },
     {
       "id": "US-003",
