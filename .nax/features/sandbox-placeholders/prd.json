@@ -3,7 +3,7 @@
   "feature": "sandbox-placeholders",
   "branchName": "feat/sandbox-placeholders",
   "createdAt": "2026-11-24T11:27:31.990Z",
-  "updatedAt": "2026-11-24T14:13:00.539Z",
+  "updatedAt": "2026-11-24T14:26:36.816Z",
   "userStories": [
     {
       "id": "US-001",
@@ -248,14 +248,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Destructive cross-process cleanup combines inode provenance, PID reuse, boot identity, lock contention and live mount namespaces; mistakes can remove user data or detach sandbox deny mounts."
+        "reasoning": "Destructive cross-process cleanup combines inode provenance, PID reuse, boot identity, lock contention and live mount namespaces; mistakes can remove user data or detach sandbox deny mounts.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
@@ -285,7 +288,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "185d1eb68f9afca55a042499a49a0527b16aa3e8"
     },
     {
       "id": "US-005",
