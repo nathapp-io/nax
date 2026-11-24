@@ -423,6 +423,6 @@ describe("readJobPanelView sources", () => {
       state: "running",
       elapsedMs: 2_520_000,
     });
-    expect(logTail).toHaveBeenCalledWith("run-1a2b3c4d", JOB_PANEL_LOG_LINES);
+    expect(logTail).toHaveBeenCalledWith("run-1a2b3c4d", JOB_PANEL_LOG_LINES, { nonEmpty: true });
   });
 });

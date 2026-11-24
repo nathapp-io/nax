@@ -173,7 +173,7 @@ async function decisionsSource(job: ChatJob): Promise<readonly AdviceDecision[]>
 
 async function logTailSource(job: ChatJob, jobs: Pick<ChatJobs, "logTail">): Promise<string> {
   try {
-    return await jobs.logTail(job.id, JOB_PANEL_LOG_LINES);
+    return await jobs.logTail(job.id, JOB_PANEL_LOG_LINES, { nonEmpty: true });
   } catch {
     // The log file can be gone with the process; the rest of the panel still renders.
     return "";
