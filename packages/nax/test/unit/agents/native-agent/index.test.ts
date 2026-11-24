@@ -7,7 +7,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AgentSessionAdapter, OpenSessionOpts, SendTurnOpts, SessionHandle, TurnResult } from "@nathapp/nax-agent";
 import { _clientDeps, _resetNativeClient } from "@nathapp/nax-agent/internal";
-import type { Client, ResolvedModel } from "@nathapp/nax-ai";
+import type { Client, ClientRequest, ResolvedModel } from "@nathapp/nax-ai";
+import { assertDefined } from "@test/helpers";
 import { NativeAgentAdapter } from "@/agents/native-agent";
 import type { ResolvedCompleteOptions } from "@/agents/types";
 
@@ -128,5 +129,54 @@ describe("NativeAgentAdapter shell", () => {
     // cacheRead was absent in config, so it takes the input rate (2 per 1M).
     expect(out.rates?.cacheRead).toBe(2);
     expect(out.estimatedCostUsd).toBe(2);
+  });
+
+  test("US-003 AC-8: forwards options.signal so a caller abort cancels the request in flight", async () => {
+    const model = {
+      id: "gpt-5.4-mini",
+      provider: "openai",
+      protocol: "openai-responses",
+      pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+      contextWindow: 128_000,
+      supportsTools: true,
+      thinkingLevels: [],
+    } satisfies ResolvedModel;
+    const caller = new AbortController();
+    const seen: ClientRequest[] = [];
+    const pending = Promise.withResolvers<Awaited<ReturnType<Client["complete"]>>>();
+    const inFlight = Promise.withResolvers<void>();
+    _clientDeps.build = async () =>
+      ({
+        model: async () => model,
+        listModels: async () => [model],
+        pricing: () => model.pricing,
+        stream: async function* stream() {},
+        complete: async (_resolved, req) => {
+          seen.push(req);
+          inFlight.resolve();
+          return pending.promise;
+        },
+        validate: () => {},
+      }) satisfies Client;
+
+    const call = new NativeAgentAdapter().complete("hi", {
+      modelDef: { provider: "openai", model: "openai/gpt-5.4-mini" },
+      workdir: "/w",
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      signal: caller.signal,
+    });
+    await inFlight.promise;
+
+    const requestSignal = seen[0]?.signal;
+    assertDefined(requestSignal, "the request signal handed to client.complete");
+    expect(requestSignal.aborted).toBe(false);
+
+    caller.abort(new Error("run cancelled"));
+
+    // The request the client already holds is the only thing that reaches the
+    // provider — an adapter that drops options.signal leaves it live forever.
+    expect(requestSignal.aborted).toBe(true);
+    pending.resolve({ text: "ok", usage: { inputTokens: 0, outputTokens: 0 }, stopReason: "stop" });
+    expect((await call).output).toBe("ok");
   });
 });
