@@ -41,6 +41,7 @@ import { answerElicitation } from "#src/client/elicitation";
 import { sessionLost } from "#src/client/errors";
 import { createTurnCollector } from "#src/client/events";
 import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
+import { hasInstructions } from "#src/client/instructions";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
 import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
@@ -96,7 +97,10 @@ interface AcpSession {
   readonly serverName: string | undefined;
   live: Live;
   closing: Promise<void> | undefined;
+  /** Whether the agent has the session instructions (#2364): set on real receipt, or read from the document at open (US-003). */
   instructionsSent: boolean;
+  /** US-003: the stored document carries `instructionsDelivered: true`; false while a write is still owed. */
+  deliverySaved: boolean;
   /** No reconnect is possible any more: later turns end AGENT_SESSION_CLOSED (§6.3 step 5). */
   lost: boolean;
   /** The cost baseline the transcript document holds (D6-a). */
@@ -243,6 +247,9 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
   const restore = ctx.resume === undefined ? undefined : storedSessionOf(ctx.resume.doc, ctx, base);
   const serverName = ctx.tools.length > 0 ? _acpBackendDeps.newToolHostServerName() : undefined;
   const live = await connect(base, ctx, restore, [], serverName);
+  // US-003: the recorded delivery wins. A document written before the field keeps
+  // D6-f's turn-marker rule: a resumed agent that ran a turn already holds them.
+  const instructionsSent = restore?.instructionsDelivered ?? ctx.resume?.doc.turn !== undefined;
   return assemble({
     base,
     configOptions: live.acp.configOptions,
@@ -250,8 +257,8 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
     serverName,
     live,
     closing: undefined,
-    // A restored agent already holds the instructions once a turn has run (D6-f).
-    instructionsSent: ctx.resume?.doc.turn !== undefined,
+    instructionsSent,
+    deliverySaved: instructionsSent,
     lost: false,
     savedBaseline: restore?.costUsd ?? 0,
   });
@@ -362,8 +369,8 @@ async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Prom
   if (opts.images?.length && !live.acp.record.image) {
     throw new NaxError("[acp] The agent does not support image input", "ACP_IMAGE_INPUT_UNSUPPORTED", { stage: "acp" });
   }
-  const instructions = s.instructionsSent ? undefined : s.ctx.instructions;
-  const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
+  const instructions = s.instructionsSent || !hasInstructions(s.ctx.instructions) ? undefined : s.ctx.instructions;
+  const text = instructions === undefined ? prompt : `${instructions}\n\n${prompt}`;
   // #2364: delivered once the agent shows it has the prompt, not when it is sent.
   const onReceipt =
     instructions === undefined
@@ -392,6 +399,7 @@ async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Prom
     // Held text and calls left without a result go out before turn_end (D5-e, D5-g).
     collector.finish();
     await saveBaseline(s, live.meter.baseline());
+    await saveDelivery(s);
   }
 }
 
@@ -406,6 +414,25 @@ async function saveBaseline(s: AcpSession, baseline: number): Promise<void> {
     s.savedBaseline = baseline;
   } catch {
     warn("Could not save the ACP cost baseline", sessionId);
+  }
+}
+
+/**
+ * US-003: load-merge the instruction delivery into the document once the agent
+ * has the instructions. Best effort, as saveBaseline is: a failure is logged, the
+ * turn's result is unchanged, and the next turn tries again.
+ */
+async function saveDelivery(s: AcpSession): Promise<void> {
+  if (!s.instructionsSent || s.deliverySaved) return;
+  if (!hasInstructions(s.ctx.instructions)) return;
+  const { transcriptStore: store, sessionId } = s.ctx;
+  try {
+    const doc = await store.load(sessionId);
+    if (doc?.acp === undefined) return;
+    await store.save(sessionId, { ...doc, acp: { ...doc.acp, instructionsDelivered: true } });
+    s.deliverySaved = true;
+  } catch {
+    warn("Could not save the ACP instruction delivery", sessionId);
   }
 }
 

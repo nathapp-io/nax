@@ -31,6 +31,12 @@ export interface Restore {
   readonly cwd: string;
   /** The meter's starting baseline (D6-a). */
   readonly costUsd: number;
+  /**
+   * Whether the agent already holds the session instructions, as the document
+   * records it (US-003). Absent when the document predates the field or carries a
+   * value that is not a boolean; the caller then falls back to the turn marker.
+   */
+  readonly instructionsDelivered?: boolean;
 }
 
 export type RestoredWith = "resume" | "load";
@@ -112,7 +118,13 @@ export function storedSessionOf(doc: TranscriptDoc, ctx: BackendOpenContext, opt
       { path: "workdir" },
     );
   }
-  return { agentSessionId: acp.agentSessionId, cwd: acp.cwd, costUsd: costOf(acp.costUsd) };
+  return {
+    agentSessionId: acp.agentSessionId,
+    cwd: acp.cwd,
+    costUsd: costOf(acp.costUsd),
+    // US-003: a value that is not a boolean is treated as absent, not coerced.
+    ...(typeof acp.instructionsDelivered === "boolean" ? { instructionsDelivered: acp.instructionsDelivered } : {}),
+  };
 }
 
 /** §6.9 step 3 (D6-d): an echoed id must be the stored one. A null answer (D6-k) offers nothing. */

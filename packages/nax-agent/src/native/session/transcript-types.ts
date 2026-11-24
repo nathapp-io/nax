@@ -20,6 +20,12 @@ export interface TranscriptAcpRecord {
   readonly agentVersion?: string;
   readonly cwd: string;
   /**
+   * Whether the agent has received the session instructions. Absent means "not
+   * recorded": a document written before this field existed, whose resume keeps
+   * the turn-marker rule (the agent holds the instructions once a turn ran).
+   */
+  readonly instructionsDelivered?: boolean;
+  /**
    * The agent's cumulative cost reading (USD) at the end of the session's last
    * priced turn. A resumed ACP session measures its next turn's cost from it,
    * because the agent's running total survives a resume (S4-6 D6-a).

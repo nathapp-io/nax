@@ -109,6 +109,11 @@ async function promptOnce(
 ): Promise<PromptResponse> {
   const { text, carried, firstPrompt } = prompt;
   const images = firstPrompt ? (input.images ?? []) : [];
+  if (input.signal.aborted) {
+    const reason = abortReason(input.signal);
+    attachTurnSpend(reason, unansweredSpend(carried));
+    throw reason;
+  }
   const pending = state.link.prompt({
     sessionId: state.agentSessionId,
     prompt: [

@@ -271,10 +271,10 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
 
   test("cancel answered end_turn inside the grace: still cancelled, still priced (Review Focus 2)", async () => {
     const o = await open([{ steps: [{ kind: "awaitCancel" }, usd(0.02)], stopReason: "end_turn" }]);
-    const events = await driveTurn(o.session, "go", (event) => {
-      if (event.type === "turn_start") o.session.cancel();
-    });
-    expect(endOf(events)).toMatchObject({ status: "cancelled", costUsd: 0.02, costSource: "reported" });
+    const pending = driveTurn(o.session, "go");
+    await waitForCondition(() => o.fake.callsTo("session/prompt").length === 1, 2_000);
+    o.session.cancel();
+    expect(endOf(await pending)).toMatchObject({ status: "cancelled", costUsd: 0.02, costSource: "reported" });
   });
 
   test("cancel not answered inside the grace: no usage event, unpriced (spec §3.3)", async () => {
