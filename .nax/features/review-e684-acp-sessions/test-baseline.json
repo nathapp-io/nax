@@ -1,0 +1,10 @@
+{
+  "kind": "captured",
+  "source": "preflight",
+  "capturedAt": "2026-11-24T03:04:23.901Z",
+  "baseRef": "e8ad67f5f0c82d3455bbfe6b049d2984b30f24ce",
+  "packageDirs": [
+    "packages/nax-agent-acp"
+  ],
+  "entries": []
+}
