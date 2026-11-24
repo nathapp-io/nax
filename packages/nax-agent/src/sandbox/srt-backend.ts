@@ -9,10 +9,13 @@
  * process.env itself and is DISCARDED here (spec F6).
  */
 import { mkdir } from "node:fs/promises";
+import { errorMessage } from "#src/infra/errors";
+import { getSafeLogger } from "#src/infra/index";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
 import { type PlaceholderLedger, placeholderLedger } from "./placeholder-ledger.ts";
 import { candidatePaths } from "./placeholder-paths.ts";
+import { sweepStalePlaceholders } from "./placeholder-sweep.ts";
 import type { SandboxBackend, SandboxPolicy, SandboxWrapRequest } from "./types.ts";
 
 type SrtModule = typeof import("@anthropic-ai/sandbox-runtime");
@@ -41,6 +44,7 @@ export const _srtBackendDeps = {
   load: (): Promise<SrtModuleSlice> => import("@anthropic-ai/sandbox-runtime"),
   platform: (): NodeJS.Platform => process.platform,
   mkdir,
+  sweep: sweepStalePlaceholders,
   /**
    * US-003: the directory srt resolves its mandatory write-deny names against,
    * and therefore the directory bwrap creates placeholders in. Process cwd, NOT
@@ -116,6 +120,13 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
+      if (_srtBackendDeps.platform() === "linux") {
+        try {
+          await _srtBackendDeps.sweep();
+        } catch (error) {
+          getSafeLogger()?.warn("sandbox", "placeholder sweep initialization failed", { error: errorMessage(error) });
+        }
+      }
       await mod.SandboxManager.initialize({
         network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
         filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
