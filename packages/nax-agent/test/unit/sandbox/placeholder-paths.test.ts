@@ -79,6 +79,30 @@ describe("candidatePaths", () => {
     expect(candidatePaths(cwd, policy({ writeRoots: [elsewhere] }))).toEqual([]);
   });
 
+  test("US-001 AC4 boundary: a child whose NAME begins with two dots is inside the root", () => {
+    // `<root>/..repo` is a descendant of `<root>`: only a `..` path SEGMENT is a
+    // parent traversal, and a first name that merely starts with two dots is an
+    // ordinary directory name. Rejecting it would silently drop every candidate
+    // for a project checked out at such a path.
+    const dotted = join(base, "..repo");
+    mkdirSync(dotted);
+
+    const paths = candidatePaths(dotted, policy({ writeRoots: [base] }));
+
+    expect(paths).toContain(join(dotted, ".bashrc"));
+    expect(paths).toContain(join(dotted, ".claude"));
+  });
+
+  test("US-001 AC4 boundary: a sibling reached through a real parent traversal is outside", () => {
+    // The same check must still reject a genuine traversal: `<root>/../sibling`.
+    const root = join(base, "root");
+    const sibling = join(base, "sibling");
+    mkdirSync(root);
+    mkdirSync(sibling);
+
+    expect(candidatePaths(sibling, policy({ writeRoots: [root] }))).toEqual([]);
+  });
+
   test("US-001 AC5: adds .git/hooks and .git/config for a .git directory", () => {
     mkdirSync(join(cwd, ".git"));
 

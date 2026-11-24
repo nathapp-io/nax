@@ -20,7 +20,7 @@
  * (nax-agent is a Node library; it uses no Bun API).
  */
 import { lstatSync, readdirSync, type Stats, statSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { NaxError } from "#src/infra/index";
 import { SRT_MANDATORY_DENY_DIRS, SRT_MANDATORY_DENY_FILES } from "./defaults.ts";
 import type { SandboxPolicy } from "./types.ts";
@@ -31,10 +31,20 @@ const START_TICKS_FIELD = 22;
 /** The field index of `START_TICKS_FIELD` after the last `)` (whose following field is field 3). */
 const START_TICKS_AFTER_COMM_INDEX = START_TICKS_FIELD - 3;
 
-/** `target` is `root` itself or lies beneath it — by path segment, so `/xy` is not under `/x`. */
+/**
+ * `target` is `root` itself or lies beneath it — by path segment, so `/xy` is not
+ * under `/x`.
+ *
+ * Only a real parent traversal is outside: the `..` segment itself, or a `../`
+ * prefix (`..` followed by the separator). A first segment that merely BEGINS
+ * with two dots — `/a/..foo/repo` under `/a` — is an ordinary child directory,
+ * and treating it as outside would silently drop every candidate for a project
+ * checked out at such a path.
+ */
 function contains(root: string, target: string): boolean {
   const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  if (rel === "") return true;
+  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 /** True when something (a file, a directory, a dangling symlink) occupies `path`. */
