@@ -25,8 +25,9 @@
  *      on SIGINT, 134 on Bun panic / other signal, otherwise whatever
  *      `bun test` returned.
  *
- * Usage: `bun run scripts/run-tests.ts [--bail] [--e2e]`
+ * Usage: `bun run scripts/run-tests.ts [--bail] [--e2e] [<file>.test.ts ...]`
  *   `--e2e` runs only `test/e2e/` (the `test:e2e` script).
+ *   Explicit test files run in the phases that own them, and nothing else does.
  *   The unit and integration phases run over 4 workers with `--no-isolate`
  *   (`SUITE_PARALLEL_WORKERS`); `NAX_TEST_PARALLEL_WORKERS=1` runs them serially.
  */
@@ -35,7 +36,6 @@ import { createTestOutputController } from "./run-tests-output";
 import { type Phase, phaseArgs, selectPhases, suiteParallelWorkers } from "./run-tests-phases";
 
 const BAIL = process.argv.includes("--bail");
-const PHASES = selectPhases(process.argv);
 const WORKERS = suiteParallelWorkers(process.env);
 const OUTPUT_CONTROLLER = createTestOutputController({
   agentMode: process.env.AGENT === "1",
@@ -174,7 +174,11 @@ async function runPhase(phase: Phase): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  for (const phase of PHASES) {
+  // Selection happens here, not at module load, so a refused file (one under no
+  // phase directory) reaches the `main().catch` fatal path and exits non-zero
+  // before the first phase banner.
+  const phases = selectPhases(process.argv.slice(2), process.cwd());
+  for (const phase of phases) {
     const code = await runPhase(phase);
     if (code !== 0) {
       process.exit(code);

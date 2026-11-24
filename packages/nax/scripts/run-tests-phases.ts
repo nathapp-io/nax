@@ -1,3 +1,5 @@
+import { isAbsolute, relative, resolve } from "node:path";
+
 /**
  * The phases `scripts/run-tests.ts` runs. Kept pure (no spawning) so the
  * selection is unit-testable; the wrapper owns the timeouts and the reaping.
@@ -14,6 +16,11 @@ export type Phase = {
    * `bun test --parallel=<n> --no-isolate`. Absent: serial.
    */
   parallel?: true;
+  /**
+   * Absolute test files to run INSTEAD of `dir`, set only by `selectPhases` when
+   * the run names its files on the command line.
+   */
+  readonly files?: readonly string[];
 };
 
 /**
@@ -37,7 +44,8 @@ export function suiteParallelWorkers(env: Readonly<Record<string, string | undef
 }
 
 /**
- * The `bun test` arguments for one phase. A parallel phase gets `--no-isolate`
+ * The `bun test` arguments for one phase. A phase carrying selected files runs
+ * exactly those instead of the directory; a parallel phase gets `--no-isolate`
  * with `--parallel`: `--parallel` alone implies `--isolate`, which re-imports every
  * module per file and was slower than serial. One worker runs the phase serially
  * rather than as a single shared-registry worker.
@@ -45,7 +53,7 @@ export function suiteParallelWorkers(env: Readonly<Record<string, string | undef
 export function phaseArgs(phase: Phase, opts: { readonly bail: boolean; readonly workers: number }): string[] {
   return [
     "test",
-    phase.dir,
+    ...(phase.files ?? [phase.dir]),
     `--timeout=${phase.testTimeoutMs}`,
     ...(phase.parallel === true && opts.workers > 1 ? [`--parallel=${opts.workers}`, "--no-isolate"] : []),
     ...(opts.bail ? ["--bail"] : []),
@@ -80,6 +88,54 @@ export const SUITE_PHASES: readonly Phase[] = [
  */
 export const E2E_PHASE: Phase = { name: "e2e", dir: "test/e2e/", testTimeoutMs: 60_000, phaseTimeoutMs: 180_000 };
 
-export function selectPhases(argv: readonly string[]): readonly Phase[] {
-  return argv.includes("--e2e") ? [E2E_PHASE] : SUITE_PHASES;
+/**
+ * Every phase a run can select, in the order the wrapper reports them: a selected
+ * set is always emitted in this order, never in argument order, so a run's phases
+ * are reproducible from its command line.
+ */
+const ALL_PHASES: readonly Phase[] = [...SUITE_PHASES, E2E_PHASE];
+
+/** The suffix that makes an argument an explicit test file rather than a filter. */
+const EXPLICIT_TEST_FILE = /\.test\.tsx?$/;
+
+function isExplicitTestFile(arg: string): boolean {
+  return !arg.startsWith("-") && EXPLICIT_TEST_FILE.test(arg);
+}
+
+/** True when `file` (absolute) lies under `dir`, resolved against `packageDir`. */
+function isUnderPhase(file: string, dir: string, packageDir: string): boolean {
+  const rel = relative(resolve(packageDir, dir), file);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * The phases a run selects.
+ *
+ * Arguments are otherwise ignored: a flag or a bare name filter selects the whole
+ * suite exactly as before. An explicit `.test.ts` / `.test.tsx` file is resolved
+ * against `packageDir` and routed to the phase whose directory holds it, and a file
+ * under none of them is refused here — before any phase runs — because `bun test`
+ * would otherwise run it as a filter and report the suite's result instead.
+ *
+ * `--e2e` is ignored once files are named: the files already say which phases run.
+ */
+export function selectPhases(args: readonly string[], packageDir: string = process.cwd()): readonly Phase[] {
+  const files = args.filter(isExplicitTestFile).map((file) => resolve(packageDir, file));
+  if (files.length === 0) return args.includes("--e2e") ? [E2E_PHASE] : SUITE_PHASES;
+
+  const selected = new Map<string, string[]>();
+  for (const file of files) {
+    const phase = ALL_PHASES.find((candidate) => isUnderPhase(file, candidate.dir, packageDir));
+    if (phase === undefined) {
+      throw new Error(`[run-tests] ${file} is not under test/unit/, test/integration/, test/ui/ or test/e2e/`);
+    }
+    const own = selected.get(phase.name) ?? [];
+    own.push(file);
+    selected.set(phase.name, own);
+  }
+
+  return ALL_PHASES.filter((phase) => selected.has(phase.name)).map((phase) => ({
+    ...phase,
+    files: selected.get(phase.name) ?? [],
+  }));
 }
