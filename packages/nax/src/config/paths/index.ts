@@ -87,6 +87,7 @@ export function globalConfigDir(): string {
  * - `memory` — `src/memory/paths.ts` (`memoryDirs`)
  * - `hooks` — `src/cli/init.ts` (`initGlobalConfig`)
  * - `_archive` — `src/commands/migrate.ts` (the reclaim archive)
+ * - `sandbox` — `packages/nax-agent/src/sandbox/placeholder-ledger.ts` (placeholder ledgers)
  *
  * Validation only: nax's own path helpers still spell these directory names
  * inline.
@@ -101,6 +102,7 @@ export const RESERVED_PROJECT_NAMES: readonly string[] = [
   "memory",
   "hooks",
   "_archive",
+  "sandbox",
 ];
 
 /**
