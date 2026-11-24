@@ -3,7 +3,7 @@
   "feature": "review-e684-chat",
   "branchName": "feat/review-e684-chat",
   "createdAt": "2026-11-24T04:05:29.472Z",
-  "updatedAt": "2026-11-24T04:22:39.556Z",
+  "updatedAt": "2026-11-24T04:33:12.627Z",
   "userStories": [
     {
       "id": "US-001",
@@ -79,14 +79,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The spec explicitly binds this test-only story separately: it integrates real shared transcript files, metadata, session locks and keyed ACP resume stubs through openChatSession without production edits. Sessions mandate three-session-tdd; verify baseline failure against the old store despite the upstream dependency already containing its fix."
+        "reasoning": "The spec explicitly binds this test-only story separately: it integrates real shared transcript files, metadata, session locks and keyed ACP resume stubs through openChatSession without production edits. Sessions mandate three-session-tdd; verify baseline failure against the old store despite the upstream dependency already containing its fix.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -101,7 +104,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1e9446ab3efa8f98460216c90cbd76a2ceddda49"
     },
     {
       "id": "US-003",
