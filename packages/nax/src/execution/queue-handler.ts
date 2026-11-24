@@ -70,7 +70,11 @@ async function claimCommandsLocked(
 ): Promise<QueueCommand[] | null> {
   const processingFile = Bun.file(processingPath);
   if (await processingFile.exists()) {
-    return parseQueueFile(await processingFile.text()).commands;
+    const result = parseQueueFile(await processingFile.text());
+    if (result.guidance.length > 0) {
+      logger?.warn("queue", "Queue guidance is not delivered; discarded", { lines: result.guidance });
+    }
+    return result.commands;
   }
 
   // Check if queue file exists
@@ -98,6 +102,9 @@ async function claimCommandsLocked(
   const claimedFile = Bun.file(processingPath);
   const content = await claimedFile.text();
   const result = parseQueueFile(content);
+  if (result.guidance.length > 0) {
+    logger?.warn("queue", "Queue guidance is not delivered; discarded", { lines: result.guidance });
+  }
 
   return result.commands;
 }

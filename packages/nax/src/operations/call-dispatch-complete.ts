@@ -15,10 +15,16 @@ import type { RetryStrategy } from "../agents/retry";
 import type { CompleteOptions } from "../agents/types";
 import { resolveModelForAgent } from "../config";
 import type { AdapterFailure } from "../context/engine";
+import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { storyExecRoot } from "../runtime/packages";
 import type { CallOpDeps, DispatchPrologue } from "./call-dispatch-prologue";
-import { throwAborted, throwNoDispatch, throwRetryBudgetExhausted } from "./call-dispatch-prologue";
+import {
+  CALL_OP_ABORTED_CODE,
+  throwAborted,
+  throwNoDispatch,
+  throwRetryBudgetExhausted,
+} from "./call-dispatch-prologue";
 import { MAX_COMPLETE_RETRY_ATTEMPTS, recordDispatchOutcome, resolveOpRetry } from "./call-resolvers";
 import { runPostParse } from "./post-parse";
 import type { CallContext, CompleteOperation } from "./types";
@@ -42,6 +48,12 @@ export async function dispatchCompleteOp<I, O, C>(params: CompleteDispatchParams
   const retryStrategy = resolveOpRetry(op, input, buildCtx);
   let attempt = 0;
   while (attempt <= MAX_COMPLETE_RETRY_ATTEMPTS) {
+    // US-003: a run cancelled before this attempt is refused before dispatch.
+    // An aborted run must not spend a billed call on a result it will discard,
+    // so this sits ahead of the try rather than inside it.
+    if (abortSignal?.aborted) {
+      throwAborted(op, ctx.storyId, "aborted before dispatch");
+    }
     try {
       const completeOutcome = await ctx.runtime.agentManager.completeAsWithFallback(
         dispatchAgent,
@@ -51,6 +63,14 @@ export async function dispatchCompleteOp<I, O, C>(params: CompleteDispatchParams
       // nax#1712: mirror the run branch at the bottom of the original dispatch — a swap
       // taken inside completeWithFallback is only attributable to a story here.
       recordDispatchOutcome(ctx, completeOutcome, resolved.modelTier, sessionRole);
+      // US-003: the guarantee that an aborted run's result is never acted on.
+      // `completeWithFallback` may settle a hop, retry or swap before it
+      // returns (unchanged, deliberately), so the cancellation is judged here —
+      // after recording, which is where the dispatch that DID happen is
+      // attributed, and before the zero-dispatch guard and `op.parse`.
+      if (abortSignal?.aborted) {
+        throwAborted(op, ctx.storyId, "aborted during dispatch");
+      }
       // US-001: zero-dispatch guard for complete-kind. Same placement rule
       // as the run branch — before parse, after recording, so the per-story
       // store still carries the failure that caused the zero-dispatch.
@@ -61,6 +81,9 @@ export async function dispatchCompleteOp<I, O, C>(params: CompleteDispatchParams
       const parsedComplete = op.parse(raw.output, input, buildCtx);
       return await runPostParse(op, parsedComplete, input, buildCtx);
     } catch (err) {
+      // US-003: a cancellation is not a retryable failure. Rethrow it untouched
+      // so a cancelled run's dispatch is never repeated on the strategy's say-so.
+      if (err instanceof NaxError && err.code === CALL_OP_ABORTED_CODE) throw err;
       const decision = decideCompleteRetry({ ctx, op, err, attempt, retryStrategy, dispatchAgent, abortSignal });
       if (decision === undefined) throw err;
       await deps.sleep(decision.delayMs, abortSignal);
@@ -88,7 +111,8 @@ export async function dispatchCompleteOp<I, O, C>(params: CompleteDispatchParams
  */
 function buildCompleteOptions<I, O, C>(params: CompleteDispatchParams<I, O, C>): CompleteOptions {
   const { ctx, op, prologue } = params;
-  const { callId, timeoutMs, sessionRole, effectiveModels, effectiveTier, defaultAgent, resolved } = prologue;
+  const { callId, timeoutMs, sessionRole, effectiveModels, effectiveTier, defaultAgent, resolved, abortSignal } =
+    prologue;
   const { agent: dispatchAgent, modelDef: dispatchModelDef } = prologue.target;
   const sessionName =
     sessionRole && ctx.packageDir
@@ -116,6 +140,10 @@ function buildCompleteOptions<I, O, C>(params: CompleteDispatchParams<I, O, C>):
     ...(sessionRole !== undefined ? { sessionRole } : {}),
     ...(sessionName !== undefined ? { sessionName } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    // US-003: the run's cancellation reaches the adapter, so a one-shot (ACP or
+    // native) stops work the run has already given up on instead of finishing
+    // a reply that `dispatchCompleteOp` then refuses.
+    signal: abortSignal,
   };
 }
 

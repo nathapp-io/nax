@@ -18,8 +18,8 @@ export {
   clearCommandDefaultsCache,
   resolveDefaultQualityCommands,
 } from "./command-defaults";
-export type { ResolvedTestCommands } from "./command-resolver";
-export { _commandResolverDeps, resolveQualityTestCommands } from "./command-resolver";
+export type { PromotedTestCommands, ResolvedTestCommands } from "./command-resolver";
+export { _commandResolverDeps, promoteOrchestratorCommand, resolveQualityTestCommands } from "./command-resolver";
 export type { Diagnostic } from "./diagnostics";
 export { detectTool, MAX_RAW_TAIL_CHARS, parseDiagnostics } from "./diagnostics";
 export type { FullSuiteTimeoutConfig } from "./gate-timeout";

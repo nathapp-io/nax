@@ -92,6 +92,10 @@ export class NativeAgentAdapter implements AgentAdapter {
         model: toSessionModel(options.modelDef),
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        // US-003: the caller's cancellation must reach the request, or an
+        // aborted run's one-shot keeps the provider working on a reply that
+        // `callOp` will discard.
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
       },
       { catalogOverrides: this.catalogOverrides, sessionKey: this.oneShotKey },
     );

@@ -721,7 +721,7 @@ rename or `nax migrate --reclaim` / `--merge`).
 `src/queue/`:
 - Mid-run story control via the `.queue.txt` control file
 - `parseQueueFile()` (`manager.ts`) parses commands: `PAUSE`, `ABORT`, `SKIP <id>`,
-  `RETRY <id>`, `PRIORITY <id> <n>`, `INJECT <path>`; text after `--- PENDING ---` is guidance
+  `RETRY <id>`, `PRIORITY <id> <n>`, `INJECT <path>`; text after `--- PENDING ---` (and a malformed command line) is parsed as guidance, which is not delivered to agents: the consumer logs it as discarded
 - `src/execution/queue-handler.ts` consumes the file atomically
   (`.queue.txt` → `.queue.txt.processing` → delete) between stories
 - `queueCheckStage` (pipeline stage 1) acts on commands before each story

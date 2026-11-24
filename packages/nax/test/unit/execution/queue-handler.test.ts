@@ -62,6 +62,69 @@ describe("readQueueFile", () => {
     expect(commands).toEqual([{ type: "SKIP", storyId: "US-001" }, { type: "PAUSE" }]);
   });
 
+  test("returns commands while discarding pending guidance", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n--- PENDING ---\nfocus on the parser\n");
+
+    expect(await readQueueFile(workdir)).toEqual([{ type: "PAUSE" }]);
+  });
+
+  test("logs discarded pending guidance for a fresh claim", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n--- PENDING ---\nfocus on the parser\n");
+
+    await readQueueFile(workdir);
+
+    const warns = await readWarnLines(logFile);
+    expect(warns).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        stage: "queue",
+        message: "Queue guidance is not delivered; discarded",
+        data: { lines: ["focus on the parser"] },
+      }),
+    );
+  });
+
+  test("logs discarded pending guidance when recovering a processing claim", async () => {
+    await Bun.write(join(workdir, ".queue.txt.processing"), "PAUSE\n--- PENDING ---\nfocus on the parser\n");
+
+    await readQueueFile(workdir);
+
+    const warns = await readWarnLines(logFile);
+    expect(warns).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        stage: "queue",
+        message: "Queue guidance is not delivered; discarded",
+        data: { lines: ["focus on the parser"] },
+      }),
+    );
+  });
+
+  test("logs malformed bare SKIP as discarded guidance", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "SKIP\n");
+
+    await readQueueFile(workdir);
+
+    const warns = await readWarnLines(logFile);
+    expect(warns).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        stage: "queue",
+        message: "Queue guidance is not delivered; discarded",
+        data: { lines: ["SKIP"] },
+      }),
+    );
+  });
+
+  test("does not log guidance warning for well-formed commands", async () => {
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\nSKIP US-001\n");
+
+    await readQueueFile(workdir);
+
+    const warns = await readWarnLines(logFile);
+    expect(warns.filter((entry) => entry.message === "Queue guidance is not delivered; discarded")).toHaveLength(0);
+  });
+
   test("recovers commands left in .processing after a runner crash", async () => {
     await Bun.write(join(workdir, ".queue.txt.processing"), "ABORT\n");
 

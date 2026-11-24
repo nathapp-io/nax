@@ -71,13 +71,20 @@ export function throwNoDispatch(
   });
 }
 
+/**
+ * The abort code, named once: `dispatchCompleteOp`'s catch rethrows a
+ * cancellation untouched instead of asking the retry policy about it, and that
+ * decision reads this code rather than a second literal.
+ */
+export const CALL_OP_ABORTED_CODE = "CALL_OP_ABORTED";
+
 /** Abort surfaced at a retry/parse boundary; message names where it fired. */
 export function throwAborted(
   op: { name: string; stage: PipelineStage },
   storyId: string | undefined,
   message: string,
 ): never {
-  throw new NaxError(`callOp[${op.name}]: ${message}`, "CALL_OP_ABORTED", { stage: op.stage, storyId });
+  throw new NaxError(`callOp[${op.name}]: ${message}`, CALL_OP_ABORTED_CODE, { stage: op.stage, storyId });
 }
 
 /** Retry budget exhausted; the message differs between the complete and run paths. */

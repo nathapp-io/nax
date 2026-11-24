@@ -59,7 +59,7 @@ const alwaysRetryCompleteOp: CompleteOperation<string, string, Cfg> = {
 };
 
 describe("callOpDispatch — complete-kind retry abort checks", () => {
-  test("throws CALL_OP_ABORTED (before retry) when the signal is already aborted at the retry decision", async () => {
+  test("throws CALL_OP_ABORTED (before dispatch) when the signal is already aborted", async () => {
     let callCount = 0;
     const agentManager = makeMockAgentManager({
       completeAsWithFallbackFn: async () => {
@@ -93,8 +93,10 @@ describe("callOpDispatch — complete-kind retry abort checks", () => {
 
     assertCaughtInstanceOf(thrown, NaxError, "callOp rejection");
     expect(thrown.code).toBe("CALL_OP_ABORTED");
-    expect(thrown.message).toContain("aborted before retry");
-    expect(callCount).toBe(1);
+    // US-003 moved this boundary ahead of the dispatch: an already-aborted run
+    // never spends the call, so the message names the dispatch, not the retry.
+    expect(thrown.message).toContain("aborted before dispatch");
+    expect(callCount).toBe(0);
   });
 
   test("throws CALL_OP_ABORTED (during retry sleep) when the signal aborts inside the sleep", async () => {
