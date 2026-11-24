@@ -21,6 +21,7 @@ import { cancellableDelay } from "@/utils/bun-deps";
 import { EMPTY_STARVED_LEDGER, type StarvedLedger, starvedAtDeadline } from "./ci-starved";
 import { classifyChecks, cliError, GH_OK, isRecord, parseJson } from "./ci-wait-checks";
 import { commitChecksPoll, isNoPullRequest } from "./ci-wait-commit";
+import { bindPollToHead, bracketsHead, type PollOptions } from "./ci-wait-head-bind";
 import {
   EMPTY_SAME_HEAD_RERUN_STATE,
   type SameHeadRerun,
@@ -213,13 +214,17 @@ function checksArgv(forge: ForgeKind, prRef: string): string[] {
     : ["glab", "mr", "view", prRef, "--output", "json"];
 }
 
-async function pollOnce(forge: ForgeKind, prRef: string, cwd: string, commitSha?: string): Promise<Poll> {
+async function pollOnce(forge: ForgeKind, prRef: string, cwd: string, opts: PollOptions = {}): Promise<Poll> {
   try {
+    // US-001: a bound GitHub poll reads the head before its checks, and `bindPollToHead` reads it
+    // again after them when the poll carries none of its own.
+    const headBefore = bracketsHead(forge, opts) ? await readHeadSha(prRef, cwd, _ciWaitDeps.run) : undefined;
     const r = await _ciWaitDeps.run(checksArgv(forge, prRef), { cwd });
-    if (forge === "github" && commitSha !== undefined && isNoPullRequest(r)) {
-      return await commitChecksPoll(_ciWaitDeps.run, commitSha, cwd);
+    if (forge === "github" && opts.commitSha !== undefined && isNoPullRequest(r)) {
+      return await commitChecksPoll(_ciWaitDeps.run, opts.commitSha, cwd);
     }
-    return forge === "github" ? await githubWaiting(classifyGh(r), prRef, cwd) : classifyGlab(r);
+    const poll = forge === "github" ? await githubWaiting(classifyGh(r), prRef, cwd) : classifyGlab(r);
+    return await bindPollToHead({ poll, headBefore, prRef, cwd, run: _ciWaitDeps.run });
   } catch (err) {
     return { state: "error", detail: errorMessage(err) };
   }
@@ -470,8 +475,14 @@ export async function waitForChecks(
   try {
     for (;;) {
       if (opts.signal?.aborted) return end({ outcome: "pending", detail: "aborted" });
+      // US-001: a GitHub poll is bracketed by the head its checks were read for, so a verdict read
+      // across a head change is never accepted for the later head. Push mode passes the pushed
+      // commit instead, and takes no bracket.
       const poll = bindToHead(
-        await pollOnce(forge, prRef, opts.cwd, opts.commitChecks === true ? opts.expectedSha : undefined),
+        await pollOnce(forge, prRef, opts.cwd, {
+          ...(opts.commitChecks === true && opts.expectedSha !== undefined ? { commitSha: opts.expectedSha } : {}),
+          ...(opts.expectedSha === undefined ? {} : { bindSha: opts.expectedSha }),
+        }),
         opts.expectedSha,
       );
       history.note(poll);
@@ -521,7 +532,7 @@ export async function readChecksOnce(
   prRef: string,
   opts: { readonly cwd: string; readonly expectedSha: string },
 ): Promise<CiWaitResult> {
-  const poll = await pollOnce(forge, prRef, opts.cwd);
+  const poll = await pollOnce(forge, prRef, opts.cwd, { bindSha: opts.expectedSha });
   switch (poll.state) {
     case "error":
       return { outcome: "unavailable", detail: `CI status unavailable: ${poll.detail}` };

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ForgeRunResult } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import { _ciWaitDeps, waitForChecks } from "@/workflow/ci-wait";
+import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, waitForChecks } from "@/workflow/ci-wait";
 
 /**
  * US-002: a CI check whose job never got a runner is `starved`, not `failed`. The wait classifies
@@ -14,6 +14,13 @@ const original = { ..._ciWaitDeps };
 afterEach(() => Object.assign(_ciWaitDeps, original));
 
 const OPTS = { cwd: "/repo", timeoutMs: 100, pollMs: 30 };
+/**
+ * The head a bound poll must read its checks for, and the head the forge reports once the PR has
+ * moved (US-001). A bound GitHub poll reads the head before its checks and — for a failed poll,
+ * which carries no `sha` — once after them, ahead of `settlePoll`'s own mismatch read.
+ */
+const BOUND_HEAD = "aaaaaaaa5678";
+const MOVED_HEAD = "bbbbbbbb1234";
 const r = (stdout: string, exitCode = 0, stderr = ""): ForgeRunResult => ({ stdout, stderr, exitCode });
 
 interface Check {
@@ -315,22 +322,27 @@ describe("waitForChecks starved deadline", () => {
   });
 
   test("B3: a deadline poll for another head is unavailable, never a waiverable starved", async () => {
-    // The re-run happens at head a; the queued poll at the deadline reports head b.
+    // The re-run happens at head a; the queued poll at the deadline reports head b. The failed
+    // poll's three head reads (its pre-read, the post-read standing in for its absent `sha`, and
+    // `settlePoll`'s own mismatch read) all report the bound head, so its re-run still runs; the
+    // head moves on the second poll's own reads.
     const { rerunCalls, headReads } = wire({
       polls: [
         checks([cancelled("e2e", "1")]),
         checks([{ name: "e2e", bucket: "pending", state: "QUEUED", link: JOB_URL("1") }]),
       ],
-      heads: ["aaaaaaaa5678", "bbbbbbbb1234"],
+      heads: [BOUND_HEAD, BOUND_HEAD, BOUND_HEAD, MOVED_HEAD],
     });
     const out = await waitForChecks("github", "b", {
       ...DEADLINE,
       rerunStarved: true,
-      expectedSha: "aaaaaaaa5678",
+      expectedSha: BOUND_HEAD,
     });
     expect(out).toEqual({ outcome: "unavailable", detail: "checks report bbbbbbbb but HEAD is aaaaaaaa" });
     expect(rerunCalls).toEqual([rerunArgv("1")]);
-    expect(headReads()).toHaveLength(1);
+    // Three head-only reads for the failed poll's binding, plus the second poll's pre-read; the
+    // second poll's mergeability read reports the moved head too, and is not a head-only read.
+    expect(headReads()).toHaveLength(3 + 1);
   });
 });
 
@@ -361,6 +373,8 @@ describe("waitForChecks starved head binding", () => {
   test("M4: a failure kept from the error-poll limit is not bound to the head", async () => {
     // A failing poll is observed, then the forge goes unreadable until CI_ERROR_POLL_LIMIT. The
     // terminal is that earlier observation, not this poll's, so a moved head must not rewrite it.
+    // The failed poll's bracket is scripted at the bound head — its pre-read and the post-read
+    // standing in for its absent `sha` agree — and the head moves on the later unreadable polls.
     const { headReads } = wire({
       polls: [
         checks([
@@ -369,11 +383,14 @@ describe("waitForChecks starved head binding", () => {
         ]),
         r("", 1, "gh: rate limited"),
       ],
-      headRefOid: "bbbbbbbb1234",
+      heads: [BOUND_HEAD, BOUND_HEAD, MOVED_HEAD],
     });
-    const out = await waitForChecks("github", "b", { ...OPTS, expectedSha: "aaaaaaaa5678" });
+    const out = await waitForChecks("github", "b", { ...OPTS, expectedSha: BOUND_HEAD });
     expect(out.outcome).toBe("failed");
     expect(out.detail).toBe("CI failed: e2e; 1 still pending");
-    expect(headReads()).toEqual([]);
+    // The non-terminal failed poll makes exactly its bracket reads (pre, post) and no head-binding
+    // read of its own — its terminal is not this poll's verdict. Each later error poll still makes
+    // its normal pre-read before the checks are classified, so the run is not two reads long.
+    expect(headReads()).toHaveLength(2 + CI_ERROR_POLL_LIMIT);
   });
 });
