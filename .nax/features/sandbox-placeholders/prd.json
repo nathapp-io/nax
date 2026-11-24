@@ -3,7 +3,7 @@
   "feature": "sandbox-placeholders",
   "branchName": "feat/sandbox-placeholders",
   "createdAt": "2026-11-24T11:27:31.990Z",
-  "updatedAt": "2026-11-24T15:30:59.106Z",
+  "updatedAt": "2026-11-24T15:55:44.999Z",
   "userStories": [
     {
       "id": "US-001",
@@ -440,14 +440,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "An additive exclude-file updater reuses existing git-layout, hardened git and path-lock helpers with a small backend/preload seam change; it changes local ignore visibility, not permissions or session contracts, so failing behavior tests in one session suffice."
+        "reasoning": "An additive exclude-file updater reuses existing git-layout, hardened git and path-lock helpers with a small backend/preload seam change; it changes local ignore visibility, not permissions or session contracts, so failing behavior tests in one session suffice.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/policy-inputs.ts",
@@ -480,7 +483,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a7c8c2ebcbc95883fab74ef22c3fabd9fc13f5bc"
     },
     {
       "id": "US-008",
