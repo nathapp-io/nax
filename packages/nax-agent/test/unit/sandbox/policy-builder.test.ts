@@ -350,6 +350,75 @@ describe("buildSandboxPolicy", () => {
   });
 });
 
+/**
+ * US-005 — the deny for the Linux placeholder ledger directory.
+ *
+ * Pinned, not derived: `pinnedDenyWrite()` spells out the list the existing
+ * fixture produced BEFORE `placeholderLedgerDir` existed, in order, so an
+ * absent input that quietly adds an entry (or a deny that moves) fails here
+ * instead of passing as an unrecognised extra.
+ */
+function pinnedDenyWrite(): string[] {
+  const nax = join(root, ".nax");
+  return [
+    join(nax, "config.json"),
+    join(nax, "features"),
+    join(nax, "rules"),
+    join(nax, "cache"),
+    join(nax, "mono"),
+    join(nax, "context.md"),
+    join(nax, "hooks.json"),
+    join(nax, "plugins"),
+    join(nax, "templates"),
+    join(nax, "prompts"),
+    join(root, ".queue.txt"),
+    join(root, ".queue.txt.processing"),
+    join(root, ".git", "hooks"),
+    join(root, ".git", "config"),
+    join(root, ".git", "info"),
+    join(root, ".git", "config.worktree"),
+    join(root, ".claude", "settings.json"),
+    join(root, ".claude", "settings.local.json"),
+  ];
+}
+
+describe("US-005 — the placeholder ledger directory is denied", () => {
+  test("AC-4: with the optional input absent the fixture's denyWrite is exactly the pre-change list", () => {
+    expect(buildSandboxPolicy(input()).denyWrite).toEqual(pinnedDenyWrite());
+  });
+
+  test("AC-4 boundary: an explicit undefined placeholderLedgerDir adds no deny either", () => {
+    expect(buildSandboxPolicy(input({ placeholderLedgerDir: undefined })).denyWrite).toEqual(pinnedDenyWrite());
+  });
+
+  test("a present placeholderLedgerDir is denied immediately after the trust store", () => {
+    const trustStoreFile = join(home, ".nax", "trust.json");
+    const ledgerDir = join(home, ".nax", "sandbox", "placeholders");
+    const policy = buildSandboxPolicy(input({ trustStoreFile, placeholderLedgerDir: ledgerDir }));
+    const at = policy.denyWrite.indexOf(realOrRaw(trustStoreFile));
+    expect(at).toBeGreaterThan(-1);
+    expect(policy.denyWrite[at + 1]).toBe(realOrRaw(ledgerDir));
+  });
+
+  test("the ledger deny uses literal()'s realOrRaw spelling, like every other deny", () => {
+    // A symlinked ancestor: the deny must name the location a write lands in,
+    // because srt realpaths the paths that exist and the ledger directory does.
+    const real = join(base, "real-nax");
+    mkdirSync(real, { recursive: true });
+    const link = join(base, "link-nax");
+    symlinkSync(real, link);
+    const policy = buildSandboxPolicy(input({ placeholderLedgerDir: join(link, "sandbox", "placeholders") }));
+    expect(policy.denyWrite).toContain(join(real, "sandbox", "placeholders"));
+    expect(policy.denyWrite.some((p) => p.startsWith(link))).toBe(false);
+  });
+
+  test("a glob character in the ledger directory is refused, exactly like any other policy path", () => {
+    expect(() => buildSandboxPolicy(input({ placeholderLedgerDir: join(base, "led*gers") }))).toThrow(
+      expect.objectContaining({ code: "SANDBOX_POLICY_NOT_LITERAL" }),
+    );
+  });
+});
+
 describe("buildSandboxPolicy reads owned paths from the port (S3-2)", () => {
   test("nax's policy and a project-state dir give today's denies", () => {
     const policy = buildSandboxPolicy({ ...input(), naxEntries: [] });

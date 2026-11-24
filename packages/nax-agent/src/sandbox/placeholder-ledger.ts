@@ -361,3 +361,23 @@ export function _resetPlaceholderLedgerForTests(): void {
   ledger = undefined;
   initialised = false;
 }
+
+/**
+ * US-005 — the ledger directory a sandboxed command must not write, or
+ * `undefined` when this host keeps no ledger.
+ *
+ * Read per policy build, and read AFTER {@link placeholderLedger}, so the deny
+ * exists exactly when a ledger does: never on a host that is not Linux, and
+ * never when this process's directory, boot id or start ticks were unavailable
+ * (those readers disable the ledger; they do not throw out of here, because the
+ * ledger is created first and a disabled ledger is `undefined`).
+ *
+ * The ledger creates its 0700 directory as it is created, so by the time this
+ * answers, the path exists. It must be denied: a command that could write there
+ * could add or remove the entries the sweep trusts when it decides which
+ * placeholder to delete, and the user's own file is what that decision protects.
+ */
+export function placeholderLedgerDirForPolicy(): string | undefined {
+  if (placeholderLedger() === undefined) return undefined;
+  return _placeholderDeps.ledgerDir();
+}
