@@ -18,6 +18,13 @@ export interface NativeCompleteOptions {
   readonly model: SessionModel;
   readonly maxTokens?: number;
   readonly timeoutMs?: number;
+  /**
+   * US-002: the caller's cancellation. A signal already aborted on entry
+   * rejects with its own reason before any client work; an abort while the call
+   * is in flight — including while the client is built or the model resolved —
+   * cancels the request signal handed to `client.complete`.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface NativeCompleteContext {
@@ -45,6 +52,12 @@ export async function nativeComplete(
   options: NativeCompleteOptions,
   context: NativeCompleteContext,
 ): Promise<NativeCompleteResult> {
+  const callerSignal = options.signal;
+  // A caller that gave up before the call started rejects with ITS reason —
+  // before any client work, because building the client loads the whole
+  // catalog and a cancelled request must not pay for that.
+  if (callerSignal?.aborted === true) throw abortReason(callerSignal);
+
   // modelDef.provider is deliberately ignored. resolveModel() INFERS it from
   // the model name for string entries ("claude..." -> anthropic, else
   // "unknown"), so it is a guess rather than configuration — and routing a
@@ -52,20 +65,19 @@ export async function nativeComplete(
   // string is the only source of truth.
   const { provider, model, effort } = parseNativeModel(options.model.model);
   const thinking = toThinkingLevel(effort);
-  const client = await getNativeClient(context.catalogOverrides);
-  const resolved = await client.model(provider, model);
-
-  const controller = new AbortController();
-  const timer =
-    options.timeoutMs !== undefined ? _adapterDeps.setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
+  const cancellation = callCancellation(callerSignal);
 
   try {
+    const client = await getNativeClient(context.catalogOverrides);
+    const resolved = await client.model(provider, model);
+    cancellation.armTimeout(options.timeoutMs);
+
     const sessionId = nativeSessionId(context.sessionKey);
     const result = await client.complete(resolved, {
       messages: [{ role: "user", content: prompt }],
       ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
       sessionId,
-      signal: controller.signal,
+      signal: cancellation.signal,
       ...(thinking !== undefined ? { thinking } : {}),
     });
 
@@ -120,6 +132,52 @@ export async function nativeComplete(
     }
     throw err;
   } finally {
-    if (timer !== undefined) _adapterDeps.clearTimeout(timer);
+    cancellation.release();
   }
+}
+
+/** The error an abort surfaces: the caller's own reason, or an AbortError when it gave none. */
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+
+/**
+ * The cancellation lifecycle of one one-shot call (US-002): a single controller
+ * for the request signal, aborted by whichever of the caller's signal or the
+ * call's timeout fires first.
+ *
+ * Wired synchronously, before the first `await`, because `getNativeClient` can
+ * spend real time building the catalog. A listener registered after it would
+ * miss an abort that landed in that gap, and the signal handed to
+ * `client.complete` is this controller's either way — so an abort during the
+ * client build or the model lookup still reaches the request.
+ *
+ * `armTimeout` covers the request itself; `release` is the one teardown, called
+ * from the caller's `finally` so a rejection from `getNativeClient` or
+ * `client.model` also detaches the listener and clears the timer, leaving the
+ * caller's signal no reference to a call that already ended.
+ */
+function callCancellation(callerSignal: AbortSignal | undefined): {
+  readonly signal: AbortSignal;
+  armTimeout(timeoutMs: number | undefined): void;
+  release(): void;
+} {
+  const controller = new AbortController();
+  const onCallerAbort = (): void => controller.abort(callerSignal?.reason);
+  callerSignal?.addEventListener("abort", onCallerAbort);
+
+  // Typed `unknown` like the seam it comes from: the handle is opaque, and only
+  // `_adapterDeps.clearTimeout` may read it.
+  let timer: unknown;
+  return {
+    signal: controller.signal,
+    armTimeout(timeoutMs) {
+      if (timeoutMs !== undefined) timer = _adapterDeps.setTimeout(() => controller.abort(), timeoutMs);
+    },
+    release() {
+      if (timer !== undefined) _adapterDeps.clearTimeout(timer);
+      timer = undefined;
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    },
+  };
 }
