@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { type CredentialAuthConfig, configureCredentials } from "#src/infra/index";
 import { _clientDeps } from "#src/native/client";
+import { _srtBackendDeps } from "#src/sandbox/srt-backend";
 
 const isolatedGlobalDir = makeTempDir("nax-agent-test-global-");
 
@@ -57,3 +58,9 @@ _clientDeps.build = () => {
       "and cache it for the rest of the process. Mock it in your describe block and call _resetNativeClient() after.",
   );
 };
+
+// US-007: on Linux, a backend's first wrap appends the shell-startup names to
+// the cwd's `git/info/exclude`. Under test that cwd is the real checkout, so the
+// whole suite would edit this repository's exclude file. A no-op for every test
+// file; the US-007 tests put the real function back themselves.
+_srtBackendDeps.ensureExcludes = async () => {};

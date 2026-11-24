@@ -13,6 +13,7 @@ import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
+import { ensurePlaceholderExcludes } from "./placeholder-excludes.ts";
 import { type PlaceholderLedger, placeholderLedger } from "./placeholder-ledger.ts";
 import { candidatePaths } from "./placeholder-paths.ts";
 import { sweepStalePlaceholders } from "./placeholder-sweep.ts";
@@ -45,6 +46,12 @@ export const _srtBackendDeps = {
   platform: (): NodeJS.Platform => process.platform,
   mkdir,
   sweep: sweepStalePlaceholders,
+  /**
+   * US-007: hide the shell-startup placeholders srt holds from a repository's
+   * `git status`, once per initialize. Replaced with a no-op for the whole test
+   * suite by `test/preload.ts`, so no test writes its checkout's exclude file.
+   */
+  ensureExcludes: ensurePlaceholderExcludes,
   /**
    * US-003: the directory srt resolves its mandatory write-deny names against,
    * and therefore the directory bwrap creates placeholders in. Process cwd, NOT
@@ -112,6 +119,25 @@ function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
   };
 }
 
+/**
+ * One Linux start-up step, caught on its own: a failed sweep must not suppress
+ * the excludes (and the reverse), and neither may fail the wrap that triggered
+ * it — a command still runs with stale placeholders or an untracked `.bashrc`.
+ */
+async function linuxStep(message: string, step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    getSafeLogger()?.warn("sandbox", message, { error: errorMessage(error) });
+  }
+}
+
+/** US-004 and US-007: the placeholder work that only a Linux start-up does. */
+async function runLinuxStartupSteps(): Promise<void> {
+  await linuxStep("placeholder sweep initialization failed", () => _srtBackendDeps.sweep());
+  await linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(_srtBackendDeps.cwd()));
+}
+
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
@@ -120,13 +146,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
-      if (_srtBackendDeps.platform() === "linux") {
-        try {
-          await _srtBackendDeps.sweep();
-        } catch (error) {
-          getSafeLogger()?.warn("sandbox", "placeholder sweep initialization failed", { error: errorMessage(error) });
-        }
-      }
+      if (_srtBackendDeps.platform() === "linux") await runLinuxStartupSteps();
       await mod.SandboxManager.initialize({
         network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
         filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
