@@ -143,7 +143,10 @@ describe("selectPhases — explicit test files", () => {
   });
 
   test("a file under no phase directory is refused, naming the file", () => {
-    expect(() => selectPhases(["docs/x.test.ts"], PKG)).toThrow("docs/x.test.ts");
+    // The message names the file as `selectPhases` resolved it, so it carries the platform's
+    // separators: `docs\x.test.ts` on Windows, not `docs/x.test.ts`. `join` of the same
+    // segments is separator-native, so the assertion holds on either platform.
+    expect(() => selectPhases(["docs/x.test.ts"], PKG)).toThrow(join("docs", "x.test.ts"));
   });
 
   test("a basename beginning with two dots is a valid file, not a parent-directory escape", () => {
@@ -154,7 +157,12 @@ describe("selectPhases — explicit test files", () => {
   });
 
   test("an absolute path outside the package directory is still refused", () => {
-    expect(() => selectPhases(["/elsewhere/test/unit/a.test.ts"], PKG)).toThrow("/elsewhere/test/unit/a.test.ts");
+    // An absolute argument stays absolute on Windows, but drive-qualified and backslash-
+    // separated (`C:\elsewhere\test\unit\a.test.ts`), so the assertion names the
+    // separator-native tail of the resolved path rather than the POSIX spelling.
+    const named = join("elsewhere", "test", "unit", "a.test.ts");
+
+    expect(() => selectPhases(["/elsewhere/test/unit/a.test.ts"], PKG)).toThrow(named);
   });
 
   test("--e2e is ignored when explicit files are given", () => {

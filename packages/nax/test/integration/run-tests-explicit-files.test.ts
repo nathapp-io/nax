@@ -31,6 +31,13 @@ const SPAWN_TIMEOUT_MS = 120_000;
 /** The banner `runPhase` prints for each phase it starts. */
 const BANNER_PREFIX = "── ";
 
+/**
+ * A test file under no phase directory, as a separator-native relative path: the
+ * runner reports it resolved, so on Windows the output names `docs\x.test.ts`, and
+ * asserting on a literal `docs/x.test.ts` would match nothing there.
+ */
+const OUTSIDE_PHASE_TEST = join("docs", "x.test.ts");
+
 const UNIT_FIXTURE = `import { expect, test } from "bun:test";
 
 test("explicit unit fixture passes", () => {
@@ -97,7 +104,7 @@ function runExplicitE2e(dir: string): Promise<RunnerResult> {
 
 /** A test file under no phase directory, run from the fixture package. */
 function runOutsidePhases(dir: string): Promise<RunnerResult> {
-  return runRunner(dir, ["docs/x.test.ts"]);
+  return runRunner(dir, [OUTSIDE_PHASE_TEST]);
 }
 
 describe("run-tests — an explicit failing e2e file", () => {
@@ -136,7 +143,7 @@ describe("run-tests — a file under no phase directory", () => {
         const { exitCode, output } = await runOutsidePhases(dir);
 
         expect(exitCode).not.toBe(0);
-        expect(output).toContain("docs/x.test.ts");
+        expect(output).toContain(OUTSIDE_PHASE_TEST);
       });
     },
     SPAWN_TIMEOUT_MS,
