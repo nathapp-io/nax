@@ -42,6 +42,7 @@ import {
   openRequestError,
   rpcErrorOf,
 } from "#src/client/errors";
+import { hasInstructions } from "#src/client/instructions";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
 import { type OfferedChoices, offeredChoices } from "#src/client/offered-choices";
 import type { AcpProcessHooks, ResolvedAcpOptions } from "#src/client/options";
@@ -401,6 +402,10 @@ function initialDoc(o: Opening, record: CapabilityRecord, agentSessionId: string
       agent: o.options.agentName,
       ...(record.agentVersion === undefined ? {} : { agentVersion: record.agentVersion }),
       cwd: o.ctx.workdir,
+      // US-003: a session opened with instructions starts undelivered, so a first
+      // turn rejected before any prompt (an unsupported image) cannot pass for one
+      // that delivered them. Opened without instructions, the field stays absent.
+      ...(hasInstructions(o.ctx.instructions) ? { instructionsDelivered: false } : {}),
     },
     messages: [],
     savedAt: new Date().toISOString(),
