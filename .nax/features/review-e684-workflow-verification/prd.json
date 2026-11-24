@@ -1,0 +1,328 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-e684-workflow-verification",
+  "branchName": "feat/review-e684-workflow-verification",
+  "createdAt": "2026-11-24T05:46:42.317Z",
+  "updatedAt": "2026-11-24T05:46:42.317Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bind GitHub checks to the head read around the poll",
+      "description": "**Goal** — Prevent a GitHub checks verdict read across a PR head change from being accepted for the later head.\n\n**Motivation** — A scripted forge returned green checks for A and then reported B as the head; `readChecksOnce` and `waitForChecks` both accepted green for expected B.\n\n**Approach** — `pollOnce` (`packages/nax/src/workflow/ci-wait.ts`). Target: `pollOnce(forge, prRef, cwd, opts: { readonly commitSha?: string; readonly bindSha?: string })`. For GitHub with `bindSha` defined and `commitSha` undefined (push mode skips the bracket), it first calls `readHeadSha(prRef, cwd, _ciWaitDeps.run)` (`headBefore`), then runs the checks and `githubWaiting` as today. When the resulting poll is `green` or `failed` and `headBefore` is defined, it takes `headAfter` = the poll's `sha` when defined, otherwise one more `readHeadSha` call (a `failed` poll carries no `sha`, because `githubWaiting` returns it unchanged). A `failed` poll whose heads agree is returned with `sha: headAfter`, so `readChecksOnce`'s `verdictForHead` makes no further head read. When `headAfter` is defined and differs from `headBefore`, it returns `{ state: \"waiting\", summary: poll.summary, mismatch: \"the PR head moved from <headBefore[0..8]> to <headAfter[0..8]> while its checks were read\" }`. An unreadable `headBefore` or `headAfter` leaves the poll unchanged (the existing fail-open for an unreadable head). No pre-read happens for GitLab, in push mode, or without `bindSha`. `waitForChecks` passes `bindSha: opts.expectedSha` and `commitSha` as today; `readChecksOnce` passes `bindSha: opts.expectedSha`.\n\nRead-only integration: `packages/nax/src/workflow/ci-wait-starved.ts`: `readHeadSha(prRef, cwd, run): Promise<string | undefined>` — runs `gh pr view <ref> --json headRefOid`; `undefined` when unreadable. Keep `bindToHead`, `headMismatchDetail(reported, expected)`, `githubWaiting`, `classifyGh`, and `verdictForHead` behavior unchanged. Failure handling: the head pre-read failing or being unparseable leaves classification unchanged; movement makes a wait retry, and a deadline reached while still moved ends `unavailable` with the mismatch detail.\n\nFixture migration and TDD: modify `packages/nax/test/unit/workflow/ci-wait-sha.test.ts` and add the moving-head tests there. Its `wire(values)` stub answers every non-`checks` GitHub command from one sequence, so the new head pre-read (`gh pr view <ref> --json headRefOid`) consumes a value meant for the post-read, and its `polls()` counts shift. The invariant: the stub answers the pre-read with the same head as the following post-read unless the test is about a moving head, and the existing outcomes and sleeps hold. Modify `packages/nax/test/unit/workflow/ci-wait-starved.test.ts`: a bound GitHub poll now reads the head before the checks and, for a failed poll, once after them, ahead of `settlePoll`'s own mismatch read. Replace M4's obsolete no-head-read assertion (`expect(headReads()).toEqual([])`) with assertions that the initial non-terminal failed poll makes exactly its bracket reads and that a terminal failure synthesized from that earlier observation does not add a head-binding read. Script the failed poll's bracket at the expected SHA, then move the head on the later unreadable polls, preserving M4's existing `failed` outcome and detail. The pre-read occurs before checks classification, so each later error poll also contributes its normal pre-read; do not incorrectly assert that the entire multi-poll run has only two head reads or suppress error-poll pre-reads to fit an obsolete fixture. The `headReads()` length assertion in the stale-head re-run test and its `heads: [a, b]` sequence with `expectedSha: a` are extended so the pre-read and post-read report the same head and the test keeps its `unavailable` outcome after the re-run. Use separate head-only and mergeability sequences, captured forge argv and the fake clock for acceptance cases.\n\n**Scope** — In: private poll options, GitHub bracket logic, its two callers and affected CI fixtures. Out: native cancellation (US-002/003), scoped verification (US-004), runner routing (US-005), queue logging (US-006); push-mode brackets, GitLab changes, statusCheckRollup replacement and detecting an away-and-back head movement.\n\n**Interface** — `pollOnce(forge, prRef, cwd, opts: { readonly commitSha?: string; readonly bindSha?: string })`; read-only `readHeadSha(prRef, cwd, run): Promise<string | undefined>`. Public `waitForChecks` and `readChecksOnce` signatures stay unchanged.",
+      "acceptanceCriteria": [
+        "[unit] readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns outcome 'pending', not 'green', with all-pass checks, the headRefOid read reporting 'a' first and then 'b', and the mergeability read reporting 'b'.",
+        "[unit] waitForChecks('github', ref, { cwd, timeoutMs: 20, pollMs: 10, expectedSha: 'b' }) returns 'green' after two polls when all checks pass, the first poll's pre-read reports 'a', the second poll's pre-read reports 'b', and the mergeability read reports 'b' both times.",
+        "[unit] waitForChecks('github', ref, { cwd, timeoutMs: 20, pollMs: 10, expectedSha: 'b' }) returns 'unavailable' with a detail naming that the PR head moved when all checks pass, every pre-read reports 'a' and every mergeability read reports 'b'.",
+        "[unit] (control) readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns 'green' with all-pass checks and every head read reporting 'b'.",
+        "[unit] (control) readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns 'unavailable' with the existing 'checks report a but HEAD is b' detail shape when all checks pass and every head read reports 'a'.",
+        "[unit] (control) readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns 'green' with all-pass checks, a pre-read that exits non-zero and a mergeability read reporting 'b'.",
+        "[unit] (control) waitForChecks('github', ref, ...) without expectedSha never issues gh pr view <ref> --json headRefOid.",
+        "[unit] (control) waitForChecks('gitlab', ref, ...) with expectedSha never issues a gh command.",
+        "[unit] readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns 'pending', not 'failed', with failing checks, the pre-read reporting 'a' and every later headRefOid read reporting 'b'.",
+        "[unit] (control) waitForChecks('github', ref, { ..., expectedSha: 'b', commitChecks: true }) issues no gh pr view <ref> --json headRefOid before its first gh pr checks.",
+        "[unit] readChecksOnce('github', ref, { cwd, expectedSha: 'b' }) returns outcome 'green' when its head-only pre-read exits zero with unparseable stdout 'not-json', all checks pass and the mergeability read reports head 'b', preserving the existing fail-open classification."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "github",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded poll algorithm change with two internal callers and two existing fixture updates; deterministic forge/clock seams cover the head-movement race without a new abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/workflow/ci-wait-starved.ts",
+        "packages/nax/test/unit/workflow/ci-wait-sha.test.ts",
+        "packages/nax/test/unit/workflow/ci-wait-starved.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/ci-wait-sha.test.ts",
+          "reason": "its `wire(values)` stub answers every non-`checks` GitHub command from one sequence, so the new head pre-read (`gh pr view <ref> --json headRefOid`) consumes a value meant for the post-read, and its `polls()` counts shift. The invariant: the stub answers the pre-read with the same head as the following post-read unless the test is about a moving head, and the existing outcomes and sleeps hold. The US-001 moving-head tests are added to this file."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/ci-wait-starved.test.ts",
+          "reason": "a bound GitHub poll now reads the head before the checks and, for a failed poll, once after them, ahead of `settlePoll`'s own mismatch read. The M4 assertion that a non-terminal failed poll reads no head (`expect(headReads()).toEqual([])`) is intentionally replaced by: it makes exactly the bracket reads. The `headReads()` length assertion in the stale-head re-run test and its `heads: [a, b]` sequence with `expectedSha: a` are extended so the pre-read and post-read report the same head and the test keeps its `unavailable` outcome after the re-run."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Honor caller cancellation in nativeComplete",
+      "description": "**Goal** — Allow a native one-shot request to abort on its caller's signal as well as its own timeout, including cancellation during initialization.\n\n**Motivation** — `NativeAgentAdapter.complete` (`packages/nax/src/agents/native-agent/index.ts`) forwards only `timeoutMs`, and `nativeComplete` (`packages/nax-agent/src/native/complete.ts`) accepts no signal.\n\n**Approach** — `nativeComplete` and `NativeCompleteOptions` (`packages/nax-agent/src/native/complete.ts`). Target: options gain `readonly signal?: AbortSignal`. A signal already aborted on entry throws its `reason` (or an `AbortError` `DOMException` when it has none) before `getNativeClient` is called. The internal `AbortController` is created, and the `abort` listener on the caller's signal registered, before the first await (`getNativeClient`), so an abort that lands during `getNativeClient` or `client.model` still aborts the request signal handed to `client.complete`. The request signal aborts on either the timer or the caller. The `try`/`finally` is widened to start right after registration, so the listener is removed (and the timer cleared) on every exit, including a rejection from `getNativeClient` or `client.model`.\n\nTDD: extend `packages/nax-agent/test/unit/native/complete.test.ts` with the US-002 caller-signal cases; no existing assertion changes. Use its captured-call client stub (`seen`), `_clientDeps.build` / `_resetNativeClient`, and `_adapterDeps` timer fakes. Use controlled pending promises to abort while complete/model work is in flight and a listener-removal spy for rejection cleanup. Preserve pricing, usage, protocol-fault handling and session affinity. Maintain Node-compatible source and existing public named exports; no new export name is needed for the additive options field.\n\n**Scope** — In: package-owned nativeComplete options, per-call cancellation lifecycle and existing native completion tests. Out: callOp dispatch guards and NativeAgentAdapter forwarding (US-003), CI binding (US-001), scoped verification (US-004), runner routing (US-005), queue logging (US-006); no session, authentication or permission changes.\n\n**Interface** — `NativeCompleteOptions` gains `readonly signal?: AbortSignal`; `nativeComplete` keeps its existing prompt/options/context parameters and NativeCompleteResult return contract. This additive field is consumed by US-003, whose adapter test must observe the request signal rather than merely capture intermediate options.",
+      "acceptanceCriteria": [
+        "[unit] nativeComplete called with a signal already aborted rejects with that signal's reason.",
+        "[unit] nativeComplete called with a signal already aborted never calls the stubbed nax-ai client's complete.",
+        "[unit] When the caller's signal aborts while the stubbed client.complete is pending, then the request signal client.complete received is aborted.",
+        "[unit] When the caller's signal aborts while the stubbed client.model lookup is pending, then the request signal the later client.complete call receives is already aborted.",
+        "[unit] (control) When a caller signal never aborts and timeoutMs is set, then firing the armed timer still aborts the request signal.",
+        "[unit] (control) After a nativeComplete call with a caller signal resolves, aborting that signal does not throw.",
+        "[unit] (control) After a nativeComplete call with a caller signal resolves and that signal subsequently aborts, the next call's request signal is not aborted.",
+        "[unit] When the stubbed client.model rejects while the caller's signal is live, then nativeComplete rejects with that error.",
+        "[unit] When the stubbed client.model rejects while the caller's signal is live, then nativeComplete removes its abort listener from the caller's signal, observed through a spied removeEventListener."
+      ],
+      "tags": [
+        "native",
+        "cancellation",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One source module and its tests, with standard AbortController/listener cleanup across asynchronous initialization; additive optional API and no new integration."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/complete.ts",
+        "packages/nax-agent/src/native/client.ts",
+        "packages/nax-agent/src/native/adapter-deps.ts",
+        "packages/nax-agent/test/unit/native/complete.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the caller aborts while getNativeClient is pending, the later client.complete request receives an already-aborted signal.",
+        "When getNativeClient rejects after a caller listener and timeout were registered, nativeComplete removes the listener and clears the timer before rejecting with the initialization error."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/native/complete.test.ts",
+          "reason": "the US-002 caller-signal tests are added here; no existing assertion changes."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Reject canceled complete operations and forward their signal",
+      "description": "**Goal** — Wire the resolved run signal into complete operations, reject canceled results before parsing, and keep CALL_OP_ABORTED errors out of retry policy.\n\n**Motivation** — Nothing checks `abortSignal.aborted` before dispatch or after it returns, so an aborted run still dispatched the ruling-read operation and returned its parsed result.\n\n**Approach** — `dispatchCompleteOp` and `buildCompleteOptions` (`packages/nax/src/operations/call-dispatch-complete.ts`). Target: `buildCompleteOptions` sets `signal: prologue.abortSignal`. At the top of each retry-loop iteration, before the `try`, an aborted `abortSignal` calls `throwAborted(op, ctx.storyId, \"aborted before dispatch\")`. Inside the `try`, after `completeAsWithFallback` resolves and `recordDispatchOutcome` runs, an aborted `abortSignal` calls `throwAborted(op, ctx.storyId, \"aborted during dispatch\")` before the zero-dispatch guard and before `op.parse`. The `catch` rethrows a `NaxError` whose code is `CALL_OP_ABORTED` unchanged, without consulting `decideCompleteRetry`. The post-dispatch check is the guarantee that an aborted run's result is never parsed; `completeWithFallback` itself is not changed.\n\n`NativeAgentAdapter.complete` (`packages/nax/src/agents/native-agent/index.ts`). Target: forwards `options.signal` into `nativeComplete`'s options when defined.\n\nRead-only integration: `packages/nax/src/operations/call-dispatch-prologue.ts`: `throwAborted(op, storyId, message)` → `NaxError` code `CALL_OP_ABORTED`; the prologue's `abortSignal = ctx.signal ?? ctx.runtime.signal`. `packages/nax/src/agents/types.ts`: `CompleteOptions.signal?: AbortSignal`. US-002 adds `signal` to the exported `nativeComplete` options; US-003's `NativeAgentAdapter.complete` passes it. US-003's AC drives `NativeAgentAdapter.complete` with a stubbed nax-ai client and asserts the request signal aborts when the caller's signal aborts, so an adapter that does not forward it fails.\n\nTDD and fixture migration: create `packages/nax/test/unit/operations/call-complete-abort.test.ts` for callOp cancellation cases, mirroring the fake `agentManager.completeAsWithFallback` and complete-kind op fixtures in `call.test.ts`; `call.test.ts` is already over the 650-line split threshold. Modify `packages/nax/test/unit/operations/call-branches.test.ts`: the test \"throws CALL_OP_ABORTED (before retry) when the signal is already aborted at the retry decision\" passes `signal: AbortSignal.abort()` and formerly expects `completeAsWithFallback` to be called once and the message to contain `aborted before retry`. With the pre-dispatch check the call is never made. The invariant becomes: code `CALL_OP_ABORTED`, message containing `aborted before dispatch`, and `callCount` 0. The test that aborts inside the retry sleep keeps its expectations. Add the adapter forwarding assertion to `packages/nax/test/unit/agents/native-agent/index.test.ts` using its `_clientDeps.build` stub; no existing adapter assertion changes.\n\n**Scope** — In: complete-options signal wiring, pre/post dispatch cancellation guards, abort-error retry bypass, adapter forwarding and their tests. Out: nativeComplete lifecycle implementation (US-002), CI binding (US-001), scoped verification (US-004), runner routing (US-005), queue logging (US-006). The ACP one-shot path already forwards `CompleteOptions.signal` into its turn loop (`packages/nax/src/agents/acp/complete.ts`); this story newly supplies the signal, so ACP one-shots start honouring run cancellation, and its ACP handling is not otherwise changed. `AgentManager.completeWithFallback` is not changed; with an aborted signal it may still finish a hop, retry or swap before returning, and `callOp`'s post-dispatch check then refuses the result.\n\n**Interface** — Use existing `CompleteOptions.signal?: AbortSignal` and `throwAborted(op, storyId, message)`; wire `signal: prologue.abortSignal` and conditionally forward `options.signal` to the NativeCompleteOptions provided by US-002. Existing public callOp and adapter signatures stay unchanged.",
+      "acceptanceCriteria": [
+        "[unit] callOp on a complete-kind op with ctx.signal already aborted rejects with a NaxError coded CALL_OP_ABORTED whose message contains 'aborted before dispatch'.",
+        "[unit] callOp on a complete-kind op with ctx.signal already aborted never calls the fake agentManager.completeAsWithFallback.",
+        "[unit] callOp on a complete-kind op whose fake completeAsWithFallback aborts the run's controller and then resolves with a dispatched result rejects with a NaxError coded CALL_OP_ABORTED whose message contains 'aborted during dispatch'.",
+        "[unit] When completeAsWithFallback aborts the run's controller and resolves with a dispatched result, then the complete-kind op's parse is never called.",
+        "[unit] When completeAsWithFallback aborts the run's controller and resolves with a dispatched result, an always-retry strategy is configured and the op's parse would throw on that output, then the strategy's shouldRetry is never called.",
+        "[unit] The options the fake completeAsWithFallback receives from callOp carry signal equal to the run's signal: ctx.signal, or ctx.runtime.signal when ctx.signal is unset.",
+        "[unit] (control) callOp on a complete-kind op with a signal that never aborts returns the op's parsed result.",
+        "[unit] NativeAgentAdapter.complete with an options.signal that aborts while the stubbed nax-ai client's complete (via _clientDeps.build) is pending makes the request signal that client received aborted."
+      ],
+      "tags": [
+        "operations",
+        "native",
+        "cancellation",
+        "regression"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two small source edits reuse the existing abort helper, retry loop, CompleteOptions.signal and adapter delegation after US-002; deterministic manager/client seams make ordinary TDD sufficient without new orchestration or session behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/call-dispatch-complete.ts",
+        "packages/nax/src/operations/call-dispatch-prologue.ts",
+        "packages/nax/src/agents/native-agent/index.ts",
+        "packages/nax/test/unit/operations/call.test.ts",
+        "packages/nax/test/unit/agents/native-agent/index.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/operations/call-complete-abort.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/call-branches.test.ts",
+          "reason": "the test \"throws CALL_OP_ABORTED (before retry) when the signal is already aborted at the retry decision\" passes `signal: AbortSignal.abort()` and expects `completeAsWithFallback` to be called once and the message to contain `aborted before retry`. With the pre-dispatch check the call is never made. The invariant becomes: code `CALL_OP_ABORTED`, message containing `aborted before dispatch`, and `callCount` 0. The test that aborts inside the retry sleep keeps its expectations."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/native-agent/index.test.ts",
+          "reason": "The adapter signal-forwarding test is added here; no existing assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Preserve the orchestrator package filter in scoped verification",
+      "description": "**Goal** — Make verify-scoped execute the same promoted package-scoped orchestrator command as the shared quality resolver.\n\n**Motivation** — The story gate runs every package's tests, so an unrelated package's failure can block the story.\n\n**Approach** — `promoteOrchestratorCommand` (new export, `packages/nax/src/quality/command-resolver.ts`) and `resolveQualityTestCommands`. Target: the existing `{{package}}` resolution plus orchestrator promotion inside `resolveQualityTestCommands` moves into `promoteOrchestratorCommand(testCommand: QualityCommandSpec | undefined, scopedTemplate: QualityCommandSpec | undefined, workdir: string, storyWorkdir: string | undefined): Promise<{ readonly testCommand; readonly testScopedTemplate }>`, which `resolveQualityTestCommands` calls. `resolveQualityTestCommands`'s results are unchanged.\n\n`verifyScopedOp.execute` (`packages/nax/src/operations/verify-scoped.ts`). Target: when `baseCommand` came from config (not detected from the package), it is replaced by `(await promoteOrchestratorCommand(baseCommand, quality.quality?.commands?.testScoped, input.workdir, input.packagePrefix)).testCommand` before `selectScopedTests`, and the promoted value is the `testCommand` and `fallbackFullSuiteCommand` passed there. A non-orchestrator command, a missing template, or an undefined `packagePrefix` leaves `baseCommand` unchanged. The `testScopedTemplate` passed to `selectScopedTests` is unchanged.\n\nRead-only integration: `packages/nax/src/test-runners/orchestrator-command.ts`: `isMonorepoOrchestratorCommand(command)`. `packages/nax/src/test-runners/scoped-selection.ts`: `selectScopedTests` returns `input.testCommand` for an orchestrator command. Preserve command-spec string/list handling, shellQuoteArg package substitution and `_commandResolverDeps.readPackageName`; no package.json name means the template is not used and the raw command runs, as `resolveQualityTestCommands` does today. Preserve review/quality precedence and all resolver metadata and existing command cwd/provenance behavior.\n\nTDD: create `packages/nax/test/unit/operations/verify-scoped-orchestrator.test.ts` for orchestrator promotion tests; `verify-scoped.test.ts` is already over the 650-line split threshold. Reuse its deps.regression capture and context patterns. Drive execute with a package directory whose package.json name is @nathapp/nax, configured test `npx turbo test`, testScoped `npx turbo test --filter={{package}}`, and packagePrefix `packages/nax`. Capture both selectScopedTests input and regression command, and retain the real shared resolver for the coversFullSuite comparison so the test proves the connection rather than a tautological mocked result. Existing resolver results and non-orchestrator verify-scoped tests must remain unchanged.\n\n**Scope** — In: extraction of substitution/promotion, configured-command promotion before scoped selection and its tests. Out: CI binding (US-001), native/callOp cancellation (US-002/003), runner routing (US-005), queue logging (US-006). Run-end and review gates keep their existing command resolution; only `verify-scoped` changes. Do not promote commands detected from the package.\n\n**Interface** — Concretize the spec's return-field shorthand as `promoteOrchestratorCommand(testCommand: QualityCommandSpec | undefined, scopedTemplate: QualityCommandSpec | undefined, workdir: string, storyWorkdir: string | undefined): Promise<{ readonly testCommand: QualityCommandSpec | undefined; readonly testScopedTemplate: QualityCommandSpec | undefined }>`. `workdir` is the absolute package directory used for package.json lookup; `storyWorkdir` is the relative package key, supplied as input.packagePrefix by verifyScopedOp, not the lookup directory. Existing resolveQualityTestCommands and verifyScopedOp input/output contracts are unchanged.",
+      "acceptanceCriteria": [
+        "[unit] Given a package named @nathapp/nax, quality.commands.test 'npx turbo test', quality.commands.testScoped 'npx turbo test --filter={{package}}', and packagePrefix 'packages/nax', verifyScopedOp.execute passes \"npx turbo test --filter='@nathapp/nax'\" as command to regression.",
+        "[unit] Given a package named @nathapp/nax, quality.commands.test 'npx turbo test', quality.commands.testScoped 'npx turbo test --filter={{package}}', and packagePrefix 'packages/nax', verifyScopedOp.execute passes \"npx turbo test --filter='@nathapp/nax'\" as testCommand to selectScopedTests.",
+        "[unit] Given the @nathapp/nax Turbo setup with testScoped 'npx turbo test --filter={{package}}' and packagePrefix 'packages/nax', verifyScopedOp.execute returns coversFullSuite true when regression passes.",
+        "[unit] (control) Given the @nathapp/nax Turbo setup with testScoped unset, verifyScopedOp.execute passes 'npx turbo test' to regression.",
+        "[unit] (control) When quality.commands.test is 'bun test' (not an orchestrator), verifyScopedOp.execute passes the command selectScopedTests chose to regression, as today.",
+        "[unit] (control) Given the Turbo setup with no package.json name in the package directory, verifyScopedOp.execute passes 'npx turbo test' to regression.",
+        "[unit] (control) Given a package named @nathapp/nax, test 'npx turbo test', testScoped 'npx turbo test --filter={{package}}' and storyWorkdir 'packages/nax', resolveQualityTestCommands returns testCommand \"npx turbo test --filter='@nathapp/nax'\" and testScopedTemplate undefined."
+      ],
+      "tags": [
+        "verification",
+        "monorepo",
+        "quality",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two source modules share an extracted existing resolver algorithm; the new behavior is confined to configured verify-scoped commands and uses established dependency seams."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/verify-scoped.ts",
+        "packages/nax/src/quality/command-resolver.ts",
+        "packages/nax/src/test-runners/scoped-selection.ts",
+        "packages/nax/test/unit/operations/verify-scoped.test.ts",
+        "packages/nax/test/unit/quality/command-resolver.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/operations/verify-scoped-orchestrator.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When packagePrefix is undefined, verifyScopedOp.execute passes the unpromoted configured 'npx turbo test' to selectScopedTests.",
+        "When the base test command is detected from the package rather than configured, verifyScopedOp.execute passes the detected command unchanged to selectScopedTests even if a scoped orchestrator template exists."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Route explicit nax test files to their own phases",
+      "description": "**Goal** — Make the nax test runner execute only explicitly named test files within their proper phases and reject files outside all phases before running anything.\n\n**Motivation** — It ran unit, integration and UI and exited 0 while the named fixture failed; `test:e2e` exited 1 on the same fixture.\n\n**Approach** — `selectPhases` and `phaseArgs` (`packages/nax/scripts/run-tests-phases.ts`), and the call in `packages/nax/scripts/run-tests.ts`. Target: `Phase` gains `readonly files?: readonly string[]`. `selectPhases(args: readonly string[], packageDir: string = process.cwd())`: an explicit file is an argument that does not start with `-` and ends in `.test.ts` or `.test.tsx`; it is resolved against `packageDir`. Every other argument is ignored, as today. With no explicit file the result is today's (`[E2E_PHASE]` for `--e2e`, else `SUITE_PHASES`). With explicit files, `--e2e` is ignored and each file is routed to the phase (`unit`, `integration`, `ui`, `e2e`, in that order) whose `dir` under `packageDir` contains it; the result is those phases, in `SUITE_PHASES` then `E2E_PHASE` order, each carrying its `files` and its own timeouts. An explicit file under no phase directory throws `Error(\"[run-tests] <file> is not under test/unit/, test/integration/, test/ui/ or test/e2e/\")`. `phaseArgs` passes `phase.files ?? [phase.dir]`. In `run-tests.ts` the `selectPhases(process.argv.slice(2), process.cwd())` call moves into `main()`, so a routing error goes through the existing `main().catch` fatal path and exits non-zero before any phase runs.\n\nRead-only integration: `packages/repo-tooling/scripts/run-workspace-tests.ts`: `workspaceTestCommands` already passes explicit files as absolute paths to `bun run --filter ./packages/<pkg> test <files>`. Unchanged. Preserve the nax runner's existing timeout, worker, bail, output-controller and process-group reaping behavior. Explicit selection is per phase, with all selected files in that phase; it does not create a new phase/process per individual file.\n\nTDD: add unit ACs to `packages/nax/test/unit/scripts/run-tests-phases.test.ts`; existing selectPhases/phaseArgs assertions keep passing unchanged. Create `packages/nax/test/integration/run-tests-explicit-files.test.ts` for spawned-runner cases, with a per-test timeout long enough for a spawned `bun test`. Run the actual script by absolute path with cwd a temporary package containing a passing test/unit/ok.test.ts and failing test/e2e/fail.test.ts, and an explicit environment leaving AGENT unset so phase banners are observable. A failing fixture must propagate its non-zero exit; docs/x.test.ts must fail routing before any banner. Temporary fixtures are generated inside the temporary directory and cleaned up, not committed as intentionally failing repository test files.\n\n**Scope** — In: phase file routing, phase argument assembly, in-main selection, unit and spawned integration assertions. Out: CI binding (US-001), cancellation (US-002/003), scoped quality promotion (US-004), queue logging (US-006); `packages/repo-tooling/scripts/run-workspace-tests.ts` routing and other packages' test scripts. Arguments that are neither flags nor `.test.ts` / `.test.tsx` files keep being ignored; nonexistent files under a phase are passed to bun test and keep its exit code; explicit files retain phase timeouts and worker settings, with no per-file timeout.\n\n**Interface** — `readonly files?: readonly string[]` on `Phase`; `selectPhases(args: readonly string[], packageDir: string = process.cwd())`; existing `phaseArgs(phase: Phase, opts: { readonly bail: boolean; readonly workers: number }): string[]` emits selected files instead of phase.dir when files are present.",
+      "acceptanceCriteria": [
+        "[unit] selectPhases(['test/e2e/a.test.ts'], pkg) returns one phase named 'e2e' whose files hold the absolute path of test/e2e/a.test.ts under pkg, with E2E_PHASE's testTimeoutMs and phaseTimeoutMs.",
+        "[unit] selectPhases with one unit file and one integration file under pkg returns phases 'unit' then 'integration', each with only its own file.",
+        "[unit] selectPhases(['docs/x.test.ts'], pkg) throws an error whose message names docs/x.test.ts.",
+        "[unit] selectPhases(['test/unit/a.test.ts', '--e2e'], pkg) returns only the 'unit' phase carrying that file.",
+        "[unit] phaseArgs for a phase carrying files passes those files instead of the phase directory.",
+        "[unit] (control) selectPhases(['--bail'], pkg) equals SUITE_PHASES.",
+        "[unit] (control) selectPhases(['--e2e'], pkg) equals [E2E_PHASE].",
+        "[unit] (control) selectPhases(['parser'], pkg), a bare name filter, equals SUITE_PHASES.",
+        "[integration] Spawning bun <nax>/scripts/run-tests.ts test/e2e/fail.test.ts with an explicit env leaving AGENT unset and cwd a temporary package holding passing test/unit/ok.test.ts and failing test/e2e/fail.test.ts exits with a non-zero code.",
+        "[integration] In the explicit failing-e2e-file spawned case with AGENT unset and the passing unit sibling fixture, the runner's output names the failing test.",
+        "[integration] In the explicit failing-e2e-file spawned case, the runner prints the e2e phase banner '── e2e ('.",
+        "[integration] In the explicit failing-e2e-file spawned case, the runner prints no unit phase banner '── unit (', so only the e2e phase ran.",
+        "[integration] Spawning the runner in that temporary directory with docs/x.test.ts exits non-zero.",
+        "[integration] Spawning the runner in that temporary directory with docs/x.test.ts produces output naming docs/x.test.ts.",
+        "[integration] Spawning the runner in that temporary directory with docs/x.test.ts prints no phase banner '── ', so no phase ran."
+      ],
+      "tags": [
+        "test-runner",
+        "cli",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two script changes plus deterministic routing tests and spawned-runner tests; selection changes while existing subprocess lifecycle and phase policies remain intact."
+      },
+      "contextFiles": [
+        "packages/nax/scripts/run-tests-phases.ts",
+        "packages/nax/scripts/run-tests.ts",
+        "packages/nax/test/unit/scripts/run-tests-phases.test.ts",
+        "packages/repo-tooling/scripts/run-workspace-tests.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/run-tests-explicit-files.test.ts"
+      ],
+      "suggestedCriteria": [
+        "selectPhases with an absolute test/ui/view.test.tsx path returns only the ui phase carrying that absolute path.",
+        "selectPhases rejects a file under test/unit-other/ with the outside-phase routing error rather than treating it as a unit file.",
+        "selectPhases with explicit files from all four phase directories returns unit, integration, ui, e2e in that order regardless of argument order."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/scripts/run-tests-phases.test.ts",
+          "reason": "The US-005 selectPhases / phaseArgs unit tests are added here; the existing `selectPhases` / `phaseArgs` assertions keep passing unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Log queue guidance when discarding claimed lines",
+      "description": "**Goal** — Make discarded queue guidance visible through a structured warning on both fresh and recovered claims without delivering it.\n\n**Motivation** — `parseQueueFile` returns `{ commands, guidance }`, but `claimCommandsLocked` (`packages/nax/src/execution/queue-handler.ts`) returns only `commands` and the file is then removed, so guidance disappears without a trace.\n\n**Approach** — `claimCommandsLocked` (`packages/nax/src/execution/queue-handler.ts`). Target: on both the recovered `.processing` path and the freshly claimed path, when the parsed `guidance` is non-empty it logs `logger?.warn(\"queue\", \"Queue guidance is not delivered; discarded\", { lines: guidance })` before returning the commands. `parseQueueFile` also files malformed commands (for example a bare `SKIP` with no story id) under `guidance`, so those lines are named in the same warning. Commands are unchanged.\n\nRead-only integration: `packages/nax/src/queue/manager.ts`: `parseQueueFile(content): QueueFileResult` (`{ commands, guidance }`). Unchanged. Keep the claim inside the existing queue lock and reuse the logger passed to claimCommandsLocked so the production processQueueFile path and readQueueFile path both observe the warning. Preserve rename, recovery, command return values and clear/process semantics.\n\nTDD: extend `packages/nax/test/unit/execution/queue-handler.test.ts`, reusing its `initLogger({ level: \"silent\", filePath })` capture and flush-before-reading warn helper; no existing assertion changes. Assert fresh pending text, recovered processing text, malformed bare SKIP, and absence of guidance warnings for well-formed commands. No new test file or guidance delivery abstraction is needed.\n\n**Scope** — In: warning on claim for nonempty parser guidance, fresh/recovered command behavior and existing handler tests. Out: CI binding (US-001), cancellation (US-002/003), scoped verification (US-004), runner routing (US-005); delivering guidance to agents or changing parser semantics. Correcting `docs/architecture/subsystems.md` section 31 is the manual edit made with the spec; no story edits it.\n\n**Interface** — Existing `parseQueueFile(content): QueueFileResult` (`{ commands, guidance }`) is unchanged. Warning contract: `logger?.warn(\"queue\", \"Queue guidance is not delivered; discarded\", { lines: guidance })`; claimCommandsLocked and its public queue-handler callers keep returning commands only.",
+      "acceptanceCriteria": [
+        "[unit] readQueueFile on a .queue.txt holding PAUSE, --- PENDING --- and 'focus on the parser' returns the PAUSE command.",
+        "[unit] readQueueFile on a .queue.txt holding PAUSE, --- PENDING --- and 'focus on the parser' logs a queue warning with message 'Queue guidance is not delivered; discarded' whose lines hold 'focus on the parser', captured through initLogger({ filePath }) and the warn lines of that file.",
+        "[unit] readQueueFile with the same guidance in a leftover .queue.txt.processing logs the same queue warning with message 'Queue guidance is not delivered; discarded' and lines holding 'focus on the parser'.",
+        "[unit] readQueueFile on a .queue.txt holding a bare SKIP line logs a queue warning with message 'Queue guidance is not delivered; discarded' whose lines hold 'SKIP'.",
+        "[unit] (control) readQueueFile on a queue file with only well-formed commands logs no queue warning about guidance."
+      ],
+      "tags": [
+        "queue",
+        "logging",
+        "regression"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One handler source change adds the same warning at two existing claim paths using parsed data and an existing logger; tests reuse the established JSONL capture."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/queue-handler.ts",
+        "packages/nax/src/queue/manager.ts",
+        "packages/nax/test/unit/execution/queue-handler.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/queue-handler.test.ts",
+          "reason": "The US-006 queue guidance tests are added here, reusing its `initLogger({ level: \"silent\", filePath })` capture; no existing assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Existing-code bug-fix feature, not a new subsystem. Discovery used direct reads and targeted text search because codebase-memory MCP tools are unavailable in this host. The six binding stories retain their specified workdirs; only US-003 depends on US-002. No application schema, stored-data migration, new dependency, release/version bump, or user configuration migration is needed. Read docs/architecture/ARCHITECTURE.md:14 for the architecture index and dependency-injection/error patterns, and docs/architecture/ARCHITECTURE.md:163 for the reference limits. Keep external calls behind the existing dependency seams, restore seam mutations in tests, and use package-local targeted test commands rather than bare bun test. nax is Bun-native; shipped nax-agent remains Node-compatible with #src/ aliases and file extensions on relative source imports. New tests must demonstrate their non-control regressions against the baseline before implementation; control criteria pin existing behavior. No validation commands were executed while drafting this PRD.\n\nUS-001 / CI binding: packages/nax/src/workflow/ci-wait.ts:216 currently reads checks before githubWaiting; githubWaiting at :190 only enriches waiting/green polls with mergeability and headRefOid, returning failed polls untouched. bindToHead at :297 compares a supplied poll SHA, so it cannot detect checks read for A later stamped B. waitForChecks at :423 and readChecksOnce at :519 are the two callers of the private pollOnce and must pass the new options object. verdictForHead at :543 otherwise reads the head again when a failed poll lacks sha; stable bracketed failures must carry their post-read SHA to avoid this extra read. Reuse readHeadSha from packages/nax/src/workflow/ci-wait-starved.ts:31, whose malformed/nonzero/throw paths already return undefined, and preserve headMismatchDetail at :26. deadlineVerdict already prioritizes poll.mismatch, so a moving head can use the existing unavailable-at-deadline behavior. Checks bucket classification, GitLab pipeline SHA handling, commitChecks push fallback, starved classification and same-head re-run policies remain unchanged. CI consumers include packages/nax/src/workflow/finalize.ts:439, packages/nax/src/cli/workflow-promote.ts:181, packages/nax/src/bot/fix-report.ts:164 and packages/nax/src/bot/gate-baseline.ts:30; their public call signatures need no changes. Main risk is changing the sequence/count of forge calls, not changing the public result vocabulary. packages/nax/test/unit/workflow/ci-wait-sha.test.ts:9 currently consumes a single sequence for all non-checks calls; distinguish head-only and mergeability reads and keep existing logical poll/sleep outcomes. packages/nax/test/unit/workflow/ci-wait-starved.test.ts:102 has scripted heads and call capture; the stale-head re-run fixture at :317 and M4 fixture at :360 require explicit accommodation for bracket reads. Align head sequences with the intended semantic scenario rather than retaining old read-count assumptions; do not weaken the binding algorithm to satisfy an obsolete fake. Test moving green and red heads with independent scripted read sequences and a virtual clock.\n\nUS-002 / native cancellation: packages/nax-agent/src/native/complete.ts:17 exports NativeCompleteOptions without signal; nativeComplete at :43 awaits client construction and model lookup before it creates its AbortController and timer. Consequently caller cancellation during either await is currently lost, and the finally cleanup covers only client.complete and downstream processing. Add the optional caller signal, reject a pre-aborted call before getNativeClient, register the forwarding listener before any await, and widen cleanup to cover initialization failures too. Preserve existing pricing, session affinity, token usage and protocol-failure mapping. packages/nax-agent/src/native/client.ts:118 exposes _clientDeps.build; use it with deferred client/model promises rather than contacting a provider. packages/nax-agent/test/unit/native/complete.test.ts:35 has the captured-request fakeClient; :53 has deterministic timer fakes and :16 restores/reset seams. Extend that file without changing existing assertions. NativeCompleteOptions and nativeComplete are already named public exports at packages/nax-agent/src/index.ts:183 and :188 and re-exported from src/native/index.ts; the optional field is backward-compatible and does not introduce a new export name. The API snapshot lists export names (packages/nax-agent/api/nax-agent.api.txt:236 and :471); do not introduce unrelated API or release changes. Resource risks are leaked abort listeners/timers on getNativeClient/client.model failure, missing cancellation during initialization, and shared/memoized client state leaking across tests. Preserve per-call controllers even though the client is memoized. This is sessionless request cancellation, not a change to sessions, credentials or permission resolution.\n\nUS-003 / callOp wiring: packages/nax/src/operations/call-dispatch-prologue.ts:144 resolves ctx.signal ?? ctx.runtime.signal; throwAborted at :73 creates CALL_OP_ABORTED NaxErrors with operation/stage/story context. packages/nax/src/operations/call-dispatch-complete.ts:35 dispatches complete operations, records dispatch outcomes, then applies the zero-dispatch guard and parses; its options builder at :87 omits signal, and its catch currently always delegates retry decisions. Place the entry check outside the try on each iteration, propagate the exact prologue signal through CompleteOptions, check again after outcome recording and before guard/parse, and exempt CALL_OP_ABORTED from retry policy. This ordering retains dispatch accounting while refusing canceled results. CompleteOptions already supports signal at packages/nax/src/agents/types.ts:394. packages/nax/src/agents/native-agent/index.ts:88 delegates to the package's nativeComplete but only forwards model/maxTokens/timeout; signal forwarding is the consumer of US-002. ACP already forwards options.signal into open and runTurnLoop at packages/nax/src/agents/acp/complete.ts:48 and :102 and must not otherwise change. AgentManager fallback may still complete hops before returning; the post-dispatch check is deliberately the result-rejection guarantee, not a new manager cancellation contract. Use packages/nax/test/unit/operations/call.test.ts:24 echo-op patterns and shared makeMockAgentManager/makeTestRuntime helpers, but create call-complete-abort.test.ts because call.test.ts is already 879 lines. packages/nax/test/unit/operations/call-branches.test.ts:62 currently expects one dispatch and 'aborted before retry' for a pre-aborted signal; update to zero dispatches and 'aborted before dispatch', preserving the abort-during-retry-sleep test at :100. Extend packages/nax/test/unit/agents/native-agent/index.test.ts:98 with a pending-client forwarding assertion, using its existing _clientDeps.build/reset seam. Risk: cancellation errors accidentally entering shouldRetry, parsing after cancellation, or losing dispatch outcome accounting.\n\nUS-004 / scoped orchestration: packages/nax/src/quality/command-resolver.ts:69 already resolves review.commands.test before quality.commands.test, substitutes shell-quoted package names using command-spec helpers, promotes Turbo/Nx templates, and clears orchestrator testScopedTemplate. Extract only substitution/promotion into the specified new export; keep the resolver's priority, rawTestCommand, isMonorepoOrchestrator, scopeFileThreshold and outputs unchanged. The helper must retain QualityCommandSpec string/list support, shellQuoteArg and the existing _commandResolverDeps.readPackageName seam at :36; do not duplicate manifest probing or interpolate raw package names. packages/nax/src/operations/verify-scoped.ts:178 currently gets the configured base command, :190 tracks detected command provenance, and :229 hands the unpromoted value to selectScopedTests. packages/nax/src/test-runners/scoped-selection.ts:118 immediately returns the base command for orchestrators, which is why promotion must happen before selection. Only configured commands are eligible; preserve detected-package command provenance, selection's original testScopedTemplate, fallback behavior and resolveGateCwd routing. coversSuite at packages/nax/src/operations/verify-scoped.ts:141 already compares against resolveQualityTestCommands via _verifyScopedDeps.resolveFullSuiteCommand (:86), so the promoted package command should now compare equal and report coversFullSuite true after a passing run. Shared resolver callers include packages/nax/src/operations/suite-test-command/index.ts:45 and packages/nax/src/execution/lifecycle/test-baseline-capture.ts:113; their behavior must not change. packages/nax/test/unit/quality/command-resolver.test.ts:24 pins priority and :65 onward pins list substitution, missing-prefix behavior and shell quoting. Existing verify-scoped.test.ts:53 has fakeDeps/capture patterns but is 770 lines; create verify-scoped-orchestrator.test.ts rather than expanding it. Integration risk is accidentally changing run-end/review gate resolution, command-list handling, quoting, or fallback cwd while fixing only story verification. Missing package name, template or packagePrefix must retain the raw command.\n\nUS-005 / explicit test routing: packages/nax/scripts/run-tests-phases.ts:45 always passes phase.dir and :83 only distinguishes --e2e. SUITE_PHASES at :55 provides unit/integration/ui caps and worker settings, and E2E_PHASE at :81 has its own caps. Add optional files and route explicit .test.ts/.test.tsx arguments by resolved containment under the four phase directories, preserving phase order and metadata. Resolve files against packageDir, not the runner script directory: the root router already supplies absolute file paths at packages/repo-tooling/scripts/run-workspace-tests.ts:6, while package users can supply relative ones. That router only recognizes its current .test.ts form; expanding root routing is explicitly outside this story even though the nax runner itself accepts .test.tsx. packages/nax/scripts/run-tests.ts:38 currently computes PHASES at module scope; move selection into main at :176 so invalid paths use the existing fatal catch at :187 and fail before any runPhase banner/spawn. Preserve process-group reaping, signal forwarding, per-phase timeouts, workers, bail and output-controller behavior. Explicit files override --e2e but do not enable arbitrary Bun CLI forwarding or filename existence checks. packages/nax/test/unit/scripts/run-tests-phases.test.ts:11 and :83 pin defaults and phase arguments; extend them and create test/integration/run-tests-explicit-files.test.ts. Spawn the real runner by absolute script path in a temporary package with passing unit and failing e2e fixtures, supply an explicit environment without AGENT, capture output and allow enough per-test time for nested bun test. Keep intentionally failing fixture sources inside the temporary directory, not as repository tests. Risks: misrouting an absolute file, accepting directory-prefix lookalikes, running default phases alongside explicit files, or selecting outside main and bypassing the expected fatal output.\n\nUS-006 / queue discard visibility: packages/nax/src/execution/queue-handler.ts:66 claims under the existing queue lock. The recovery path at :73 extracts only commands and the fresh path at :100 also drops guidance. Log the exact warning and lines before both returns while leaving commands and atomic rename/locking behavior intact. packages/nax/src/queue/manager.ts:23 already separates guidance, :60 captures bare SKIP and :99 captures pending free text; no parser change or agent delivery is needed. Both readQueueFile (:105) and processQueueFile (:146) use the claim helper; packages/nax/src/pipeline/stages/queue-check.ts:98 uses processQueueFile, so logging at claim time reaches production without modifying the pipeline. packages/nax/test/unit/execution/queue-handler.test.ts:22 provides readWarnLines with logger.flush and :36 initializes a silent console logger with a real JSONL sink; reuse this capture to prove warning stage/message/data, including recovered .processing files. Normal command-only queues must not grow guidance warnings. Recovered batches may be claimed again under existing crash-recovery semantics; do not introduce a new once-only delivery or logging deduplication contract. The manual documentation correction to subsystems section 31 is outside the stories; this PRD does not assign it or alter docs.\n\nDelivery sequence: US-001, US-002, US-004, US-005 and US-006 are independently implementable; run US-003 only after US-002 provides NativeCompleteOptions.signal. Expected new files are exactly the three test files specified in US-003/004/005. Existing sources/tests are modifications, not expectedFiles. Public behavior changes are limited to rejecting canceled one-shots, withholding mixed-head verdicts, respecting package/file test scope, and exposing discarded guidance; existing no-binding, missing-name/template, non-orchestrator, default-suite and well-formed-queue behavior remains pinned by controls. No other review findings or packages are assigned implementation work.\n\nRefine audit: all 45 numbered spec acceptance criteria are retained, with conjunctions split into observable assertions where appropriate. Spec-to-PRD criterion positions (1-based within each story): US-001 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10; criterion 11 additionally makes the failure-table unparseable-pre-read case concrete. US-002 1->1/2, 2->3, 3->4, 4->5, 5->6/7, 6->8/9. US-003 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8. US-004 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7. US-005 1->1, 2->2, 3->3, 4->4, 5->5, 6->6/7, 7->8, 8->9/10, 9->11/12, 10->13/14/15. US-006 1->1/2, 2->3, 3->4, 4->5. Existing mismatch-detail shape, as-today command selection, control qualifiers, captured logger wiring, and no-other-phase clauses remain attached to their assertions. All six failure-table rows are covered: US-001 criteria 6/11 and 2/3; US-003 criteria 1/2 and 3/4; US-004 criterion 6; US-005 criteria 3 and 13-15. Every story has a negative path: mixed/unreadable heads, aborted native calls/model rejection, canceled dispatches, missing package name/template, out-of-phase files, or malformed SKIP. All fourteen feature exclusions remain verbatim at top level; all spec context recommendations fit the per-story five-file limit and are present; the binding IDs/workdirs/dependency are unchanged. US-003 is medium/tdd-simple on reinspection: its two source edits use an existing loop/helper/options field and existing adapter/client seams rather than introducing orchestration.\n\nAdditional fixture-fit finding: packages/nax/test/unit/workflow/ci-wait-starved.test.ts:360 currently gives M4's initial failing poll a stale head b while expectedSha is a. Under the target stable-failure SHA stamping, bindToHead correctly turns that stale poll into waiting, so it no longer populates observed-failure history. Preserve the intended M4 history assertion by scripting the original failing poll's bracket at the expected SHA and moving the head during subsequent unreadable polls. Each error poll still performs the head pre-read because that read precedes checks classification; distinguish those normal pre-reads from an extra terminal-history binding read. Do not change the production target to preserve an obsolete total head-read count. The description now makes this fixture adaptation explicit. The helper Interface also expands the spec's untyped return-field shorthand into QualityCommandSpec | undefined fields and states absolute lookup-directory versus relative package-key semantics, without changing the verbatim Target in Approach.",
+  "outOfScope": [
+    "Findings 1, 2, 4-6, 8, 9 and 13 of review e684f920 belong to the other three review-e684 features (acp-sessions, chat, pi-client).",
+    "Correcting `docs/architecture/subsystems.md` section 31 to say guidance after `--- PENDING ---` is logged as discarded and not delivered is a manual edit made with this spec; no story edits it.",
+    "Delivering queue guidance to an agent is not done (user ruling 2026-11-24).",
+    "US-001 only: a push-mode wait (`commitChecks: true`) is not bracketed, even when a PR turns out to exist.",
+    "US-001 only: GitLab polls are unchanged; the pipeline object already carries its own `sha`.",
+    "US-001 only: replacing `gh pr checks` with a single `statusCheckRollup` read is not done; the classification of check buckets is unchanged.",
+    "US-001 only: a head that moves away and back to the same SHA between the two reads is not detected.",
+    "US-003 only: the ACP one-shot path already forwards `CompleteOptions.signal` into its turn loop (`packages/nax/src/agents/acp/complete.ts`); this story newly supplies the signal, so ACP one-shots start honouring run cancellation, and its ACP handling is not otherwise changed.",
+    "US-003 only: `AgentManager.completeWithFallback` is not changed; with an aborted signal it may still finish a hop, retry or swap before returning, and `callOp`'s post-dispatch check then refuses the result.",
+    "US-004 only: run-end and review gates keep their existing command resolution; only `verify-scoped` changes.",
+    "US-005 only: `packages/repo-tooling/scripts/run-workspace-tests.ts` routing is unchanged; other packages' `test` scripts are unchanged.",
+    "US-005 only: arguments that are neither flags nor `.test.ts` / `.test.tsx` files (for example a name filter) keep being ignored by the nax runner.",
+    "US-005 only: an explicit file that is under a phase directory but does not exist is passed to `bun test` as given, and its exit code is whatever `bun test` reports.",
+    "US-005 only: explicit files keep their phase's timeouts and worker settings; no per-file timeout is added."
+  ],
+  "routingProfile": "native-codex-ds"
+}
