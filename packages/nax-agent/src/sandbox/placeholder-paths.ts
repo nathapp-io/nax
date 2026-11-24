@@ -47,15 +47,28 @@ function contains(root: string, target: string): boolean {
   return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-/** True when something (a file, a directory, a dangling symlink) occupies `path`. */
-function exists(path: string): boolean {
+/**
+ * What a lookup proved about a path: it is there, it is confirmed absent, or the
+ * answer is unavailable.
+ */
+type Presence = "present" | "absent" | "unknown";
+
+/**
+ * The errno codes that prove nothing is at a path. Any other failure — `EACCES`
+ * from an unsearchable parent, `EIO`, `ELOOP` — leaves the question open: a file
+ * may well be there, and calling that a gap would record the user's own path as
+ * one a wrap may have turned into a placeholder (B1).
+ */
+const ABSENT_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
+
+/** What `lstat` proves about `path`, without following a symlink and without guessing. */
+function presence(path: string): Presence {
   try {
     lstatSync(path);
-    return true;
-  } catch {
-    // Any lstat failure — ENOENT, ENOTDIR, an unsearchable parent — means no
-    // path is known to be there, so the caller may treat it as a gap.
-    return false;
+    return "present";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    return code === undefined || !ABSENT_CODES.has(code) ? "unknown" : "absent";
   }
 }
 
@@ -64,7 +77,8 @@ function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
   } catch {
-    // Absent or unreadable: not a directory for our purposes.
+    // Absent or unreadable: not a directory for our purposes, and a `.git` path
+    // claimed by mistake only adds candidates `firstMissing` then drops.
     return false;
   }
 }
@@ -84,19 +98,31 @@ interface FirstMissing {
  * Walking up is what turns `<cwd>/.claude/commands` into `<cwd>/.claude` when
  * `.claude` is absent: bwrap creates the parent directory and then the leaf, and
  * both are the same placeholder.
+ *
+ * A lookup that failed for any reason other than "nothing there" proves nothing
+ * either way, so the candidate is dropped instead of claimed: bwrap creates no
+ * placeholder at an existing path, and a path nax merely cannot see (an
+ * unsearchable parent, as an unreadable `$HOME` gives) is exactly the user's own
+ * file the ledger must never adopt and the sweep must never delete (B1).
  */
 function firstMissing(candidate: string): FirstMissing | undefined {
-  if (exists(candidate)) return undefined;
+  if (presence(candidate) !== "absent") return undefined;
   let placeholder = candidate;
   let anchor = dirname(candidate);
-  while (!exists(anchor)) {
+  let state = presence(anchor);
+  while (state === "absent") {
     const above = dirname(anchor);
     // Nothing above `anchor` exists, not even the filesystem root: no write root
     // can contain a placeholder there.
     if (above === anchor) return undefined;
     placeholder = anchor;
     anchor = above;
+    state = presence(anchor);
   }
+  // An anchor that could not be inspected might be an existing directory outside
+  // every write root, or an ordinary file: nothing proves where bwrap would put
+  // the placeholder, so no candidate is claimed.
+  if (state === "unknown") return undefined;
   return { placeholder, anchor };
 }
 
@@ -160,7 +186,9 @@ export function placeholderIdentity(path: string): PlaceholderIdentity | undefin
   try {
     stats = lstatSync(path);
   } catch {
-    // Absent, or a parent nax may not search: nothing to identify.
+    // Absent, or a parent nax may not search: nothing is identified. Both answer
+    // "not provably still the recorded placeholder", which is the safe direction
+    // here — removal declines (B1 fixes the other direction, in `candidatePaths`).
     return undefined;
   }
   if (stats.isFile()) {

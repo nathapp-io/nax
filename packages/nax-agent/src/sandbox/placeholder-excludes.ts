@@ -23,10 +23,19 @@
  * generated files, plus the atomic replace its in-place write lacks.
  */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { errorMessage } from "#src/infra/errors";
-import { getSafeLogger } from "#src/infra/index";
+import { getSafeLogger, NaxError } from "#src/infra/index";
 import { gitWithTimeout } from "#src/internal/git-exec";
 import { withPathFileLock } from "#src/internal/path-file-lock";
 import { realOrRaw } from "#src/internal/realpath";
@@ -55,6 +64,9 @@ const TOPLEVEL_TIMEOUT_MS = 10_000;
 
 /** How long to wait for another nax process's update of the same exclude file. */
 const EXCLUDE_LOCK_TIMEOUT_MS = 5_000;
+
+/** Bound on following a chain of exclude links, as the kernel bounds its own. */
+const MAX_LINK_HOPS = 40;
 
 /** The filesystem root: never a repository nax should write an exclude for. */
 const FILESYSTEM_ROOT = "/";
@@ -122,6 +134,10 @@ function withPlaceholderEntries(existing: string): string {
  * exist yet. A read that fails for any other reason throws: there is nothing
  * safe to append to, and writing anyway would replace the user's lines with
  * nax's.
+ *
+ * `statSync`, so a link is read through and reports its target's bytes and mode.
+ * A dangling link lands in the `ENOENT` branch together with a truly absent
+ * file; {@link excludeDestination} is what keeps the two apart.
  */
 function readExclude(path: string): { readonly text: string; readonly mode: number } | undefined {
   try {
@@ -131,6 +147,40 @@ function readExclude(path: string): { readonly text: string; readonly mode: numb
     if (errorCode(error) === "ENOENT") return undefined;
     throw error;
   }
+}
+
+/**
+ * The file to write: `path` itself, or, when `path` is a symlink, the file it
+ * points at.
+ *
+ * A DANGLING link is followed too (B3). `statSync` reports `ENOENT` for it, so it
+ * reads as an absent exclude — but replacing that name with a regular file would
+ * delete the user's link and leave the file git actually reads untouched. nax
+ * appends THROUGH the link instead, creating its target beside it.
+ *
+ * Only the leaf is resolved: a symlinked parent directory needs no help, because
+ * the kernel resolves the whole path it is given.
+ */
+function excludeDestination(path: string): string {
+  let destination = path;
+  for (let hop = 0; hop < MAX_LINK_HOPS; hop++) {
+    let target: string;
+    try {
+      if (!lstatSync(destination).isSymbolicLink()) return destination;
+      target = readlinkSync(destination);
+    } catch (error) {
+      // Nothing at this name yet: this is where the bytes belong, and the link
+      // that names it stays intact.
+      if (errorCode(error) === "ENOENT") return destination;
+      throw error;
+    }
+    destination = resolve(dirname(destination), target);
+  }
+  // A chain this long is a loop: refuse rather than guess where git reads.
+  throw new NaxError("[sandbox] git exclude symlink chain is too long", "SANDBOX_EXCLUDE_SYMLINK_LOOP", {
+    stage: "sandbox",
+    file: path,
+  });
 }
 
 /** Delete `path`, ignoring any failure: a renamed temp file is already gone. */
@@ -181,8 +231,7 @@ async function addExcludes(cwd: string): Promise<void> {
       if (next === existing) return;
       // A linked exclude is written through: the replace must land in the file
       // git reads, not on a new regular file where the user's link used to be.
-      const destination = current === undefined ? path : realOrRaw(path);
-      replaceAtomically(destination, next, current?.mode);
+      replaceAtomically(excludeDestination(path), next, current?.mode);
     },
     { timeoutMs: EXCLUDE_LOCK_TIMEOUT_MS },
   );

@@ -155,6 +155,12 @@ export async function sweepStalePlaceholders(): Promise<void> {
           // Another sweep may have removed it while this one waited for the lock.
           const current = readLedgerFile(path);
           if (current === undefined) return;
+          // And the owner may have changed: a live process can inherit the dead
+          // owner's pid and write its own ledger at this path while this sweep
+          // waits. Re-check against the record actually locked, or the sweep would
+          // delete a live process's ledger — losing the provenance of placeholders
+          // that process still owns — and, worse, act on its entries (B2).
+          if (!ownerIsDead(current)) return;
           const candidates = current.entries.filter(matchesDisk);
           if (candidates.length > 0 && !mountsRead) {
             mountsRead = true;

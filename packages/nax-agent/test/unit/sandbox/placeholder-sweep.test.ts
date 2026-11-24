@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { getSafeLogger, NaxError, setAgentLogger } from "#src/infra/index";
+import { withPathFileLock } from "#src/internal/path-file-lock";
 import { realOrRaw } from "#src/internal/realpath";
 import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
 import {
@@ -502,6 +503,56 @@ describe("sweep safety and platform boundaries", () => {
     unchanged();
     expect(lstatSync(ledgerPath).mode & 0o777).toBe(0o644);
     expect(log.calls.filter((call) => call.message === "placeholder ledger failed the trust check")).toHaveLength(1);
+  });
+
+  // B2: the owner is checked before the lock, and must be checked again after it.
+  test("B2: a live ledger written while the sweep waits for the lock survives byte for byte", async () => {
+    // Hold the ledger's lock, so the sweep has to wait after its owner check.
+    let releaseLock: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockEntered: () => void = () => {};
+    const inLock = new Promise<void>((resolve) => {
+      lockEntered = resolve;
+    });
+    const holder = withPathFileLock(ledgerPath, async () => {
+      lockEntered();
+      await held;
+    });
+    await inLock;
+
+    // Signals that the sweep has read the dead ledger and judged its owner dead:
+    // it is waiting now for the lock this case still holds.
+    let ownerChecked: () => void = () => {};
+    const ownerCheck = new Promise<void>((resolve) => {
+      ownerChecked = resolve;
+    });
+    _placeholderDeps.isProcessAlive = (pid) => {
+      ownerChecks.push(pid);
+      ownerChecked();
+      return false;
+    };
+    const sweep = wrap();
+    await ownerCheck;
+
+    // A live process inherits the pid and writes its OWN ledger at that path: the
+    // same pid, new start ticks, and one pending entry — the provenance of the
+    // placeholders it still owns and has not observed yet.
+    const live = { ...file, startTicks: 6, entries: [{ path: join(cwd, ".profile") }] };
+    const liveBytes = `${JSON.stringify(live)}\n`;
+    writeFileSync(ledgerPath, liveBytes);
+    _placeholderDeps.isProcessAlive = () => true;
+    _placeholderDeps.startTicks = () => 6;
+
+    releaseLock();
+    await holder;
+    await sweep;
+
+    // The live record is not this sweep's to filter or delete: doing that lost the
+    // active process's provenance (B2).
+    expect(readFileSync(ledgerPath, "utf8")).toBe(liveBytes);
+    expect(existsSync(path)).toBe(true);
   });
 
   test("malformed identity is dropped without touching its file", async () => {

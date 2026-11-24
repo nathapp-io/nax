@@ -291,6 +291,22 @@ describe("US-007 placeholder excludes through a fresh Linux backend", () => {
     expect(readFileSync(shared, "utf8")).toBe(`*.log\n${HEADER}\n${ENTRIES.join("\n")}\n`);
   });
 
+  test("B3: a dangling exclude symlink is written through, not replaced by a regular file", async () => {
+    const shared = join(base, "not-created-yet");
+    unlinkSync(excludePath(repo));
+    // The user's link points at a file that does not exist (yet): `statSync`
+    // reports ENOENT for it, so it reads as an absent exclude.
+    symlinkSync(shared, excludePath(repo));
+    expect(existsSync(shared)).toBe(false);
+
+    await wrapIn(repo);
+
+    // Renaming a regular file over the link would delete the user's link and
+    // leave the file git reads through it untouched (B3).
+    expect(lstatSync(excludePath(repo)).isSymbolicLink()).toBe(true);
+    expect(readFileSync(shared, "utf8")).toBe(`${HEADER}\n${ENTRIES.join("\n")}\n`);
+  });
+
   test("AC-10: a throwing ensureExcludes seam still lets wrap resolve its argv", async () => {
     _srtBackendDeps.ensureExcludes = async () => {
       throw new NaxError("injected excludes failure", "SANDBOX_EXCLUDES_FAILED", { stage: "sandbox" });

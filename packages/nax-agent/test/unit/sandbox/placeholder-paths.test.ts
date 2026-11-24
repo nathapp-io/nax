@@ -133,6 +133,30 @@ describe("candidatePaths", () => {
     expect(paths).not.toContain(join(cwd, ".zed", "settings.json"));
   });
 
+  // B1: an unsearchable parent makes an existing name INVISIBLE, not absent.
+  test.skipIf(process.getuid?.() === 0)(
+    "B1: an unsearchable parent hides an existing name instead of proving a gap",
+    () => {
+      const hidden = join(base, "home");
+      mkdirSync(hidden);
+      const bashrc = join(hidden, ".bashrc");
+      placeholderFile(bashrc);
+      chmodSync(hidden, 0o000);
+      try {
+        // The reproduction: the user's file is there, and the lookup is refused
+        // rather than answered "nothing here".
+        expect(() => lstatSync(bashrc)).toThrow();
+        // Claiming it as a gap would make `observe()` adopt the user's own inode
+        // as a placeholder, and a later sweep would then delete the user's file.
+        expect(candidatePaths(hidden, policy({ writeRoots: [hidden] }))).toEqual([]);
+      } finally {
+        chmodSync(hidden, 0o700);
+      }
+      // The fixture really held the file, so the empty result above is the skip.
+      expect(isPlaceholderShaped(bashrc)).toBe(true);
+    },
+  );
+
   test("US-001 AC8: an existing parent keeps the denyWrite path's own component", () => {
     mkdirSync(join(cwd, ".claude"));
 

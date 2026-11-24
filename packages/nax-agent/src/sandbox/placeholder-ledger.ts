@@ -83,14 +83,22 @@ function isNormalisedAbsolute(path: string): boolean {
   return normaliseEntryPath(path) === path;
 }
 
-/** The `lstat` of `path`, or `undefined` when there is nothing there to inspect. */
+/**
+ * The `lstat` of `path`, or `undefined` when there is nothing there to inspect.
+ *
+ * Only `ENOENT` and `ENOTDIR` prove that no ledger is at this path, and they are
+ * the silent cases: the sweep skips a ledger another sweep has already deleted.
+ * Every other failure — `EACCES` from an unsearchable parent, `EIO` — leaves the
+ * question open, so it is reported by file name, like any other refusal, instead
+ * of hiding a trust check that never ran (M1).
+ */
 function lstatOrUndefined(path: string): Stats | undefined {
   try {
     return lstatSync(path);
-  } catch {
-    // Absent, or behind an unsearchable parent. Nothing was refused, so no warn:
-    // the sweep skips a ledger another sweep has already deleted, silently.
-    return undefined;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+    return rejected(path, `not inspectable: ${errorMessage(error)}`);
   }
 }
 

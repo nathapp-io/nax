@@ -231,6 +231,27 @@ describe("readLedgerFile — the trust check", () => {
 
     expect(readLedgerFile(link)).toBeUndefined();
   });
+
+  // M1: only ENOENT means "no ledger here"; any other lookup failure is a refusal.
+  test.skipIf(process.getuid?.() === 0)("M1: an uninspectable ledger is refused with one warn naming it", () => {
+    const locked = join(ledgerDir, "locked");
+    mkdirSync(locked, { recursive: true });
+    const path = join(locked, "999.json");
+    writeFileSync(path, JSON.stringify(ledgerContent()), { mode: 0o600 });
+    chmodSync(path, 0o600);
+    chmodSync(locked, 0o000);
+    try {
+      expect(readLedgerFile(path)).toBeUndefined();
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+
+    // The file could not be inspected, so nothing about it was checked: that is a
+    // failed trust check, reported by name rather than swallowed as "absent" (M1).
+    const warns = callsAt("warn", "sandbox: placeholder ledger failed the trust check");
+    expect(warns.length).toBe(1);
+    expect(warns[0]?.data?.file).toBe(path);
+  });
 });
 
 describe("the process ledger", () => {
