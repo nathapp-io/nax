@@ -3,7 +3,7 @@
   "feature": "sandbox-placeholders",
   "branchName": "feat/sandbox-placeholders",
   "createdAt": "2026-11-24T11:27:31.990Z",
-  "updatedAt": "2026-11-24T11:27:31.990Z",
+  "updatedAt": "2026-11-24T12:13:56.747Z",
   "userStories": [
     {
       "id": "US-001",
@@ -36,14 +36,17 @@
         "filesystem"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two small utility modules and additive constants implement specified filesystem predicates, parsers and host defaults; strict security TDD remains necessary because identity and real-UID facts protect sandbox deny mounts during later cleanup."
+        "reasoning": "Two small utility modules and additive constants implement specified filesystem predicates, parsers and host defaults; strict security TDD remains necessary because identity and real-UID facts protect sandbox deny mounts during later cleanup.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/defaults.ts",
@@ -69,7 +72,11 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5498169170064c012530b583f714b4231c2e0ddb"
     },
     {
       "id": "US-002",
@@ -136,7 +143,10 @@
         "prune drops an identified entry when its path has been replaced with a different-inode placeholder-shaped file, without removing the replacement."
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -185,7 +195,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -261,7 +274,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -310,7 +326,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -370,7 +389,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -435,7 +457,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -477,7 +502,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Goal and completion: close #2986 by recording Linux srt/bwrap placeholders before any destructive cleanup, reclaiming only proven stale identities without live same-user mounts, keeping untracked placeholder files out of broad staging, and hiding six shell-startup names through local git excludes. Implement exactly US-001 through US-008 with the specified dependency graph; no srt upgrade or chat signal changes. Existing code is an enhancement, not greenfield. Discovery used direct reads and text search because codebase-memory MCP tools are unavailable in this session. The authoritative feature source exists at .nax/features/sandbox-placeholders/spec.md:1. No implementation or test execution is part of this PRD-drafting task.\n\nArchitecture and current integration: packages/nax-agent/src/sandbox/srt-backend.ts:38 currently exposes only load/platform/mkdir; createSrtBackend at :79 caches initialization in a Promise at :83, wraps at :103, calls cleanupAfterCommand at :121, and resets loaded/initialized at :129. Keep that one initialization boundary and srt's process-wide activeSandboxCount; never add a second cleanup gate or eagerly unlink a live placeholder. Add cwd in US-003, sweep in US-004, and ensureExcludes in US-007. Candidate discovery must use deps.cwd() (process cwd), not req.cwd; the latter remains the command execution directory passed to srt. On Linux, initialize must await sweep, then ensureExcludes, then SandboxManager.initialize, with independent nonfatal warn handling so a failed sweep does not suppress excludes. Each runs once per initialize and repeats after reset. On other platforms retain the existing srt behavior, including the darwin mkdir. packages/nax-agent/src/sandbox/types.ts:50 defines SandboxWrapRequest and :58 defines SandboxBackend; their signatures stay unchanged. packages/nax-agent/src/sandbox/launcher.ts:172 wraps before the execution try/finally, and :216 calls commandFinished in finally; a throwing wrap must not acquire an extra cleanup call. It is read-only context, not a target. packages/nax-agent/src/sandbox/registry.ts:23 caches the backend, :31 caches its probe, :62 resets the backend, and :68 demonstrates resetting process singleton state for tests.\n\nUS-001 foundations: packages/nax-agent/src/sandbox/defaults.ts:1 currently holds cache, credential and macOS tmp constants; append independent mandatory-deny constants without altering those lists. packages/nax-agent/package.json:41 pins @anthropic-ai/sandbox-runtime to 0.0.77. Compare the new lists against that version's sandbox-utils exports in tests, without introducing another shipped runtime importer; srt-backend.ts:1 explicitly documents the single-importer gate. packages/nax-agent/src/sandbox/session-tmp.ts:25 uses synchronous node:fs, and :37 demonstrates an injectable deps object, so synchronous identity/proc/ledger operations fit this Node library. Add placeholder-deps.ts and placeholder-paths.ts plus the two named tests. Candidate discovery must preserve ordering, map intermediate missing components, distinguish a .git pointer file from a directory, deduplicate .claude, omit existing user files and require the deepest existing ancestor to be in a write root. lstat must reject symlinks, nonempty files, writable files, extra hard links and nonempty directories. /proc stat parsing must find the last ')' before counting field 22; mountinfo field 5 must decode the specified octal escapes. Real proc ownership must read the real Uid value from status, not /proc directory ownership. The production defaults may throw; do not silently equate unreadability with process death.\n\nUS-002 ledger: placeholder-ledger.ts does not exist today. Create a process singleton with pending and identified entries, synchronous recordAbsent/observe/prune, 0700 directory creation before wrapping, atomic same-directory .<pid>.tmp to <pid>.json writes at 0600, one exit callback and resettable test state. Credentials are injected by the host: packages/nax-agent/src/infra/credentials-config.ts:24 throws CREDENTIALS_NOT_CONFIGURED when unset; resolve the configDir lazily, not at module import. The absence of credentials, boot id or process start ticks disables bookkeeping nonfatally, with the specified debug log. readLedgerFile is the sole trust-checking reader for sweep and staging. Validate regular-file ownership, private permission bits, version, filename/pid agreement and absolute normalized entry paths; malformed identity fields cannot authorize removal. Warn on invalid ledgers without changing them. Track write-warning suppression separately from retries; a failed first write cannot disable later attempts. Exit deletes the ledger only, not placeholders, leaving srt responsible for live cleanup. The new _placeholderDeps is deliberately module-local to this feature and is not re-exported from src/internal.ts, as specified. Do not add these helpers to the public package entry or expose underscore names there.\n\nUS-003 lifecycle: wire recordAbsent and observe before wrapWithSandboxArgv, observe before cleanupAfterCommand, and prune after cleanup and after reset. Observing before cleanup is essential because srt may delete the last placeholder immediately. Existing pre-wrap .bashrc content must never become ledger entries. Preserve pending entries for commands still starting. Tests at packages/nax-agent/test/unit/sandbox/srt-backend.test.ts:41 onward already assert cleanup on every finished command, overlap deferral, wrap failure and commandFinished before wrap; extend rather than replace those regression anchors. The tests use a narrowed SandboxManager slice, so avoid unsafe module casts.\n\nUS-004 stale cleanup: packages/nax-agent/src/internal/process-alive.ts:43 only ESRCH proves a process absent; reuse it through _placeholderDeps. bootId plus startTicks prevent stale boot/PID reuse mistakes. packages/nax-agent/src/internal/path-file-lock.ts:26 wraps asynchronous withFileLock and locks <target>.lock; use it unchanged with the configurable 2000ms timeout, re-read inside the operation, and skip lock contention nonfatally. Sweeping and excludes can be async for locks/git, while identity re-check plus remove must remain synchronous without an intervening await. Read a same-real-UID live mount set lazily once per sweep; deduplicate namespaces, tolerate only ENOENT/ESRCH process departure and treat every other proc error as unknown. Unknown must preserve original ledger bytes, not rewrite filtered entries. Resolve the parent with packages/nax-agent/src/internal/realpath.ts:93 realOrRaw for mount comparison, retaining lstat's no-follow identity semantics for the leaf. :105 isInside supplies symlink-aware containment precedent. Remove with unlink/rmdir only, never recursive removal. Keep mounted paths and failed removals for retry, discard pending/mismatched/malformed records without touching disk, and log removed paths once. Tests must drive the real sweep through a fresh backend's first wrap using a fake proc reader and real temp filesystem; no live bwrap or kernel mount dependency is needed.\n\nUS-005 policy protection: packages/nax-agent/src/sandbox/policy-builder.ts:27 declares SandboxPolicyInput, :78 normalizes all literal policy paths with realOrRaw, :90 protects git config/hooks/info, and :202 assembles denyWrite with trustStoreFile at :208. Add the optional placeholderLedgerDir immediately after trustStoreFile in both input grouping and deny composition. packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts:97 resolves session sandbox availability and :140 builds policyFor repeatedly; pass the helper result only when defined, preserving all unavailable/disabled, tmp-confinement, trust-store and per-command policy behavior. The helper must create/obtain the ledger first so its directory exists before the deny is applied. Tests already inspect real policies at packages/nax-agent/test/unit/coding-tools/coding-tool-sandbox.test.ts:138 and use realOrRaw-normalized temp paths at packages/nax-agent/test/unit/sandbox/policy-builder.test.ts:21. SandboxPolicyInput and buildSandboxPolicy are already exported from packages/nax-agent/src/index.ts:315 and :345; the change is additive, not a new root-export name. Do not expand the public API to publish the new helpers.\n\nUS-006 staging impact: packages/nax-agent/src/internal/git-add.ts:43 parses mode-160000 records and :53 performs ls-files --stage -z with requested pathspecs, fails closed on listing failure, appends literal gitlink excludes and restages gitlinks through update-index. Derive all tracked paths from the same tab-delimited, NUL-separated listing; do not issue another tracked-file command, split records on whitespace, or mistake only gitlinks for tracked paths. Append placeholder excludes after gitlink excludes and keep the argv identical when no placeholder exists. Never suppress legitimate tracked-file modifications (especially .gitmodules), arbitrary empty read-only files or writable empty mandatory names. Trusted ledger paths must be contained within cwd, and fallback still checks mandatory files when ledger lookup/listing fails. Existing nested-repository filter-driver safety tests at packages/nax-agent/test/unit/internal/git-add.test.ts:94 must retain their protections. The shared helper is already exported internally and used by auto-commit at packages/nax/src/utils/git.ts:298, finish at packages/nax/src/finish/commit.ts:91, review tree snapshots at packages/nax/src/review/fix-review/tree-snapshot/index.ts:174, and GitCommit at packages/nax-agent/src/tools/git-commit.ts:210. Therefore those broad staging consumers gain the guard without cross-package source edits. GitCommit first applies its protectedPaths filter (:175 onward); retain it and use the existing testProtectedPaths fixture from packages/nax-agent/test/unit/tools/git-commit.test.ts:66 for the real commit assertion.\n\nUS-007 excludes: packages/nax-agent/src/sandbox/policy-inputs.ts:51 already resolves main versus linked-worktree git directories; use commonDir/info for worktrees. packages/nax-agent/src/internal/git-exec.ts:86 provides hardened gitWithTimeout and routes all spawns through the runtime slot; use it for --show-toplevel rather than raw child_process. packages/nax/src/worktree/manager.ts:138 is the lock-protected, exact-trimmed-line exclude update precedent, with mkdir before lock at :151 and exact matching at :165; read it for the pattern but do not import across packages, copy its retired-line deletion, or rewrite existing lines. New excludes are purely additive and root-anchored, must skip home, /, nonrepos and repo subdirectories, and intentionally omit committed config names. packages/nax-agent/test/preload.ts:16 provisions isolated global config and :43 configures credentials; it does not currently protect the real checkout's excludes. Add the specified process-wide no-op ensureExcludes seam there; US-007 tests explicitly install the real function and restore state. Older backend and allow-local-binding tests can initialize Linux srt from process cwd, so this protection prevents accidental checkout mutation. Consumer ACs must reach the real function through backend.wrap, not merely assert stub invocation.\n\nUS-008 config impact/migration: packages/nax/src/config/paths/index.ts:67 documents global reserved-directory ownership and :94 holds the existing nine names. Append sandbox after _archive and add the exact owner comment. The list already feeds init validation at packages/nax/src/cli/init.ts:56 and the schema reserved-name error at packages/nax/src/config/schemas.ts:105; migration commands use that same validation. packages/nax/test/unit/config/reserved-project-names.test.ts:20 asserts list order and :61 covers schema errors; update the ten-name assertion and add sandbox validation there. This intentionally breaks an existing project named sandbox; it must be renamed, with no automatic config migration or directory move. Other project names and caller APIs stay compatible. Existing unledgered leftovers cannot safely be adopted/deleted by nax and remain untouched. Exclude entries persist once written. No package versions, dependency pins, generated agent instructions or signal handlers should change.\n\nTesting and delivery constraints: use Node-compatible ESM shipped code in nax-agent, #src imports or explicit .ts relative extensions, synchronous node:fs for identity/ledger/exit callbacks, and existing runtime/git/locking ports rather than new direct spawns. Respect the package dependency boundary; only US-008 touches nax. New source/helpers should stay feature-local, avoid import cycles between deps, parsers and consumers, and preserve existing git hardening and permission SSOT. Read docs/architecture/ARCHITECTURE.md:1 and package instructions before implementation. Show regressions fail against old code, then implement them; use three-session-tdd for sandbox access-control and ledger-trust stories. Every consumer AC uses real temp files/repos. Fixture conventions: cwd is a real temp dir; inject _placeholderDeps.platform='linux', temp ledgerDir, bootId='boot-A', startTicks(process.pid)=100, current uid and an onExit recorder; reset the ledger singleton before each test. Backend fixtures additionally inject linux platform, cwd, and a narrowed srt module whose wrapWithSandboxArgv resolves {argv:['true'],env:{}}; writeRoots=[cwd]. Placeholder files are empty chmod 0444, directories empty. Restore every patched deps object and singleton; the only host-specific automated test is the explicitly Linux-only real /proc default check. Source test files are the spec-listed unit paths even where assertions are integration-level. Run scoped Bun test paths from the story package, never bare bun test or bun run nax. Build/typecheck/check:all are pipeline gates, not acceptance criteria. Coverage gates exist separately; do not run nax coverage inside NAX_SANDBOXED=1. The post-merge Linux live bwrap/proc check is explicitly manual and is not a delivery AC.\n\nRisk model: the primary risk is deleting user data or detaching another sandbox's deny mount. Preserve the absence-to-identity provenance, private trusted ledgers, boot/start identity, owner liveness, same-user mount checks, second identity check, and conservative unknown/error handling together. Secondary risks are filtered tracked config changes, altered gitlink safety, lost user excludes, wrong worktree common-dir writes, real checkout mutation in tests, singleton leakage and non-Linux regressions. The accepted pending-empty-directory and once-read mount-set races are retained exactly as exclusions rather than expanded scope. All failure-table rows are represented by behavioral criteria in their owning stories, including log levels, retry behavior and nonfatal initialization failures; the binding eight-story structure remains unchanged.\n\nRefine-pass audit: re-read all design/context/Creates/Modifies/Seams sections and all numbered acceptance criteria against the draft and the current backend, shared staging adapter, async lock, policy builder/resolver, preload, git-layout resolver and reserved-name tests. The 93 numbered spec criteria are preserved in their original stories and at their original ordinals: US-001 AC1-18, US-002 AC1-20, US-003 AC1-8, US-004 AC1-22, US-005 AC1-4, US-006 AC1-9, US-007 AC1-10, US-008 AC1-2. Their existing-file, same-error, same-denyWrite/as-before/existing-fixture, already-before-cleanup, unchanged-bytes, different-inode, ignored-name and non-Linux regression qualifiers remain intact. Additional failure-table criteria remain separate from the numbered inventory. Each story already has an observable negative path: malformed stat/shape rejection (001), ledger trust/write/exit failures (002), unconfigured/write-failing ledger wrapping (003), proc/removal/lock errors (004), disabled ledger policy (005), untrusted/unreadable ledgers (006), unwritable/throwing excludes (007), reserved config name (008). No speculative extra negative criterion was needed. All fourteen feature-level exclusions remain verbatim in outOfScope; the US-prefixed exclusions are retained at feature level because the spec actually locates them there, not beneath story acceptance criteria. Binding ids, workdirs and dependency arrays remain exactly unchanged; no nonexistent dependency or own-output context path was found. New-file inventories remain 4/2/0/2/0/2/2/0. Restored the spec-recommended read-only worktree manager context for US-007 at the expense of its redundant lock-helper context slot; this is not permission to import or modify nax from that story. Reduced utility/scanner/exclude routing to medium where existing ports make the implementation standard; retained strict TDD for identity/trust/access-control paths and expert routing for destructive mount-safe sweeping, while using tdd-simple for additive git visibility changes. Clarified US-007's real-function fixture exception for its deliberately throwing seam AC, made US-004 removal-error continuation observable using a second identified unmounted path, made US-008's reserved-name assertion concrete through NaxConfigSchema.safeParse while retaining its same-error regression anchor, and clarified fixture preconditions without changing the specified algorithms or consumer data flow. No implementation tests or executable JSON validation were run during this document-only audit.",
