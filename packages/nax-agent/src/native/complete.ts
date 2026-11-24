@@ -136,9 +136,17 @@ export async function nativeComplete(
   }
 }
 
-/** The error an abort surfaces: the caller's own reason, or an AbortError when it gave none. */
+/**
+ * The error an abort surfaces: the caller's own reason, or an `AbortError` when
+ * it carried none.
+ *
+ * `undefined` is the only absent reason. An explicit `abort(null)` states a
+ * reason of its own (the spec stores whatever `abort()` was given), so a
+ * nullish test here would silently replace it with a synthesised error the
+ * caller never asked for.
+ */
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("Aborted", "AbortError");
+  return signal.reason === undefined ? new DOMException("Aborted", "AbortError") : signal.reason;
 }
 
 /**

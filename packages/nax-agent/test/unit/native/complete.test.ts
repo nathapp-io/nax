@@ -207,6 +207,17 @@ describe("nativeComplete — caller cancellation (US-002)", () => {
     await expect(nativeComplete("hi", { model: SESSION_MODEL, signal: caller.signal }, CONTEXT)).rejects.toBe(reason);
   });
 
+  test("US-002 AC-1: an explicit null abort reason is preserved, not replaced", async () => {
+    const caller = new AbortController();
+    // `abort(null)` states a reason of its own. Only an ABSENT reason may be
+    // substituted with an AbortError, or the caller's reason is not the one
+    // that comes back.
+    caller.abort(null);
+    _clientDeps.build = async () => fakeClient(async () => OK_RESULT);
+
+    await expect(nativeComplete("hi", { model: SESSION_MODEL, signal: caller.signal }, CONTEXT)).rejects.toBeNull();
+  });
+
   test("US-002 AC-2: an already-aborted caller signal never reaches the client", async () => {
     const caller = new AbortController();
     caller.abort(new Error("run cancelled"));
