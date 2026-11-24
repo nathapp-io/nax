@@ -369,10 +369,13 @@ export function clearNativeSessionState(state: NativeSessionState, sessionName: 
 /**
  * Kept on failure, deleted on success. Every Phase B op is lifetime "fresh", so
  * the transcript survives exactly when it is worth reading. Keeping is the
- * store's `retainFailed`; the file store's also prunes the feature's
- * `sessions/` directory down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3),
- * since the kept-on-failure set is otherwise unbounded. A session opened with
- * `retainOnClose` skips both: its live document stays resumable.
+ * store's `retainFailed`; the file store's also prunes the kept-on-failure
+ * archives down to `MAX_RETAINED_TRANSCRIPTS` (ADR-028 section 3), since that
+ * set is otherwise unbounded. It bounds only the archives: a live document is
+ * another chat's resumption source, so one chat's failure never evicts it
+ * (review e684) — live names are bounded by the feature-startup sweep instead.
+ * A session opened with `retainOnClose` skips both: its live document stays
+ * resumable.
  */
 export async function closeNativeSession(
   state: NativeSessionState,

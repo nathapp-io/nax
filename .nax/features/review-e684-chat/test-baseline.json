@@ -1,0 +1,17 @@
+{
+  "kind": "captured",
+  "source": "preflight",
+  "capturedAt": "2026-11-24T04:10:28.543Z",
+  "baseRef": "dca3cae86a415ca197a7a0d8641b3d01cb556461",
+  "packageDirs": [
+    "packages/nax",
+    "packages/nax-agent"
+  ],
+  "entries": [
+    {
+      "file": "unknown",
+      "testName": "writes under a literal /tmp path",
+      "packageDir": "packages/nax-agent"
+    }
+  ]
+}

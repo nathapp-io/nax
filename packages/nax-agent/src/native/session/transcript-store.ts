@@ -79,8 +79,11 @@ async function writeTranscriptDoc(dir: string, sessionName: string, doc: Transcr
 /**
  * The file store: `<dir>/<name>.transcript.json`, written as given (the loop's
  * documents carry no schemaVersion or turn, so nax's bytes are unchanged).
- * `retainFailed` is the kept-on-failure rename plus the prune to
- * `MAX_RETAINED_TRANSCRIPTS` that `closeNativeSession` used to run inline.
+ * `retainFailed` is the kept-on-failure rename plus an archives-only prune to
+ * `MAX_RETAINED_TRANSCRIPTS`, so it bounds only the archives it keeps — a live
+ * document is some other chat's resumption source and is never evicted by a
+ * failure (review e684). Live names are bounded by the feature-startup sweep
+ * (`sweepFeatureTranscripts`), which prunes both kinds together.
  */
 export function createFileTranscriptStore(dir: string): TranscriptStore {
   return {
@@ -88,7 +91,7 @@ export function createFileTranscriptStore(dir: string): TranscriptStore {
     save: (sessionId, doc) => writeTranscriptDoc(dir, sessionId, doc),
     retainFailed: async (sessionId) => {
       await retainTranscript(dir, sessionId);
-      await pruneRetainedTranscripts(dir);
+      await pruneRetainedTranscripts(dir, MAX_RETAINED_TRANSCRIPTS, { archivesOnly: true });
     },
     delete: (sessionId) => deleteTranscript(dir, sessionId),
     markTurn: async (sessionId: string, marker: TurnMarker) => {
@@ -199,10 +202,36 @@ export function _resetTranscriptTruncationWarningForTests(): void {
 }
 
 /**
- * Prune a feature's `sessions/` directory to the `maxRetained` most recently
- * modified transcript files, deleting the oldest first. Called from
- * `closeNativeSession`'s kept-on-failure branch — the only place transcripts
- * accumulate, since a clean close always deletes its own transcript.
+ * Marker `retainTranscript` puts in a kept-on-failure archive's name:
+ * `<name>.transcript.failed-<stamp>.json`.
+ */
+const RETAINED_ARCHIVE_MARKER = ".transcript.failed-";
+
+/**
+ * Whether one directory entry counts against the retention cap.
+ *
+ * Both kinds of transcript end in `.json` and carry `.transcript.`, so the
+ * marker is what tells a kept-on-failure archive from a live document. The
+ * `archivesOnly` arm deliberately excludes live names: a live document is
+ * resumable, an archive is not.
+ */
+function countsTowardsRetention(name: string, archivesOnly: boolean): boolean {
+  if (!name.endsWith(".json")) return false;
+  return archivesOnly ? name.includes(RETAINED_ARCHIVE_MARKER) : name.includes(".transcript.");
+}
+
+/**
+ * Prune a directory down to the `maxRetained` most recently modified transcript
+ * files, deleting the oldest first.
+ *
+ * By default live documents and kept-on-failure archives are counted together,
+ * which is what the feature-startup sweep needs: nothing else bounds the live
+ * names sitting in a feature's `sessions/` directory. A failed close passes
+ * `{ archivesOnly: true }`, which counts and deletes only the
+ * `<name>.transcript.failed-<stamp>.json` archives `retainTranscript` produces —
+ * a live document is the resumption source for a chat that has NOT failed, so
+ * evicting one on another chat's failure silently restarted that chat
+ * (review e684). Live names are bounded by the feature-startup sweep instead.
  *
  * A missing directory is not an error (nothing to prune yet).
  *
@@ -212,6 +241,7 @@ export function _resetTranscriptTruncationWarningForTests(): void {
 export async function pruneRetainedTranscripts(
   dir: string,
   maxRetained: number = MAX_RETAINED_TRANSCRIPTS,
+  opts?: { readonly archivesOnly?: boolean },
 ): Promise<number> {
   let entries: string[];
   try {
@@ -221,10 +251,7 @@ export async function pruneRetainedTranscripts(
     throw err;
   }
 
-  // Matches both the live name and the `failed-<stamp>` names `retainTranscript`
-  // produces — the retained set is the one that accumulates, so a filter that
-  // missed it would leave the cap enforcing nothing.
-  const transcriptFiles = entries.filter((name) => name.includes(".transcript.") && name.endsWith(".json"));
+  const transcriptFiles = entries.filter((name) => countsTowardsRetention(name, opts?.archivesOnly === true));
   if (transcriptFiles.length <= maxRetained) return 0;
 
   const withMtimes = await Promise.all(

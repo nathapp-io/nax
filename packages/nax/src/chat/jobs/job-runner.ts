@@ -10,6 +10,7 @@ import { isWithinRoot } from "../target-repo";
 import { readRunProgress, resolveJobOutcome } from "./job-outcome";
 import { jobAsksDir, jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
 import { type ChatJob, type ChatJobKind, isRunJobKind } from "./job-types";
+import { readTailLines } from "./log-tail";
 
 export const JOB_POLL_MS = 2_000;
 export const CANCEL_GRACE_MS = 10_000;
@@ -50,7 +51,8 @@ export interface ChatJobs {
   canCancel(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
   /** Loads this repo's records once; idempotent. */
   attach(): Promise<void>;
-  logTail(id: string, lines?: number): Promise<string>;
+  /** The job's last lines; with `nonEmpty` the last lines that are not blank. */
+  logTail(id: string, lines?: number, opts?: { readonly nonEmpty?: boolean }): Promise<string>;
   /** Oldest queued notice, left in the queue. */
   peekNotice(): string | undefined;
   /** Returns and removes the oldest queued notice. */
@@ -96,7 +98,6 @@ export const _jobRunnerDeps = {
     await writeChatHeartbeat(dir, now);
   },
   randomSecret: (): Uint8Array => crypto.getRandomValues(new Uint8Array(ASK_SECRET_BYTES)),
-  readLog: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
 class DetachedJobs implements ChatJobs {
@@ -530,20 +531,10 @@ class DetachedJobs implements ChatJobs {
     this.records.set(job.id, { ...current, ...metrics });
     this.emit();
   }
-  async logTail(id: string, lines = JOB_LOG_TAIL_LINES): Promise<string> {
+  async logTail(id: string, lines = JOB_LOG_TAIL_LINES, opts: { readonly nonEmpty?: boolean } = {}): Promise<string> {
     const job = this.records.get(id);
-    if (!job || !Number.isFinite(lines) || lines < 1) return "";
-    try {
-      const text = await _jobRunnerDeps.readLog(job.logPath);
-      return text
-        .replace(/\r?\n$/, "")
-        .split(/\r?\n/)
-        .slice(-Math.floor(lines))
-        .join("\n");
-    } catch (cause) {
-      if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return "";
-      throw cause;
-    }
+    if (!job) return "";
+    return await readTailLines(job.logPath, lines, opts);
   }
   dispose(): void {
     this.disposed = true;
