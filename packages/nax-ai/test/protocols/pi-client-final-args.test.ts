@@ -255,6 +255,50 @@ describe("createPiProtocol completed tool arguments", () => {
   });
 });
 
+/** pi's verdict when the completed argument text was not a JSON object. */
+const MALFORMED_ARGS = "Tool arguments must be a JSON object";
+
+describe("createPiProtocol final-only malformed tool arguments", () => {
+  it("AC-7 yields no tool-call when argumentsError arrives with no accumulation", async () => {
+    const events = await drain([callEnd({}, MALFORMED_ARGS)]);
+
+    expect(toolCallsOf(events)).toEqual([]);
+  });
+
+  it("AC-8 ends with terminal usage then one bad-request error carrying argumentsError as its cause", async () => {
+    const events = await drain([callEnd({}, MALFORMED_ARGS), done()]);
+
+    expect(events.at(-2)?.type).toBe("usage");
+    expect(events.at(-1)).toEqual({
+      type: "error",
+      error: {
+        kind: "bad-request",
+        message: 'Tool "lookup" returned unparseable arguments.',
+        cause: MALFORMED_ARGS,
+      },
+    });
+  });
+
+  it("AC-9 (control) yields an empty input when there is neither a delta nor an argumentsError", async () => {
+    const events = await drain([callEnd({})]);
+
+    expect(toolCallsOf(events)).toEqual([{ id: "t1", name: "lookup", input: {} }]);
+  });
+
+  it("AC-10 (control) keeps the parsed accumulation when argumentsError arrives after a usable delta", async () => {
+    const events = await drain([argumentsDelta('{"city":"SG"}'), callEnd({}, MALFORMED_ARGS), done()]);
+
+    expect(toolCallsOf(events)).toEqual([{ id: "t1", name: "lookup", input: { city: "SG" } }]);
+  });
+
+  it("AC-12 treats an accumulation of one empty delta as no accumulation at all", async () => {
+    const events = await drain([argumentsDelta(""), callEnd({}, MALFORMED_ARGS), done()]);
+
+    expect(toolCallsOf(events)).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ type: "error", error: { kind: "bad-request" } });
+  });
+});
+
 describe("createClient completed tool arguments (real pi-ai)", () => {
   it("AC-7 resolves the arguments pi reports on output_item.done when no delta streamed", async () => {
     const result = await completeThroughRealPi([

@@ -332,7 +332,12 @@ function toolCallAt(partial: { content: readonly unknown[] }, index: number): { 
  * object (`arguments` is `{}` in that case), so it keeps the accumulation —
  * and so does a completed value that is not a plain object, which a
  * hand-written backend could hand over. In both of those the accumulated
- * deltas remain the only source of truth nax has.
+ * deltas remain the only source of truth nax has. That "keeps the
+ * accumulation" reading applies only when there IS one: `argumentsError` with
+ * no accumulated deltas (or an accumulation that is empty, such as a single
+ * zero-length delta) never reaches here — the caller reports it as a
+ * bad-request error, because there is no input to fall back to and reporting
+ * `{}` would hand back a successful call that carries no arguments at all.
  */
 function completedToolInput(
   toolCall: { readonly arguments: JsonObject; readonly argumentsError?: string },
@@ -419,6 +424,14 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
         observed = response;
       });
       const toolArgs = createToolArgAccumulator();
+      /**
+       * Text emitted per content index, so `text_end` can deliver a suffix its
+       * deltas never carried. Entries are removed when their block ends; a
+       * block whose `text_end` never arrives simply goes with the stream —
+       * there is no `done`-time flush, because the terminal message's blocks
+       * are not a source nax reconciles text from.
+       */
+      const emittedText = new Map<number, string>();
       let malformedToolArgs: Extract<ProtocolEvent, { type: "error" }> | undefined;
       // Complete thinking blocks, in the order their thinking_end events
       // arrived. Held rather than emitted there so the terminal message can
@@ -467,8 +480,27 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
 
           switch (event.type) {
             case "text_delta":
+              // Remembered per content index so text_end can tell what it still
+              // owes the consumer: a provider may deliver a block's text only on
+              // the item that closes it, and the deltas then carry nothing.
+              emittedText.set(event.contentIndex, (emittedText.get(event.contentIndex) ?? "") + event.delta);
               yield { type: "text-delta", text: event.delta };
               break;
+
+            case "text_end": {
+              // The terminal content is authoritative about what the block says,
+              // but text already emitted cannot be retracted. So only a content
+              // that EXTENDS what this index delivered adds the missing suffix
+              // (finding 8: a stream answering "42" only on text_end answered
+              // nothing at all). Equal is already delivered; divergent is a
+              // provider inconsistency the deltas stand for.
+              const emitted = emittedText.get(event.contentIndex) ?? "";
+              emittedText.delete(event.contentIndex);
+              if (event.content.startsWith(emitted) && event.content.length > emitted.length) {
+                yield { type: "text-delta", text: event.content.slice(emitted.length) };
+              }
+              break;
+            }
 
             case "thinking_delta":
               yield { type: "thinking-delta", text: event.delta };
@@ -506,6 +538,23 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
 
             case "toolcall_end": {
               const pending = toolArgs.take(event.toolCall.id);
+              // pi reports argumentsError when the completed argument text was
+              // not a JSON object. With no accumulation to fall back on there is
+              // no input at all, so this takes the same draining bad-request path
+              // as an accumulation that failed to parse (finding 9). An empty
+              // accumulation is the same case: one zero-length delta records an
+              // entry whose raw text says nothing.
+              if (event.toolCall.argumentsError !== undefined && (pending === undefined || pending.raw === "")) {
+                malformedToolArgs = {
+                  type: "error",
+                  error: {
+                    kind: "bad-request",
+                    message: `Tool "${event.toolCall.name}" returned unparseable arguments.`,
+                    cause: event.toolCall.argumentsError,
+                  },
+                };
+                break;
+              }
               let input: unknown;
               try {
                 input = parseToolArgs(pending?.raw ?? "");
@@ -596,10 +645,10 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             }
 
             default:
-              // start, text_start, text_end, thinking_start and toolcall_start
-              // carry nothing our vocabulary expresses: content is already
-              // delivered by the deltas (and, for thinking, by "thinking_end"
-              // above once the stream ends).
+              // start, text_start, thinking_start and toolcall_start carry
+              // nothing our vocabulary expresses: content is already delivered
+              // by the deltas (text_end and thinking_end are handled above,
+              // because each can carry content the deltas did not).
               break;
           }
         }
