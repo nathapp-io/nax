@@ -16,7 +16,15 @@
  * `submodule.<name>.ignore` from `.gitmodules` -- so it can recurse too. The
  * commit sites therefore ask `hasStagedChanges` first and never run a commit
  * that would only report "nothing to commit".
+ *
+ * US-006: the same `add` also excludes every bwrap placeholder-shaped path nax
+ * protects (an empty 0444 `.mcp.json`, `.gitmodules`, a trusted ledger's entry).
+ * A broad staging pass used to commit one as an empty file in the user's
+ * history; the exclusion is one more `:(exclude,literal)` pathspec, derived from
+ * the tracked set this module already lists, so a tree with no placeholder keeps
+ * exactly the argv it had.
  */
+import { stagingPlaceholderPaths } from "../sandbox/staging-placeholders.ts";
 
 export interface GitRunResult {
   stdout: string;
@@ -39,6 +47,15 @@ export interface GitlinkSafeAddOptions {
 const GITLINK_MODE = "160000";
 const WHOLE_TREE_PATHSPEC = ":/";
 
+/** Every path in `git ls-files --stage -z` output (paths as git printed them: relative to its cwd). */
+function parseTrackedPaths(lsFilesStageZ: string): string[] {
+  const paths = lsFilesStageZ.split("\0").flatMap((record) => {
+    const tab = record.indexOf("\t");
+    return tab < 0 ? [] : [record.slice(tab + 1)];
+  });
+  return [...new Set(paths)];
+}
+
 /** Gitlink paths from `git ls-files --stage -z` output (paths as git printed them: relative to its cwd). */
 export function parseGitlinks(lsFilesStageZ: string): string[] {
   const paths = lsFilesStageZ.split("\0").flatMap((record) => {
@@ -57,8 +74,14 @@ export async function gitlinkSafeAdd(git: GitRunner, cwd: string, opts: GitlinkS
     // Fail closed: staging without knowing the gitlinks would recurse into them.
     return { ...listed, exitCode: listed.exitCode === 0 ? 1 : listed.exitCode };
   }
+  const tracked = parseTrackedPaths(listed.stdout);
   const gitlinks = parseGitlinks(listed.stdout);
-  const excludes = gitlinks.map((p) => `:(exclude,literal)${p}`);
+  const excludes = [
+    ...gitlinks.map((p) => `:(exclude,literal)${p}`),
+    // US-006: never stage a placeholder-shaped path nax protects. A tree with no
+    // placeholder yields no extra pathspec, so that argv is unchanged.
+    ...stagingPlaceholderPaths(cwd, tracked).map((p) => `:(exclude,literal)${p}`),
+  ];
   const added = await git(["add", ...(opts.flags ?? []), "--", ...pathspecs, ...excludes], cwd, opts.timeoutMs);
   if (added.exitCode !== 0 || gitlinks.length === 0) return added;
   return git(["update-index", "--add", "--remove", "--", ...gitlinks], cwd, opts.timeoutMs);

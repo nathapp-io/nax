@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { cpSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type GitRunResult,
@@ -9,7 +9,8 @@ import {
   hasStagedChanges,
   parseGitlinks,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
+import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 const OK: GitRunResult = { stdout: "", stderr: "", exitCode: 0 };
 
@@ -86,6 +87,47 @@ describe("gitlinkSafeAdd argv", () => {
       expect(r.exitCode).not.toBe(0);
       expect(calls.map((c) => c[0])).toEqual(["ls-files"]);
     }
+  });
+
+  // US-006: a broad `git add` must not stage the bwrap placeholder at a mandatory
+  // or trusted-ledger path, so the guard appends one `:(exclude,literal)` pathspec
+  // per placeholder-shaped path the stage listing does not already track.
+  describe("with a placeholder in the tree (US-006)", () => {
+    withDepsRestore(_placeholderDeps);
+    let cwd: string;
+
+    beforeEach(() => {
+      cwd = makeTempDir("git-add-placeholders-");
+      // An absent ledger directory: these cases are about the mandatory names.
+      _placeholderDeps.ledgerDir = () => join(cwd, "no-ledgers");
+    });
+    afterEach(() => cleanupTempDir(cwd));
+
+    test("appends one exclude per untracked placeholder-shaped path", async () => {
+      writeFileSync(join(cwd, ".mcp.json"), "");
+      chmodSync(join(cwd, ".mcp.json"), 0o444);
+      const { calls, run } = recorder(OK);
+
+      await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
+
+      expect(calls).toEqual([
+        ["ls-files", "--stage", "-z", "--", ":/"],
+        ["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"],
+      ]);
+    });
+
+    test("takes the tracked set from every mode of the stage listing, not only gitlinks", async () => {
+      writeFileSync(join(cwd, ".mcp.json"), "");
+      chmodSync(join(cwd, ".mcp.json"), 0o444);
+      const { calls, run } = recorder({ ...OK, stdout: "100644 aaaa 0\t.mcp.json\0" });
+
+      await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
+
+      expect(calls).toEqual([
+        ["ls-files", "--stage", "-z", "--", ":/"],
+        ["add", "-A", "--", ":/"],
+      ]);
+    });
   });
 });
 
