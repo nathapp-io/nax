@@ -60,6 +60,16 @@ export interface OpenInput {
   readonly port: (sessionId: string) => ClientPort;
 }
 
+/** How an entry is opened. `requireStored` re-checks the stored metadata under the lock (US-001). */
+export interface OpenEntryOptions {
+  /**
+   * Under the lock, refuse when the metadata is gone: a resume whose session was
+   * deleted while it waited must not reopen it. The open proceeds with the
+   * metadata the caller read before the lock.
+   */
+  readonly requireStored?: boolean;
+}
+
 export interface SessionRegistry {
   create(input: OpenInput): Promise<{ readonly sessionId: string } & SessionState>;
   load(sessionId: string, input: OpenInput): Promise<SessionState>;
@@ -188,7 +198,12 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
   }
 
   /** Parses MCP servers, takes the lock, connects MCP, opens the S3 session, registers it. Everything is undone on failure. */
-  async function openEntry(meta: SessionMeta, port: ClientPort, mcpServers: readonly unknown[]) {
+  async function openEntry(
+    meta: SessionMeta,
+    port: ClientPort,
+    mcpServers: readonly unknown[],
+    options: OpenEntryOptions = {},
+  ) {
     if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN);
     const parsed = mcpServers.length === 0 ? NO_SERVERS : parseMcpServers(mcpServers);
     await deps.ensureCredentials?.(meta.model);
@@ -196,6 +211,10 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     let mcp: SessionMcp | undefined;
     let opened: OpenedSession | undefined;
     try {
+      // Under the lock: a session deleted while this open waited is refused before anything starts.
+      if (options.requireStored === true && (await deps.storage.readMeta(meta.sessionId)) === null) {
+        throw unknownSession(meta.sessionId);
+      }
       mcp = await startMcp(parsed, meta, port);
       if (closing) throw RequestError.internalError(undefined, SHUTTING_DOWN); // shutdown during connect
       const settings = settingsOf(meta);
@@ -313,6 +332,37 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     if (changed) await announceConfig(entry, next);
   }
 
+  /** Settings mutations queued per session, so an overlapping pair cannot compute from the same stale metadata. */
+  const settingsTails = new Map<string, Promise<void>>();
+
+  /**
+   * Runs `work` after the session's previous mutation settled (US-001). Uncontended
+   * it runs in this tick, exactly as before; waiting it computes from the metadata
+   * the previous mutation persisted. A failed mutation is the previous caller's news
+   * alone — the next one still runs.
+   */
+  function serializeSettings<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
+    const previous = settingsTails.get(sessionId);
+    const result =
+      previous === undefined
+        ? work()
+        : previous.then(
+            () => work(),
+            () => work(),
+          );
+    // Muted, so a waiter never inherits the tail's failure and an unsettled tail never rejects unhandled.
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    settingsTails.set(sessionId, tail);
+    void tail.then(() => {
+      // Only the newest tail owns the entry: an earlier one settling must not drop the queue.
+      if (settingsTails.get(sessionId) === tail) settingsTails.delete(sessionId);
+    });
+    return result;
+  }
+
   /** The default model, re-read from the config when none was configured at startup. */
   async function reloadDefaultModel(): Promise<string> {
     let problem: string | undefined;
@@ -396,15 +446,19 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
       }
     },
     async setMode(sessionId, modeId) {
-      const entry = entryOf(sessionId);
-      const next = applyModeChange(settingsOf(entry.meta), modeId);
-      await applySettings(sessionId, entry, next, true);
+      await serializeSettings(sessionId, async () => {
+        const entry = entryOf(sessionId);
+        const next = applyModeChange(settingsOf(entry.meta), modeId);
+        await applySettings(sessionId, entry, next, true);
+      });
     },
-    async setConfigOption(sessionId, configId, value) {
-      const entry = entryOf(sessionId);
-      const next = applyConfigChange(settingsOf(entry.meta), configId, value, options.tiers);
-      await applySettings(sessionId, entry, next, false);
-      return configOptions(next, options.tiers);
+    setConfigOption(sessionId, configId, value) {
+      return serializeSettings(sessionId, async () => {
+        const entry = entryOf(sessionId);
+        const next = applyConfigChange(settingsOf(entry.meta), configId, value, options.tiers);
+        await applySettings(sessionId, entry, next, false);
+        return configOptions(next, options.tiers);
+      });
     },
     async closeAll() {
       closing = true;

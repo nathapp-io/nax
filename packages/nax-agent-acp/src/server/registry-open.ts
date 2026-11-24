@@ -15,7 +15,7 @@ import type { AgentLogger, SessionMeta, SessionStorage, TranscriptStore } from "
 import type { ClientPort } from "#src/server/client-port";
 import { unknownSession } from "#src/server/errors";
 import type { OpenedSession } from "#src/server/open-session";
-import type { Entry, OpenInput, SessionState } from "#src/server/registry";
+import type { Entry, OpenEntryOptions, OpenInput, SessionState } from "#src/server/registry";
 import type { ServerSession } from "#src/server/server-session";
 import type { SessionSettings } from "#src/server/session-config";
 import { announce } from "#src/server/translate/notice";
@@ -30,6 +30,7 @@ export interface ReopenDeps {
     meta: SessionMeta,
     port: ClientPort,
     mcpServers: readonly unknown[],
+    options?: OpenEntryOptions,
   ) => Promise<{ readonly server: ServerSession; readonly opened: OpenedSession }>;
   readonly closeEntry: (sessionId: string, entry: Entry) => Promise<void>;
   readonly stateOf: (settings: SessionSettings) => SessionState;
@@ -66,9 +67,15 @@ export function createReopen(deps: ReopenDeps): Reopener {
     }
   }
 
-  async function openAndReplay(sessionId: string, meta: SessionMeta, input: OpenInput, replay: boolean): Promise<void> {
+  async function openAndReplay(
+    sessionId: string,
+    meta: SessionMeta,
+    input: OpenInput,
+    replay: boolean,
+    options: OpenEntryOptions = {},
+  ): Promise<void> {
     const port = input.port(sessionId);
-    const { opened } = await deps.openEntry(meta, port, input.mcpServers);
+    const { opened } = await deps.openEntry(meta, port, input.mcpServers, options);
     if (replay) {
       try {
         await replayOpened(port, sessionId, opened, meta.cwd);
@@ -103,7 +110,9 @@ export function createReopen(deps: ReopenDeps): Reopener {
         stored: meta.cwd,
       });
     }
-    await openAndReplay(sessionId, meta, input, replay);
+    // The metadata was read before the lock: re-checked under it, a session deleted
+    // while this open waited is refused instead of resurrected (US-001).
+    await openAndReplay(sessionId, meta, input, replay, { requireStored: true });
     return deps.stateOf(settingsOf(meta));
   }
 
