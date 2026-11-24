@@ -70,21 +70,25 @@ describe("resolveSessionSandbox — US-005 placeholder ledger deny", () => {
   interface LedgerHostCase {
     readonly platform?: NodeJS.Platform;
     readonly bootId?: "throws";
-    readonly ledgerDir?: "throws";
+    /** `"throws"` fails the creation read; `"throwsAfter"` fails every read after it. */
+    readonly ledgerDir?: "throws" | "throwsAfter";
     readonly startTicks?: "throws";
   }
 
   /** The host facts a ledger needs, injected so no case touches `/proc`. */
   function stubLedgerHost(host: LedgerHostCase = {}): void {
     _placeholderDeps.platform = () => host.platform ?? "linux";
-    // The ledger directory is read twice when a ledger is kept: once to create
-    // it, once to deny it. The throwing case fails only the CREATION read, so
-    // the directory is still a real path afterwards — an implementation that
-    // read it without checking for a ledger would then deny it, and fail.
+    // The ledger directory is read at creation, and — until F1 — again when the
+    // deny is built. `"throws"` fails only the CREATION read, so the directory is
+    // still a real path afterwards and an implementation that read it without
+    // checking for a ledger would deny it and fail. `"throwsAfter"` answers the
+    // creation read and fails every later one: a provider that goes away mid-run
+    // must not abort policy construction (the ledger already has its directory).
     let dirReads = 0;
     _placeholderDeps.ledgerDir = () => {
       dirReads += 1;
       if (host.ledgerDir === "throws" && dirReads === 1) throw new Error("CREDENTIALS_NOT_CONFIGURED");
+      if (host.ledgerDir === "throwsAfter" && dirReads > 1) throw new Error("CREDENTIALS_NOT_CONFIGURED");
       return ledgerDir;
     };
     _placeholderDeps.bootId = () => {
@@ -200,6 +204,16 @@ describe("resolveSessionSandbox — US-005 placeholder ledger deny", () => {
     await wrappedPolicyFor({ startTicks: "throws" });
 
     expect(exitListeners).toEqual([]);
+  });
+
+  test("AC-5 boundary: a ledgerDir() that fails AFTER the ledger exists still denies the captured directory", async () => {
+    // F1: the ledger captures its directory at creation, so a provider that goes
+    // away later must neither abort policy construction nor drop the deny — the
+    // deny must still name the directory the ledger is actually writing to.
+    const { policy, launcherState } = await wrappedPolicyFor({ ledgerDir: "throwsAfter" });
+
+    expect(launcherState).toBe("available");
+    expect(policy.denyWrite).toContain(realOrRaw(ledgerDir));
   });
 
   test("AC-5 boundary: a kept ledger registers exactly one exit hook across repeated builds", async () => {

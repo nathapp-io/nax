@@ -326,6 +326,12 @@ function createProcessLedger(): ProcessLedger | undefined {
     return disabled(errorMessage(err));
   }
   ensureLedgerDir(host.dir);
+  // F1: capture the directory here, once. Every later reader -- the deny in
+  // `placeholderLedgerDirForPolicy` in particular -- takes this value instead of
+  // asking the provider again: it can go away mid-run (`credentialsConfig()`
+  // throws once the host is unconfigured), and a provider read must never abort
+  // policy construction for a path the ledger already owns.
+  capturedLedgerDir = host.dir;
   const ledger = createLedger(host);
   // One hook per process, registered before any wrap, deleting the file whatever
   // it still holds: the entries are this process's, and it will not observe again.
@@ -336,6 +342,17 @@ function createProcessLedger(): ProcessLedger | undefined {
 }
 
 let ledger: ProcessLedger | undefined;
+
+/**
+ * The directory {@link ledger} was created with, captured at creation (F1).
+ *
+ * Never re-read from `_placeholderDeps.ledgerDir()`: that provider is a host
+ * fact that can fail after the ledger exists (`credentialsConfig()` throws once
+ * the host is unconfigured), and a policy built for a command must not abort
+ * because the directory it should deny can no longer be looked up — the ledger
+ * already owns the path, and `undefined` here is what "no ledger" means.
+ */
+let capturedLedgerDir: string | undefined;
 
 /**
  * True once creation has been attempted — the ledger singleton's own flag, and
@@ -359,6 +376,7 @@ export function placeholderLedger(): PlaceholderLedger | undefined {
 /** Clears the process ledger and its one-attempt flag. Tests only. @internal */
 export function _resetPlaceholderLedgerForTests(): void {
   ledger = undefined;
+  capturedLedgerDir = undefined;
   initialised = false;
 }
 
@@ -372,12 +390,15 @@ export function _resetPlaceholderLedgerForTests(): void {
  * (those readers disable the ledger; they do not throw out of here, because the
  * ledger is created first and a disabled ledger is `undefined`).
  *
- * The ledger creates its 0700 directory as it is created, so by the time this
- * answers, the path exists. It must be denied: a command that could write there
- * could add or remove the entries the sweep trusts when it decides which
+ * The directory is the one the ledger was CREATED with, not a fresh
+ * `_placeholderDeps.ledgerDir()` call (F1): re-reading a host provider here would
+ * let a provider that failed after creation abort policy construction, for a
+ * path the ledger already owns. The ledger created its 0700 directory as it was
+ * created, so the path exists. It must be denied: a command that could write
+ * there could add or remove the entries the sweep trusts when it decides which
  * placeholder to delete, and the user's own file is what that decision protects.
  */
 export function placeholderLedgerDirForPolicy(): string | undefined {
   if (placeholderLedger() === undefined) return undefined;
-  return _placeholderDeps.ledgerDir();
+  return capturedLedgerDir;
 }
