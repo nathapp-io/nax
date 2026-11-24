@@ -70,8 +70,6 @@ function heldCredentials() {
 
 interface OverlapExtra {
   readonly scripts?: readonly Script[];
-  /** Runs once the model switch is parked on the held lookup, before the mode switch starts. */
-  readonly whileHeld?: (s: ReturnType<typeof setupRegistry>, sessionId: string) => Promise<void>;
 }
 
 /**
@@ -89,7 +87,6 @@ async function overlapFixture(d: string, extra: OverlapExtra = {}) {
   await s.registry.setMode(sessionId, "full");
   const modelSwitch = s.registry.setConfigOption(sessionId, "model", MODEL);
   await credentials.entered.promise;
-  await extra.whileHeld?.(s, sessionId);
   const openedBeforeModeSwitch = s.opened.length;
   const modeSwitch = s.registry.setMode(sessionId, "read");
   return { s, sessionId, credentials, modelSwitch, modeSwitch, openedBeforeModeSwitch };
@@ -164,19 +161,17 @@ describe("two settings mutations that overlap on one session", () => {
     }
   });
 
-  test("AC-6 (control): a prompt runs while the lookup is held and keeps its cost", async () => {
-    const fixture = await overlapFixture(dir(), {
-      scripts: [priced(0.25)],
-      whileHeld: async (s, sessionId) => {
-        // Not serialized behind the parked mutation: the turn completes before the release.
-        expect((await s.registry.get(sessionId).prompt(PROMPT)).stopReason).toBe("end_turn");
-        expect((await s.storage.readMeta(sessionId))?.costUsd).toBe(0.25);
-      },
-    });
+  test("AC-6: a prompt started while both mutations wait still runs and keeps its cost", async () => {
+    const fixture = await overlapFixture(dir(), { scripts: [priced(0.25)] });
     try {
+      // Both settings calls have started and the credential lookup is still held: a turn is
+      // not queued behind them, so the prompt runs now rather than after the mutations settle.
+      expect(fixture.credentials.calls()).toBe(2);
+      const reply = await fixture.s.registry.get(fixture.sessionId).prompt(PROMPT);
+      expect(reply.stopReason).toBe("end_turn");
+      expect((await fixture.s.storage.readMeta(fixture.sessionId))?.costUsd).toBe(0.25);
       fixture.credentials.held.resolve();
-      // Swallowed: this control tracks the turn's metadata, not how the mutations settle.
-      await Promise.all([fixture.modelSwitch.catch(() => undefined), fixture.modeSwitch.catch(() => undefined)]);
+      await Promise.all([fixture.modelSwitch, fixture.modeSwitch]);
       expect((await fixture.s.storage.readMeta(fixture.sessionId))?.costUsd).toBe(0.25);
     } finally {
       await closeOverlap(fixture);
