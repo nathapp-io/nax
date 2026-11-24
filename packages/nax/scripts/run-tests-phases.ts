@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /**
  * The phases `scripts/run-tests.ts` runs. Kept pure (no spawning) so the
@@ -105,7 +105,10 @@ function isExplicitTestFile(arg: string): boolean {
 /** True when `file` (absolute) lies under `dir`, resolved against `packageDir`. */
 function isUnderPhase(file: string, dir: string, packageDir: string): boolean {
   const rel = relative(resolve(packageDir, dir), file);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  // An escape is `..` itself or `..` followed by a separator. A bare `..` prefix
+  // is not an escape: `relative()` returns `..case.test.ts` for a file of that
+  // name, and that file is under the phase directory.
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 /**

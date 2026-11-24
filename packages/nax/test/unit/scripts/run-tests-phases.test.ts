@@ -146,6 +146,17 @@ describe("selectPhases — explicit test files", () => {
     expect(() => selectPhases(["docs/x.test.ts"], PKG)).toThrow("docs/x.test.ts");
   });
 
+  test("a basename beginning with two dots is a valid file, not a parent-directory escape", () => {
+    const phases = selectPhases(["test/unit/..case.test.ts"], PKG);
+
+    expect(selectedNames(phases)).toEqual(["unit"]);
+    expect(phases[0]?.files).toEqual([join(PKG, "test/unit/..case.test.ts")]);
+  });
+
+  test("an absolute path outside the package directory is still refused", () => {
+    expect(() => selectPhases(["/elsewhere/test/unit/a.test.ts"], PKG)).toThrow("/elsewhere/test/unit/a.test.ts");
+  });
+
   test("--e2e is ignored when explicit files are given", () => {
     const phases = selectPhases(["test/unit/a.test.ts", "--e2e"], PKG);
 
