@@ -178,7 +178,7 @@ export function useIdleCompact(input: { readonly host: ChatHost; readonly delayM
 - `decisions` = decisions whose `decidedAt` parses and is at or after `job.startedAt` (an unparseable `decidedAt` is dropped), each `{ line: decisionBody(decision), flagged: decision.needsHumanConfirm }`, sorted flagged first, then by `decidedAt` newest first.
 - `logTail` = the last `JOB_PANEL_LOG_LINES` non-empty lines of `logTail`.
 
-`readJobPanelView(job, jobs, now)` gathers the sources: for `run` and `finish` jobs, `readJobStatus(job, job.cwd)`, the PRD at `<featureDir(job.cwd, job.target)>/prd.json` when it exists, and `readDecisions(job.cwd, job.target)`; for `plan` and bot jobs, `status` null, no stories and no decisions. It always reads `jobs.logTail(job.id, JOB_PANEL_LOG_LINES)`. A source that throws or is missing contributes its empty value (`null`, `[]`, `""`); the panel still renders.
+`readJobPanelView(job, jobs, now)` gathers the sources: for `run` and `finish` jobs, `readJobStatus(job, job.cwd)`, the PRD at `<featureDir(job.cwd, job.target)>/prd.json` when it exists, and `readDecisions(job.cwd, job.target)`; for `plan` and bot jobs, `status` null, no stories and no decisions. It always reads `jobs.logTail(job.id, JOB_PANEL_LOG_LINES, { nonEmpty: true })`, which returns the last `JOB_PANEL_LOG_LINES` non-empty lines (revised by review-e684 finding 13, 2026-11-24). A source that throws or is missing contributes its empty value (`null`, `[]`, `""`); the panel still renders.
 
 ### Panel layout
 
