@@ -116,9 +116,17 @@ describe("logTail", () => {
   });
 
   test("AC-22 a failing size leaves the panel with no log lines", async () => {
-    _logTailDeps.size = () => Promise.reject(denied());
-    const view = await readJobPanelView(job, jobs, new Date(clock.now()));
-    expect(view.logTail).toEqual([]);
+    // The log holds text that a reader skipping the size seam would show: the same fixture fills
+    // the panel once the seam works again, so the empty panel below is the injected failure.
+    await Bun.write(job.logPath, "a\nb\n");
+    const size = mock(() => Promise.reject(denied()));
+    _logTailDeps.size = size;
+    const failed = await readJobPanelView(job, jobs, new Date(clock.now()));
+    _logTailDeps.size = originalLogTail.size;
+    const readable = await readJobPanelView(job, jobs, new Date(clock.now()));
+    expect(size).toHaveBeenCalledTimes(1);
+    expect(failed.logTail).toEqual([]);
+    expect(readable.logTail).toEqual(["a", "b"]);
   });
 });
 
