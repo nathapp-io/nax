@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -254,6 +255,40 @@ describe("US-007 placeholder excludes through a fresh Linux backend", () => {
 
     expect(argv).toEqual(["true"]);
     expect(callsAt("warn", "could not update git excludes")).toHaveLength(1);
+  });
+
+  test("AC-9: the section lands by an atomic replace, never a truncation in place", async () => {
+    const user = "*.log\n/build\n/.profile";
+    writeFileSync(excludePath(repo), user);
+    chmodSync(excludePath(repo), 0o600);
+    const before = lstatSync(excludePath(repo));
+
+    await wrapIn(repo);
+
+    const after = lstatSync(excludePath(repo));
+    const missing = ["/.bashrc", "/.bash_profile", "/.zshrc", "/.zprofile", "/.ripgreprc"];
+    // A new inode: the bytes arrived by a rename, so the destination was never
+    // emptied first — a write that fails partway cannot lose the user's lines.
+    expect(after.ino).not.toBe(before.ino);
+    expect(excludeText(repo)).toBe(`${user}\n${HEADER}\n${missing.join("\n")}\n`);
+    // The user's permission bits survive the replace, and no temporary file is
+    // left beside it.
+    expect(after.mode & 0o777).toBe(0o600);
+    expect(readdirSync(join(repo, ".git", "info"))).toEqual(["exclude"]);
+  });
+
+  test("AC-9: a linked exclude file is written through, not replaced by a regular file", async () => {
+    const shared = join(base, "shared-exclude");
+    writeFileSync(shared, "*.log\n");
+    unlinkSync(excludePath(repo));
+    symlinkSync(shared, excludePath(repo));
+
+    await wrapIn(repo);
+
+    // The user's link survives, and the entries landed in the file git reads
+    // through it — not on a new regular file where the link used to be.
+    expect(lstatSync(excludePath(repo)).isSymbolicLink()).toBe(true);
+    expect(readFileSync(shared, "utf8")).toBe(`*.log\n${HEADER}\n${ENTRIES.join("\n")}\n`);
   });
 
   test("AC-10: a throwing ensureExcludes seam still lets wrap resolve its argv", async () => {

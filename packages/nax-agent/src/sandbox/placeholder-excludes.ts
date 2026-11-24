@@ -18,11 +18,13 @@
  *
  * Nothing is ever removed: `.git/info/exclude` belongs to the user, so an entry
  * nax added stays after nax is done with the repository. The update is
- * line-exact and locked, the same additive shape `nax/src/worktree/manager.ts`
- * uses for its own generated files.
+ * line-exact, locked, and staged through a temporary file renamed into place —
+ * the same additive shape `nax/src/worktree/manager.ts` uses for its own
+ * generated files, plus the atomic replace its in-place write lacks.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { gitWithTimeout } from "#src/internal/git-exec";
@@ -56,6 +58,11 @@ const EXCLUDE_LOCK_TIMEOUT_MS = 5_000;
 
 /** The filesystem root: never a repository nax should write an exclude for. */
 const FILESYSTEM_ROOT = "/";
+
+/** The errno code an fs error carries, or `undefined` for anything else. */
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
 
 /** `<info>/exclude`: git reads the file under the git dir, which for a worktree is the common dir's. */
 function excludePath(infoRoot: string): string {
@@ -111,28 +118,71 @@ function withPlaceholderEntries(existing: string): string {
 }
 
 /**
- * The file's current bytes, `""` when it does not exist yet. A read that fails
- * for any other reason throws: there is nothing safe to append to, and writing
- * anyway would replace the user's lines with nax's.
+ * The file's current bytes and permission bits, `undefined` when it does not
+ * exist yet. A read that fails for any other reason throws: there is nothing
+ * safe to append to, and writing anyway would replace the user's lines with
+ * nax's.
  */
-function readExclude(path: string): string {
-  return existsSync(path) ? readFileSync(path, "utf8") : "";
+function readExclude(path: string): { readonly text: string; readonly mode: number } | undefined {
+  try {
+    const stats = statSync(path);
+    return { text: readFileSync(path, "utf8"), mode: stats.mode & 0o777 };
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/** Delete `path`, ignoring any failure: a renamed temp file is already gone. */
+function removeQuietly(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    // A successful rename already removed the temporary name.
+  }
+}
+
+/**
+ * Replace `path`'s bytes without ever truncating it first: stage the new
+ * contents in a uniquely named file beside it, then rename that over it.
+ *
+ * `open`/`write` in place would empty the destination before the new bytes
+ * arrive, so a write that fails partway (a full filesystem, a quota, a killed
+ * process) would leave the user's exclude file empty or half-written. A rename
+ * is atomic within one directory: readers see either the old file or the new
+ * one, and a failure before it leaves the old bytes untouched. The temporary
+ * name is unique per call and created with `wx`, never a predictable name that
+ * another process could have left behind as a symlink.
+ */
+function replaceAtomically(path: string, content: string, mode: number | undefined): void {
+  const temp = `${dirname(path)}/.${basename(path)}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, content, { flag: "wx", mode });
+    renameSync(temp, path);
+  } finally {
+    removeQuietly(temp);
+  }
 }
 
 async function addExcludes(cwd: string): Promise<void> {
   const path = await targetExclude(cwd);
   if (path === undefined) return;
-  mkdirSync(dirname(path), { recursive: true });
+  const infoDir = dirname(path);
+  mkdirSync(infoDir, { recursive: true });
   // Serialized, so two nax processes starting at once cannot interleave
   // read-read-write-write and drop one process's entries.
   await withPathFileLock(
     path,
     async () => {
-      const existing = readExclude(path);
+      const current = readExclude(path);
+      const existing = current?.text ?? "";
       const next = withPlaceholderEntries(existing);
       // Nothing missing: leave the inode, the bytes and the mtime alone.
       if (next === existing) return;
-      writeFileSync(path, next);
+      // A linked exclude is written through: the replace must land in the file
+      // git reads, not on a new regular file where the user's link used to be.
+      const destination = current === undefined ? path : realOrRaw(path);
+      replaceAtomically(destination, next, current?.mode);
     },
     { timeoutMs: EXCLUDE_LOCK_TIMEOUT_MS },
   );
