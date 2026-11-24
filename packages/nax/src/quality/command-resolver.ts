@@ -53,6 +53,56 @@ export const _commandResolverDeps = {
   },
 };
 
+/** The pair a promotion yields: the command to run, and the template left for per-file expansion. */
+export interface PromotedTestCommands {
+  readonly testCommand: QualityCommandSpec | undefined;
+  readonly testScopedTemplate: QualityCommandSpec | undefined;
+}
+
+/**
+ * Resolve a `{{package}}` template and, for a monorepo orchestrator, promote the
+ * resolved template to the command to run.
+ *
+ * Extracted from `resolveQualityTestCommands` so `verifyScopedOp` can apply the
+ * same promotion to the command it was about to run (US-004): an orchestrator
+ * scopes natively through its own filter syntax, so appending individual file
+ * paths would be invalid — and running the raw repo-wide command would verify
+ * every package instead of the story's.
+ *
+ * @param testCommand  - The command as configured (review.commands.test ?? quality.commands.test)
+ * @param scopedTemplate - quality.commands.testScoped, as configured
+ * @param workdir      - ABSOLUTE package directory used for the package.json name lookup
+ * @param storyWorkdir - the package's key relative to the repo root (e.g. "packages/nax").
+ *                       Not the lookup directory; undefined at the repo root, where no
+ *                       promotion happens.
+ */
+export async function promoteOrchestratorCommand(
+  testCommand: QualityCommandSpec | undefined,
+  scopedTemplate: QualityCommandSpec | undefined,
+  workdir: string,
+  storyWorkdir: string | undefined,
+): Promise<PromotedTestCommands> {
+  const isMonorepoOrchestrator = testCommand ? isMonorepoOrchestratorCommand(testCommand) : false;
+
+  // Resolve {{package}} in the scoped template. Returns null if package.json is
+  // absent (non-JS project) — callers then run the raw command.
+  let resolvedScopedTemplate = scopedTemplate;
+  if (scopedTemplate !== undefined && commandSpecIncludes(scopedTemplate, "{{package}}") && storyWorkdir) {
+    const pkgName = await _commandResolverDeps.readPackageName(workdir);
+    resolvedScopedTemplate =
+      pkgName !== null ? replaceInCommandSpec(scopedTemplate, "{{package}}", shellQuoteArg(pkgName)) : undefined;
+  }
+
+  // Monorepo orchestrator promotion: turbo/nx handle scoping natively via their own filter syntax.
+  if (!isMonorepoOrchestrator) return { testCommand, testScopedTemplate: resolvedScopedTemplate };
+
+  return {
+    testCommand: resolvedScopedTemplate && storyWorkdir ? resolvedScopedTemplate : testCommand,
+    // never do per-file expansion for orchestrators
+    testScopedTemplate: undefined,
+  };
+}
+
 /**
  * Resolve quality test commands for a story, applying:
  * 1. review.commands.test ?? quality.commands.test priority
@@ -76,26 +126,14 @@ export async function resolveQualityTestCommands(
   const scopeFileThreshold = config.quality?.scopeTestThreshold ?? 10;
   const isMonorepoOrchestrator = rawTestCommand ? isMonorepoOrchestratorCommand(rawTestCommand) : false;
 
-  // Resolve {{package}} in testScoped template for monorepo stories.
-  // Returns null if package.json is absent (non-JS project) — callers skip template.
-  let resolvedScopedTemplate = rawScopedTemplate;
-  if (rawScopedTemplate !== undefined && commandSpecIncludes(rawScopedTemplate, "{{package}}") && storyWorkdir) {
-    const pkgName = await _commandResolverDeps.readPackageName(workdir);
-    resolvedScopedTemplate =
-      pkgName !== null ? replaceInCommandSpec(rawScopedTemplate, "{{package}}", shellQuoteArg(pkgName)) : undefined;
-  }
-
-  // Monorepo orchestrator promotion: turbo/nx handle scoping natively via their own filter syntax.
-  // Appending individual file paths would produce invalid syntax for these tools.
-  // When a resolved scoped template is available and story has a workdir, promote it to testCommand.
-  let testCommand = rawTestCommand;
-  let testScopedTemplate = resolvedScopedTemplate;
-  if (isMonorepoOrchestrator) {
-    if (resolvedScopedTemplate && storyWorkdir) {
-      testCommand = resolvedScopedTemplate;
-    }
-    testScopedTemplate = undefined; // never do per-file expansion for orchestrators
-  }
+  // {{package}} substitution + orchestrator promotion live in one helper so
+  // verify-scoped applies exactly the same rules to the command it runs.
+  const { testCommand, testScopedTemplate } = await promoteOrchestratorCommand(
+    rawTestCommand,
+    rawScopedTemplate,
+    workdir,
+    storyWorkdir,
+  );
 
   return { rawTestCommand, testCommand, testScopedTemplate, isMonorepoOrchestrator, scopeFileThreshold };
 }

@@ -6,6 +6,7 @@ import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
 import { executionFailureToFinding, testSummaryToFindings } from "../findings";
 import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
+import { promoteOrchestratorCommand } from "../quality";
 import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import { equalTestCommands, parseTestOutput, selectScopedTests } from "../test-runners";
@@ -138,6 +139,26 @@ function withStopReason<T extends object>(result: T, stopReason: GateStopReason 
   return stopReason === undefined ? result : { ...result, stopReason };
 }
 
+/**
+ * Apply the shared `{{package}}` resolution + orchestrator promotion to a
+ * CONFIGURED test command (US-004). A command detected from the package's
+ * manifest is left alone: promotion is about the monorepo orchestrator the
+ * project configured, not about the package's own runner.
+ *
+ * `promoteOrchestratorCommand` never drops a defined command, so the `??`
+ * only satisfies the optional return type.
+ */
+async function promoteConfiguredCommand(
+  command: QualityCommandSpec,
+  scopedTemplate: QualityCommandSpec | undefined,
+  input: VerifyScopedInput,
+  detectedFromPackage: boolean,
+): Promise<QualityCommandSpec> {
+  if (detectedFromPackage) return command;
+  const promoted = await promoteOrchestratorCommand(command, scopedTemplate, input.workdir, input.packagePrefix);
+  return promoted.testCommand ?? command;
+}
+
 async function coversSuite(
   input: VerifyScopedInput,
   ctx: CallContext,
@@ -212,6 +233,19 @@ export const verifyScopedOp: DeterministicOperation<
         coversFullSuite: false,
       };
     }
+
+    // Configured commands get the same {{package}} resolution + orchestrator
+    // promotion the shared resolver applies (US-004): a turbo/nx command scopes
+    // natively, so running it unfiltered verifies every package in the monorepo
+    // and an unrelated package's failure blocks the story. A command detected
+    // from the package is left alone, as are a non-orchestrator command and a
+    // setup with no scoped template or no package name.
+    baseCommand = await promoteConfiguredCommand(
+      baseCommand,
+      quality.quality?.commands?.testScoped,
+      input,
+      detectedFromPackage,
+    );
 
     // One-time init for a newly-created package (e.g. `uv sync` / `bun install`),
     // now that the implementer has scaffolded the manifest. No-op for existing packages.
