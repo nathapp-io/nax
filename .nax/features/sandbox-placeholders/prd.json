@@ -3,7 +3,7 @@
   "feature": "sandbox-placeholders",
   "branchName": "feat/sandbox-placeholders",
   "createdAt": "2026-11-24T11:27:31.990Z",
-  "updatedAt": "2026-11-24T13:21:40.102Z",
+  "updatedAt": "2026-11-24T14:13:00.539Z",
   "userStories": [
     {
       "id": "US-001",
@@ -176,14 +176,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A small existing-backend integration with security-critical observe/cleanup ordering and overlapping sandbox sessions; strict security TDD overrides medium defaults."
+        "reasoning": "A small existing-backend integration with security-critical observe/cleanup ordering and overlapping sandbox sessions; strict security TDD overrides medium defaults.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/srt-backend.ts",
@@ -202,7 +205,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3b224d83360308f4b694d1a8eb6511b7b811be5f"
     },
     {
       "id": "US-004",
