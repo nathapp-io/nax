@@ -33,7 +33,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, parse, sep } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import { gitWithTimeout } from "#src/internal/git-exec";
@@ -79,6 +79,11 @@ function errorCode(error: unknown): string | undefined {
 /** `<info>/exclude`: git reads the file under the git dir, which for a worktree is the common dir's. */
 function excludePath(infoRoot: string): string {
   return join(infoRoot, "info", "exclude");
+}
+
+/** The real components of a path: the empty and `.` ones a leading `/` or a link text produce, dropped. */
+function segmentsOf(path: string): string[] {
+  return path.split(sep).filter((segment) => segment !== "" && segment !== ".");
 }
 
 /**
@@ -151,36 +156,61 @@ function readExclude(path: string): { readonly text: string; readonly mode: numb
 
 /**
  * The file to write: `path` itself, or, when `path` is a symlink, the file it
- * points at.
+ * points at, resolved the way the kernel resolves it.
  *
- * A DANGLING link is followed too (B3). `statSync` reports `ENOENT` for it, so it
- * reads as an absent exclude — but replacing that name with a regular file would
- * delete the user's link and leave the file git actually reads untouched. nax
- * appends THROUGH the link instead, creating its target beside it.
+ * A DANGLING link is followed too (B3). It reads as an absent exclude, so a
+ * write that replaced that name with a regular file would delete the user's link
+ * and leave the file git actually reads untouched; nax appends THROUGH the link
+ * instead, creating its target beside it.
  *
- * Only the leaf is resolved: a symlinked parent directory needs no help, because
- * the kernel resolves the whole path it is given.
+ * The walk goes component by component and follows every link it crosses (B4),
+ * so a link's target is applied in the directory the link ACTUALLY lives in. With
+ * `.git/info` a symlink to `/shared/info`, the relative target `../settings` of
+ * `.git/info/exclude` names `/shared/settings` — the file git reads through the
+ * link. Lexically normalising the text instead collapses `info/..` to `.git`
+ * first and names `.git/settings`, a file git never reads and one nax would then
+ * overwrite.
  */
 function excludeDestination(path: string): string {
-  let destination = path;
-  for (let hop = 0; hop < MAX_LINK_HOPS; hop++) {
+  const root = parse(path).root;
+  const pending = segmentsOf(path.slice(root.length));
+  let base = root;
+  let hops = 0;
+  while (pending.length > 0) {
+    const segment = pending.shift() as string;
+    if (segment === "..") {
+      // Applied to the resolved `base`, never to the raw text: after a link, `..`
+      // is the parent of where that link landed.
+      base = dirname(base);
+      continue;
+    }
+    const next = join(base, segment);
     let target: string;
     try {
-      if (!lstatSync(destination).isSymbolicLink()) return destination;
-      target = readlinkSync(destination);
+      if (!lstatSync(next).isSymbolicLink()) {
+        base = next;
+        continue;
+      }
+      target = readlinkSync(next);
     } catch (error) {
       // Nothing at this name yet: this is where the bytes belong, and the link
-      // that names it stays intact.
-      if (errorCode(error) === "ENOENT") return destination;
+      // that names it stays intact. The rest of the path is created with it.
+      if (errorCode(error) === "ENOENT") return join(next, ...pending);
       throw error;
     }
-    destination = resolve(dirname(destination), target);
+    hops += 1;
+    if (hops > MAX_LINK_HOPS) {
+      // A chain this long is a loop: refuse rather than guess where git reads.
+      throw new NaxError("[sandbox] git exclude symlink chain is too long", "SANDBOX_EXCLUDE_SYMLINK_LOOP", {
+        stage: "sandbox",
+        file: path,
+      });
+    }
+    const targetRoot = parse(target).root;
+    if (targetRoot !== "") base = targetRoot;
+    pending.unshift(...segmentsOf(target.slice(targetRoot.length)));
   }
-  // A chain this long is a loop: refuse rather than guess where git reads.
-  throw new NaxError("[sandbox] git exclude symlink chain is too long", "SANDBOX_EXCLUDE_SYMLINK_LOOP", {
-    stage: "sandbox",
-    file: path,
-  });
+  return base;
 }
 
 /** Delete `path`, ignoring any failure: a renamed temp file is already gone. */

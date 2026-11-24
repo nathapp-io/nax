@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -305,6 +306,27 @@ describe("US-007 placeholder excludes through a fresh Linux backend", () => {
     // leave the file git reads through it untouched (B3).
     expect(lstatSync(excludePath(repo)).isSymbolicLink()).toBe(true);
     expect(readFileSync(shared, "utf8")).toBe(`${HEADER}\n${ENTRIES.join("\n")}\n`);
+  });
+
+  test("B4: a relative exclude link under a symlinked info directory lands where git reads", async () => {
+    // `.git/info` is itself a symlink, so the exclude link lives in another
+    // directory than its path spells: `../settings` names a file beside that
+    // directory, which only the filesystem can say (B4).
+    const shared = join(base, "shared");
+    mkdirSync(join(shared, "info"), { recursive: true });
+    rmSync(join(repo, ".git", "info"), { recursive: true, force: true });
+    symlinkSync(join(shared, "info"), join(repo, ".git", "info"));
+    symlinkSync("../settings", join(shared, "info", "exclude"));
+    // The lexically collapsed destination: an unrelated .git file that must
+    // survive, and that a `resolve()` of the link text would overwrite.
+    writeFileSync(join(repo, ".git", "settings"), "user\n");
+
+    await wrapIn(repo);
+
+    // The link is written through to the file the kernel resolves it to...
+    expect(readFileSync(join(shared, "settings"), "utf8")).toBe(`${HEADER}\n${ENTRIES.join("\n")}\n`);
+    // ...and the unrelated file at the collapsed path keeps every byte.
+    expect(readFileSync(join(repo, ".git", "settings"), "utf8")).toBe("user\n");
   });
 
   test("AC-10: a throwing ensureExcludes seam still lets wrap resolve its argv", async () => {
