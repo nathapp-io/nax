@@ -36,6 +36,7 @@ export {
 } from "./koda-refusals";
 export type { CreateMcpMemoryProviderInput } from "./mcp-provider";
 export { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
+export { _mirrorLockDeps, lockMemoryMirror, type MirrorLockInput } from "./mirror-lock";
 export { _mirrorOriginDeps, ensureMirrorOrigin, ORIGIN_FILE } from "./mirror-origin";
 export type { MemoryMirrorInfo } from "./mirrors";
 export { isPrunableMirror, listMemoryMirrors } from "./mirrors";

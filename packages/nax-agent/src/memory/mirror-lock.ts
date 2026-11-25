@@ -56,14 +56,31 @@ export type ReleaseLock = () => Promise<void>;
  * A save's or a forget's inputs satisfy it as they are; an approval's does too once its
  * optional seams are filled from the process defaults, and a sync's with its own pid.
  */
-export interface MirrorLockInput {
+export interface MirrorLockInput extends MirrorLockSeam {
   readonly store: MemoryStore;
+  readonly timers?: MemoryTimers;
+}
+
+/**
+ * The half of a lock's inputs that is not the store: the clock it is stamped with, the logger a
+ * takeover is reported through, and the liveness probe a holder is judged by.
+ *
+ * It is split out because taking a lock does not otherwise need a store — the caller names the
+ * directory — and one caller has none: nax's `memory mirrors --prune`, which removes a whole
+ * mirror directory and holds no store for it.
+ */
+export interface MirrorLockSeam {
   readonly logger: AgentLogger;
   readonly now?: () => Date;
-  readonly timers?: MemoryTimers;
   readonly isAlive?: (pid: number) => boolean;
   /** The pid this process claims in the lock; default `process.pid`. */
   readonly pid?: number;
+}
+
+/** One mirror directory whose lock a caller with no store takes. */
+export interface MirrorDirLockInput extends MirrorLockSeam {
+  /** The mirror directory itself: its lock lives at `<dir>/sync.lock`. */
+  readonly dir: string;
 }
 
 /** One lock file and the directory it lives in: the pair every lock operation needs. */
@@ -149,12 +166,12 @@ export function mirrorBusy(store: MemoryStore): NaxError {
 }
 
 /** The liveness probe a lock holder is judged by: the caller's, or the real one. */
-function livenessOf(input: MirrorLockInput): (pid: number) => boolean {
+function livenessOf(input: MirrorLockSeam): (pid: number) => boolean {
   return input.isAlive ?? isProcessAlive;
 }
 
 /** Everything the lock protocol needs for one lock: the directory its guard lives in, the holder. */
-function lockDeps(input: MirrorLockInput, dir: string): SessionStorageDeps {
+function lockDeps(input: MirrorLockSeam, dir: string): SessionStorageDeps {
   return {
     dir,
     pid: input.pid ?? process.pid,
@@ -180,7 +197,7 @@ function lockDeps(input: MirrorLockInput, dir: string): SessionStorageDeps {
  * of them off the mirror at once.
  */
 async function takeMirrorLock(
-  input: MirrorLockInput,
+  input: MirrorLockSeam,
   target: MirrorLockTarget,
   ownSync: boolean,
 ): Promise<ReleaseLock | null> {
@@ -288,6 +305,41 @@ export async function withMirrorLocks<T>(
  */
 export function withMirrorLock<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
   return withMirrorLocks(input, storeLockTargets(input.store), work);
+}
+
+/**
+ * Take one mirror directory's lock, for a caller that holds no store.
+ *
+ * `null` means another writer owns that mirror and this caller must leave it alone — the same
+ * answer an operation that waits its turn gets, and the reason a caller removing a directory
+ * has to ask at all: what the directory held when it was listed is not what it holds now.
+ *
+ * The release handed back reports a failed release and never throws it, which is what a caller
+ * that removes the directory while holding the lock needs: the lock file, its guard and the
+ * heartbeat all go with the directory, and a lock nobody can find again is not one anyone
+ * holds. The heartbeat is stopped either way, so an abandoned lock ages into stale recovery
+ * rather than beating from a process that has moved on.
+ */
+export async function acquireMirrorDirLock(input: MirrorDirLockInput): Promise<ReleaseLock | null> {
+  const dir = realOrRaw(input.dir);
+  const release = await takeMirrorLock(input, { path: join(dir, LOCK_FILE), dir }, false);
+  if (release === null) return null;
+  return async () => await releaseMirrorDirLock(input, dir, release);
+}
+
+/**
+ * Hand a mirror directory's lock back, reporting a failure instead of throwing it.
+ *
+ * Its own function rather than a closure over the release in `acquireMirrorDirLock`: Biome's
+ * `useAwaitThenable` cannot infer a function-type alias through a captured variable, and reads
+ * `await release()` there as an await on a plain value. The shape matches `releaseMirrorLock`'s.
+ */
+async function releaseMirrorDirLock(input: MirrorDirLockInput, dir: string, release: ReleaseLock): Promise<void> {
+  try {
+    await release();
+  } catch (error) {
+    warnQuietly(input.logger, "memory mirror lock could not be released", { dir, error: errorMessage(error) });
+  }
 }
 
 /**

@@ -13,7 +13,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, symlink } from "node:fs/promises";
+import { mkdir, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   createMemoryOutbox,
@@ -23,6 +23,7 @@ import {
   NaxError,
   saveMemoryNote,
 } from "@nathapp/nax-agent";
+import { acquireMirrorDirLock } from "#src/memory/mirror-lock";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
   type FakeClock,
@@ -238,6 +239,98 @@ describe("a user directory two projects share", () => {
       await clock.advance(POLL_STEP_MS);
       expect((await saving).delivered).toBe(true);
       expect(await only.store.readNote("user", SLUG)).toMatchObject({ body: "body" });
+    });
+  });
+});
+
+/**
+ * The lock taken by a caller with no store — nax's `memory mirrors --prune`, which removes the
+ * directory rather than writing a note into it. What it shares with a writer is the file, so that
+ * is what these cases read: the same `sync.lock`, the same staleness rule, and a live holder that
+ * keeps the taker out.
+ */
+describe("acquireMirrorDirLock", () => {
+  /** A mirror directory with nothing in it, and the lock path inside it. */
+  async function mirrorDir(dir: string, name: string): Promise<{ dir: string; lock: string }> {
+    const mirror = join(dir, name);
+    await mkdir(mirror, { recursive: true });
+    return { dir: mirror, lock: join(mirror, "sync.lock") };
+  }
+
+  test("takes the mirror's lock and its release removes it", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const mirror = await mirrorDir(dir, "api-01234567");
+
+      const release = await acquireMirrorDirLock({
+        dir: mirror.dir,
+        logger,
+        now: () => new Date(STAMP),
+        isAlive: () => true,
+      });
+
+      expect(release).not.toBeNull();
+      expect(existsSync(mirror.lock)).toBe(true);
+      await expect(release?.()).resolves.toBeUndefined();
+      expect(existsSync(mirror.lock)).toBe(false);
+    });
+  });
+
+  test("answers null while another live process holds the mirror", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const mirror = await mirrorDir(dir, "api-01234567");
+      await heldByAnotherProcess(mirror.lock, logger);
+
+      const release = await acquireMirrorDirLock({
+        dir: mirror.dir,
+        logger,
+        now: () => new Date(STAMP),
+        isAlive: (pid) => pid === FOREIGN_PID,
+      });
+
+      expect(release).toBeNull();
+      // The holder's file is left exactly as it was.
+      expect(existsSync(mirror.lock)).toBe(true);
+    });
+  });
+
+  test("takes over a lock whose holder is gone", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const mirror = await mirrorDir(dir, "api-01234567");
+      await heldByAnotherProcess(mirror.lock, logger);
+
+      const release = await acquireMirrorDirLock({
+        dir: mirror.dir,
+        logger,
+        now: () => new Date(STAMP),
+        isAlive: () => false,
+      });
+
+      expect(release).not.toBeNull();
+      await expect(release?.()).resolves.toBeUndefined();
+      expect(existsSync(mirror.lock)).toBe(false);
+    });
+  });
+
+  test("the release does not throw after the directory it guarded is removed", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const mirror = await mirrorDir(dir, "api-01234567");
+      const release = await acquireMirrorDirLock({
+        dir: mirror.dir,
+        logger,
+        now: () => new Date(STAMP),
+        isAlive: () => true,
+      });
+      expect(release).not.toBeNull();
+
+      // What a prune does with the lock still held: the mirror, its lock and its guard all go.
+      await rm(mirror.dir, { recursive: true, force: true });
+
+      await expect(release?.()).resolves.toBeUndefined();
+      expect(logger.calls.some((call) => call.level === "warn")).toBe(true);
     });
   });
 });

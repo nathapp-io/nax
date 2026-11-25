@@ -62,7 +62,13 @@ export {
   type MemoryUndoResult,
 } from "#src/memory/compaction-types";
 export { type MemoryUndoInput, undoMemoryCompaction } from "#src/memory/compaction-undo";
-export { storeLockTargets } from "#src/memory/mirror-lock";
+export {
+  acquireMirrorDirLock,
+  type MirrorDirLockInput,
+  type MirrorLockSeam,
+  type ReleaseLock,
+  storeLockTargets,
+} from "#src/memory/mirror-lock";
 export { parseMemoryNoteRecord } from "#src/memory/note";
 export { _memoryStoreDeps } from "#src/memory/store";
 export { rewindPullCursor } from "#src/memory/sync-drain";

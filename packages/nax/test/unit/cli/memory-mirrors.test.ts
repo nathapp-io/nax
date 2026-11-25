@@ -97,6 +97,15 @@ interface Fixture {
   readonly isTTY?: boolean;
   /** What `deps.confirm` answers; `true` by default. */
   readonly confirmAnswer?: boolean;
+  /**
+   * What the inventory answers from its second read on — the mirror a writer changed between the
+   * listing and the removal. Absent means the first inventory, read again.
+   */
+  readonly refilled?: readonly MemoryMirrorInfo[];
+  /** Directories another writer holds, so `lockMirror` answers `null` for them. */
+  readonly heldByOther?: readonly string[];
+  /** Rejects the removal of this directory, as an unwritable filesystem would. */
+  readonly removeRejects?: string;
 }
 
 /** Everything a case measures: both channels, every seam the run reached, and the order of them. */
@@ -114,6 +123,10 @@ interface Harness {
   readonly asks: string[];
   /** Every directory `listMemoryMirrors` was asked for. */
   readonly listed: string[];
+  /** Every directory `lockMirror` was asked to lock, in the order it was asked. */
+  readonly locked: string[];
+  /** Every directory whose lock was handed back. */
+  readonly released: string[];
   /** Every line written and every question asked, in the order it happened. */
   readonly events: string[];
 }
@@ -127,7 +140,10 @@ function harness(fixture: Fixture = {}): Harness {
   const removed: string[] = [];
   const asks: string[] = [];
   const listed: string[] = [];
+  const locked: string[] = [];
+  const released: string[] = [];
   const events: string[] = [];
+  let reads = 0;
   const deps: MemoryMirrorsCliDeps = {
     log: (msg) => {
       out.push(msg);
@@ -147,14 +163,25 @@ function harness(fixture: Fixture = {}): Harness {
     projectsDir: () => PROJECTS_DIR,
     listMemoryMirrors: async (dir) => {
       listed.push(dir);
-      return mirrors;
+      reads += 1;
+      return reads > 1 && fixture.refilled !== undefined ? fixture.refilled : mirrors;
+    },
+    lockMirror: async (dir) => {
+      locked.push(dir);
+      events.push(`lock:${dir}`);
+      if (fixture.heldByOther?.includes(dir) === true) return null;
+      return async () => {
+        released.push(dir);
+        events.push(`release:${dir}`);
+      };
     },
     removeDir: async (dir) => {
+      if (fixture.removeRejects === dir) throw new Error(`EACCES: ${dir}`);
       removed.push(dir);
       events.push(`removed:${dir}`);
     },
   };
-  return { deps, out, err, codes, removed, asks, listed, events };
+  return { deps, out, err, codes, removed, asks, listed, locked, released, events };
 }
 
 /** `nax memory mirrors` with the given flags. */
@@ -327,6 +354,7 @@ describe("nax memory mirrors --prune", () => {
     expect(h.events.slice(0, firstRemoval)).toEqual([
       "out:probe-01234567  notes 0  outbox 0  provider none  index 0 bytes  origin unknown",
       `out:${PROBE_LINE}`,
+      "lock:/global/nax/memory/projects/probe-01234567",
     ]);
   });
 
@@ -378,6 +406,99 @@ describe("nax memory mirrors --prune", () => {
     await run(h, { prune: true, yes: true });
 
     expect(h.asks).toEqual([]);
+  });
+});
+
+// ─── pruning under the mirror's own lock (F1) ────────────────────────────────
+//
+// The inventory is read before the question and the removal happens after it, so what a mirror
+// held at listing time is not what it holds at removal time. Every removal is therefore taken
+// under the lock the mirror's own writers take — `sync.lock`, through the shared protocol — and
+// the mirror is read again once that lock is held. A mirror another writer owns, or one that
+// gained something meanwhile, is skipped rather than deleted.
+
+describe("nax memory mirrors --prune — the mirror lock", () => {
+  /** Two leftover probes, one of which another writer holds. */
+  const PROBE_A = join(PROJECTS_DIR, "probe-01234567");
+  const PROBE_B = join(PROJECTS_DIR, "probe-89abcdef");
+
+  test("F1: it takes the lock of every mirror it removes, before removing it", async () => {
+    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
+
+    await run(h, { prune: true, yes: true });
+
+    expect(h.locked).toEqual([PROBE_A, PROBE_B]);
+    expect(h.events.indexOf(`lock:${PROBE_A}`)).toBeLessThan(h.events.indexOf(`removed:${PROBE_A}`));
+    expect(h.events.indexOf(`lock:${PROBE_B}`)).toBeLessThan(h.events.indexOf(`removed:${PROBE_B}`));
+  });
+
+  test("F1: it hands every lock back, so the mirror is writable again", async () => {
+    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
+
+    await run(h, { prune: true, yes: true });
+
+    expect(h.released).toEqual([PROBE_A, PROBE_B]);
+  });
+
+  test("F1: a mirror another writer holds is left alone", async () => {
+    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR], heldByOther: [PROBE_A] });
+
+    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(h.removed).toEqual([PROBE_B]);
+    expect(h.err).toEqual(["Skipped probe-01234567: another writer holds it"]);
+    expect(h.released).toEqual([PROBE_B]);
+  });
+
+  test("F1: a mirror that gained a note since the listing is not removed", async () => {
+    const filled = { ...emptyMirror("probe-01234567"), notes: 1 };
+    const h = harness({
+      mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR],
+      refilled: [filled, PROBE_MIRROR],
+    });
+
+    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(h.removed).toEqual([PROBE_B]);
+    expect(h.err).toEqual(["Skipped probe-01234567: it is no longer empty"]);
+  });
+
+  test("F1: the recheck happens under the lock, before the removal", async () => {
+    const h = harness({ mirrors: [PROBE_MIRROR] });
+
+    await run(h, { prune: true, yes: true });
+
+    expect(h.events).toEqual([
+      `out:${PROBE_LINE}`,
+      `lock:${PROBE_B}`,
+      `removed:${PROBE_B}`,
+      `release:${PROBE_B}`,
+      "out:Removed probe-89abcdef",
+    ]);
+    // The inventory is read again once the lock is held: the listing and the removal are two reads.
+    expect(h.listed).toEqual([PROJECTS_DIR, PROJECTS_DIR]);
+  });
+
+  test("F1: the lock is handed back when the removal throws", async () => {
+    const h = harness({ mirrors: [PROBE_MIRROR], removeRejects: PROBE_B });
+
+    expect(await run(h, { prune: true, yes: true })).toBe(1);
+    expect(h.err).toEqual([`Error: EACCES: ${PROBE_B}`]);
+    expect(h.released).toEqual([PROBE_B]);
+  });
+
+  test("F1: a prune with nothing to remove takes no lock at all", async () => {
+    const h = harness({ mirrors: [API_MIRROR] });
+
+    await run(h, { prune: true, yes: true });
+
+    expect(h.locked).toEqual([]);
+  });
+
+  test("F1: a plain listing takes no lock at all", async () => {
+    const h = harness({ mirrors: [PROBE_MIRROR] });
+
+    await run(h);
+
+    expect(h.locked).toEqual([]);
   });
 });
 

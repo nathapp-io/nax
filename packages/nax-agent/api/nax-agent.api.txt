@@ -722,6 +722,8 @@ type MemoryCompactionRetire
 type MemoryTranscriptStore
 type MemoryUndoInput
 type MemoryUndoResult
+type MirrorDirLockInput
+type MirrorLockSeam
 type ModelTruncationOptions
 NATIVE_AGENT
 NATIVE_AGENT_NAME
@@ -764,6 +766,7 @@ RESERVED_TOOL_NAMES
 type ReadFileSliceOptions
 type ReadFileSliceResult
 type RegisteredSink
+type ReleaseLock
 type RemovalDecision
 type RemovalResult
 type ResolveResult
@@ -897,6 +900,7 @@ _transcriptArchiveDeps
 _transcriptImagesDeps
 _transcriptLifecycleDeps
 abortableSleep
+acquireMirrorDirLock
 adaptProviderTool
 advertisedSchemaBytes
 agentOutputOverlay
