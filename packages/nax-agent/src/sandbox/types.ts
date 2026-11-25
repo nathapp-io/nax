@@ -62,6 +62,13 @@ export interface SandboxBackend {
   wrap(req: SandboxWrapRequest): Promise<readonly string[]>;
   /** Extra violation text for this command, or "" when there is none. */
   annotate(commandId: string, stderr: string): string;
+  /**
+   * Called once, right after a wrapped command's process has spawned (#2986). Linux
+   * bwrap creates its mount-point placeholders at spawn, so this is the first moment
+   * the backend can identify them. Best effort and non-blocking; absent on a backend
+   * with nothing to do.
+   */
+  commandStarted?(): void;
   /** Called once per finished wrapped command (in-flight bookkeeping). */
   commandFinished(): void;
   reset(): Promise<void>;

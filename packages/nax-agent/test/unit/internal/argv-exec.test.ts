@@ -329,4 +329,20 @@ describe("US-001 runArgv abort & drain", () => {
     expect(result.exitCode).toBe(0);
     expect(removals).toBeGreaterThan(0);
   });
+
+  test("#2986: onSpawn runs once after the spawn, and a throw does not fail the command", async () => {
+    let calls = 0;
+    const result = await runArgv({
+      argv: ["echo", "hi"],
+      cwd: root,
+      timeoutMs: 5000,
+      onSpawn: () => {
+        calls += 1;
+        throw new Error("observer failed");
+      },
+    });
+    expect(calls).toBe(1);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("hi");
+  });
 });

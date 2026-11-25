@@ -41,6 +41,11 @@ export interface RunArgvOptions {
   readonly releaseDeadline?: AbortSignal;
   /** Observes every read chunk before capture; observer exceptions are ignored. */
   readonly onOutput?: (stream: "stdout" | "stderr", chunk: Uint8Array) => void;
+  /**
+   * Called synchronously once, right after the child has been spawned. A throw is
+   * swallowed: an observer of the spawn must never fail the command it observes.
+   */
+  readonly onSpawn?: () => void;
 }
 
 export interface ArgvExecResult {
@@ -268,6 +273,12 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
     // the direct child.
     detached: true,
   });
+
+  try {
+    options.onSpawn?.();
+  } catch {
+    // Observer only; see RunArgvOptions.onSpawn.
+  }
 
   let timedOut = false;
   let aborted = false;

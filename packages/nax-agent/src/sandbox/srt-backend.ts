@@ -60,6 +60,19 @@ export const _srtBackendDeps = {
    */
   // biome-ignore lint/plugin: this seam mirrors srt, which pins its own mandatory denies to process.cwd(); threading nax's resolved root in instead would describe placeholders that never appear. Tests override it.
   cwd: (): string => process.cwd(),
+  /**
+   * #2986: run `fn` once after `ms` and return a canceller. The timer is unref'd, so
+   * a pending poll never keeps the process alive. Tests replace it with a manual queue.
+   */
+  schedule: (fn: () => void, ms: number): (() => void) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref();
+    return () => clearTimeout(timer);
+  },
+  /** #2986: how often `commandStarted` re-reads the ledger while a candidate is still absent. */
+  startedPollIntervalMs: 20,
+  /** #2986: the longest `commandStarted` keeps polling for bwrap to create its placeholders. */
+  startedPollMaxMs: 2000,
 };
 
 /**
@@ -138,9 +151,67 @@ async function runLinuxStartupSteps(): Promise<void> {
   await linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(_srtBackendDeps.cwd()));
 }
 
+/**
+ * #2986 — identifies the placeholders bwrap creates when a wrapped process SPAWNS.
+ *
+ * `wrap` runs before the spawn, so it can only record candidates as pending; a
+ * process killed mid-command would leave every entry pending, and the sweep never
+ * removes a pending entry. `start` is called once the process has spawned and
+ * re-reads the ledger on a short timer until no entry is pending, the cap passes,
+ * or every started command has finished. It never throws and never blocks.
+ */
+function createStartedPoll(): { start(): void; finish(): void } {
+  let running = 0;
+  let cancel: (() => void) | undefined;
+  let elapsedMs = 0;
+
+  function stop(): void {
+    cancel?.();
+    cancel = undefined;
+  }
+
+  function tick(): void {
+    cancel = undefined;
+    const pending = linuxLedger()?.observe() ?? 0;
+    elapsedMs += _srtBackendDeps.startedPollIntervalMs;
+    if (pending === 0 || running === 0 || elapsedMs >= _srtBackendDeps.startedPollMaxMs) return;
+    cancel = _srtBackendDeps.schedule(guardedTick, _srtBackendDeps.startedPollIntervalMs);
+  }
+
+  function guardedTick(): void {
+    try {
+      tick();
+    } catch (error) {
+      getSafeLogger()?.warn("sandbox", "placeholder identification after spawn failed", { error: errorMessage(error) });
+    }
+  }
+
+  return {
+    start(): void {
+      if (linuxLedger() === undefined) return;
+      running += 1;
+      // A new command opens a new window: its own bwrap has yet to create its mounts.
+      elapsedMs = 0;
+      if (cancel !== undefined) return;
+      try {
+        cancel = _srtBackendDeps.schedule(guardedTick, _srtBackendDeps.startedPollIntervalMs);
+      } catch (error) {
+        getSafeLogger()?.warn("sandbox", "placeholder identification after spawn failed", {
+          error: errorMessage(error),
+        });
+      }
+    },
+    finish(): void {
+      running = Math.max(0, running - 1);
+      if (running === 0) stop();
+    },
+  };
+}
+
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
+  const startedPoll = createStartedPoll();
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -178,6 +249,9 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       );
       return argv;
     },
+    commandStarted() {
+      startedPoll.start();
+    },
     annotate(commandId: string, stderr: string) {
       if (loaded === undefined) return "";
       const annotated = loaded.SandboxManager.annotateStderrWithSandboxFailures(commandId, stderr);
@@ -193,6 +267,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: the ledger must hold the placeholder's identity BEFORE that
       // deletion happens (`observe`), so a placeholder srt removes is still known
       // by inode; `prune` afterwards is what then drops the entries srt removed.
+      startedPoll.finish();
       const ledger = linuxLedger();
       ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();
