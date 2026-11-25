@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T11:55:10.101Z",
+  "updatedAt": "2026-11-25T12:07:23.292Z",
   "userStories": [
     {
       "id": "US-001",
@@ -679,14 +679,17 @@
         "US-001",
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard complete-operation and JSON-parser pattern across selector/barrels. Use static replies and direct operation assertions, separating structural parsing from semantic plan validation."
+        "reasoning": "Standard complete-operation and JSON-parser pattern across selector/barrels. Use static replies and direct operation assertions, separating structural parsing from semantic plan validation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/bot-ruling-read.ts",
@@ -703,7 +706,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f694b57564698da04ca1623890195db7caae562a"
     },
     {
       "id": "US-012",
