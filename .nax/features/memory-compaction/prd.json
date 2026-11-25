@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T09:42:47.316Z",
+  "updatedAt": "2026-11-25T10:07:52.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -302,14 +302,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "High-risk multi-file transaction recovery, error-cause preservation and lock ordering. Isolate fault-injection tests for each failure boundary and deterministic concurrent applies; never use live remote delivery."
+        "reasoning": "High-risk multi-file transaction recovery, error-cause preservation and lock ordering. Isolate fault-injection tests for each failure boundary and deterministic concurrent applies; never use live remote delivery.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/compaction-apply.ts",
@@ -330,7 +333,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f0ab92b3430e9d88ca2abf48dcd0df69d77e3d3b"
     },
     {
       "id": "US-006",
