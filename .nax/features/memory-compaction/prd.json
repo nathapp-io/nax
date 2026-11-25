@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T08:40:59.987Z",
+  "updatedAt": "2026-11-25T09:25:13.163Z",
   "userStories": [
     {
       "id": "US-001",
@@ -169,14 +169,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New archive I/O and lock-scoped revalidation span store, outbox and serialization. Inject busy/stale-plan faults, inspect interim manifests and verify no writes on refusals."
+        "reasoning": "New archive I/O and lock-scoped revalidation span store, outbox and serialization. Inject busy/stale-plan faults, inspect interim manifests and verify no writes on refusals.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/store-paths.ts",
@@ -201,7 +204,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a1d1f6fd38510e151515a86f61e69cb6d7acd298"
     },
     {
       "id": "US-004",
