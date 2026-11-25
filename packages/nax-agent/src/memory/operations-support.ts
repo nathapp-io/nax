@@ -17,7 +17,14 @@ import { refreshMemoryIndex } from "./index-render.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider } from "./provider-types.ts";
 import type { MemoryStore } from "./store.ts";
-import type { MemoryNoteStatus, MemoryNoteWrite, MemoryScope, MemoryTimers, MemoryWriteRefusal } from "./types.ts";
+import type {
+  MemoryNote,
+  MemoryNoteStatus,
+  MemoryNoteWrite,
+  MemoryScope,
+  MemoryTimers,
+  MemoryWriteRefusal,
+} from "./types.ts";
 import { memoryNoteKey } from "./types.ts";
 
 const ERROR_STAGE = "memory";
@@ -47,6 +54,14 @@ export interface MemorySaveInput extends MemoryOperationInput {
   readonly writeMode: "direct" | "proposal";
   /** The one-line label the note records as its `source` (`"nax-chat"`, `"nax-run"`, ...). */
   readonly source: string;
+  /**
+   * Whether adding this note to the host's index projection would drop another entry off the
+   * end of it — asked only for a slug the mirror does not hold, because an overwrite replaces an
+   * entry the projection already lists. A `true` answer refuses the save with `MEMORY_FULL`
+   * before the note is staged, so nothing is written, queued or pushed. Absent, no save is
+   * refused; the host that renders the index is the only caller that can answer it.
+   */
+  readonly indexOverflows?: (note: MemoryNote) => Promise<boolean>;
 }
 
 /** What a save came to: the note's slug, the status it ended in, and whether a provider took it. */
