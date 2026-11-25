@@ -63,6 +63,26 @@ describe("sandbox exec", () => {
     deps.spawn = original.spawn;
     expect(await sandboxExecCommand("policy", "exit 3")).toBe(3);
   });
+  test("#2986: the backend hears commandStarted with the wrap's commandId, after the spawn", async () => {
+    await sandboxExecCommand("policy", "exit 3");
+    expect(backend.started).toHaveLength(1);
+    expect(backend.wrap).toHaveBeenCalledWith(expect.objectContaining({ commandId: backend.started[0] }));
+    expect(backend.finished).toBe(1);
+  });
+  test("#2986: a commandStarted that throws does not change the exit status", async () => {
+    backend.commandStarted = () => {
+      throw new Error("poll failed");
+    };
+    expect(await sandboxExecCommand("policy", "exit 3")).toBe(3);
+    expect(backend.finished).toBe(1);
+  });
+  test("#2986: a spawn that throws never reports a start", async () => {
+    deps.spawn = () => {
+      throw new Error("spawn failed");
+    };
+    expect(await sandboxExecCommand("policy", "true")).toBe(126);
+    expect(backend.started).toEqual([]);
+  });
   test("AC-14: exit zero emits no stdout", async () => {
     deps.spawn = () => ({ exited: Promise.resolve({ exitCode: 0, signal: null }), kill });
     const stdout = spyOn(process.stdout, "write").mockImplementation(() => true);

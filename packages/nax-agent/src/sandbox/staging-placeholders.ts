@@ -14,9 +14,10 @@
  * track? The answer is a list of paths relative to `cwd`, ready to become
  * `:(exclude,literal)` pathspecs on the `git add` that `gitlinkSafeAdd` runs.
  *
- * Only two sources count, because only they are paths nax knows a sandbox may
- * place a placeholder at: srt's mandatory write-deny files, and the entries of
- * the trusted process ledger (US-002). A path git already tracks is never
+ * Only three sources count, because only they are paths nax knows a sandbox may
+ * place a placeholder at: srt's mandatory write-deny files, srt's dangerous
+ * directory names (an absent one is mounted over by a FILE placeholder, #2986),
+ * and the entries of the trusted process ledger (US-002). A path git already tracks is never
  * excluded — a tracked `.gitmodules` the agent legitimately empties must still
  * stage, and the placeholder at an untracked name is the only one that could
  * enter history by accident.
@@ -32,7 +33,7 @@
  */
 import { readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { SRT_MANDATORY_DENY_FILES } from "./defaults.ts";
+import { SRT_MANDATORY_DENY_DIRS, SRT_MANDATORY_DENY_FILES } from "./defaults.ts";
 import { _placeholderDeps } from "./placeholder-deps.ts";
 import { readLedgerFile } from "./placeholder-ledger.ts";
 import { placeholderIdentity } from "./placeholder-paths.ts";
@@ -90,7 +91,14 @@ export function stagingPlaceholderPaths(cwd: string, trackedPaths: readonly stri
   const tracked = new Set(trackedPaths);
   const out: string[] = [];
   const seen = new Set<string>();
-  const sources = [...SRT_MANDATORY_DENY_FILES.map((name) => join(base, name)), ...ledgerEntryPaths()];
+  // The dangerous-directory names too (#2986): when `.idea` or `.vscode` is absent bwrap
+  // mounts over it with an empty 0444 REGULAR FILE, not a directory, and that file is as
+  // stageable as `.mcp.json`. A name that is a directory is dropped below (`kind` check).
+  const sources = [
+    ...SRT_MANDATORY_DENY_FILES.map((name) => join(base, name)),
+    ...SRT_MANDATORY_DENY_DIRS.map((name) => join(base, name)),
+    ...ledgerEntryPaths(),
+  ];
 
   for (const path of sources) {
     if (!inside(base, path)) continue;

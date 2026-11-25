@@ -25,6 +25,7 @@ import {
   socketDenialHintLine,
   unsandboxedNextStepLine,
 } from "./messages.ts";
+import { notifyCommandStarted } from "./notify-started.ts";
 import type {
   CommandLauncher,
   LaunchRequest,
@@ -188,6 +189,8 @@ async function runWrapped(
       ...(req.signal !== undefined ? { signal: req.signal } : {}),
       ...(req.releaseDeadline !== undefined ? { releaseDeadline: req.releaseDeadline } : {}),
       ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
+      // #2986: bwrap creates its placeholders at spawn, so the backend identifies them from here.
+      onSpawn: () => notifyCommandStarted(backend, commandId),
     });
     const failed = result.exitCode !== 0;
     const denied = failed && LIKELY_SANDBOX_DENIAL.test(result.stderr);
@@ -213,7 +216,7 @@ async function runWrapped(
       },
     };
   } finally {
-    backend.commandFinished();
+    backend.commandFinished(commandId);
   }
 }
 

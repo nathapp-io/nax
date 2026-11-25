@@ -60,6 +60,19 @@ export const _srtBackendDeps = {
    */
   // biome-ignore lint/plugin: this seam mirrors srt, which pins its own mandatory denies to process.cwd(); threading nax's resolved root in instead would describe placeholders that never appear. Tests override it.
   cwd: (): string => process.cwd(),
+  /**
+   * #2986: run `fn` once after `ms` and return a canceller. The timer is unref'd, so
+   * a pending poll never keeps the process alive. Tests replace it with a manual queue.
+   */
+  schedule: (fn: () => void, ms: number): (() => void) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref();
+    return () => clearTimeout(timer);
+  },
+  /** #2986: how often `commandStarted` re-reads the ledger while a candidate is still absent. */
+  startedPollIntervalMs: 20,
+  /** #2986: the longest `commandStarted` keeps polling for bwrap to create its placeholders. */
+  startedPollMaxMs: 2000,
 };
 
 /**
@@ -138,9 +151,73 @@ async function runLinuxStartupSteps(): Promise<void> {
   await linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(_srtBackendDeps.cwd()));
 }
 
+/**
+ * #2986 — identifies the placeholders bwrap creates when a wrapped process SPAWNS.
+ *
+ * `wrap` runs before the spawn, so it can only record candidates as pending; a
+ * process killed mid-command would leave every entry pending, and the sweep never
+ * removes a pending entry. `start` is called once the process has spawned and
+ * re-reads the ledger on a short timer until no entry is pending, the cap passes,
+ * or every started command has finished. It never throws and never blocks.
+ */
+function createStartedPoll(): { start(commandId?: string): void; finish(commandId?: string): void } {
+  // Only STARTED commands count: a command that finishes without ever spawning (an
+  // aborted signal, a spawn that threw) must not stop another live command's poll.
+  const startedIds = new Set<string>();
+  let startedAnonymous = 0;
+  const running = (): number => startedIds.size + startedAnonymous;
+  let cancel: (() => void) | undefined;
+  let elapsedMs = 0;
+
+  function stop(): void {
+    cancel?.();
+    cancel = undefined;
+  }
+
+  function tick(): void {
+    cancel = undefined;
+    const pending = linuxLedger()?.observe() ?? 0;
+    elapsedMs += _srtBackendDeps.startedPollIntervalMs;
+    if (pending === 0 || running() === 0 || elapsedMs >= _srtBackendDeps.startedPollMaxMs) return;
+    cancel = _srtBackendDeps.schedule(guardedTick, _srtBackendDeps.startedPollIntervalMs);
+  }
+
+  function guardedTick(): void {
+    try {
+      tick();
+    } catch (error) {
+      getSafeLogger()?.warn("sandbox", "placeholder identification after spawn failed", { error: errorMessage(error) });
+    }
+  }
+
+  return {
+    start(commandId?: string): void {
+      if (linuxLedger() === undefined) return;
+      if (commandId === undefined) startedAnonymous += 1;
+      else startedIds.add(commandId);
+      // A new command opens a new window: its own bwrap has yet to create its mounts.
+      elapsedMs = 0;
+      if (cancel !== undefined) return;
+      try {
+        cancel = _srtBackendDeps.schedule(guardedTick, _srtBackendDeps.startedPollIntervalMs);
+      } catch (error) {
+        getSafeLogger()?.warn("sandbox", "placeholder identification after spawn failed", {
+          error: errorMessage(error),
+        });
+      }
+    },
+    finish(commandId?: string): void {
+      if (commandId === undefined) startedAnonymous = Math.max(0, startedAnonymous - 1);
+      else startedIds.delete(commandId);
+      if (running() === 0) stop();
+    },
+  };
+}
+
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
+  const startedPoll = createStartedPoll();
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -178,12 +255,15 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       );
       return argv;
     },
+    commandStarted(commandId?: string) {
+      startedPoll.start(commandId);
+    },
     annotate(commandId: string, stderr: string) {
       if (loaded === undefined) return "";
       const annotated = loaded.SandboxManager.annotateStderrWithSandboxFailures(commandId, stderr);
       return annotated.startsWith(stderr) ? annotated.slice(stderr.length).trim() : "";
     },
-    commandFinished() {
+    commandFinished(commandId?: string) {
       // Removes bwrap mount placeholders (Linux: `.bashrc`, `.profile`,
       // `.claude/commands`, ...). srt counts every wrap itself and defers the
       // deletion while another wrapped command still runs, so it must hear about
@@ -193,6 +273,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: the ledger must hold the placeholder's identity BEFORE that
       // deletion happens (`observe`), so a placeholder srt removes is still known
       // by inode; `prune` afterwards is what then drops the entries srt removed.
+      startedPoll.finish(commandId);
       const ledger = linuxLedger();
       ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();

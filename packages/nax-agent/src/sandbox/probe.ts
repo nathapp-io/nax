@@ -14,9 +14,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runArgv } from "#src/internal/argv-exec";
 import { realOrRaw } from "#src/internal/realpath";
+import { notifyCommandStarted } from "./notify-started.ts";
 import type { ProbeResult, SandboxBackend } from "./types.ts";
 
 const PROBE_TIMEOUT_MS = 30_000;
+const PROBE_COMMAND_ID = "nax-sandbox-probe";
 
 export const _probeDeps = { tmpdir, runArgv };
 
@@ -41,17 +43,22 @@ export async function probeSandbox(backend: SandboxBackend): Promise<ProbeResult
         shell: "/bin/sh",
         policy: { writeRoots: [dir], denyWrite: [denied], denyRead: [], network: {} },
         cwd: dir,
-        commandId: "nax-sandbox-probe",
+        commandId: PROBE_COMMAND_ID,
       });
     } catch (err) {
       return { available: false, reason: `sandbox wrap failed: ${err instanceof Error ? err.message : String(err)}` };
     }
     let result: Awaited<ReturnType<typeof runArgv>>;
     try {
-      result = await _probeDeps.runArgv({ argv, cwd: dir, timeoutMs: PROBE_TIMEOUT_MS });
+      result = await _probeDeps.runArgv({
+        argv,
+        cwd: dir,
+        timeoutMs: PROBE_TIMEOUT_MS,
+        onSpawn: () => notifyCommandStarted(backend, PROBE_COMMAND_ID),
+      });
     } finally {
       // Exactly once per successful wrap, even when the spawn itself throws.
-      backend.commandFinished();
+      backend.commandFinished(PROBE_COMMAND_ID);
     }
     if (!existsSync(allowed)) {
       return {

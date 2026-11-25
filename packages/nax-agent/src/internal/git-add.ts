@@ -23,7 +23,15 @@
  * history; the exclusion is one more `:(exclude,literal)` pathspec, derived from
  * the tracked set this module already lists, so a tree with no placeholder keeps
  * exactly the argv it had.
+ *
+ * #2986: git (2.53 tested) stages everything else but exits 1 with "The following
+ * paths are ignored by one of your .gitignore files" when an exclude pathspec names
+ * a path git already ignores, and US-007 puts the shell rc names in
+ * `.git/info/exclude`. An ignored path is never staged by a broad `add` anyway, so
+ * its exclude is dropped, found with one batched `git check-ignore`. That call
+ * fails safe: when it times out or errors, every exclude stays.
  */
+import { getSafeLogger } from "#src/infra/index";
 import { stagingPlaceholderPaths } from "../sandbox/staging-placeholders.ts";
 
 export interface GitRunResult {
@@ -67,6 +75,35 @@ export function parseGitlinks(lsFilesStageZ: string): string[] {
   return [...new Set(paths)];
 }
 
+/**
+ * The subset of `paths` git already ignores, from one `git check-ignore`.
+ * Exit 0 lists at least one ignored path, exit 1 means none; anything else
+ * (a timeout, a fatal) proves nothing and yields no ignored path, which keeps
+ * every exclude and so keeps the guard.
+ */
+async function ignoredPaths(
+  git: GitRunner,
+  cwd: string,
+  paths: readonly string[],
+  timeoutMs: number | undefined,
+): Promise<Set<string>> {
+  if (paths.length === 0) return new Set();
+  // `core.quotePath=false`: git octal-quotes every non-ASCII path by default, which would
+  // never match the path it was asked about.
+  const r = await git(["-c", "core.quotePath=false", "check-ignore", "--", ...paths], cwd, timeoutMs);
+  if (r.timedOut || (r.exitCode !== 0 && r.exitCode !== 1)) {
+    getSafeLogger()?.debug("sandbox", "git check-ignore failed; keeping every placeholder exclude", {
+      exitCode: r.exitCode,
+      timedOut: r.timedOut === true,
+    });
+    return new Set();
+  }
+  // Newline-separated (`-z` needs `--stdin`, which a GitRunner cannot feed). Git still
+  // C-quotes a path holding a quote, a backslash or a control byte; that never matches
+  // here, so its exclude stays.
+  return new Set(r.stdout.split("\n").filter((p) => p !== ""));
+}
+
 export async function gitlinkSafeAdd(git: GitRunner, cwd: string, opts: GitlinkSafeAddOptions): Promise<GitRunResult> {
   const pathspecs = opts.pathspecs !== undefined && opts.pathspecs.length > 0 ? opts.pathspecs : [WHOLE_TREE_PATHSPEC];
   const listed = await git(["ls-files", "--stage", "-z", "--", ...pathspecs], cwd, opts.timeoutMs);
@@ -76,11 +113,14 @@ export async function gitlinkSafeAdd(git: GitRunner, cwd: string, opts: GitlinkS
   }
   const tracked = parseTrackedPaths(listed.stdout);
   const gitlinks = parseGitlinks(listed.stdout);
+  const placeholders = stagingPlaceholderPaths(cwd, tracked);
+  const ignored = await ignoredPaths(git, cwd, placeholders, opts.timeoutMs);
   const excludes = [
     ...gitlinks.map((p) => `:(exclude,literal)${p}`),
     // US-006: never stage a placeholder-shaped path nax protects. A tree with no
-    // placeholder yields no extra pathspec, so that argv is unchanged.
-    ...stagingPlaceholderPaths(cwd, tracked).map((p) => `:(exclude,literal)${p}`),
+    // placeholder yields no extra pathspec, so that argv is unchanged. #2986: a
+    // path git already ignores needs none, and naming it would make `add` exit 1.
+    ...placeholders.filter((p) => !ignored.has(p)).map((p) => `:(exclude,literal)${p}`),
   ];
   const added = await git(["add", ...(opts.flags ?? []), "--", ...pathspecs, ...excludes], cwd, opts.timeoutMs);
   if (added.exitCode !== 0 || gitlinks.length === 0) return added;

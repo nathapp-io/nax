@@ -44,6 +44,25 @@ function placeholderFile(path: string): void {
   chmodSync(path, 0o444);
 }
 
+describe("a dangerous-directory name that bwrap made a FILE (#2986)", () => {
+  test("`.idea` is a candidate while absent, and its empty 0444 file is identified as kind file", () => {
+    expect(candidatePaths(cwd, policy())).toContain(join(cwd, ".idea"));
+
+    placeholderFile(join(cwd, ".idea"));
+
+    const stats = lstatSync(join(cwd, ".idea"));
+    expect(placeholderIdentity(join(cwd, ".idea"))).toEqual({ kind: "file", dev: stats.dev, ino: stats.ino });
+    // An existing path is no longer a candidate: the file is the placeholder, not a gap.
+    expect(candidatePaths(cwd, policy())).not.toContain(join(cwd, ".idea"));
+  });
+
+  test("an empty `.vscode` directory is identified as kind dir", () => {
+    mkdirSync(join(cwd, ".vscode"));
+
+    expect(placeholderIdentity(join(cwd, ".vscode"))?.kind).toBe("dir");
+  });
+});
+
 describe("candidatePaths", () => {
   test("US-001 AC1: returns the mandatory deny files then the dangerous directories", () => {
     expect(candidatePaths(cwd, policy())).toEqual([

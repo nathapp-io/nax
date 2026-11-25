@@ -16,12 +16,13 @@ export type FakeSandboxMode = "enforce" | "leak" | "cannot-run" | "throw" | "uns
 
 export function makeFakeSandboxBackend(
   mode: FakeSandboxMode = "enforce",
-): SandboxBackend & { readonly calls: SandboxWrapRequest[]; finished: number } {
+): SandboxBackend & { readonly calls: SandboxWrapRequest[]; finished: number; readonly started: string[] } {
   const calls: SandboxWrapRequest[] = [];
   const fake = {
     name: "srt" as const,
     calls,
     finished: 0,
+    started: [] as string[],
     async isSupportedPlatform() {
       return mode !== "unsupported";
     },
@@ -45,6 +46,9 @@ export function makeFakeSandboxBackend(
     },
     annotate() {
       return "";
+    },
+    commandStarted(commandId: string) {
+      fake.started.push(commandId);
     },
     commandFinished() {
       fake.finished += 1;

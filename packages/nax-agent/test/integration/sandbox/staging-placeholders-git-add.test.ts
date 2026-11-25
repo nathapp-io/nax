@@ -195,3 +195,117 @@ describe("gitlinkSafeAdd keeps the mandatory names when the ledger directory is 
     expect(isTracked(root, ".mcp.json")).toBe(false);
   });
 });
+
+/** Names in `.git/info/exclude`, the way the US-007 step writes them for the shell rc placeholders. */
+function excludeLocally(cwd: string, ...names: string[]): void {
+  writeFileSync(join(cwd, ".git", "info", "exclude"), `${names.join("\n")}\n`);
+}
+
+describe("gitlinkSafeAdd with a placeholder at a path git already ignores (#2986)", () => {
+  test("a .bashrc placeholder named in .git/info/exclude exits 0, stages the rest and not the placeholder", async () => {
+    excludeLocally(root, ".bashrc");
+    placeholder(join(root, ".bashrc"));
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    const result = await addAll(root);
+
+    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(await staged(root)).toEqual(["notes.md"]);
+    expect(isTracked(root, ".bashrc")).toBe(false);
+  });
+
+  test("a .gitignore'd placeholder is handled the same way", async () => {
+    writeFileSync(join(root, ".gitignore"), ".mcp.json\n");
+    placeholder(join(root, ".mcp.json"));
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual([".gitignore"]);
+    expect(isTracked(root, ".mcp.json")).toBe(false);
+  });
+
+  test("an ignored placeholder does not unguard an un-ignored one beside it", async () => {
+    excludeLocally(root, ".bashrc");
+    placeholder(join(root, ".bashrc"));
+    placeholder(join(root, ".mcp.json"));
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual(["notes.md"]);
+    expect(isTracked(root, ".mcp.json")).toBe(false);
+  });
+
+  test("a git that cannot answer check-ignore keeps the guard: the placeholder is still not staged", async () => {
+    placeholder(join(root, ".mcp.json"));
+    writeFileSync(join(root, "notes.md"), "notes\n");
+    const failing = (args: string[], cwd: string, timeoutMs?: number) =>
+      args[0] === "check-ignore"
+        ? Promise.resolve({ stdout: "", stderr: "fatal", exitCode: 128 })
+        : gitWithTimeout(args, cwd, timeoutMs);
+
+    expect((await gitlinkSafeAdd(failing, root, { flags: ["-A"] })).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual(["notes.md"]);
+  });
+});
+
+describe("gitlinkSafeAdd leaves an .idea / .vscode placeholder untracked (#2986)", () => {
+  test.each([".idea", ".vscode"])("an empty 0444 REGULAR FILE at %s is not staged", async (name) => {
+    placeholder(join(root, name));
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual(["notes.md"]);
+    expect(isTracked(root, name)).toBe(false);
+  });
+
+  test("an .idea directory with a real file in it is still staged", async () => {
+    mkdirSync(join(root, ".idea"));
+    writeFileSync(join(root, ".idea", "workspace.xml"), "<x/>\n");
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual([".idea/workspace.xml"]);
+  });
+
+  test("an empty 0444 file at .vscode that is ignored locally exits 0", async () => {
+    excludeLocally(root, ".vscode");
+    placeholder(join(root, ".vscode"));
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual(["notes.md"]);
+  });
+});
+
+describe("gitlinkSafeAdd with non-ASCII and nested paths (#2986)", () => {
+  test("a placeholder at a non-ASCII path git already ignores exits 0 (git octal-quotes it by default)", async () => {
+    placeholder(join(root, "项目", ".bashrc"));
+    writeLedger([join(root, "项目", ".bashrc")]);
+    excludeLocally(root, "项目/.bashrc");
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    const result = await addAll(root);
+
+    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(await staged(root)).toEqual(["notes.md"]);
+  });
+
+  test("run from a repository subdirectory (the tree-snapshot case): ignored and un-ignored placeholders", async () => {
+    const sub = join(root, "pkg");
+    mkdirSync(sub);
+    writeFileSync(join(sub, "keep.txt"), "k\n");
+    placeholder(join(sub, ".bashrc"));
+    placeholder(join(sub, ".mcp.json"));
+    excludeLocally(root, "pkg/.bashrc");
+
+    const result = await gitlinkSafeAdd(gitWithTimeout, sub, { flags: ["-A"] });
+
+    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(await staged(root)).toEqual(["pkg/keep.txt"]);
+    expect(isTracked(root, "pkg/.mcp.json")).toBe(false);
+  });
+});

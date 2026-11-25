@@ -72,9 +72,16 @@ async function runChild(
   argv: readonly string[],
   opts: { cwd: string; env: Record<string, string> },
   backend: SandboxBackend,
+  commandId: string,
 ): Promise<number> {
   // nax-git-env-allow: Run sandbox backend argv with the already policy-filtered opts.env, not a Git-specific environment.
   const child = _sandboxExecDeps.spawn(argv, opts);
+  try {
+    backend.commandStarted?.(commandId);
+  } catch {
+    // Observer only (#2986): bwrap creates its placeholders at spawn, and a backend that
+    // cannot identify them must not change the command's exit status.
+  }
   const interrupt = () => child.kill("SIGINT");
   const terminate = () => child.kill("SIGTERM");
   try {
@@ -87,7 +94,7 @@ async function runChild(
   } finally {
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", terminate);
-    backend.commandFinished();
+    backend.commandFinished(commandId);
   }
 }
 
@@ -102,8 +109,9 @@ export async function sandboxExecCommand(policyFile: string, command: string): P
       return REFUSED_EXIT;
     }
     const cwd = _sandboxExecDeps.cwd();
-    const argv = await backend.wrap({ command, shell: "/bin/bash", policy: file.policy, cwd, commandId: randomUUID() });
-    return await runChild(argv, { cwd, env: childEnv(file) }, backend);
+    const commandId = randomUUID();
+    const argv = await backend.wrap({ command, shell: "/bin/bash", policy: file.policy, cwd, commandId });
+    return await runChild(argv, { cwd, env: childEnv(file) }, backend, commandId);
   } catch (error) {
     _sandboxExecDeps.stderr(`nax sandbox exec: ${errorMessage(error)}`);
     return REFUSED_EXIT;

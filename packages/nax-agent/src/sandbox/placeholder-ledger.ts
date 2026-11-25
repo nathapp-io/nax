@@ -60,8 +60,11 @@ export interface LedgerFile {
 export interface PlaceholderLedger {
   /** Record every path a wrap could create a placeholder at, skipping the ones already known. */
   recordAbsent(paths: readonly string[]): void;
-  /** Record the identity of every pending path that is now a placeholder. */
-  observe(): void;
+  /**
+   * Record the identity of every pending path that is now a placeholder.
+   * Returns how many entries are still pending afterwards.
+   */
+  observe(): number;
   /** Drop the identified entries whose placeholder is no longer on disk. */
   prune(): void;
 }
@@ -272,7 +275,7 @@ function createLedger(host: LedgerHost): ProcessLedger {
       if (changed) write();
     },
 
-    observe(): void {
+    observe(): number {
       let changed = false;
       entries = entries.map((entry) => {
         if (!isPending(entry)) return entry;
@@ -282,6 +285,7 @@ function createLedger(host: LedgerHost): ProcessLedger {
         return { path: entry.path, ...identity };
       });
       if (changed) write();
+      return entries.filter(isPending).length;
     },
 
     prune(): void {

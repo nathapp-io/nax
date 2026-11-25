@@ -399,4 +399,168 @@ describe("srt backend placeholder ledger (Linux)", () => {
     expect(callsAt("warn", "sandbox: placeholder ledger write failed").length).toBe(1);
     expect(lstatSync(processLedgerPath()).isDirectory()).toBe(true);
   });
+
+  /**
+   * #2986 — bwrap creates its placeholders when the wrapped process SPAWNS, which
+   * is after `wrap` resolves. `commandStarted` is the hook the launcher calls once
+   * the argv is running; it identifies the placeholders with a bounded retry, so a
+   * process killed mid-command still leaves identified entries behind.
+   */
+  describe("commandStarted (#2986)", () => {
+    const INTERVAL = 20;
+    const MAX = 2000;
+    let queue: { fn: () => void; ms: number; cancelled: boolean }[];
+
+    function installManualTimer(): void {
+      queue = [];
+      _srtBackendDeps.startedPollIntervalMs = INTERVAL;
+      _srtBackendDeps.startedPollMaxMs = MAX;
+      _srtBackendDeps.schedule = (fn, ms) => {
+        const item = { fn, ms, cancelled: false };
+        queue.push(item);
+        return () => {
+          item.cancelled = true;
+        };
+      };
+    }
+
+    /** Fire the oldest live timer, as the event loop would. */
+    function tick(): boolean {
+      const next = queue.find((item) => !item.cancelled);
+      if (next === undefined) return false;
+      next.cancelled = true;
+      next.fn();
+      return true;
+    }
+
+    function pendingTimers(): number {
+      return queue.filter((item) => !item.cancelled).length;
+    }
+
+    test("identifies a placeholder that appears after wrap, without commandFinished", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      const target = join(cwd, ".zprofile");
+      await backend.wrap(ledgerRequest("a"));
+      expect(ledgerEntries()).toContainEqual({ path: target });
+
+      // The wrapped process spawns and bwrap creates the mount points.
+      makePlaceholderFile(target);
+      backend.commandStarted?.();
+      tick();
+
+      const stats = lstatSync(target);
+      expect(ledgerEntries()).toContainEqual({ path: target, kind: "file", dev: stats.dev, ino: stats.ino });
+    });
+
+    test("retries while a candidate is still absent, then stops once none is pending", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      const everyCandidate = async () => {
+        await backend.wrap(ledgerRequest("a"));
+        return ledgerPaths();
+      };
+      const paths = await everyCandidate();
+      backend.commandStarted?.();
+      expect(pendingTimers()).toBe(1);
+
+      // First poll: bwrap has not created anything yet, so another poll is queued.
+      tick();
+      expect(pendingTimers()).toBe(1);
+
+      // bwrap now creates every candidate; the next poll identifies them all.
+      for (const path of paths) {
+        mkdirSync(join(path, ".."), { recursive: true });
+        makePlaceholderFile(path);
+      }
+      tick();
+      expect(ledgerEntries().every((entry) => entry.ino !== undefined)).toBe(true);
+      expect(pendingTimers()).toBe(0);
+    });
+
+    test("gives up after the cap when a candidate never appears", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+      backend.commandStarted?.();
+
+      let polls = 0;
+      while (tick()) polls += 1;
+
+      expect(polls).toBe(MAX / INTERVAL);
+      expect(pendingTimers()).toBe(0);
+    });
+
+    test("commandFinished stops the polling", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+      backend.commandStarted?.();
+      expect(pendingTimers()).toBe(1);
+
+      backend.commandFinished();
+
+      expect(pendingTimers()).toBe(0);
+    });
+
+    test("a command that is still running keeps the poll alive when another one finishes", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+      await backend.wrap(ledgerRequest("b"));
+      backend.commandStarted?.();
+      backend.commandStarted?.();
+
+      backend.commandFinished();
+
+      expect(pendingTimers()).toBe(1);
+    });
+
+    test("a commandFinished for a command that never started leaves another command's poll alone", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+      await backend.wrap(ledgerRequest("b"));
+      backend.commandStarted?.("a");
+
+      // `b` was wrapped but its runArgv returned early (aborted signal): finished, never started.
+      backend.commandFinished("b");
+      expect(pendingTimers()).toBe(1);
+
+      backend.commandFinished("a");
+      expect(pendingTimers()).toBe(0);
+    });
+
+    test("a scheduler that throws never fails the command", async () => {
+      installCountingSrt();
+      installManualTimer();
+      _srtBackendDeps.schedule = () => {
+        throw new Error("no timers");
+      };
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+
+      expect(() => backend.commandStarted?.()).not.toThrow();
+      expect(callsAt("warn", "sandbox: placeholder identification after spawn failed").length).toBe(1);
+    });
+
+    test("on darwin it schedules nothing", async () => {
+      _srtBackendDeps.platform = () => "darwin";
+      _placeholderDeps.platform = () => "darwin";
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+
+      backend.commandStarted?.();
+
+      expect(pendingTimers()).toBe(0);
+    });
+  });
 });
