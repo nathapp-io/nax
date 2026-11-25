@@ -80,6 +80,7 @@ import { createKodaMemoryProvider } from "./koda-provider";
 import { createKodaRefusals, type KodaRefusals, type MemoryKodaRefusal } from "./koda-refusals";
 import { createMcpIdMap } from "./mcp-id-map";
 import { createMcpMemoryProvider } from "./mcp-provider";
+import { ensureMirrorOrigin } from "./mirror-origin";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
 import { type RepoNotes, readRepoNotes } from "./repo-notes";
 
@@ -378,6 +379,10 @@ async function composeKodaMemory(input: CreateMemoryHostInput, dirs: MemoryDirs)
 /** Resolve the directories and build the store, the outbox and the configured provider over them. */
 async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts> {
   const dirs = await _memoryHostDeps.memoryDirs({ config: input.config, repoRoot: input.repoRoot });
+  // The mirror names the repository it belongs to before anything reads it: `nax memory mirrors`
+  // has nothing else to go on. A refused write costs one warn, never the host.
+  const origin = { projectDir: dirs.projectDir, repoRoot: input.repoRoot, config: input.config, logger: input.logger };
+  await ensureMirrorOrigin(origin);
   const provider = memoryConfigOf(input.config).provider;
   // koda's records come first: the mirror store reads its index's held forgets from them.
   if (provider === "koda") return await composeKodaMemory(input, dirs);

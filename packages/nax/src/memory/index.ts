@@ -36,8 +36,11 @@ export {
 } from "./koda-refusals";
 export type { CreateMcpMemoryProviderInput } from "./mcp-provider";
 export { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
+export { _mirrorOriginDeps, ensureMirrorOrigin, ORIGIN_FILE } from "./mirror-origin";
+export type { MemoryMirrorInfo } from "./mirrors";
+export { isPrunableMirror, listMemoryMirrors } from "./mirrors";
 export type { MemoryDirs, MemoryLogger } from "./paths";
-export { _memoryPathsDeps, memoryDirs, memoryProjectSegment } from "./paths";
+export { _memoryPathsDeps, memoryDirs, memoryProjectSegment, memoryProjectsDir } from "./paths";
 export type { RepoNotes } from "./repo-notes";
 export { _repoNotesDeps, REPO_NOTE_MAX_FILE_BYTES, REPO_NOTES_MAX, readRepoNotes } from "./repo-notes";
 export type { CreateRunMemoryInput, RunMemory, RunMemorySummary } from "./run-memory";
