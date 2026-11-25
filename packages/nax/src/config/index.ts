@@ -202,6 +202,7 @@ export {
   advisorConfigSelector,
   agentManagerConfigSelector,
   decomposeConfigSelector,
+  memoryCompactConfigSelector,
   planConfigSelector,
   qualityConfigSelector,
   rectificationGateConfigSelector,
