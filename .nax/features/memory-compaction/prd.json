@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T14:21:03.111Z",
+  "updatedAt": "2026-11-25T14:49:11.015Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1240,14 +1240,17 @@
         "housekeeping"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The new modules perform conventional file counts, JSON/stat reads and a pure prune predicate using the existing paths/host seams, without introducing lock arbitration or deletion. Use isolated directory fixtures and injected origin-write failures for inventory and disabled-host regressions."
+        "reasoning": "The new modules perform conventional file counts, JSON/stat reads and a pure prune predicate using the existing paths/host seams, without introducing lock arbitration or deletion. Use isolated directory fixtures and injected origin-write failures for inventory and disabled-host regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/paths.ts",
@@ -1269,7 +1272,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "920bfbe88d48262a4f20a504b1cf6288132137e0"
     },
     {
       "id": "US-021",
