@@ -1,0 +1,243 @@
+/**
+ * Undoing one compaction: the notes it archived go back, the notes it wrote go away.
+ *
+ * An undo is the apply read backwards, and it is the same three records the other way round:
+ * the archive holds the notes to put back, the manifest holds the notes the apply created, and
+ * the log line is the record that the compaction happened at all. Which of them is the source
+ * of truth is the one thing the caller decides. With no id the log picks the newest compaction
+ * still marked `undone: false`; with an explicit id the manifest is authoritative, which is what
+ * makes the two crash windows recoverable at all — an `applying` manifest (the process died
+ * during steps 4-7) and an `applied` one with no log line (it died between steps 7 and 8).
+ *
+ * Everything it writes is what a direct save and a direct forget stage — the note in the mirror
+ * plus its request on the outbox — under the same ordering and the same lock file an apply
+ * takes. So the sync that already delivers those requests is what tells a provider about the
+ * undo, and the undo never talks to one itself. The index is refreshed from the mirror once the
+ * mirror is final, the manifest is rewritten to say the compaction no longer stands, and the log
+ * line — when there is one to mark — is marked in place.
+ *
+ * A restored note is a re-save, not a resurrection: it keeps the original's slug, type,
+ * description, body and source, and takes a fresh id and the caller's clock. A provider assigns
+ * its own id to the save it is handed, and the note that comes back is a new write either way,
+ * so an id that claims to be the old one would be the only thing that lied.
+ *
+ * Nothing here is transactional on purpose. Every step is a whole-note write or delete, so an
+ * undo that dies part-way leaves a mirror a re-run converges on rather than one caught between
+ * two states, and the re-run is what `force` exists for.
+ */
+import { randomUUID } from "node:crypto";
+import type { AgentLogger } from "#src/infra/agent-logger";
+import { NaxError } from "#src/infra/nax-error";
+import {
+  type MemoryCompactionLogLine,
+  type MemoryCompactionManifest,
+  type MemoryCompactionManifestStatus,
+  markCompactionLogUndone,
+  readCompactionArchiveNotes,
+  readCompactionLogLines,
+  readCompactionManifest,
+  withCompactionRetentionLock,
+  writeCompactionManifest,
+} from "./compaction-archive.ts";
+import type { MemoryUndoResult } from "./compaction-types.ts";
+import { clockOf, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
+import { refreshIndex } from "./operations-support.ts";
+import type { MemoryOutbox } from "./outbox.ts";
+import type { MemoryStore } from "./store.ts";
+import type { MemoryNote, MemoryTimers } from "./types.ts";
+
+const ERROR_STAGE = "memory";
+
+/**
+ * One compaction to undo: the mirror and queue to undo it in, the id to undo (the newest the
+ * log holds when absent), and the lock wait's seams.
+ *
+ * `force` belongs to the changed-note check a later story adds; the seam is here so a caller
+ * passes the same input whether or not a note has changed since.
+ */
+export interface MemoryUndoInput {
+  readonly store: MemoryStore;
+  readonly outbox: MemoryOutbox;
+  readonly logger: AgentLogger;
+  readonly id?: string;
+  readonly force?: boolean;
+  readonly now?: () => Date;
+  readonly timers?: MemoryTimers;
+  readonly isAlive?: (pid: number) => boolean;
+}
+
+/** One compaction an undo acts on: the id it is addressed by, and the manifest that describes it. */
+interface UndoTarget {
+  readonly id: string;
+  readonly manifest: MemoryCompactionManifest;
+}
+
+/**
+ * The refusal an undo has no compaction to act on answers with.
+ *
+ * It is deliberately one code for every reason the target cannot be established — no line, no
+ * archive, a file that is not a manifest — because the caller's next move is the same in all of
+ * them, and naming the reason in the message is what tells a person which one it was.
+ */
+function targetNotFound(input: MemoryUndoInput, id?: string): NaxError {
+  return new NaxError(
+    id === undefined
+      ? "memory undo: this mirror holds no compaction left to undo"
+      : `memory undo: compaction "${id}" is not in this mirror`,
+    "MEMORY_COMPACT_NOT_FOUND",
+    {
+      stage: ERROR_STAGE,
+      projectDir: input.store.paths.projectDir,
+      ...(id === undefined ? {} : { id }),
+    },
+  );
+}
+
+/** The newest line the log holds that is not yet undone: the default target. */
+async function newestOpenLine(store: MemoryStore): Promise<MemoryCompactionLogLine | null> {
+  const lines = await readCompactionLogLines(store);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (line !== undefined && !line.undone) return line;
+  }
+  return null;
+}
+
+/**
+ * The compaction this undo acts on, with its manifest read from the archive.
+ *
+ * An explicit id is answered from its manifest and nothing else, which is what makes the two
+ * crash windows recoverable: the log line is a record of a *finished* apply, and the states an
+ * undo most needs to reach are exactly the ones no line describes. Without an id the log picks
+ * the newest compaction still open, and the archive it names is then read the same way — so the
+ * two paths cannot disagree about what an archive has to contain. The log says *which*
+ * compaction, never *what* it did.
+ */
+async function resolveTarget(input: MemoryUndoInput): Promise<UndoTarget> {
+  if (input.id === undefined) {
+    const newest = await newestOpenLine(input.store);
+    if (newest === null) throw targetNotFound(input);
+    return await manifestTarget(input, newest.id);
+  }
+  return await manifestTarget(input, input.id);
+}
+
+/** One id as a target, refusing when the archive holds no manifest this module can act on. */
+async function manifestTarget(input: MemoryUndoInput, id: string): Promise<UndoTarget> {
+  const manifest = await readCompactionManifest({ store: input.store, id });
+  if (manifest === null) throw targetNotFound(input, id);
+  return { id, manifest };
+}
+
+/**
+ * The status an undo leaves the manifest in.
+ *
+ * A compaction that finished is `undone`: its writes stood, and this is the record that they no
+ * longer do. One that never finished is `rolled_back` instead — the same word a failed apply
+ * leaves — because nothing about it was ever true for longer than the crash, and an archive that
+ * says `undone` would claim a completed compaction that a person then reversed.
+ */
+function statusAfterUndo(status: MemoryCompactionManifestStatus): MemoryCompactionManifestStatus {
+  return status === "applying" ? "rolled_back" : "undone";
+}
+
+/**
+ * One archived note as the mirror is given it back: the original's content, a fresh id and the
+ * caller's clock — a re-save, which is what the provider is told it is.
+ */
+function restoredNote(original: MemoryNote, updatedAt: string): MemoryNote {
+  return { ...original, id: randomUUID(), status: "active", updatedAt };
+}
+
+/**
+ * Put one archived note back, then declare its save, exactly as a direct save would.
+ *
+ * The note's own id is the request's client id, so the note, the request and the write a later
+ * sync delivers are named by one id — the same binding a save makes, and the same one an apply
+ * makes for the notes it writes.
+ */
+async function restoreNote(input: MemoryUndoInput, original: MemoryNote): Promise<void> {
+  const note = restoredNote(original, clockOf(input)().toISOString());
+  await input.store.writeNote(note);
+  await input.outbox.enqueue({
+    kind: "save",
+    clientId: note.id,
+    scope: note.scope,
+    slug: note.slug,
+    writeMode: "direct",
+    note,
+  });
+}
+
+/**
+ * Take the merge targets the compaction created out of the mirror, unless one is an archived
+ * original — a merge that kept one of its own source slugs wrote *that* note, and the note the
+ * archive holds is the one it has to answer with.
+ *
+ * A target the mirror does not hold is left alone: there is no note to delete and no note to
+ * forget, so the undo answers with no removal instead of inventing one.
+ */
+async function removeMergedNotes(
+  input: MemoryUndoInput,
+  target: UndoTarget,
+  restoredSlugs: ReadonlySet<string>,
+): Promise<readonly string[]> {
+  const removed: string[] = [];
+  for (const merge of target.manifest.merged) {
+    if (restoredSlugs.has(merge.into)) continue;
+    if ((await input.store.readNote("project", merge.into)) === null) continue;
+    await input.store.deleteNote("project", merge.into);
+    await input.outbox.enqueue({
+      kind: "forget",
+      clientId: randomUUID(),
+      scope: "project",
+      slug: merge.into,
+      writeMode: "direct",
+      reason: `undo compaction ${target.id}`,
+    });
+    removed.push(merge.into);
+  }
+  return removed;
+}
+
+/**
+ * The locked half of an undo: restore, remove, refresh the index, and record what it did.
+ *
+ * The order is the apply's, reversed, and it matters for the same reason: the originals go back
+ * before anything is deleted, so a merge target that is also an archived slug is answered by the
+ * restored note rather than by the note the apply wrote there, and the index is rendered from a
+ * mirror that is already final.
+ */
+async function undoLocked(input: MemoryUndoInput, target: UndoTarget): Promise<MemoryUndoResult> {
+  const originals = await readCompactionArchiveNotes({ store: input.store, id: target.id });
+  const restored: string[] = [];
+  for (const original of originals) {
+    await restoreNote(input, original);
+    restored.push(original.slug);
+  }
+  const removed = await removeMergedNotes(input, target, new Set(restored));
+  await refreshIndex({ store: input.store, outbox: input.outbox });
+  await writeCompactionManifest({
+    store: input.store,
+    manifest: { ...target.manifest, status: statusAfterUndo(target.manifest.status) },
+  });
+  await markCompactionLogUndone({ store: input.store, id: target.id });
+  return { id: target.id, restored, removed };
+}
+
+/**
+ * Undo one compaction of this mirror, and answer what it restored and removed.
+ *
+ * The target is resolved under the compaction lifecycle lock — the lock an apply holds for its
+ * whole run — so the log line an undo picks cannot be appended to by another process between
+ * choosing it and acting on it, and the archive it reads cannot be pruned away. The mirror
+ * itself is changed as this store's only writer, under the same ordering and lock a save takes.
+ */
+export async function undoMemoryCompaction(input: MemoryUndoInput): Promise<MemoryUndoResult> {
+  return await orderedByMirrorLocks(input.store, () =>
+    withCompactionRetentionLock(input, async () => {
+      const target = await resolveTarget(input);
+      return await withMirrorLock(input, () => undoLocked(input, target));
+    }),
+  );
+}

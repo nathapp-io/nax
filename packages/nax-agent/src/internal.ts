@@ -61,6 +61,7 @@ export {
   type MemoryCompactionRetire,
   type MemoryUndoResult,
 } from "#src/memory/compaction-types";
+export { type MemoryUndoInput, undoMemoryCompaction } from "#src/memory/compaction-undo";
 export { storeLockTargets } from "#src/memory/mirror-lock";
 export { parseMemoryNoteRecord } from "#src/memory/note";
 export { _memoryStoreDeps } from "#src/memory/store";

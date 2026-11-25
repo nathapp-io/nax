@@ -23,8 +23,10 @@
  * file outlives the run that wrote it and is read by a later process (`nax memory undo`), so
  * it changes only when the on-disk format does.
  */
+import type { Dirent } from "node:fs";
 import { appendFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { writeFileAtomic } from "#src/internal/atomic-write";
@@ -32,10 +34,10 @@ import { realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
 import { type MirrorLockInput, withMirrorLocks } from "./mirror-lock.ts";
-import { serializeMemoryNote } from "./note.ts";
+import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { NOTES_DIR } from "./store-paths.ts";
-import type { MemoryNote } from "./types.ts";
+import { MEMORY_SLUG_RE, type MemoryNote } from "./types.ts";
 
 /** Filesystem seams for log recovery and archive pruning. */
 export const _compactionArchiveDeps = { appendFile, readFile, rm };
@@ -94,6 +96,47 @@ export interface MemoryCompactionLogLine {
   readonly undone: boolean;
 }
 
+/**
+ * The shape a manifest file has to have to be read back as one.
+ *
+ * An undo acts on what the file says — which merge targets it created, whether it ever
+ * finished — so a file that does not carry those fields cannot be acted on, and the answer is
+ * "this archive is not a compaction" rather than a half-applied guess. `created` and
+ * `notesAfter` stay optional because an `applying` manifest genuinely has neither.
+ */
+const ManifestSchema = z.object({
+  id: z.string().regex(MEMORY_COMPACTION_ID_RE),
+  createdAt: z.string().min(1),
+  status: z.enum(["applying", "applied", "rolled_back", "undone"]),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  retired: z.array(z.string().min(1)),
+  merged: z.array(z.object({ from: z.array(z.string().min(1)).min(1), into: z.string().min(1) })),
+  created: z.array(z.object({ slug: z.string().min(1), updatedAt: z.string().min(1) })).optional(),
+  notesBefore: z.number().int().nonnegative(),
+  notesAfter: z.number().int().nonnegative().optional(),
+  fillBefore: z.number(),
+});
+
+/**
+ * The shape a `compactions.jsonl` line has to have to be read back as one.
+ *
+ * A line that fails it is skipped rather than repaired: the log is the default target an undo
+ * resolves by, and a line whose fields the undo would go on to read must be one the undo can
+ * trust. Its id has to name an archive, which is the same pattern the archive directory is
+ * found by.
+ */
+const LogLineSchema = z.object({
+  id: z.string().regex(MEMORY_COMPACTION_ID_RE),
+  createdAt: z.string().min(1),
+  retired: z.number().int().nonnegative(),
+  merged: z.number().int().nonnegative(),
+  notesBefore: z.number().int().nonnegative(),
+  notesAfter: z.number().int().nonnegative(),
+  fillBefore: z.number(),
+  undone: z.boolean(),
+});
+
 /** The directory one compaction's archive lives in: `<archiveDir>/<id>`. */
 export function compactionArchiveDir(store: MemoryStore, id: string): string {
   return join(store.paths.archiveDir, id);
@@ -124,6 +167,52 @@ export async function writeCompactionArchive(input: {
   }
 }
 
+/** A path that is not there: an archive with no notes, rather than a failure to report. */
+function isMissing(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "ENOENT" || error.code === "ENOTDIR";
+}
+
+/** The slug one archived file holds, or `null` when it is not a regular file named after a note. */
+function archivedSlugIn(entry: Dirent): string | null {
+  if (!entry.isFile()) return null;
+  const suffix = ".md";
+  if (!entry.name.endsWith(suffix)) return null;
+  const slug = entry.name.slice(0, -suffix.length);
+  return MEMORY_SLUG_RE.test(slug) ? slug : null;
+}
+
+/**
+ * Every note one compaction archived, in slug order — what an undo puts back.
+ *
+ * The files are the compaction's own record of the notes as they were, so they are decoded
+ * with the same codec a mirror read uses: a file the note schema refuses is not restored as
+ * something else. An archive with no `notes/` directory holds nothing to restore (an apply
+ * always creates it, so this is a directory that was tampered with or is not an archive).
+ */
+export async function readCompactionArchiveNotes(input: {
+  readonly store: MemoryStore;
+  readonly id: string;
+}): Promise<readonly MemoryNote[]> {
+  const notesDir = join(compactionArchiveDir(input.store, input.id), NOTES_DIR);
+  let entries: Dirent[];
+  try {
+    entries = await _memoryStoreDeps.readdir(notesDir, { withFileTypes: true });
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
+  }
+  const slugs = entries
+    .map((entry) => archivedSlugIn(entry))
+    .filter((slug): slug is string => slug !== null)
+    .sort(byCodePoint);
+  const notes: MemoryNote[] = [];
+  for (const slug of slugs) {
+    notes.push(parseMemoryNote(await _compactionArchiveDeps.readFile(join(notesDir, `${slug}.md`), "utf8")));
+  }
+  return notes;
+}
+
 /** Publish one compaction's manifest, replacing whatever the previous step wrote there. */
 export async function writeCompactionManifest(input: {
   readonly store: MemoryStore;
@@ -134,6 +223,45 @@ export async function writeCompactionManifest(input: {
     compactionManifestPath(input.store, input.manifest.id),
     `${JSON.stringify(input.manifest, null, 2)}\n`,
   );
+}
+
+/**
+ * One compaction's manifest as it is on disk, or `null` when there is not one to act on.
+ *
+ * A missing file, a file that is not JSON and a file whose shape is not a manifest all answer
+ * the same thing, because they mean the same thing to a caller: this id does not name a
+ * compaction this mirror can undo. Reading is the only place that judgement is made, so a
+ * caller never has to distinguish "absent" from "unreadable" itself.
+ */
+export async function readCompactionManifest(input: {
+  readonly store: MemoryStore;
+  readonly id: string;
+}): Promise<MemoryCompactionManifest | null> {
+  let text: string;
+  try {
+    text = await _compactionArchiveDeps.readFile(compactionManifestPath(input.store, input.id), "utf8");
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+  const parsed = ManifestSchema.safeParse(decodeJson(text));
+  return parsed.success ? parsed.data : null;
+}
+
+/** One decoded JSON value, or `null` when the text is not JSON. */
+function decodeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Not JSON: the caller's schema check turns it into "this is not one of ours".
+    return null;
+  }
+}
+
+/** One log line as a compaction record, or `null` when the line is not one. */
+function parseLogLine(line: string): MemoryCompactionLogLine | null {
+  const parsed = LogLineSchema.safeParse(decodeJson(line));
+  return parsed.success ? parsed.data : null;
 }
 
 /**
@@ -167,13 +295,64 @@ export async function restoreCompactionLog(store: MemoryStore, before: Uint8Arra
   else await writeFileAtomic(store.paths.compactionsLog, before);
 }
 
+/** The log as lines, or none when the mirror has never compacted. */
+async function compactionLogLines(store: MemoryStore): Promise<string[]> {
+  const bytes = await readCompactionLog(store);
+  if (bytes === null) return [];
+  // A log written by an older nax is still a log: the decoder only has to survive its bytes.
+  return new TextDecoder().decode(bytes).split("\n");
+}
+
+/**
+ * Every line the log holds that is a compaction record, in the order it was appended.
+ *
+ * A line that is not one is skipped, not repaired and not reported: the log is append-only
+ * history, and one truncated record — a crash between a write and its newline, a file edited by
+ * hand — must not make every compaction before it unreachable. The caller gets the records it
+ * can act on, and that is what an undo resolves its default target from.
+ */
+export async function readCompactionLogLines(store: MemoryStore): Promise<readonly MemoryCompactionLogLine[]> {
+  const lines: MemoryCompactionLogLine[] = [];
+  for (const line of await compactionLogLines(store)) {
+    const parsed = parseLogLine(line);
+    if (parsed !== null) lines.push(parsed);
+  }
+  return lines;
+}
+
+/**
+ * Mark one compaction's line `undone: true`, leaving every other line byte for byte as it was.
+ *
+ * The log is append-only history, so the one entry an undo changes is re-encoded and the rest
+ * are written back as the exact text that was read — a re-serialisation of a line nobody asked
+ * to change would rewrite history the log exists to preserve. The whole file is published
+ * atomically, so a crash during an undo leaves the old log or the new one. Answers whether a
+ * line was there to mark: an `applied` manifest with no log line (an apply that died before its
+ * last step) has nothing to mark, and that is not a failure.
+ */
+export async function markCompactionLogUndone(input: {
+  readonly store: MemoryStore;
+  readonly id: string;
+}): Promise<boolean> {
+  const lines = await compactionLogLines(input.store);
+  if (lines.length === 0) return false;
+  let marked = false;
+  const next = lines.map((line) => {
+    const parsed = parseLogLine(line);
+    if (parsed === null || parsed.id !== input.id) return line;
+    marked = true;
+    return JSON.stringify({ ...parsed, undone: true });
+  });
+  if (!marked) return false;
+  await writeFileAtomic(input.store.paths.compactionsLog, next.join("\n"));
+  return true;
+}
+
 /** An unreadable or malformed manifest is not proof that its archive is safe to prune. */
 async function isAppliedArchive(store: MemoryStore, id: string): Promise<boolean> {
   try {
-    const manifest: unknown = JSON.parse(
-      await _compactionArchiveDeps.readFile(compactionManifestPath(store, id), "utf8"),
-    );
-    return typeof manifest === "object" && manifest !== null && "status" in manifest && manifest.status === "applied";
+    // A shape this module would not act on is an archive whose state cannot be established.
+    return (await readCompactionManifest({ store, id }))?.status === "applied";
   } catch {
     // Retain archives whose state cannot be established, including a concurrent disappearance.
     return false;

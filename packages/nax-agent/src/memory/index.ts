@@ -10,6 +10,7 @@ export {
   type MemoryCompactionRetire,
   type MemoryUndoResult,
 } from "./compaction-types.ts";
+export { type MemoryUndoInput, undoMemoryCompaction } from "./compaction-undo.ts";
 export {
   type RefreshMemoryIndexOptions,
   type RenderedMemoryIndex,

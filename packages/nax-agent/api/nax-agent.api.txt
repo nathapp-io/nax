@@ -720,6 +720,7 @@ type MemoryCompactionPlanCheck
 type MemoryCompactionResult
 type MemoryCompactionRetire
 type MemoryTranscriptStore
+type MemoryUndoInput
 type MemoryUndoResult
 type ModelTruncationOptions
 NATIVE_AGENT
@@ -1160,6 +1161,7 @@ truncateModule
 truncationDirectionFor
 turnRetryDelayMs
 turnRetryFitsBudget
+undoMemoryCompaction
 unregisterToolAuditSink
 unsandboxedNextStepLine
 unsandboxedSentence
