@@ -264,6 +264,7 @@ describe("registerMemoryCommand — undo", () => {
       "discard",
       "compact",
       "undo",
+      "mirrors",
     ]);
   });
 

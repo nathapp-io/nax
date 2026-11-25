@@ -310,6 +310,7 @@ describe("registerMemoryCommand", () => {
       "discard",
       "compact",
       "undo",
+      "mirrors",
     ]);
   });
 });

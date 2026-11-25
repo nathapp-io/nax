@@ -298,6 +298,7 @@ describe("registerMemoryCommand — the write subcommands", () => {
       "discard",
       "compact",
       "undo",
+      "mirrors",
     ]);
   });
 });

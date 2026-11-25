@@ -175,6 +175,13 @@ export {
   registerMemoryCompactCommands,
 } from "./memory-compact";
 export {
+  _memoryMirrorsCliDeps,
+  type MemoryMirrorsCliDeps,
+  type MemoryMirrorsOptions,
+  memoryMirrorsCommand,
+  registerMemoryMirrorsCommand,
+} from "./memory-mirrors";
+export {
   type MemoryShowOptions,
   memoryShowCommand,
   memorySyncCommand,

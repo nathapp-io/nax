@@ -542,6 +542,7 @@ describe("registerMemoryCommand — compact", () => {
       "discard",
       "compact",
       "undo",
+      "mirrors",
     ]);
   });
 

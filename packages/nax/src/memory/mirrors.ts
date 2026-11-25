@@ -51,6 +51,8 @@ const DECISIONS_FILE = "decisions.jsonl";
 const PENDING_FORGETS_FILE = "pending-forgets.jsonl";
 /** Only note files count: the extension the store's own listing accepts. */
 const NOTE_SUFFIX = ".md";
+/** Only outbox entry files count: a stage file (`<entry>.json.tmp`) is a write in progress. */
+const OUTBOX_ENTRY_SUFFIX = ".json";
 
 /** What one mirror holds, and the little it says about itself. */
 export interface MemoryMirrorInfo {
@@ -197,11 +199,28 @@ async function noteCount(dir: string, unreadable: string[]): Promise<number> {
  * A stage file (`<entry>.json.tmp`) is a write in progress rather than an entry, so only the
  * `.json` names count. A rejected entry stays in the outbox and is counted: it still holds
  * a write the agent asked for.
+ *
+ * Anything that *is* named `.json` and is not a plain file is a write this read cannot count — a
+ * link, dangling or not, a directory, a socket — so its path joins `unreadable` instead of being
+ * skipped as if the outbox held nothing there. The entry is judged by its own type
+ * (`readdir`'s, which never follows a link): following one would count whatever it points at,
+ * and a dangling link would then vanish from the count entirely, which is exactly the read that
+ * makes `isPrunableMirror` say yes to a mirror holding an undelivered write.
  */
 async function outboxCount(dir: string, unreadable: string[]): Promise<number> {
-  const entries = await entriesIn(join(dir, OUTBOX_DIR), unreadable);
+  const outboxDir = join(dir, OUTBOX_DIR);
+  const entries = await entriesIn(outboxDir, unreadable);
   if (entries === null) return 0;
-  return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).length;
+  let count = 0;
+  for (const entry of entries) {
+    if (!entry.name.endsWith(OUTBOX_ENTRY_SUFFIX)) continue;
+    if (entry.isFile()) {
+      count += 1;
+      continue;
+    }
+    unreadable.push(join(outboxDir, entry.name));
+  }
+  return count;
 }
 
 /**

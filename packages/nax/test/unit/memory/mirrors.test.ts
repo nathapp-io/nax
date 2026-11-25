@@ -304,6 +304,91 @@ describe("listMemoryMirrors", () => {
       prunable: false,
     });
   });
+
+  // ─── an outbox entry this read cannot count (US-021 D-5) ───────────────────
+  //
+  // The outbox is counted by entry type, and an entry that is not a plain file is a write this
+  // read cannot see. Skipping such an entry would report an outbox of 0 and let `--prune` delete a
+  // mirror that still holds an undelivered write, so every one of them joins `unreadable`.
+
+  /** One outbox entry path inside a mirror, whether or not anything usable sits there. */
+  function outboxEntry(dir: string, seq = 1): string {
+    return join(dir, "outbox", `${String(seq).padStart(8, "0")}-c_one.json`);
+  }
+
+  test("D-5 marks a dangling link at an outbox entry name, so the mirror is not prunable", async () => {
+    const dir = mirrorDir();
+    mkdirSync(join(dir, "outbox"), { recursive: true });
+    const entry = outboxEntry(dir);
+    symlinkSync(join(dir, "absent-target"), entry);
+
+    const mirror = await onlyMirror();
+
+    expect({ outbox: mirror.outbox, unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      outbox: 0,
+      unreadable: [entry],
+      prunable: false,
+    });
+  });
+
+  test("D-5 marks a link to a readable file too: no symlink is followed", async () => {
+    const dir = mirrorDir();
+    mkdirSync(join(dir, "outbox"), { recursive: true });
+    const target = join(dir, "target.json");
+    writeFileSync(target, "{}\n");
+    const entry = outboxEntry(dir);
+    symlinkSync(target, entry);
+
+    const mirror = await onlyMirror();
+
+    expect({ outbox: mirror.outbox, unreadable: mirror.unreadable }).toEqual({ outbox: 0, unreadable: [entry] });
+  });
+
+  test("D-5 marks a directory named like an outbox entry", async () => {
+    const dir = mirrorDir();
+    const entry = outboxEntry(dir);
+    mkdirSync(entry, { recursive: true });
+
+    const mirror = await onlyMirror();
+
+    expect({ outbox: mirror.outbox, unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      outbox: 0,
+      unreadable: [entry],
+      prunable: false,
+    });
+  });
+
+  test("D-5 keeps the regular counts and the .json.tmp exclusion beside an uncountable entry", async () => {
+    const dir = mirrorDir();
+    writeOutboxEntry(dir, 1, "c_one");
+    writeOutboxEntry(dir, 2, "c_two");
+    writeFileSync(join(dir, "outbox", "00000003-c_three.json.tmp"), "{}\n");
+    const entry = outboxEntry(dir, 4);
+    symlinkSync(join(dir, "absent-target"), entry);
+
+    const mirror = await onlyMirror();
+
+    expect({ outbox: mirror.outbox, unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      outbox: 2,
+      unreadable: [entry],
+      prunable: false,
+    });
+  });
+
+  test("D-5 leaves a half-written stage file out of both the count and the unreadable paths", async () => {
+    const dir = mirrorDir();
+    mkdirSync(join(dir, "outbox"), { recursive: true });
+    const stage = join(dir, "outbox", "00000001-c_one.json.tmp");
+    symlinkSync(join(dir, "absent-target"), stage);
+
+    const mirror = await onlyMirror();
+
+    expect({ outbox: mirror.outbox, unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      outbox: 0,
+      unreadable: [],
+      prunable: true,
+    });
+  });
 });
 
 describe("isPrunableMirror", () => {

@@ -7,7 +7,8 @@
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
  * (`show`, `sync`), `memory-write.ts` (`save`, `forget`, `approve`), `memory-admin.ts`
  * (`link`), `memory-rejected.ts` (`requeue`, `discard`) and `memory-compact.ts` (`compact`,
- * `undo`).
+ * `undo`) — and `memory-mirrors.ts` (`mirrors`), which is the one subcommand that acts on every
+ * project's mirror rather than on this one's.
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —
@@ -39,6 +40,7 @@ import {
   withMemoryHost,
 } from "./memory-cli-deps";
 import { _memoryCompactCliDeps, registerMemoryCompactCommands } from "./memory-compact";
+import { registerMemoryMirrorsCommand } from "./memory-mirrors";
 import { registerMemoryReadCommands } from "./memory-read";
 import { registerMemoryRejectedCommands } from "./memory-rejected";
 import { registerMemoryWriteCommands } from "./memory-write";
@@ -203,5 +205,6 @@ export function registerMemoryCommand(program: Command, deps: MemoryCliDeps = _m
   registerMemoryAdminCommands(memory, deps);
   registerMemoryRejectedCommands(memory, deps);
   registerMemoryCompactCommands(memory, { ..._memoryCompactCliDeps, ...deps });
+  registerMemoryMirrorsCommand(memory);
   return memory;
 }

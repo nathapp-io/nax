@@ -428,6 +428,7 @@ describe("registerMemoryCommand — reset", () => {
       "discard",
       "compact",
       "undo",
+      "mirrors",
     ]);
   });
 });
