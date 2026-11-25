@@ -213,7 +213,8 @@ export async function sweepStalePlaceholders(): Promise<void> {
             if (mounts !== undefined && !loggedBlocked) {
               loggedBlocked = true;
               getSafeLogger()?.debug("sandbox", "live placeholder mount set unknown", {
-                error: "a same-uid process not older than the ledger owner has an unreadable mount namespace",
+                error:
+                  "a same-uid process has an unreadable mount namespace and is not provably older than the ledger owner (newer, unknown start time, or the ledger is from an earlier boot)",
               });
             }
             return;

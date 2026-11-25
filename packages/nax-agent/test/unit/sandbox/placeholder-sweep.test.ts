@@ -288,6 +288,29 @@ describe("dead-owner placeholder sweep through first Linux wrap", () => {
       await wrap();
       expect(scans).toHaveLength(1);
     });
+
+    test("an older unreadable pid does not unblock a ledger from an earlier boot", async () => {
+      // Start ticks from different boots are not comparable, so "older" proves nothing.
+      writeLedger({ bootId: "boot-B" });
+      unreadable102((pid) => (pid === 102 ? 4 : 5));
+      await wrap();
+      unchanged();
+    });
+
+    test("compares the unreadable pid against each dead owner separately", async () => {
+      // Owner 999999 started at 5, owner 999998 at 3; the unreadable pid at 4 sits between.
+      const youngerOwnerPath = join(cwd, ".zshrc");
+      const youngerOwnerLedger = join(ledgerDir, "999998.json");
+      const entry = placeholder(youngerOwnerPath);
+      writeFileSync(youngerOwnerLedger, JSON.stringify({ ...file, pid: 999998, startTicks: 3, entries: [entry] }), {
+        mode: 0o600,
+      });
+      unreadable102((pid) => (pid === 102 ? 4 : 5));
+      await wrap();
+      expect(existsSync(path)).toBe(false);
+      expect(existsSync(youngerOwnerPath)).toBe(true);
+      expect(existsSync(youngerOwnerLedger)).toBe(true);
+    });
   });
 
   test("AC-8: a second pid disappearing with ENOENT does not block cleanup", async () => {
