@@ -77,10 +77,14 @@ async function seedCommitChain(dir: string, branch: string, count: number): Prom
     if (n > 1) stream.push(`from :${n}`);
     stream.push("M 100644 :1 f.txt", "");
   }
+  // `stdout` is ignored, not piped: nothing reads it, and an undrained pipe blocks the
+  // child once it fills, which would hang this test until the suite's per-test timeout
+  // reaped it as a dangling process instead of failing with a message. stderr is piped
+  // because it is drained concurrently below and is what names a refusal.
   const proc = Bun.spawn(["git", "fast-import", "--quiet"], {
     cwd: dir,
     stdin: Buffer.from(stream.join("\n")),
-    stdout: "pipe",
+    stdout: "ignore",
     stderr: "pipe",
   });
   const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
