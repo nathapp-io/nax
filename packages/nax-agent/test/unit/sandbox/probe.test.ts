@@ -9,6 +9,12 @@ describe("probeSandbox", () => {
     expect(backend.finished).toBe(1);
   });
 
+  test("#2986: the probe tells the backend its command has spawned", async () => {
+    const backend = makeFakeSandboxBackend("enforce");
+    await probeSandbox(backend);
+    expect(backend.started).toEqual(["nax-sandbox-probe"]);
+  });
+
   test("the denied marker is a literal entry in denyWrite (deny-within-allow), not merely outside the roots", async () => {
     const backend = makeFakeSandboxBackend("enforce");
     await probeSandbox(backend);

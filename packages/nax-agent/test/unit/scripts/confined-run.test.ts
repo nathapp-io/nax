@@ -113,6 +113,9 @@ function makeFakeBackend(
     annotate() {
       return "";
     },
+    commandStarted() {
+      events.push("commandStarted");
+    },
     commandFinished() {
       events.push("commandFinished");
       if (failures.commandFinished === true) throw new Error("the backend could not finish the command");
@@ -411,7 +414,7 @@ describe("runConfinedTests", () => {
   test("AC-16: releases the backend (commandFinished, then reset) after the exit, then removes the root", async () => {
     const record = installSeam({ exitPromise: Promise.resolve(1) });
     await runConfinedTests({ packageDir, paths: ["./test/unit/"] });
-    expect(record.events).toEqual(["mkdir", "wrap", "spawn", "commandFinished", "reset", "rm"]);
+    expect(record.events).toEqual(["mkdir", "wrap", "spawn", "commandStarted", "commandFinished", "reset", "rm"]);
   });
 
   test("AC-17: outside a git work tree the policy is built on packageDir", async () => {

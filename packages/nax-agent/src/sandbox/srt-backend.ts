@@ -160,8 +160,12 @@ async function runLinuxStartupSteps(): Promise<void> {
  * re-reads the ledger on a short timer until no entry is pending, the cap passes,
  * or every started command has finished. It never throws and never blocks.
  */
-function createStartedPoll(): { start(): void; finish(): void } {
-  let running = 0;
+function createStartedPoll(): { start(commandId?: string): void; finish(commandId?: string): void } {
+  // Only STARTED commands count: a command that finishes without ever spawning (an
+  // aborted signal, a spawn that threw) must not stop another live command's poll.
+  const startedIds = new Set<string>();
+  let startedAnonymous = 0;
+  const running = (): number => startedIds.size + startedAnonymous;
   let cancel: (() => void) | undefined;
   let elapsedMs = 0;
 
@@ -174,7 +178,7 @@ function createStartedPoll(): { start(): void; finish(): void } {
     cancel = undefined;
     const pending = linuxLedger()?.observe() ?? 0;
     elapsedMs += _srtBackendDeps.startedPollIntervalMs;
-    if (pending === 0 || running === 0 || elapsedMs >= _srtBackendDeps.startedPollMaxMs) return;
+    if (pending === 0 || running() === 0 || elapsedMs >= _srtBackendDeps.startedPollMaxMs) return;
     cancel = _srtBackendDeps.schedule(guardedTick, _srtBackendDeps.startedPollIntervalMs);
   }
 
@@ -187,9 +191,10 @@ function createStartedPoll(): { start(): void; finish(): void } {
   }
 
   return {
-    start(): void {
+    start(commandId?: string): void {
       if (linuxLedger() === undefined) return;
-      running += 1;
+      if (commandId === undefined) startedAnonymous += 1;
+      else startedIds.add(commandId);
       // A new command opens a new window: its own bwrap has yet to create its mounts.
       elapsedMs = 0;
       if (cancel !== undefined) return;
@@ -201,9 +206,10 @@ function createStartedPoll(): { start(): void; finish(): void } {
         });
       }
     },
-    finish(): void {
-      running = Math.max(0, running - 1);
-      if (running === 0) stop();
+    finish(commandId?: string): void {
+      if (commandId === undefined) startedAnonymous = Math.max(0, startedAnonymous - 1);
+      else startedIds.delete(commandId);
+      if (running() === 0) stop();
     },
   };
 }
@@ -249,15 +255,15 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       );
       return argv;
     },
-    commandStarted() {
-      startedPoll.start();
+    commandStarted(commandId?: string) {
+      startedPoll.start(commandId);
     },
     annotate(commandId: string, stderr: string) {
       if (loaded === undefined) return "";
       const annotated = loaded.SandboxManager.annotateStderrWithSandboxFailures(commandId, stderr);
       return annotated.startsWith(stderr) ? annotated.slice(stderr.length).trim() : "";
     },
-    commandFinished() {
+    commandFinished(commandId?: string) {
       // Removes bwrap mount placeholders (Linux: `.bashrc`, `.profile`,
       // `.claude/commands`, ...). srt counts every wrap itself and defers the
       // deletion while another wrapped command still runs, so it must hear about
@@ -267,7 +273,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: the ledger must hold the placeholder's identity BEFORE that
       // deletion happens (`observe`), so a placeholder srt removes is still known
       // by inode; `prune` afterwards is what then drops the entries srt removed.
-      startedPoll.finish();
+      startedPoll.finish(commandId);
       const ledger = linuxLedger();
       ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();

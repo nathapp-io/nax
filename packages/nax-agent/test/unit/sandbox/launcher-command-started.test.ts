@@ -19,7 +19,7 @@ const policy = (r: string): SandboxPolicy => ({ writeRoots: [r], denyWrite: [], 
 const available = { kind: "available", backend: "srt", network: "open" } as const;
 const okResult = { exitCode: 0, stdout: "", stderr: "", timedOut: false };
 
-function backendWith(events: string[], started?: () => void): SandboxBackend {
+function backendWith(events: string[], started?: (commandId: string) => void): SandboxBackend {
   return {
     name: "srt",
     async isSupportedPlatform() {
@@ -33,8 +33,8 @@ function backendWith(events: string[], started?: () => void): SandboxBackend {
       return "";
     },
     ...(started !== undefined ? { commandStarted: started } : {}),
-    commandFinished() {
-      events.push("finished");
+    commandFinished(commandId) {
+      events.push(`finished:${commandId}`);
     },
     async reset() {},
   };
@@ -52,6 +52,20 @@ function runRequest(r: string) {
 
 describe("createCommandLauncher — commandStarted (#2986)", () => {
   withDepsRestore(_launcherDeps);
+  beforeEach(() => {
+    _launcherDeps.newCommandId = () => "cmd-1";
+  });
+
+  test("a run that never spawns still finishes under its own commandId, with no start", async () => {
+    _launcherDeps.runArgv = async () => okResult;
+    const events: string[] = [];
+    await createCommandLauncher({
+      state: available,
+      backend: backendWith(events, (id) => events.push(`started:${id}`)),
+      policyFor: async (p) => policy(p),
+    }).run(runRequest(root));
+    expect(events).toEqual(["wrap", "finished:cmd-1"]);
+  });
 
   test("the backend hears commandStarted from runArgv's onSpawn, between wrap and finish", async () => {
     const events: string[] = [];
@@ -63,10 +77,10 @@ describe("createCommandLauncher — commandStarted (#2986)", () => {
     };
     await createCommandLauncher({
       state: available,
-      backend: backendWith(events, () => events.push("started")),
+      backend: backendWith(events, (id) => events.push(`started:${id}`)),
       policyFor: async (p) => policy(p),
     }).run(runRequest(root));
-    expect(events).toEqual(["wrap", "spawn", "started", "exit", "finished"]);
+    expect(events).toEqual(["wrap", "spawn", "started:cmd-1", "exit", "finished:cmd-1"]);
   });
 
   test("a commandStarted that throws does not fail the command", async () => {

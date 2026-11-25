@@ -521,6 +521,22 @@ describe("srt backend placeholder ledger (Linux)", () => {
       expect(pendingTimers()).toBe(1);
     });
 
+    test("a commandFinished for a command that never started leaves another command's poll alone", async () => {
+      installCountingSrt();
+      installManualTimer();
+      const backend = createSrtBackend({});
+      await backend.wrap(ledgerRequest("a"));
+      await backend.wrap(ledgerRequest("b"));
+      backend.commandStarted?.("a");
+
+      // `b` was wrapped but its runArgv returned early (aborted signal): finished, never started.
+      backend.commandFinished("b");
+      expect(pendingTimers()).toBe(1);
+
+      backend.commandFinished("a");
+      expect(pendingTimers()).toBe(0);
+    });
+
     test("a scheduler that throws never fails the command", async () => {
       installCountingSrt();
       installManualTimer();

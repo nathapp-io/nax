@@ -289,11 +289,16 @@ export async function runConfinedTests(input: ConfinedRunInput): Promise<number>
       stdout: "pipe",
       stderr: "inherit",
     });
+    try {
+      backend.commandStarted?.(commandId);
+    } catch {
+      // Observer only (#2986): a backend that fails here must not fail the run.
+    }
     const [exitCode] = await Promise.all([child.exited, pumpStdout(child.stdout, _confinedRunDeps.stdout)]);
     return exitCode;
   } finally {
     try {
-      backend.commandFinished();
+      backend.commandFinished(commandId);
       await backend.reset();
     } finally {
       // Nested (F3): the run root is this runner's OWN temp data, so a backend

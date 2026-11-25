@@ -68,9 +68,13 @@ export interface SandboxBackend {
    * the backend can identify them. Best effort and non-blocking; absent on a backend
    * with nothing to do.
    */
-  commandStarted?(): void;
-  /** Called once per finished wrapped command (in-flight bookkeeping). */
-  commandFinished(): void;
+  commandStarted?(commandId?: string): void;
+  /**
+   * Called once per finished wrapped command (in-flight bookkeeping), whether or not
+   * it ever started. Pass the same `commandId` given to `wrap` and `commandStarted`
+   * so a command that never spawned cannot end another command's bookkeeping.
+   */
+  commandFinished(commandId?: string): void;
   reset(): Promise<void>;
 }
 

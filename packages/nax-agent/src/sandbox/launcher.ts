@@ -25,6 +25,7 @@ import {
   socketDenialHintLine,
   unsandboxedNextStepLine,
 } from "./messages.ts";
+import { notifyCommandStarted } from "./notify-started.ts";
 import type {
   CommandLauncher,
   LaunchRequest,
@@ -149,15 +150,6 @@ function denialHint(
   return { line: denialHintLine(policy.writeRoots, env.sharedTmp), escapable: false };
 }
 
-/** Tell the backend its argv has spawned; a backend that fails here must not fail the command. */
-function notifyStarted(backend: SandboxBackend): void {
-  try {
-    backend.commandStarted?.();
-  } catch (err) {
-    getSafeLogger()?.warn("sandbox", "backend commandStarted failed", { error: errorMessage(err) });
-  }
-}
-
 async function runWrapped(
   req: LaunchRequest,
   backend: SandboxBackend,
@@ -198,7 +190,7 @@ async function runWrapped(
       ...(req.releaseDeadline !== undefined ? { releaseDeadline: req.releaseDeadline } : {}),
       ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
       // #2986: bwrap creates its placeholders at spawn, so the backend identifies them from here.
-      onSpawn: () => notifyStarted(backend),
+      onSpawn: () => notifyCommandStarted(backend, commandId),
     });
     const failed = result.exitCode !== 0;
     const denied = failed && LIKELY_SANDBOX_DENIAL.test(result.stderr);
@@ -224,7 +216,7 @@ async function runWrapped(
       },
     };
   } finally {
-    backend.commandFinished();
+    backend.commandFinished(commandId);
   }
 }
 
