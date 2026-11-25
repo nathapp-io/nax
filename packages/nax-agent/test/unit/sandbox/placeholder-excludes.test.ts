@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -327,6 +328,30 @@ describe("US-007 placeholder excludes through a fresh Linux backend", () => {
     expect(readFileSync(join(shared, "settings"), "utf8")).toBe(`${HEADER}\n${ENTRIES.join("\n")}\n`);
     // ...and the unrelated file at the collapsed path keeps every byte.
     expect(readFileSync(join(repo, ".git", "settings"), "utf8")).toBe("user\n");
+  });
+
+  test("B4: a missing intermediate symlink target cannot overwrite a lexically collapsed destination", async () => {
+    const info = join(repo, ".git", "info");
+    const settings = join(info, "settings");
+    const bytes = Buffer.from("user settings\r\nkeep every byte\0\xff", "latin1");
+    writeFileSync(settings, bytes);
+    unlinkSync(excludePath(repo));
+    symlinkSync("missing/../settings", excludePath(repo));
+    const link = lstatSync(excludePath(repo));
+    // The kernel cannot traverse `missing`, even though lexical normalization
+    // would erase it and arrive at the unrelated settings file.
+    expect(existsSync(excludePath(repo))).toBe(false);
+
+    const argv = await wrapIn(repo);
+
+    expect(argv).toEqual(["true"]);
+    expect(readFileSync(settings)).toEqual(bytes);
+    expect(lstatSync(excludePath(repo)).isSymbolicLink()).toBe(true);
+    expect(lstatSync(excludePath(repo)).ino).toBe(link.ino);
+    expect(readlinkSync(excludePath(repo))).toBe("missing/../settings");
+    expect(existsSync(excludePath(repo))).toBe(false);
+    expect(readdirSync(info).sort()).toEqual(["exclude", "settings"]);
+    expect(callsAt("warn", "could not update git excludes")).toHaveLength(1);
   });
 
   test("AC-10: a throwing ensureExcludes seam still lets wrap resolve its argv", async () => {

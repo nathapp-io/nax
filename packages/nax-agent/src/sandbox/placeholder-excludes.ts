@@ -193,9 +193,10 @@ function excludeDestination(path: string): string {
       }
       target = readlinkSync(next);
     } catch (error) {
-      // Nothing at this name yet: this is where the bytes belong, and the link
-      // that names it stays intact. The rest of the path is created with it.
-      if (errorCode(error) === "ENOENT") return join(next, ...pending);
+      // Only an absent final component is safe to create through the link.
+      // If traversal failed earlier, even a following `..` cannot undo ENOENT:
+      // normalizing the remainder could overwrite an unrelated existing file.
+      if (errorCode(error) === "ENOENT" && pending.length === 0) return next;
       throw error;
     }
     hops += 1;
