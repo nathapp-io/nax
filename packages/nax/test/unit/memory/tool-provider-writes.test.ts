@@ -195,6 +195,22 @@ describe("memory tool provider writes", () => {
       expect(result).toEqual({ isError: true, content: "[memory] save refused: secret (aws) must not be stored" });
     });
 
+    test("AC-18 (US-012) reports a full index with the compaction hint", async () => {
+      saveSpy.mockImplementation(async () => {
+        throw new NaxError("memory index is full: a new note would drop entries from the index", "MEMORY_FULL", {
+          stage: "memory",
+        });
+      });
+
+      const result = await run("save", REPLAY_BUDGET_INPUT);
+
+      expect(result).toEqual({
+        isError: true,
+        content:
+          "[memory] save refused: memory index is full: a new note would drop entries from the index; run nax memory compact, or overwrite an existing note",
+      });
+    });
+
     test("AC-12 resolves, rather than rejecting, when the host throws something else", async () => {
       saveSpy.mockImplementation(async () => {
         throw new Error("disk full");

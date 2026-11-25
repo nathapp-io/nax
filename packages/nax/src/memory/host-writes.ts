@@ -62,6 +62,12 @@ export interface HostWritesInput {
   readonly writeMode: "direct" | "proposal";
   /** The repository's committed project notes, re-read for every refusal. */
   readonly repoNotes: () => Promise<readonly MemoryNote[]>;
+  /**
+   * Whether the index rendered with `note` added would drop entries off the end — the
+   * projection the host's own index is rendered from. Asked by feature 1's save for a slug
+   * the mirror does not hold, so a new note cannot silently push a note a session reads out.
+   */
+  readonly indexOverflows: (note: MemoryNote) => Promise<boolean>;
   readonly operations: MemoryWriteOperations;
 }
 
@@ -112,7 +118,7 @@ async function refuseRepoOnly(input: HostWritesInput, scope: MemoryScope, slug: 
   throw repoNoteRefusal(slug);
 }
 
-/** One save: feature 1's operation, given the host's write mode and source. */
+/** One save: feature 1's operation, given the host's write mode, source and index projection. */
 async function save(input: HostWritesInput, write: MemoryNoteWrite): Promise<MemorySaveResult> {
   return await input.operations.saveMemoryNote({
     store: input.store,
@@ -122,6 +128,7 @@ async function save(input: HostWritesInput, write: MemoryNoteWrite): Promise<Mem
     write,
     writeMode: input.writeMode,
     source: input.source,
+    indexOverflows: input.indexOverflows,
   });
 }
 

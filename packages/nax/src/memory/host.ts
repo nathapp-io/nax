@@ -60,16 +60,17 @@ import {
   type MemoryStore,
   type MemorySyncResult,
   type RenderedMemoryIndex,
-  renderMemoryIndex,
   saveMemoryNote,
   searchMemoryNotes,
   syncMemory,
 } from "@nathapp/nax-agent";
-import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { applyMemoryCompaction, byCodePoint, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
+import { createHostCompaction, type HostCompaction } from "./host-compact";
 import { kodaHeldForgetKeys, readForgetPendingKeys } from "./host-forget-keys";
+import { createIndexOverflows, readIndex } from "./host-index";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { type MemoryRejectedEntry, readStatus } from "./host-status";
 import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
@@ -112,8 +113,14 @@ export interface MemorySearchInput {
   readonly limit: number;
 }
 
-/** The memory surface every consumer (chat, runs, the CLI) reads and writes through. */
-export interface MemoryHost {
+/**
+ * The memory surface every consumer (chat, runs, the CLI) reads and writes through.
+ *
+ * The compaction members — `compactionCandidates`, `applyCompaction`, `undoCompaction` —
+ * are declared with their input types in `host-compact.ts`, and are optional here so a
+ * hand-built host (a test double) stays valid; `createMemoryHost` always sets them.
+ */
+export interface MemoryHost extends Partial<HostCompaction> {
   readonly dirs: MemoryDirs;
   readonly providerId: string;
   readonly writeMode: "direct" | "proposal";
@@ -175,6 +182,8 @@ export const _memoryHostDeps: {
   saveMemoryNote: typeof saveMemoryNote;
   forgetMemoryNote: typeof forgetMemoryNote;
   approveMemoryNote: typeof approveMemoryNote;
+  applyMemoryCompaction: typeof applyMemoryCompaction;
+  undoMemoryCompaction: typeof undoMemoryCompaction;
   createMcpPool: typeof createMcpPool;
   createMcpIdMap: typeof createMcpIdMap;
   createMcpMemoryProvider: typeof createMcpMemoryProvider;
@@ -194,6 +203,8 @@ export const _memoryHostDeps: {
   saveMemoryNote,
   forgetMemoryNote,
   approveMemoryNote,
+  applyMemoryCompaction,
+  undoMemoryCompaction,
   createMcpPool,
   createMcpIdMap,
   createMcpMemoryProvider,
@@ -489,21 +500,6 @@ function closeOnce(pool: McpPool | undefined): () => Promise<void> {
 }
 
 /**
- * The index a session starts with: feature 1's renderer over both scopes, the
- * project's decisions, the keys a pending forget holds and the byte cap the config
- * sets. Every part is read now — the index is a snapshot, not a view.
- */
-async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMemoryIndex> {
-  const [projectNotes, userNotes, decisions, heldForgets] = await Promise.all([
-    reads.notesOf("project"),
-    reads.notesOf("user"),
-    input.parts.store.readDecisions(),
-    readForgetPendingKeys(input.parts),
-  ]);
-  return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
-}
-
-/**
  * An outbox entry the provider refused, or a sync parked: what it was and why it stopped.
  *
  * Declared in `host-status.ts` because this file is at its size cap, and re-exported here so
@@ -536,7 +532,8 @@ function syncParts(input: HostInput): Promise<MemorySyncResult> {
  * The writes are built from the same composition and the same reads: they take the
  * repository's notes through the reads' own (warn-deduplicated) view, and feature
  * 1's operations through `_memoryHostDeps`, so an operation stubbed after the host
- * was opened is the one the next write calls.
+ * was opened is the one the next write calls. The compaction members are built the
+ * same way, and hand a save the same projection the index is rendered from.
  *
  * @param input.config - The loaded nax config (`memory` is read through `memoryConfigOf`)
  * @param input.repoRoot - Absolute repository root; the `.nax` anchor and the mirror identity
@@ -558,6 +555,18 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     source: input.source,
     writeMode: config.writeMode,
     repoNotes: async () => (await reads.repoNotes()).notes,
+    indexOverflows: createIndexOverflows(reads, hostInput),
+    operations: _memoryHostDeps,
+  });
+  const compaction = createHostCompaction({
+    store: parts.store,
+    outbox: parts.outbox,
+    logger: input.logger,
+    config,
+    providerId: parts.provider.id,
+    writeMode: config.writeMode,
+    repoNotes: async () => (await reads.repoNotes()).notes,
+    sync: () => syncParts(hostInput),
     operations: _memoryHostDeps,
   });
   return {
@@ -575,6 +584,9 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     approve: writes.approve,
     requeue: writes.requeue,
     discard: writes.discard,
+    compactionCandidates: compaction.compactionCandidates,
+    applyCompaction: compaction.applyCompaction,
+    undoCompaction: compaction.undoCompaction,
     forgetPendingKeys: () => readForgetPendingKeys(parts),
     close: closeOnce(parts.pool),
   };
