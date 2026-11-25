@@ -165,6 +165,7 @@ export {
   MEMORY_INDEX_BYTES_DEFAULT,
   MEMORY_INDEX_BYTES_MAX,
   MEMORY_INDEX_BYTES_MIN,
+  MemoryCompactConfigSchema,
   MemoryConfigSchema,
   MemoryKodaConfigSchema,
   MemoryMcpConfigSchema,

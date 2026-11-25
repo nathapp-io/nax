@@ -417,6 +417,14 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "memory.askOnSave": "Ask before nax-memory__save / nax-memory__forget in a guarded native chat (default: true)",
   "memory.inRun":
     "Give `nax run` a run memory: a start sync, the index in the workflow prompts and the memory tools on run-stage sessions. false turns all three off for runs; chat is unaffected (default: true)",
+  "memory.compact":
+    "Compaction of a nearly-full index. Holds threshold (the fill that counts as nearly full), model (what plans a compaction) and keepArchives (how many archives survive)",
+  "memory.compact.threshold":
+    "Index fill at or above which memory counts as nearly full, 0 < threshold <= 1. Fill is the larger of the byte ratio and the line ratio of the rendered index (default: 0.8)",
+  "memory.compact.model":
+    'Model that plans a compaction: a tier name such as "balanced", or { "agent": "<agent>", "model": "<model>" } (default: balanced)',
+  "memory.compact.keepArchives":
+    "How many compaction archives `nax memory compact` keeps, newest first, 1..50 (default: 5)",
 
   // Resources
   "resources.mcpInRun":

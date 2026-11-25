@@ -5,6 +5,7 @@
  * `@/memory` and never from `@/memory/<internal>` (`check:alias-internals`).
  */
 
+export { memoryIndexFill, memoryNearlyFull } from "./fill";
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
 export type { CreateMemoryHostInput, MemoryHost, MemoryRejectedEntry, MemorySearchInput, MemoryStatus } from "./host";
