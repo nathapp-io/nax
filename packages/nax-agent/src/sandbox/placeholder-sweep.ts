@@ -27,33 +27,74 @@ function errorCode(error: unknown): string | undefined {
 /**
  * One snapshot of this user's live mount namespaces; undefined means unknown,
  * NOT an empty set. A departed pid is harmless; any other unreadable process
- * makes deletion unsafe. Don't mark a namespace seen until its read succeeds:
- * another pid in that namespace may still be available after this one exits.
+ * makes deletion unsafe -- except, per owner, an unreadable pid that STARTED
+ * BEFORE that owner (see `LiveMounts.maxUnreadableTicks`). Don't mark a
+ * namespace seen until its read succeeds: another pid in that namespace may
+ * still be available after this one exits.
  */
-export function readLiveMountPoints(): Set<string> | undefined {
+export interface LiveMounts {
+  readonly points: ReadonlySet<string>;
+  /**
+   * The newest start ticks among same-uid pids whose namespace or mountinfo was
+   * refused (EACCES/EPERM): `-Infinity` when none was, `Infinity` when one of them
+   * has no readable start ticks. A sandbox binds a placeholder only after it
+   * exists, and it exists only after its owner started, so an unreadable pid
+   * strictly older than a dead owner (same boot) cannot hold that owner's mounts.
+   */
+  readonly maxUnreadableTicks: number;
+}
+
+const REFUSED_CODES: ReadonlySet<string> = new Set(["EACCES", "EPERM"]);
+
+/** Start ticks of an unreadable pid; `Infinity` (blocks every owner) when they cannot be read. */
+function unreadableTicks(pid: number): number {
+  try {
+    return _placeholderDeps.startTicks(pid);
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+export function readLiveMountPoints(): LiveMounts | undefined {
   try {
     const points = new Set<string>();
     const namespaces = new Set<string>();
     const uid = _placeholderDeps.uid();
     const proc = _placeholderDeps.proc;
+    let maxUnreadableTicks = Number.NEGATIVE_INFINITY;
     for (const pid of proc.listPids()) {
       try {
         if (proc.realUid(pid) !== uid) continue;
-        const ns = proc.mountNs(pid);
-        if (namespaces.has(ns)) continue;
-        const text = proc.mountinfo(pid);
-        for (const point of parseMountPoints(text)) points.add(mountPath(point));
-        namespaces.add(ns);
+        try {
+          const ns = proc.mountNs(pid);
+          if (namespaces.has(ns)) continue;
+          const text = proc.mountinfo(pid);
+          for (const point of parseMountPoints(text)) points.add(mountPath(point));
+          namespaces.add(ns);
+        } catch (error) {
+          const code = errorCode(error);
+          if (code === undefined || !REFUSED_CODES.has(code)) throw error;
+          maxUnreadableTicks = Math.max(maxUnreadableTicks, unreadableTicks(pid));
+        }
       } catch (error) {
         if (errorCode(error) === "ENOENT" || errorCode(error) === "ESRCH") continue;
         throw error;
       }
     }
-    return points;
+    return { points, maxUnreadableTicks };
   } catch (error) {
     getSafeLogger()?.debug("sandbox", "live placeholder mount set unknown", { error: errorMessage(error) });
     return undefined;
   }
+}
+
+/** Whether this snapshot proves no same-uid process we could not read can hold `owner`'s mounts. */
+function usable(live: LiveMounts | undefined, owner: LedgerFile): live is LiveMounts {
+  if (live === undefined) return false;
+  if (live.maxUnreadableTicks === Number.NEGATIVE_INFINITY) return true;
+  // Start ticks compare only within one boot.
+  const sameBoot = owner.bootId === _placeholderDeps.bootId();
+  return sameBoot && live.maxUnreadableTicks < owner.startTicks;
 }
 
 function ownerIsDead(file: LedgerFile): boolean {
@@ -106,12 +147,12 @@ function persistLedger(path: string, file: LedgerFile, entries: readonly LedgerE
 /** Drop changed identities; retain live mounts and failed removals for the next sweep. */
 function removeUnmounted(
   candidates: readonly IdentifiedEntry[],
-  mounts: ReadonlySet<string> | undefined,
+  mounts: ReadonlySet<string>,
   removed: string[],
 ): LedgerEntry[] {
   const kept: LedgerEntry[] = [];
   for (const entry of candidates) {
-    if (mounts?.has(mountPath(entry.path))) {
+    if (mounts.has(mountPath(entry.path))) {
       kept.push(entry);
       continue;
     }
@@ -141,7 +182,8 @@ export async function sweepStalePlaceholders(): Promise<void> {
   }
   const removed: string[] = [];
   let mountsRead = false;
-  let mounts: Set<string> | undefined;
+  let loggedBlocked = false;
+  let mounts: LiveMounts | undefined;
 
   for (const name of names) {
     if (!name.endsWith(".json") || name === `${process.pid}.json`) continue;
@@ -167,8 +209,16 @@ export async function sweepStalePlaceholders(): Promise<void> {
             mounts = readLiveMountPoints();
           }
           // Unknown means leave ALL original bytes, including pending entries.
-          if (candidates.length > 0 && mounts === undefined) return;
-          persistLedger(path, current, removeUnmounted(candidates, mounts, removed));
+          if (candidates.length > 0 && !usable(mounts, current)) {
+            if (mounts !== undefined && !loggedBlocked) {
+              loggedBlocked = true;
+              getSafeLogger()?.debug("sandbox", "live placeholder mount set unknown", {
+                error: "a same-uid process not older than the ledger owner has an unreadable mount namespace",
+              });
+            }
+            return;
+          }
+          persistLedger(path, current, removeUnmounted(candidates, mounts?.points ?? new Set(), removed));
         },
         { timeoutMs: _placeholderDeps.lockTimeoutMs },
       );

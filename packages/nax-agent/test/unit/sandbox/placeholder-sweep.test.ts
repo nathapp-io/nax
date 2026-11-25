@@ -217,6 +217,79 @@ describe("dead-owner placeholder sweep through first Linux wrap", () => {
     unchanged();
   });
 
+  /**
+   * #2986 (D4): a same-uid pid whose mount namespace cannot be read (systemd --user,
+   * sshd-session) is harmless to a dead owner when it STARTED BEFORE that owner:
+   * a sandbox binds a placeholder only after it exists, and it exists only after
+   * the owner started. Owner ticks here are 5; pid 102 is the unreadable one.
+   */
+  describe("an unreadable same-uid pid (#2986)", () => {
+    function unreadable102(statTicks: (pid: number) => number): void {
+      _placeholderDeps.proc.listPids = () => [101, 102];
+      const read = _placeholderDeps.proc.mountinfo;
+      _placeholderDeps.proc.mountinfo = (pid) => {
+        if (pid === 102) throw procError("EACCES");
+        return read(pid);
+      };
+      _placeholderDeps.startTicks = statTicks;
+    }
+
+    test("one that started before the owner does not block removal", async () => {
+      unreadable102((pid) => (pid === 102 ? 4 : 5));
+      await wrap();
+      expect(existsSync(path)).toBe(false);
+      expect(existsSync(ledgerPath)).toBe(false);
+    });
+
+    test("one that started after the owner leaves the placeholder and ledger untouched", async () => {
+      unreadable102((pid) => (pid === 102 ? 6 : 5));
+      await wrap();
+      unchanged();
+    });
+
+    test("one that started at the same tick as the owner is not strictly older, so it blocks", async () => {
+      unreadable102(() => 5);
+      await wrap();
+      unchanged();
+    });
+
+    test("one whose start ticks cannot be read blocks removal", async () => {
+      unreadable102((pid) => {
+        if (pid === 102) throw procError("EACCES");
+        return 5;
+      });
+      await wrap();
+      unchanged();
+    });
+
+    test("an unreadable ns/mnt of an older pid is harmless the same way", async () => {
+      _placeholderDeps.proc.listPids = () => [101, 102];
+      const ns = _placeholderDeps.proc.mountNs;
+      _placeholderDeps.proc.mountNs = (pid) => {
+        if (pid === 102) throw procError("EPERM");
+        return ns(pid);
+      };
+      _placeholderDeps.startTicks = (pid) => (pid === 102 ? 1 : 5);
+      await wrap();
+      expect(existsSync(path)).toBe(false);
+    });
+
+    test("scans /proc once for several dead-owner ledgers", async () => {
+      unreadable102((pid) => (pid === 102 ? 4 : 5));
+      const scans: number[] = [];
+      const list = _placeholderDeps.proc.listPids;
+      _placeholderDeps.proc.listPids = () => {
+        scans.push(1);
+        return list();
+      };
+      writeFileSync(join(ledgerDir, "999998.json"), JSON.stringify({ ...file, pid: 999998, entries: [] }), {
+        mode: 0o600,
+      });
+      await wrap();
+      expect(scans).toHaveLength(1);
+    });
+  });
+
   test("AC-8: a second pid disappearing with ENOENT does not block cleanup", async () => {
     const attempts: number[] = [];
     _placeholderDeps.proc.listPids = () => [101, 102];
