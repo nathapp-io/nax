@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T13:55:25.150Z",
+  "updatedAt": "2026-11-25T14:07:22.313Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1119,14 +1119,17 @@
       "dependencies": [
         "US-017"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Focused composition change uses established deps and chat harnesses. A spy offer and never-settling check prove observed-host identity, startup order and shell non-blocking behavior."
+        "reasoning": "Focused composition change uses established deps and chat harnesses. A spy offer and never-settling check prove observed-host identity, startup order and shell non-blocking behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -1137,7 +1140,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "64168ded633ee43909edd7a45dbc8643839ac0cd"
     },
     {
       "id": "US-019",
