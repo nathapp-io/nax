@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T11:18:06.920Z",
+  "updatedAt": "2026-11-25T11:36:11.401Z",
   "userStories": [
     {
       "id": "US-001",
@@ -552,14 +552,17 @@
         "capacity"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard strict schema extension and pure arithmetic. Test defaults, config paths, thresholds, byte/line ratios and omitted-first behavior before implementation."
+        "reasoning": "Standard strict schema extension and pure arithmetic. Test defaults, config paths, thresholds, byte/line ratios and omitted-first behavior before implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-memory.ts",
@@ -586,7 +589,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "adb1780188025fb7dcacfc6af4e0563134b692bf"
     },
     {
       "id": "US-010",
