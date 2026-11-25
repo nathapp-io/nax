@@ -74,6 +74,21 @@ describe("buildSandboxPolicy: srt's mandatory names at the session root (#3038)"
   });
 });
 
+describe("buildSandboxPolicy: nested mandatory denies (#3038, Linux scan)", () => {
+  test("the scanned nested names land in denyWrite, deduplicated against the top-level ones", () => {
+    const nested = [join(root, "sub", ".mcp.json"), join(root, "sub", ".vscode"), join(root, ".mcp.json")];
+    const { denyWrite } = buildSandboxPolicy(input({ nestedMandatoryDenies: nested }));
+    for (const p of nested) expect(denyWrite).toContain(p);
+    expect(new Set(denyWrite).size).toBe(denyWrite.length);
+  });
+
+  test("absent: the list is exactly the top-level one", () => {
+    expect(buildSandboxPolicy(input({ nestedMandatoryDenies: [] })).denyWrite).toEqual(
+      buildSandboxPolicy(input()).denyWrite,
+    );
+  });
+});
+
 describe("placeholder candidates when the process cwd is not the session root (#3038)", () => {
   test("every absent mandatory name at the root is a candidate, though cwd is elsewhere", () => {
     const policy = buildSandboxPolicy(input());

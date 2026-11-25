@@ -28,6 +28,7 @@ import {
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
+import { listNestedMandatoryDenies } from "#src/sandbox/nested-mandatory-denies";
 import { placeholderLedgerDirForPolicy } from "#src/sandbox/placeholder-ledger";
 import type { ProtectedPathsPolicy } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
@@ -38,6 +39,8 @@ export const _sessionSandboxDeps = {
   gitLayout: resolveGitLayout,
   naxEntries: listNaxEntries,
   gitGuardFiles: listGitGuardFiles,
+  /** #3038 (Linux): the existing nested mandatory names beneath a root that is not the process cwd. */
+  nestedMandatoryDenies: listNestedMandatoryDenies,
   commonDirTripwire: strayCommonDirTripwire,
   credentialFiles: listCredentialFiles,
   tempRoots: defaultTempRoots,
@@ -149,6 +152,10 @@ export async function resolveSessionSandbox(args: {
       git,
       // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
       gitGuardFiles: await _sessionSandboxDeps.gitGuardFiles(git),
+      // #3038: srt scans for nested mandatory names beneath its own cwd only. Linux only:
+      // on darwin the same denies are patterns the srt backend adds per command.
+      nestedMandatoryDenies:
+        _sessionSandboxDeps.platform() === "linux" ? await _sessionSandboxDeps.nestedMandatoryDenies(root) : [],
       // S3 spec 6.2: no project-state dir, no lookup and no project-state denies.
       naxEntries:
         args.protectedPaths.projectStateDir === undefined

@@ -57,11 +57,11 @@ describe("rootMandatoryDenyGlobs", () => {
     } finally {
       process.chdir(previous);
     }
-    const escape = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapeRegex = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const srt = entries.map((e) =>
       e.glob
-        ? new RegExp(`^${escape(e.anchor ?? "")}${denyGlobRegex(e.path.slice((e.anchor ?? "").length)).slice(1)}`)
-        : new RegExp(`^${escape(e.path)}(/.*)?$`),
+        ? new RegExp(`^${escapeRegex(e.anchor ?? "")}${denyGlobRegex(e.path.slice((e.anchor ?? "").length)).slice(1)}`)
+        : new RegExp(`^${escapeRegex(e.path)}(/.*)?$`),
     );
     const ours = ourRegexes(rootMandatoryDenyGlobs(root));
     const samples = [

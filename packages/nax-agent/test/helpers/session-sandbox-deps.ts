@@ -36,6 +36,7 @@ export interface SessionSandboxDepsLike {
   gitLayout(root: string): Promise<GitLayout>;
   naxEntries(root: string, stateDir: string): Promise<string[]>;
   gitGuardFiles(git: GitLayout): Promise<string[]>;
+  nestedMandatoryDenies(root: string): Promise<string[]>;
   credentialFiles(dir: string): Promise<string[]>;
   tempRoots(): string[];
   homedir(): string;
@@ -118,6 +119,7 @@ export function stubSessionSandboxDeps(
   deps.probe = async () => ({ available: true });
   deps.gitLayout = async () => ({ kind: "none" });
   deps.gitGuardFiles = async () => [];
+  deps.nestedMandatoryDenies = async () => [];
   deps.naxEntries = async () => {
     events.push(POLICY_BUILT);
     return [];

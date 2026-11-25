@@ -49,6 +49,12 @@ export interface SandboxPolicyInput {
    * no ledger, no deny.
    */
   readonly placeholderLedgerDir?: string;
+  /**
+   * #3038, Linux: the existing nested names srt would deny if the process cwd were `root`
+   * (`listNestedMandatoryDenies`). Absent: none, which is also today's answer on darwin,
+   * where the nested denies are patterns the backend adds. Literal paths only.
+   */
+  readonly nestedMandatoryDenies?: readonly string[];
   readonly home: string;
   readonly tempRoots: readonly string[];
   /**
@@ -225,15 +231,19 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     // with the native tool policy that refuses the same paths (B1) -- see
     // ./claude-settings.ts for why each is denied and why `.claude` is not.
     ...CLAUDE_SETTINGS_FILES.map((rel) => join(root, rel)),
-    // #3038: srt's own mandatory denies are anchored at the nax PROCESS cwd, not
-    // at this root. With `nax chat -d <dir>` from elsewhere they would cover the
-    // wrong directory and leave `.mcp.json`, `.bashrc`, `.vscode` and the
-    // `.claude` command/agent dirs creatable here. Naming them against the root
-    // closes that; with cwd == root they are the same paths srt already denies.
-    // Applied on every platform: seatbelt anchors its literal and `**/<name>`
-    // denies at the cwd as well. Absent ones get a bwrap placeholder AT the root,
-    // which `candidatePaths` records through this very list.
+    // #3038: srt's mandatory denies come in two halves, both anchored at the nax PROCESS
+    // cwd, which is not this root when `nax chat -d <dir>` starts elsewhere:
+    //   - the names directly under the cwd (below), which this list repeats against the
+    //     root. With cwd == root these are the same paths srt already denies.
+    //   - the same names at any depth beneath the cwd. On Linux srt finds only the ones
+    //     that EXIST, by a ripgrep scan; `nestedMandatoryDenies` is that scan run under
+    //     the root. On darwin they are patterns, which this literal-only list cannot
+    //     hold: the srt backend adds them per command (mandatory-deny-globs.ts).
+    // The top-level names apply on every platform: seatbelt anchors its literals at the
+    // cwd too. Absent ones get a bwrap placeholder AT the root, which `candidatePaths`
+    // records through this very list.
     ...[...SRT_MANDATORY_DENY_FILES, ...SRT_MANDATORY_DENY_DIRS].map((rel) => join(root, rel)),
+    ...(input.nestedMandatoryDenies ?? []),
     ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);
   const denyRead = literal([
