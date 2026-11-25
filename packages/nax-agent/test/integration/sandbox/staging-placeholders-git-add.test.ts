@@ -196,7 +196,7 @@ describe("gitlinkSafeAdd keeps the mandatory names when the ledger directory is 
   });
 });
 
-/** Names in `.git/info/exclude`, as US-007 writes them for the shell rc placeholders. */
+/** Names in `.git/info/exclude`, the way the US-007 step writes them for the shell rc placeholders. */
 function excludeLocally(cwd: string, ...names: string[]): void {
   writeFileSync(join(cwd, ".git", "info", "exclude"), `${names.join("\n")}\n`);
 }

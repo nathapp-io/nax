@@ -133,22 +133,22 @@ describe("gitlinkSafeAdd argv", () => {
       expect(calls.at(-1)).toEqual(["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"]);
     });
 
-    test.each([
-      [{ ...OK, exitCode: 128 }],
-      [{ ...OK, exitCode: 1, timedOut: true }],
-    ])("keeps every exclude when check-ignore cannot answer (%j)", async (answer) => {
-      writeFileSync(join(cwd, ".mcp.json"), "");
-      chmodSync(join(cwd, ".mcp.json"), 0o444);
-      const calls: string[][] = [];
-      const run = async (args: string[]) => {
-        calls.push(args);
-        return args[0] === "check-ignore" ? { ...answer, stdout: ".mcp.json\n" } : OK;
-      };
+    test.each([[{ ...OK, exitCode: 128 }], [{ ...OK, exitCode: 1, timedOut: true }]])(
+      "keeps every exclude when check-ignore cannot answer (%j)",
+      async (answer) => {
+        writeFileSync(join(cwd, ".mcp.json"), "");
+        chmodSync(join(cwd, ".mcp.json"), 0o444);
+        const calls: string[][] = [];
+        const run = async (args: string[]) => {
+          calls.push(args);
+          return args[0] === "check-ignore" ? { ...answer, stdout: ".mcp.json\n" } : OK;
+        };
 
-      await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
+        await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
 
-      expect(calls.at(-1)).toEqual(["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"]);
-    });
+        expect(calls.at(-1)).toEqual(["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"]);
+      },
+    );
 
     test("takes the tracked set from every mode of the stage listing, not only gitlinks", async () => {
       writeFileSync(join(cwd, ".mcp.json"), "");

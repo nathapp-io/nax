@@ -6,12 +6,7 @@
  * rides `runArgv`'s `onSpawn`, and must never fail or delay the command.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  _launcherDeps,
-  createCommandLauncher,
-  type SandboxBackend,
-  type SandboxPolicy,
-} from "#src/sandbox/index";
+import { _launcherDeps, createCommandLauncher, type SandboxBackend, type SandboxPolicy } from "#src/sandbox/index";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 let root: string;
