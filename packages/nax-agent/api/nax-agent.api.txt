@@ -713,6 +713,7 @@ MODEL_MAX_BYTES
 MODEL_MAX_LINES
 MODEL_MAX_LINE_CHARS
 type MaskResult
+type MemoryCompactionApplyInput
 type MemoryCompactionMerge
 type MemoryCompactionPlan
 type MemoryCompactionPlanCheck
@@ -902,6 +903,7 @@ anyAmbientCredential
 appendApproval
 appendApprovalAudit
 applyCompaction
+applyMemoryCompaction
 applyModelTruncationPolicy
 approvalId
 approvalMemoryApplies
@@ -926,6 +928,7 @@ cacheUsageFields
 canAttemptTurnRetry
 capStrings
 chainAskLinks
+claimSync
 classifyExec
 clearApprovalsTaint
 clearNativeSessionState
@@ -1084,6 +1087,7 @@ registerBuiltinCodingTools
 registerBuiltinTool
 registerCodingTool
 registerToolAuditSink
+releaseSync
 removeApprovals
 removeStoredProvider
 renderCommandSpec
@@ -1132,6 +1136,7 @@ socketDenialHintLine
 spawnDetached
 spillRelativePath
 spinTerminalNotice
+storeLockTargets
 strayCommonDirTripwire
 stripControlChars
 substituteCommand

@@ -1,3 +1,4 @@
+export { applyMemoryCompaction, type MemoryCompactionApplyInput } from "./compaction-apply.ts";
 export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "./compaction-plan.ts";
 export {
   MEMORY_COMPACTION_ID_RE,
