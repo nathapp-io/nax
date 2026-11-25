@@ -568,6 +568,18 @@ describe("registerMemoryCommand — mirrors", () => {
       expect(existsSync(dir)).toBe(false);
       cleanupTempDir(dir);
     });
+
+    test("F1: the real lock seam takes the mirror's own sync.lock", async () => {
+      const dir = makeTempDir("nax-mirrors-lock-");
+
+      const release = await _memoryMirrorsCliDeps.lockMirror(dir);
+
+      expect(release).not.toBeNull();
+      expect(existsSync(join(dir, "sync.lock"))).toBe(true);
+      await expect(release?.()).resolves.toBeUndefined();
+      expect(existsSync(join(dir, "sync.lock"))).toBe(false);
+      cleanupTempDir(dir);
+    });
   });
 });
 
