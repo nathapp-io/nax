@@ -81,6 +81,8 @@ interface MountOptions {
   readonly onPaste?: (chunk: string) => boolean;
   /** The most text rows the screen can spare; absent means the input's own cap. */
   readonly maxRows?: number;
+  /** The owner's queued-message recall, offered to up on an empty prompt (US-001). */
+  readonly onRecallQueued?: () => string | undefined;
 }
 
 /** Mount the input under an owner that keeps the draft, and expose the test verbs. */
@@ -94,6 +96,7 @@ function mount(options: MountOptions = {}) {
     colored = false,
     onPaste,
     maxRows,
+    onRecallQueued,
   } = options;
   const drafts: InputDraft[] = [];
   const onSubmit = mock((_text: string) => {});
@@ -123,6 +126,7 @@ function mount(options: MountOptions = {}) {
         onClearArmedChange={onClearArmedChange}
         onPaste={onPaste}
         maxRows={maxRows}
+        onRecallQueued={onRecallQueued}
       />
     );
   }
@@ -292,6 +296,64 @@ describe("ChatInput history", () => {
     // The bare arrows would have browsed it, so the draft is genuinely untouched, not stale.
     input.type(UP);
     expect(input.textRows()).toEqual(["> hello"]);
+  });
+});
+
+describe("ChatInput queued recall", () => {
+  /** The owner's recall of the queued messages, counting the keys that asked it. */
+  function recall(recalled: string | undefined) {
+    return mock(() => recalled);
+  }
+
+  test("AC-9 up recalls the owner's queued text with the cursor at its end", () => {
+    const onRecallQueued = recall("recalled");
+    const input = mount({ onRecallQueued });
+    input.type(UP);
+    expect(onRecallQueued).toHaveBeenCalledTimes(1);
+    expect(input.textRows()).toEqual(["> recalled"]);
+    expect(input.editor()).toEqual({ text: "recalled", cursor: 8 });
+    // A recall is not a history browse: down leaves the recalled draft where it is.
+    expect(input.drafts.at(-1)?.browse).toBeUndefined();
+  });
+
+  test("AC-10 a recall that finds nothing falls through to the history", () => {
+    const onRecallQueued = recall(undefined);
+    const input = mount({ initialDraft: { editor: EMPTY_EDITOR, history: ["earlier"] }, onRecallQueued });
+    input.type(UP);
+    expect(onRecallQueued).toHaveBeenCalledTimes(1);
+    expect(input.textRows()).toEqual(["> earlier"]);
+  });
+
+  test("AC-11 up with text already in the prompt never asks the owner", () => {
+    const onRecallQueued = recall("recalled");
+    const input = mount({ initialDraft: { editor: { text: "abc", cursor: 3 }, history: [] }, onRecallQueued });
+    input.type(UP);
+    expect(onRecallQueued).not.toHaveBeenCalled();
+    expect(input.textRows()).toEqual(["> abc"]);
+  });
+
+  test("AC-14 the open slash menu keeps up, so the owner is not asked", () => {
+    const onRecallQueued = recall("recalled");
+    const input = mount({ yieldNavigation: true, onRecallQueued });
+    input.type(UP);
+    expect(onRecallQueued).not.toHaveBeenCalled();
+    expect(input.textRows()).toEqual([`> ${PLACEHOLDER}`]);
+  });
+
+  test("AC-16 shift+up is the viewport's, so the owner is not asked", () => {
+    const onRecallQueued = recall("recalled");
+    const input = mount({ onRecallQueued });
+    input.type(SHIFT_UP);
+    expect(onRecallQueued).not.toHaveBeenCalled();
+    expect(input.drafts).toHaveLength(0);
+  });
+
+  test("AC-20 up from the first row of a typed line browses the history as before", () => {
+    const onRecallQueued = recall("recalled");
+    const input = mount({ initialDraft: { editor: { text: "abc", cursor: 3 }, history: ["earlier"] }, onRecallQueued });
+    input.type(UP);
+    expect(onRecallQueued).not.toHaveBeenCalled();
+    expect(input.textRows()).toEqual(["> earlier"]);
   });
 });
 

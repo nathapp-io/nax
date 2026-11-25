@@ -9,6 +9,7 @@ export const CHAT_KEYBOARD_HELP = [
   "ctrl+b  move the running command to the background (ctrl+b ctrl+b in tmux)",
   "ctrl+c  quit when idle; interrupt when running (again to quit)",
   "ctrl+s  steer the running turn (or interrupt and send)",
+  "up  edit queued messages (empty prompt)",
 ].join("\n");
 
 /** A count with its noun in the form the count reads as: `1 command`, `2 commands`, `0 skills`. */

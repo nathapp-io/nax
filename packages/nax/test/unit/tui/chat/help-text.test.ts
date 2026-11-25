@@ -24,17 +24,22 @@ const TARGET_KEYBOARD_HELP = [
   "ctrl+b  move the running command to the background (ctrl+b ctrl+b in tmux)",
   "ctrl+c  quit when idle; interrupt when running (again to quit)",
   "ctrl+s  steer the running turn (or interrupt and send)",
+  "up  edit queued messages (empty prompt)",
 ].join("\n");
 
 describe("CHAT_KEYBOARD_HELP", () => {
-  test("AC-1 is the nine-line block the spec fixes, joined with newlines", () => {
+  test("AC-1 is the ten-line block the spec fixes, joined with newlines", () => {
     expect(CHAT_KEYBOARD_HELP).toBe(TARGET_KEYBOARD_HELP);
   });
 
-  test("names the nine rows the block has, Keyboard first", () => {
+  test("names the ten rows the block has, Keyboard first", () => {
     const rows = CHAT_KEYBOARD_HELP.split("\n");
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(10);
     expect(rows[0]).toBe("Keyboard");
+  });
+
+  test("AC-13 names the queued-message recall as its last row", () => {
+    expect(CHAT_KEYBOARD_HELP.split("\n").at(-1)).toBe("up  edit queued messages (empty prompt)");
   });
 });
 

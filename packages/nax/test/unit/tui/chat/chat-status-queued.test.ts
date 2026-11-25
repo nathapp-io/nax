@@ -55,9 +55,9 @@ describe("footerHint with a queued line", () => {
 });
 
 describe("hintSpans for the queued hint", () => {
-  test("AC-13 names the interrupt as its gesture and ctrl+s as its extra", () => {
+  test("AC-12 names the interrupt as its gesture and ctrl+s as its extra", () => {
     const { gesture, extra } = hintSpans("queued");
     expect(gesture.text).toBe("esc to interrupt");
-    expect(extra?.text).toBe("ctrl+s to send queued now");
+    expect(extra?.text).toBe("up to edit queued · ctrl+s to send now");
   });
 });

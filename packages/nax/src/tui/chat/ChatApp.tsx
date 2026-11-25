@@ -882,6 +882,27 @@ export function ChatApp({
   }
 
   /**
+   * Up on an empty prompt with lines waiting (US-001): every queued message moves into the
+   * prompt as one editable draft, oldest first, and `undefined` means there was nothing to
+   * recall — the input then browses its history as it always did.
+   *
+   * The queue empties here, at the keypress, through `queueRef` rather than through whatever
+   * the last render drew: a drain reads the same ref after its `await`s, and a queue still
+   * holding a line the user is now editing would send it behind their back. Once recalled the
+   * text is in the prompt and nowhere else, so the turn's own outcome cannot send it — the
+   * user returns it, and it is then queued or sent exactly as a typed line is.
+   *
+   * The discarded-steer group needs no reset: `pushDiscardedSteer` already starts a new group
+   * when the queue no longer begins with the old one, and this empties the queue outright.
+   */
+  function recallQueued(): string | undefined {
+    const queue = queueRef.current;
+    if (queue.length === 0) return undefined;
+    replaceQueue(EMPTY_QUEUE);
+    return queueToPrompt(queue, "");
+  }
+
+  /**
    * What ctrl+s would steer with, or undefined when the key does nothing at all: an empty
    * prompt and a slash line are return's business — a command is never steered into a turn —
    * and a whitespace-only draft is no message.
@@ -1428,6 +1449,7 @@ export function ChatApp({
             void submit(message);
           }}
           onQueue={queueReturn}
+          onRecallQueued={recallQueued}
           busyNow={() => sending.current}
           width={columns}
           theme={theme}

@@ -191,7 +191,7 @@ const HINT_PARTS: Readonly<Record<FixedHint, { readonly gesture: string; readonl
   quit: { gesture: "press ctrl-c again to quit" },
   clear: { gesture: "esc again to clear" },
   busy: { gesture: "esc to interrupt" },
-  queued: { gesture: "esc to interrupt", extra: "ctrl+s to send queued now" },
+  queued: { gesture: "esc to interrupt", extra: "up to edit queued · ctrl+s to send now" },
   background: { gesture: "esc to interrupt", extra: "ctrl+b to background" },
   backgroundTmux: { gesture: "esc to interrupt", extra: "ctrl+b ctrl+b to background" },
   expanded: { gesture: "ctrl+o to collapse" },

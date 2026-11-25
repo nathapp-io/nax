@@ -383,6 +383,9 @@ describe("agents command", () => {
 
   test("US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit", async () => {
     const ui = mount();
+    // A terminal tall enough for the whole listing: the rows are asserted in order, so a frame
+    // that only shows the tail of the block would drop the first of them.
+    await ui.resize(100, 60);
     await ui.line("/help");
     // US-005 put `/compact` between `/agents` and `/jobs`.
     expect(ui.lastFrame()).toContain(

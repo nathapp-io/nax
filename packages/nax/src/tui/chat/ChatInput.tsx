@@ -134,6 +134,16 @@ export interface ChatInputProps {
    */
   readonly onQueue?: (text: string) => boolean;
   /**
+   * The owner's queued messages, offered to up when this input is empty (US-001). Returning
+   * the text means the owner took them — every queued message, oldest first, as one draft —
+   * so the prompt holds it with the cursor at its end and the key is consumed; the draft is
+   * not a history browse, and `history` is left as it was. Returning `undefined`, or no
+   * callback at all, falls through to today's history browsing. Never asked while the prompt
+   * holds text, on a shifted arrow, or while an open menu owns the key. The owner must not
+   * throw; the input runs it inside the key handler.
+   */
+  readonly onRecallQueued?: () => string | undefined;
+  /**
    * The owner's own turn ownership, read at key time instead of the `busy` flag of the last
    * render. A return can arrive in the same batch as the one that started the turn, before
    * any redraw, so `busy` still says idle while the owner's send has already claimed it —
@@ -575,6 +585,19 @@ function recalled(draft: InputDraft, index: number): InputDraft {
 }
 
 /**
+ * The owner's queued messages as this input's next draft, or undefined to browse the history
+ * instead (US-001). Only up asks, and only on an empty prompt: a prompt holding text is the
+ * user's own next message, and the recall would replace what they are typing. What comes back
+ * is one draft — the queued messages oldest first — written with the cursor at its end and no
+ * browse position, because there is no history entry behind it to step away from.
+ */
+function recalledDraft(draft: InputDraft, recall: (() => string | undefined) | undefined): InputDraft | undefined {
+  if (recall === undefined || draft.editor.text !== "") return undefined;
+  const text = recall();
+  return text === undefined ? undefined : { editor: atEnd(text), history: draft.history };
+}
+
+/**
  * Up on the editor's first row walks one entry older; anything else (a cursor further
  * down, no history, already at the oldest entry) leaves the key to nobody.
  */
@@ -622,6 +645,7 @@ export function ChatInput({
   maxRows,
   onPaste,
   onQueue,
+  onRecallQueued,
   busyNow,
 }: ChatInputProps): ReactElement {
   // The rows wrap to the container the input is drawn into, which is the terminal's width
@@ -757,6 +781,18 @@ export function ChatInput({
   };
 
   /**
+   * The up and down keys: the owner's queued messages for up on an empty prompt, and the
+   * history otherwise. A queue that has something to recall wins over the browse; either
+   * answer is a draft to publish, and a key nobody answers leaves the prompt alone.
+   */
+  const browse = (direction: "previous" | "next"): void => {
+    const current = latest.current;
+    const queued = direction === "previous" ? recalledDraft(current, onRecallQueued) : undefined;
+    const next = queued ?? (direction === "previous" ? previousEntry(current) : nextEntry(current));
+    if (next !== undefined) publish(next);
+  };
+
+  /**
    * Whether the slash menu owns a navigation key right now. The owner may hand over a claim
    * to read instead of a flag, because the flag is the last render's: a tab and the return
    * after it can arrive before any re-render, and after that tab the prompt is no longer a
@@ -779,8 +815,7 @@ export function ChatInput({
       const current = latest.current;
       const direction = historyDirection(key);
       if (direction !== undefined) {
-        const browsed = direction === "previous" ? previousEntry(current) : nextEntry(current);
-        if (browsed !== undefined) publish(browsed);
+        browse(direction);
         return;
       }
       // A pasted chunk is offered to the owner before the editor sees it: a path to an image
