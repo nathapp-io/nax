@@ -16,7 +16,8 @@
  * every refusal is 1. A throw (`MEMORY_BUSY`, `MEMORY_COMPACT_FAILED`, a disabled mirror) is the
  * group's own contract, `withMemoryErrors` — `Error: <message>` on stderr and 1.
  *
- * `--json` moves the plan and the question to stderr and makes stdout the one document, so
+ * `--json` moves the plan to stderr and makes stdout the one document, asking the question on
+ * stderr too — the prompt's own text is routed there rather than merely echoed there — so
  * `nax memory compact --json | jq` reads a document and a person still sees what is being asked.
  * The document is the outcome itself: `outcome` is its kind, and the rest are the fields that kind
  * carries.
@@ -24,7 +25,7 @@
 import type { Command } from "commander";
 import { getProjectKey, memoryConfigOf } from "@/config";
 import { compactProjectMemory, type MemoryCompactOutcome, type MemoryCompactPreview } from "@/memory";
-import { promptForConfirmation } from "./confirm";
+import { type ConfirmChannel, promptForConfirmation } from "./confirm";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -67,7 +68,11 @@ export interface MemoryCompactOptions extends MemoryCliOptions {
  */
 export interface MemoryCompactCliDeps extends MemoryCliDeps {
   isTTY(): boolean;
-  confirm(question: string): Promise<boolean>;
+  /**
+   * Ask the one question. `channel` is where the prompt's own text goes: `stderr` under
+   * `--json`, whose stdout belongs to the document alone.
+   */
+  confirm(question: string, channel?: ConfirmChannel): Promise<boolean>;
   compactProjectMemory: typeof compactProjectMemory;
 }
 
@@ -206,13 +211,14 @@ function printPlan(surface: CompactSurface, preview: MemoryCompactPreview): void
 /**
  * The question, and the answer to it.
  *
- * A `--yes` run has already answered, so it asks no one. Under `--json` the question itself is a
- * line on stderr: the prompt writes to stdout, and stdout holds the document alone.
+ * A `--yes` run has already answered, so it asks no one. Everything else asks through the seam,
+ * naming the channel the prompt's own text belongs on: `stderr` under `--json`, because stdout
+ * there holds the document and a prompt printed into it would corrupt it. The prompt writes the
+ * question itself, so the command adds no second copy of it.
  */
 async function confirmApply(surface: CompactSurface): Promise<boolean> {
   if (surface.opts.yes === true) return true;
-  if (surface.json) surface.deps.logErr(APPLY_QUESTION);
-  return surface.deps.confirm(APPLY_QUESTION);
+  return surface.deps.confirm(APPLY_QUESTION, surface.json ? "stderr" : "stdout");
 }
 
 /** The answer handed to the orchestration: the plan first, because the question is about it. */

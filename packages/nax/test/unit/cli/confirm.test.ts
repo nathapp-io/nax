@@ -43,15 +43,18 @@ function makeStdin(isTTY = true) {
 describe("promptForConfirmation", () => {
   let original: typeof _confirmDeps.stdin;
   let originalWrite: typeof _confirmDeps.write;
+  let originalWriteErr: typeof _confirmDeps.writeErr;
   let originalExit: typeof _confirmDeps.exit;
   let exitCodes: number[];
 
   beforeEach(() => {
     original = _confirmDeps.stdin;
     originalWrite = _confirmDeps.write;
+    originalWriteErr = _confirmDeps.writeErr;
     originalExit = _confirmDeps.exit;
     exitCodes = [];
     _confirmDeps.write = () => true;
+    _confirmDeps.writeErr = () => true;
     _confirmDeps.exit = (code: number) => {
       exitCodes.push(code);
     };
@@ -60,6 +63,7 @@ describe("promptForConfirmation", () => {
   afterEach(() => {
     _confirmDeps.stdin = original;
     _confirmDeps.write = originalWrite;
+    _confirmDeps.writeErr = originalWriteErr;
     _confirmDeps.exit = originalExit;
   });
 
@@ -69,6 +73,53 @@ describe("promptForConfirmation", () => {
 
     expect(await promptForConfirmation("go?")).toBe(true);
     expect(h.rawModeCalls).toEqual([]);
+  });
+
+  // F1: `nax memory compact --json` may write nothing but the document to stdout, so the
+  // prompt it asks has to be able to put its own text on stderr instead.
+  test("writes its question and its newline to the stderr writer when asked, never to stdout", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+    const written: string[] = [];
+    const writtenErr: string[] = [];
+    _confirmDeps.write = (text: string) => {
+      written.push(text);
+      return true;
+    };
+    _confirmDeps.writeErr = (text: string) => {
+      writtenErr.push(text);
+      return true;
+    };
+
+    const pending = promptForConfirmation("go?", "stderr");
+    h.emit("data", "y");
+
+    expect(await pending).toBe(true);
+    expect(written).toEqual([]);
+    expect(writtenErr.join("")).toContain("go?");
+    expect(writtenErr.at(-1)).toBe("\n");
+  });
+
+  test("keeps writing to stdout when no channel is named", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+    const written: string[] = [];
+    const writtenErr: string[] = [];
+    _confirmDeps.write = (text: string) => {
+      written.push(text);
+      return true;
+    };
+    _confirmDeps.writeErr = (text: string) => {
+      writtenErr.push(text);
+      return true;
+    };
+
+    const pending = promptForConfirmation("go?");
+    h.emit("data", "y");
+
+    expect(await pending).toBe(true);
+    expect(written.join("")).toContain("go?");
+    expect(writtenErr).toEqual([]);
   });
 
   test.each([

@@ -16,7 +16,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertDefined, makeFakeMemoryHost, makeNaxConfig } from "@test/helpers";
 import { Command } from "commander";
 import {
+  _confirmDeps,
   _memoryCompactCliDeps,
+  type ConfirmChannel,
+  type ConfirmStdin,
   type MemoryCliDeps,
   type MemoryCompactCliDeps,
   type MemoryCompactOptions,
@@ -122,6 +125,8 @@ interface Fixture {
   readonly isTTY?: boolean;
   /** What `deps.confirm` answers; `true` by default. */
   readonly confirmAnswer?: boolean;
+  /** Asks the question through this seam instead of the recording stub (the real prompt). */
+  readonly confirm?: MemoryCompactCliDeps["confirm"];
   /** Answers this outcome instead of the confirm-driven one. */
   readonly outcome?: MemoryCompactOutcome;
   /** Rejects the compaction with this error instead of answering an outcome. */
@@ -144,6 +149,8 @@ interface Harness {
   readonly compactCalls: CompactProjectMemoryInput[];
   /** Every question that reached `deps.confirm`. */
   readonly asks: string[];
+  /** The channel each of those questions was asked on. */
+  readonly channels: (ConfirmChannel | undefined)[];
   /** Every line written and every question asked, in the order it happened. */
   readonly events: string[];
 }
@@ -155,6 +162,7 @@ function harness(fixture: Fixture = {}): Harness {
   const codes: number[] = [];
   const compactCalls: CompactProjectMemoryInput[] = [];
   const asks: string[] = [];
+  const channels: (ConfirmChannel | undefined)[] = [];
   const events: string[] = [];
   const deps: MemoryCompactCliDeps = {
     log: (msg) => {
@@ -171,11 +179,14 @@ function harness(fixture: Fixture = {}): Harness {
     createMemoryHost: async () => (fixture.disabled === true ? null : HOST),
     readFile: async () => "",
     isTTY: () => fixture.isTTY ?? true,
-    confirm: async (question) => {
-      asks.push(question);
-      events.push(`ask:${question}`);
-      return fixture.confirmAnswer ?? true;
-    },
+    confirm:
+      fixture.confirm ??
+      (async (question, channel) => {
+        asks.push(question);
+        channels.push(channel);
+        events.push(`ask:${question}`);
+        return fixture.confirmAnswer ?? true;
+      }),
     compactProjectMemory: async (input) => {
       compactCalls.push(input);
       events.push("compact");
@@ -187,7 +198,7 @@ function harness(fixture: Fixture = {}): Harness {
       return answer ? applied(0.414) : DECLINED;
     },
   };
-  return { deps, out, err, codes, compactCalls, asks, events };
+  return { deps, out, err, codes, compactCalls, asks, channels, events };
 }
 
 /** The group's own deps, without the three compacting seams the group composes itself. */
@@ -213,6 +224,28 @@ function jsonDocument(h: Harness): Record<string, unknown> {
   const [line] = h.out;
   assertDefined(line, "the --json document");
   return JSON.parse(line);
+}
+
+/**
+ * A TTY stdin that answers the first prompt with `key` as soon as it is listened to.
+ *
+ * The prompt is driven for real in the one case that measures which channel its own text goes
+ * to; every other case stubs the seam. Nothing else about the terminal matters here, so the
+ * bookkeeping `confirm.test.ts` records is left out.
+ */
+function answeringStdin(key: string): ConfirmStdin {
+  return {
+    isTTY: true,
+    setRawMode: () => undefined,
+    resume: () => undefined,
+    pause: () => undefined,
+    setEncoding: () => undefined,
+    on: (_event, listener) => {
+      queueMicrotask(() => listener(key));
+    },
+    once: () => undefined,
+    removeListener: () => undefined,
+  };
 }
 
 // ─── the confirmation gate ───────────────────────────────────────────────────
@@ -275,6 +308,7 @@ describe("nax memory compact — the plan", () => {
 
     expect(h.out.slice(0, PLAN_LINES.length)).toEqual(PLAN_LINES);
     expect(h.asks).toEqual([APPLY_QUESTION]);
+    expect(h.channels).toEqual(["stdout"]);
     expect(h.events.indexOf(`ask:${APPLY_QUESTION}`)).toBeGreaterThan(h.events.indexOf("out:Notes: 115 -> 72"));
     expect(h.events.indexOf(`ask:${APPLY_QUESTION}`)).toBeLessThan(h.events.indexOf("answered:true"));
   });
@@ -435,15 +469,53 @@ describe("nax memory compact --json", () => {
     expect((document.result as { id: string }).id).toBe(COMPACT_ID);
   });
 
-  test("AC-19: on a TTY the plan and the question go to stderr, so stdout is the document alone", async () => {
+  test("AC-19: on a TTY the plan goes to stderr and the question is asked there", async () => {
     const h = harness();
 
     await run(h, { json: true });
 
     expect(h.out).toHaveLength(1);
     expect(jsonDocument(h).outcome).toBe("applied");
-    expect(h.err).toEqual([...PLAN_LINES, APPLY_QUESTION]);
+    expect(h.err).toEqual(PLAN_LINES);
     expect(h.asks).toEqual([APPLY_QUESTION]);
+    expect(h.channels).toEqual(["stderr"]);
+  });
+
+  describe("the real prompt (F1)", () => {
+    let saved: Pick<typeof _confirmDeps, "stdin" | "write" | "writeErr">;
+
+    beforeEach(() => {
+      saved = { stdin: _confirmDeps.stdin, write: _confirmDeps.write, writeErr: _confirmDeps.writeErr };
+    });
+
+    afterEach(() => {
+      Object.assign(_confirmDeps, saved);
+    });
+
+    test("AC-19: the question lands on stderr, so stdout holds the document alone", async () => {
+      const stdoutWrites: string[] = [];
+      const stderrWrites: string[] = [];
+      Object.assign(_confirmDeps, {
+        stdin: answeringStdin("y"),
+        write: (text: string) => {
+          stdoutWrites.push(text);
+          return true;
+        },
+        writeErr: (text: string) => {
+          stderrWrites.push(text);
+          return true;
+        },
+      });
+      const h = harness({ confirm: _memoryCompactCliDeps.confirm });
+
+      expect(await run(h, { json: true })).toBe(0);
+
+      // The prompt's own text — question and newline — never reaches the stdout writer.
+      expect(stdoutWrites).toEqual([]);
+      expect(stderrWrites.join("")).toContain(APPLY_QUESTION);
+      expect(h.out).toHaveLength(1);
+      expect(jsonDocument(h).outcome).toBe("applied");
+    });
   });
 });
 

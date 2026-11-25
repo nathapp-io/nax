@@ -14,6 +14,15 @@ const EOT = "\u0004";
 /** Exit status for a SIGINT-initiated cancellation. */
 const SIGINT_EXIT_CODE = 130;
 
+/**
+ * Where the prompt's own text goes.
+ *
+ * `stdout` is the terminal's answer for every command that owns stdout. `stderr` is what a
+ * command whose stdout is a machine-readable document needs — `nax memory compact --json` — so
+ * the question and the caller's document never share a stream.
+ */
+export type ConfirmChannel = "stdout" | "stderr";
+
 /** The slice of `process.stdin` this prompt drives. Injected so tests can stand one up. */
 export interface ConfirmStdin {
   isTTY?: boolean;
@@ -36,10 +45,13 @@ export interface ConfirmStdin {
 export const _confirmDeps: {
   stdin: ConfirmStdin;
   write: (text: string) => boolean;
+  /** The same writer for a prompt that may not touch stdout — see {@link ConfirmChannel}. */
+  writeErr: (text: string) => boolean;
   exit: (code: number) => void;
 } = {
   stdin: process.stdin as unknown as ConfirmStdin,
   write: (text: string) => process.stdout.write(text),
+  writeErr: (text: string) => process.stderr.write(text),
   exit: (code: number) => process.exit(code),
 };
 
@@ -61,10 +73,15 @@ export const _confirmDeps: {
  *     confirming the action instead.
  *
  * @param question - Confirmation question to display
+ * @param channel - Where that question and its closing newline go; `stdout` unless the caller's
+ *   stdout is a machine-readable document
  * @returns true for Y/Enter/other keys, false for N, Ctrl+D, or a closed stream
  */
-export async function promptForConfirmation(question: string): Promise<boolean> {
+export async function promptForConfirmation(question: string, channel: ConfirmChannel = "stdout"): Promise<boolean> {
   const { stdin } = _confirmDeps;
+  // Bound once, so a caller that restores the deps mid-prompt cannot split one prompt across
+  // two streams.
+  const write = channel === "stderr" ? _confirmDeps.writeErr : _confirmDeps.write;
 
   // In non-TTY mode (tests, pipes), default to true
   if (!stdin.isTTY) {
@@ -72,7 +89,7 @@ export async function promptForConfirmation(question: string): Promise<boolean> 
   }
 
   return new Promise<boolean>((resolve) => {
-    _confirmDeps.write(chalk.bold(`${question} [Y/n] `));
+    write(chalk.bold(`${question} [Y/n] `));
 
     stdin.setRawMode(true);
     stdin.resume();
@@ -88,7 +105,7 @@ export async function promptForConfirmation(question: string): Promise<boolean> 
       stdin.removeListener("data", onData);
       stdin.removeListener("end", onClosed);
       stdin.removeListener("error", onClosed);
-      _confirmDeps.write("\n");
+      write("\n");
       resolve(answer);
     };
 
