@@ -5,6 +5,8 @@
  * `@/memory` and never from `@/memory/<internal>` (`check:alias-internals`).
  */
 
+export type { MemoryCompactFacts } from "./compact-facts";
+export { _compactFactsDeps, readMemoryCompactFacts } from "./compact-facts";
 export { memoryIndexFill, memoryNearlyFull } from "./fill";
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
