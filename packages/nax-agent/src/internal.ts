@@ -48,7 +48,7 @@ export * from "#src/internal/shell-quote";
 export * from "#src/internal/sort";
 export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
-export { memoryCompactionCandidates } from "#src/memory/compaction-plan";
+export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "#src/memory/compaction-plan";
 export {
   MEMORY_COMPACTION_ID_RE,
   MEMORY_COMPACTION_SOURCE,

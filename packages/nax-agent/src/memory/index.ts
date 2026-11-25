@@ -1,4 +1,4 @@
-export { memoryCompactionCandidates } from "./compaction-plan.ts";
+export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "./compaction-plan.ts";
 export {
   MEMORY_COMPACTION_ID_RE,
   MEMORY_COMPACTION_SOURCE,

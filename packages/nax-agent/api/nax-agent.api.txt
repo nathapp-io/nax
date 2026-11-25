@@ -1158,6 +1158,7 @@ unregisterToolAuditSink
 unsandboxedNextStepLine
 unsandboxedSentence
 usageBeat
+validateMemoryCompactionPlan
 validateProviderId
 validateRewrite
 validateShellRewrite
