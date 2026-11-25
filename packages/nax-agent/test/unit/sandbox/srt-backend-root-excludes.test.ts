@@ -138,16 +138,22 @@ describe("git excludes for a session root that is not the process cwd (#3038)", 
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let entered: () => void = () => {};
+    const inStep = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     _srtBackendDeps.ensureExcludes = async (path: string) => {
       seen.push(path);
+      entered();
       await gate;
     };
     const backend = createSrtBackend({});
 
     const first = backend.wrap(request(repo, repo));
+    // The first wrap is now inside the step and cannot finish it until released,
+    // so the second wrap is concurrent with it by construction, not by timing.
+    await inStep;
     const second = backend.wrap(request(repo, repo));
-    // Let both wraps reach the step before the first one finishes it.
-    await new Promise((resolve) => setTimeout(resolve, 20));
     release();
     await Promise.all([first, second]);
 

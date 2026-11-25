@@ -117,12 +117,22 @@ function warnFallback(root: string, reason: string): void {
 export async function listNestedMandatoryDenies(root: string): Promise<string[]> {
   if (realOrRaw(_nestedDenyDeps.cwd()) === realOrRaw(root)) return [];
   try {
-    const r = await _nestedDenyDeps.run({ argv: ripgrepScanArgs(root), cwd: root, timeoutMs: SCAN_TIMEOUT_MS });
+    // cwd "/": the scan target is absolute, and a root cwd would let a relative PATH
+    // entry resolve `rg` to a binary the agent planted in the root, run on the host.
+    const r = await _nestedDenyDeps.run({ argv: ripgrepScanArgs(root), cwd: "/", timeoutMs: SCAN_TIMEOUT_MS });
     // ripgrep exits 1 for "no matches", which is the normal answer.
     if (r.exitCode === 1 && !r.timedOut) return [];
-    if (r.timedOut || r.exitCode !== 0) {
+    // Exit 2 means some paths could not be read (an agent can cause that with
+    // `chmod 000 x`), but stdout still lists every match it found: keep them.
+    if (r.timedOut || (r.exitCode !== 0 && r.exitCode !== 2)) {
       warnFallback(root, r.timedOut ? "timed out" : `exit ${r.exitCode}: ${r.stderr.trim().slice(0, 200)}`);
       return [];
+    }
+    if (r.exitCode === 2) {
+      getSafeLogger()?.warn("sandbox", "nested mandatory-deny scan was partial; the denies it found still apply", {
+        root,
+        reason: r.stderr.trim().slice(0, 200),
+      });
     }
     return nestedDenyPaths(
       root,

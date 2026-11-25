@@ -147,13 +147,14 @@ describe("nestedDenyPaths (srt's own match mapping)", () => {
 });
 
 describe("listNestedMandatoryDenies", () => {
-  test("runs rg at the root with a timeout and maps the matches", async () => {
+  test('runs rg on the root, from cwd "/", with a timeout, and maps the matches', async () => {
     fakeRun(result({ stdout: `${join(root, "sub/.mcp.json")}\n${join(root, "n/.git/hooks/x")}\n` }));
     const out = await listNestedMandatoryDenies(root);
     expect(out).toEqual([join(root, "sub/.mcp.json"), join(root, "n/.git/hooks")]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.argv).toEqual(ripgrepScanArgs(root));
-    expect(calls[0]?.cwd).toBe(root);
+    // Never the root: a relative PATH entry would resolve \`rg\` to a binary planted there.
+    expect(calls[0]?.cwd).toBe("/");
     expect(calls[0]?.timeoutMs).toBeGreaterThan(0);
   });
 
@@ -164,8 +165,20 @@ describe("listNestedMandatoryDenies", () => {
   });
 
   test("a failed scan falls back to no nested denies and warns", async () => {
-    fakeRun(result({ exitCode: 2, stderr: "boom" }));
+    fakeRun(result({ exitCode: 127, stderr: "boom" }));
     expect(await listNestedMandatoryDenies(root)).toEqual([]);
+    expect(log.calls.filter((c) => c.level === "warn" && c.stage === "sandbox")).toHaveLength(1);
+  });
+
+  test("exit 2 (some paths unreadable, e.g. an agent's chmod 000 dir) keeps every match rg listed, and warns", async () => {
+    fakeRun(
+      result({
+        exitCode: 2,
+        stdout: `${join(root, "sub/.vscode/tasks.json")}\n${join(root, "sub/.mcp.json")}\n`,
+        stderr: "rg: ./x: Permission denied (os error 13)",
+      }),
+    );
+    expect(await listNestedMandatoryDenies(root)).toEqual([join(root, "sub/.vscode"), join(root, "sub/.mcp.json")]);
     expect(log.calls.filter((c) => c.level === "warn" && c.stage === "sandbox")).toHaveLength(1);
   });
 
