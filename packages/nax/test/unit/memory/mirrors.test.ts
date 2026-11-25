@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { isPrunableMirror, listMemoryMirrors, type MemoryMirrorInfo } from "@/memory";
@@ -32,6 +32,7 @@ function emptyMirror(overrides: Partial<MemoryMirrorInfo> = {}): MemoryMirrorInf
     hasArchive: false,
     decisions: 0,
     pendingForgets: 0,
+    unreadable: [],
     ...overrides,
   };
 }
@@ -249,6 +250,59 @@ describe("listMemoryMirrors", () => {
     mirrorDir();
 
     expect(await onlyMirror()).toMatchObject({ decisions: 0, pendingForgets: 0 });
+  });
+
+  test("F1 reports a mirror it read whole as holding nothing unreadable", async () => {
+    mirrorDir();
+
+    const mirror = await onlyMirror();
+
+    expect({ unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      unreadable: [],
+      prunable: true,
+    });
+  });
+
+  test.each(["notes", "outbox"])("F1 reports a mirror whose %s directory cannot be listed", async (name) => {
+    // A self-referential link fails the listing with ELOOP as any user, which no permission
+    // bit can be relied on to do: the point is a directory that is *there* and unlistable.
+    const dir = mirrorDir();
+    symlinkSync(join(dir, name), join(dir, name));
+
+    const mirror = await onlyMirror();
+
+    expect({ unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+      unreadable: [join(dir, name)],
+      prunable: false,
+    });
+  });
+
+  test.each(["decisions.jsonl", "sync.json", "MEMORY.md"])(
+    "F1 reports a mirror whose %s cannot be read",
+    async (name) => {
+      const dir = mirrorDir();
+      symlinkSync(join(dir, name), join(dir, name));
+
+      const mirror = await onlyMirror();
+
+      expect({ unreadable: mirror.unreadable, prunable: isPrunableMirror(mirror) }).toEqual({
+        unreadable: [join(dir, name)],
+        prunable: false,
+      });
+    },
+  );
+
+  test("F1 reports a mirror whose sync.lock is a link as in use", async () => {
+    const dir = mirrorDir();
+    symlinkSync(join(dir, "absent-target"), join(dir, "sync.lock"));
+
+    const mirror = await onlyMirror();
+
+    expect({ unreadable: mirror.unreadable, inUse: mirror.inUse, prunable: isPrunableMirror(mirror) }).toEqual({
+      unreadable: [],
+      inUse: true,
+      prunable: false,
+    });
   });
 });
 
