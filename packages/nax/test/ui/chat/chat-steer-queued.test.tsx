@@ -25,7 +25,7 @@ const QUEUED = "queued · ";
 /** The marker the screen draws in front of a steer the turn has not taken yet. */
 const STEERING = "steering · ";
 /** The gesture the footer offers while a line waits in the queue. */
-const QUEUED_GESTURE = "ctrl+s to send queued now";
+const QUEUED_GESTURE = "up to edit queued · ctrl+s to send now";
 /** The microtask rounds a settle needs to reach the end of a send's `finally`. */
 const FLUSHES = 6;
 
@@ -159,7 +159,7 @@ describe("ctrl+s on an empty prompt with a queued line", () => {
     expect(queuedRows(ui.rows())).toEqual([`${QUEUED}next please`]);
   });
 
-  test("AC-14 offers ctrl+s to send queued now on the footer row", async () => {
+  test("AC-14 offers up to edit queued and ctrl+s to send now on the footer row", async () => {
     const ui = screen({ steer: accepting().steer });
     await ui.submit("hello");
     await ui.submit("next please");

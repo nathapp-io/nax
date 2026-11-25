@@ -322,8 +322,12 @@ function mountScreen() {
   return { ...fake, ui, rows, frame, press, pressAndSettle, pressBatch, settle, type, submit, current, endTurn };
 }
 
-/** The rows that carry the queue's muted marker. */
-const queuedRows = (rows: readonly string[]): readonly string[] => rows.filter((row) => row.includes("queued · "));
+/**
+ * The rows that carry the queue's muted marker. Matched at the row's start: the footer's own
+ * hint names the queue in the same words (`up to edit queued · ctrl+s to send now`), and the
+ * drawn queue rows are the ones the marker opens.
+ */
+const queuedRows = (rows: readonly string[]): readonly string[] => rows.filter((row) => row.startsWith("queued · "));
 
 /** The prompt's own text row: the **last** marker row, because the transcript has them too. */
 const promptRow = (rows: readonly string[]): string => {

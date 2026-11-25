@@ -154,9 +154,9 @@ describe("runSlashCommand on an ACP brain", () => {
     // No catalog command or skill appears: the listing is the built-in rows alone, then the
     // chat's own keys. Built from the exported block so the composition is what is pinned here.
     expect(shown).toEqual([[...BUILTIN_ROWS, "", CHAT_KEYBOARD_HELP].join("\n")]);
-    // One keyboard block on both paths (never a shortened ACP variant): the whole nine-row
+    // One keyboard block on both paths (never a shortened ACP variant): the whole ten-row
     // block follows the single empty row.
-    expect((shown[0] ?? "").split("\n").slice(BUILTIN_ROWS.length + 1)).toHaveLength(9);
+    expect((shown[0] ?? "").split("\n").slice(BUILTIN_ROWS.length + 1)).toHaveLength(10);
   });
 
   test("AC-8 /model with no argument still opens the model picker", async () => {
