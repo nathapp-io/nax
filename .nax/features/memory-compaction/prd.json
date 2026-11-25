@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T10:07:52.898Z",
+  "updatedAt": "2026-11-25T10:39:25.554Z",
   "userStories": [
     {
       "id": "US-001",
@@ -371,14 +371,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New recovery path crosses archive, log, store and outbox under shared locks. Exercise ordinary and crash-window undo with isolated mirrors and explicit manifests."
+        "reasoning": "New recovery path crosses archive, log, store and outbox under shared locks. Exercise ordinary and crash-window undo with isolated mirrors and explicit manifests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/compaction-archive.ts",
@@ -404,7 +407,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8875963b0cd30a36896ade761576f8bca98e48da"
     },
     {
       "id": "US-007",
