@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
 import { CLAUDE_SETTINGS_FILES } from "#src/sandbox/claude-settings";
@@ -125,7 +125,9 @@ describe("buildSandboxPolicy", () => {
 
   test("no git repo: no git denies at all", () => {
     const policy = buildSandboxPolicy(input({ git: { kind: "none" } }));
-    expect(policy.denyWrite.some((p) => p.includes(join(root, ".git")))).toBe(false);
+    // `.gitconfig` and `.gitmodules` are srt's root names (#3038), not git-dir denies: match whole segments.
+    const gitDir = join(root, ".git");
+    expect(policy.denyWrite.some((p) => p === gitDir || p.startsWith(`${gitDir}${sep}`))).toBe(false);
   });
 
   test("F2 + finding 4: a worktree gets its git write roots and every pointer denied", () => {
@@ -354,7 +356,7 @@ describe("buildSandboxPolicy", () => {
  * US-005 — the deny for the Linux placeholder ledger directory.
  *
  * Pinned, not derived: `pinnedDenyWrite()` spells out the list the existing
- * fixture produced BEFORE `placeholderLedgerDir` existed, in order, so an
+ * fixture produced WITHOUT `placeholderLedgerDir` (plus the #3038 root names), in order, so an
  * absent input that quietly adds an entry (or a deny that moves) fails here
  * instead of passing as an unrecognised extra.
  */
@@ -379,6 +381,22 @@ function pinnedDenyWrite(): string[] {
     join(root, ".git", "config.worktree"),
     join(root, ".claude", "settings.json"),
     join(root, ".claude", "settings.local.json"),
+    // #3038: srt's mandatory names, spelled out against the root.
+    ...[
+      ".gitconfig",
+      ".gitmodules",
+      ".bashrc",
+      ".bash_profile",
+      ".zshrc",
+      ".zprofile",
+      ".profile",
+      ".ripgreprc",
+      ".mcp.json",
+      ".vscode",
+      ".idea",
+      ".claude/commands",
+      ".claude/agents",
+    ].map((name) => join(root, name)),
   ];
 }
 

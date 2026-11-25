@@ -45,7 +45,9 @@ export const SRT_MACOS_TMPDIR_DENIES: readonly string[] = [SRT_MACOS_TMPDIR, SRT
  * `@anthropic-ai/sandbox-runtime` 0.0.77's `DANGEROUS_FILES` — the same pin the
  * package pins as a dependency.
  *
- * srt applies these itself, so nax cannot see them in a policy. On Linux bwrap
+ * srt applies these itself, against the process cwd, so nax cannot see them in a
+ * policy; `buildSandboxPolicy` also names them against the session root (#3038), where
+ * srt's own would miss them whenever the cwd is not the root. On Linux bwrap
  * creates a mount placeholder at every one of them that is absent, which is why
  * the placeholder ledger needs the list: a test (`test/unit/sandbox/placeholder-paths.test.ts`)
  * fails if this array drifts from the pinned srt.

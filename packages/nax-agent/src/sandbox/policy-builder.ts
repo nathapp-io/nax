@@ -18,6 +18,8 @@ import {
   MACOS_CACHE_WRITE_ROOT,
   SRT_MACOS_TMPDIR,
   SRT_MACOS_TMPDIR_DENIES,
+  SRT_MANDATORY_DENY_DIRS,
+  SRT_MANDATORY_DENY_FILES,
 } from "./defaults.ts";
 import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards.ts";
 import { effectiveAllowLocalBinding } from "./network.ts";
@@ -223,6 +225,15 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     // with the native tool policy that refuses the same paths (B1) -- see
     // ./claude-settings.ts for why each is denied and why `.claude` is not.
     ...CLAUDE_SETTINGS_FILES.map((rel) => join(root, rel)),
+    // #3038: srt's own mandatory denies are anchored at the nax PROCESS cwd, not
+    // at this root. With `nax chat -d <dir>` from elsewhere they would cover the
+    // wrong directory and leave `.mcp.json`, `.bashrc`, `.vscode` and the
+    // `.claude` command/agent dirs creatable here. Naming them against the root
+    // closes that; with cwd == root they are the same paths srt already denies.
+    // Applied on every platform: seatbelt anchors its literal and `**/<name>`
+    // denies at the cwd as well. Absent ones get a bwrap placeholder AT the root,
+    // which `candidatePaths` records through this very list.
+    ...[...SRT_MANDATORY_DENY_FILES, ...SRT_MANDATORY_DENY_DIRS].map((rel) => join(root, rel)),
     ...(darwin && confined ? SRT_MACOS_TMPDIR_DENIES : []),
   ]);
   const denyRead = literal([
