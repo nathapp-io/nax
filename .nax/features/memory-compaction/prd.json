@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T13:27:06.112Z",
+  "updatedAt": "2026-11-25T13:40:45.362Z",
   "userStories": [
     {
       "id": "US-001",
@@ -995,14 +995,17 @@
       "dependencies": [
         "US-015"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Thin additive subcommand delegates restoration and safeguards to host. Test argument forwarding, exact text/JSON errors and ordered registration with existing harnesses."
+        "reasoning": "Thin additive subcommand delegates restoration and safeguards to host. Test argument forwarding, exact text/JSON errors and ordered registration with existing harnesses.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/memory-compact.ts",
@@ -1028,7 +1031,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "734fdb77acdd679137bf1a9ea97c612bd84e9cca"
     },
     {
       "id": "US-017",
