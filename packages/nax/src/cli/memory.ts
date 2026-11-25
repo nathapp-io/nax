@@ -6,7 +6,8 @@
  * and holds the two listing subcommands — `status` reports what the mirror holds, `list`
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
  * (`show`, `sync`), `memory-write.ts` (`save`, `forget`, `approve`), `memory-admin.ts`
- * (`link`), `memory-rejected.ts` (`requeue`, `discard`) and `memory-compact.ts` (`compact`).
+ * (`link`), `memory-rejected.ts` (`requeue`, `discard`) and `memory-compact.ts` (`compact`,
+ * `undo`).
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —

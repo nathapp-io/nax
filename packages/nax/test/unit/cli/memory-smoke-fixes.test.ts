@@ -346,6 +346,7 @@ describe("the memory command's registration", () => {
       "requeue",
       "discard",
       "compact",
+      "undo",
     ]);
     expect(typeof _memoryCliDeps.createMemoryHost).toBe("function");
   });

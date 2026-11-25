@@ -541,6 +541,7 @@ describe("registerMemoryCommand — compact", () => {
       "requeue",
       "discard",
       "compact",
+      "undo",
     ]);
   });
 

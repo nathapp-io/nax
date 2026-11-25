@@ -309,6 +309,7 @@ describe("registerMemoryCommand", () => {
       "requeue",
       "discard",
       "compact",
+      "undo",
     ]);
   });
 });

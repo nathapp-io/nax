@@ -1,9 +1,10 @@
 /**
- * `nax memory compact` — one previewed, confirmed compaction from the terminal (US-015).
+ * `nax memory compact` and `nax memory undo` — the terminal's two compaction commands (US-015,
+ * US-016).
  *
- * The work itself is `compactProjectMemory`'s (US-014): it reads the mirror, asks the model,
- * checks the plan and applies it. What is left to this file is the surface — the two questions a
- * terminal alone can answer, and the lines a person reads:
+ * The work of a compaction is `compactProjectMemory`'s (US-014): it reads the mirror, asks the
+ * model, checks the plan and applies it. What is left to this file is the surface — the two
+ * questions a terminal alone can answer, and the lines a person reads:
  *
  * - **May this run ask at all?** No TTY and no `--yes` is an abort *before* the mirror is opened,
  *   so a pipe or a CI job costs no model call. `--dry-run` is exempt: a preview writes nothing, so
@@ -21,9 +22,19 @@
  * `nax memory compact --json | jq` reads a document and a person still sees what is being asked.
  * The document is the outcome itself: `outcome` is its kind, and the rest are the fields that kind
  * carries.
+ *
+ * `undo` is the way back, and the simplest surface here: it asks nothing, decides nothing, and
+ * hands the id (or its absence, meaning the newest compaction not yet undone) and `--force`
+ * straight to the host's `undoCompaction`. The safety is the archive's and the operation's — the
+ * two refusals a person meets, a note that moved since (`MEMORY_COMPACT_CHANGED`) and a target
+ * that is not there (`MEMORY_COMPACT_NOT_FOUND`), arrive already worded, so this file only puts
+ * `Error: ` in front of them. Both commands take the same flags (`-d`, `--json`) and answer on the
+ * same channels.
  */
+import type { MemoryUndoResult } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { getProjectKey, memoryConfigOf } from "@/config";
+import { NaxError } from "@/errors";
 import { compactProjectMemory, type MemoryCompactOutcome, type MemoryCompactPreview } from "@/memory";
 import { type ConfirmChannel, promptForConfirmation } from "./confirm";
 import {
@@ -270,8 +281,90 @@ export async function memoryCompactCommand(
 }
 
 /**
- * Register `compact` on the `memory` group, after the subcommands that read and write notes and
- * before `undo` (which restores what this one archived).
+ * What `undo` takes on top of the group's flags: permission to overwrite notes that moved on.
+ */
+export interface MemoryUndoOptions extends MemoryCliOptions {
+  /** Undo even when a note changed since the compaction ran. */
+  readonly force?: boolean;
+}
+
+/**
+ * The one request `undoCompaction` takes: the compaction it names (absent for the newest one not
+ * yet undone) and whether it may overwrite edits made since.
+ */
+interface UndoRequest {
+  readonly id?: string;
+  readonly force?: boolean;
+}
+
+/** What a host with no `undoCompaction` member answers, spelled once. */
+const UNDO_UNSUPPORTED_MESSAGE = "memory undo is not available on this memory host";
+
+/** The refusal a host that carries no compaction surface answers with, before anything is read. */
+function undoUnsupportedError(): NaxError {
+  return new NaxError(UNDO_UNSUPPORTED_MESSAGE, "MEMORY_COMPACT_UNSUPPORTED", { stage: "memory" });
+}
+
+/**
+ * The request the two flags name.
+ *
+ * An unnamed id is left out of the object rather than sent as `undefined`, because that is what
+ * the operation reads as "the newest compaction not yet undone" — one shape, one meaning.
+ */
+function undoRequestOf(id: string | undefined, opts: MemoryUndoOptions): UndoRequest {
+  const force = opts.force === true;
+  return id === undefined ? { force } : { id, force };
+}
+
+/**
+ * The line an undo prints: which compaction came back, how many notes it restored, and how many
+ * merged notes it removed.
+ *
+ * The counts are the result's own lengths, so the line and the `--json` document can never
+ * disagree about what happened.
+ */
+function undoLine(result: MemoryUndoResult): string {
+  return `Undid compaction ${result.id}: restored ${result.restored.length} notes, removed ${result.removed.length}`;
+}
+
+/**
+ * `nax memory undo [<id>] [--force]`: restore what one compaction archived, and report what it
+ * put back.
+ *
+ * There is nothing to decide and nothing to confirm here: the safety is the archive's, and the
+ * two refusals an operator meets — a note that moved since (`MEMORY_COMPACT_CHANGED`, unless
+ * `--force` says otherwise) and a target that is not there (`MEMORY_COMPACT_NOT_FOUND`) — are
+ * raised by the operation the host calls. Each reaches the group's error contract unchanged, so
+ * the operator reads the operation's own words after `Error: `. A `MemoryHost` that carries no
+ * `undoCompaction` at all (only a hand-built one can) is refused the same way rather than
+ * reported as an undo that did nothing.
+ *
+ * @param id - The compaction to undo, or `undefined` for the newest one not yet undone
+ * @param opts - The group's flags, plus `--force`
+ * @param deps - The seam every external call goes through
+ */
+export async function memoryUndoCommand(
+  id: string | undefined,
+  opts: MemoryUndoOptions,
+  deps: MemoryCliDeps = _memoryCliDeps,
+): Promise<number> {
+  return withMemoryErrors(
+    async () =>
+      withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+        if (host === null) throw memoryDisabledError();
+        const undo = host.undoCompaction;
+        if (undo === undefined) throw undoUnsupportedError();
+        const result = await undo(undoRequestOf(id, opts));
+        deps.log(opts.json === true ? JSON.stringify(result) : undoLine(result));
+        return 0;
+      }),
+    deps,
+  );
+}
+
+/**
+ * Register `compact` and `undo` on the `memory` group, after the subcommands that read and write
+ * notes — `compact` first, because `undo` restores what it archived.
  */
 export function registerMemoryCompactCommands(memory: Command, deps: MemoryCompactCliDeps): Command {
   memory
@@ -283,6 +376,16 @@ export function registerMemoryCompactCommands(memory: Command, deps: MemoryCompa
     .option("--json", "Emit one machine-readable document", false)
     .action(async (opts: MemoryCompactOptions) => {
       deps.exit(await memoryCompactCommand(opts, deps));
+    });
+  memory
+    .command("undo")
+    .description("Undo a compaction, restoring the notes it archived")
+    .argument("[id]", "The compaction to undo (default: the newest one not yet undone)")
+    .option("--force", "Undo even if notes changed since the compaction ran", false)
+    .option("-d, --dir <path>", "Project directory", memoryDefaultDir())
+    .option("--json", "Emit one machine-readable document", false)
+    .action(async (id: string | undefined, opts: MemoryUndoOptions) => {
+      deps.exit(await memoryUndoCommand(id, opts, deps));
     });
   return memory;
 }

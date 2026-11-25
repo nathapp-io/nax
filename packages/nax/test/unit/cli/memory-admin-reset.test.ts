@@ -427,6 +427,7 @@ describe("registerMemoryCommand — reset", () => {
       "requeue",
       "discard",
       "compact",
+      "undo",
     ]);
   });
 });

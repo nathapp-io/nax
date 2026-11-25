@@ -169,7 +169,9 @@ export {
   _memoryCompactCliDeps,
   type MemoryCompactCliDeps,
   type MemoryCompactOptions,
+  type MemoryUndoOptions,
   memoryCompactCommand,
+  memoryUndoCommand,
   registerMemoryCompactCommands,
 } from "./memory-compact";
 export {

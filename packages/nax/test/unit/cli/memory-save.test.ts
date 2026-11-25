@@ -297,6 +297,7 @@ describe("registerMemoryCommand — the write subcommands", () => {
       "requeue",
       "discard",
       "compact",
+      "undo",
     ]);
   });
 });
