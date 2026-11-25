@@ -124,6 +124,36 @@ describe("git excludes for a session root that is not the process cwd (#3038)", 
     expect(await createSrtBackend({}).wrap(request(repo, repo))).toEqual(["true"]);
   });
 
+  test("a root is handled again after reset() (forget)", async () => {
+    const backend = createSrtBackend({});
+    await backend.wrap(request(repo, repo));
+    await backend.reset();
+    await backend.wrap(request(repo, repo));
+
+    expect(seen.filter((p) => p === repo)).toHaveLength(2);
+  });
+
+  test("two concurrent wraps on a new root share one excludes step", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    _srtBackendDeps.ensureExcludes = async (path: string) => {
+      seen.push(path);
+      await gate;
+    };
+    const backend = createSrtBackend({});
+
+    const first = backend.wrap(request(repo, repo));
+    const second = backend.wrap(request(repo, repo));
+    // Let both wraps reach the step before the first one finishes it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    release();
+    await Promise.all([first, second]);
+
+    expect(seen.filter((p) => p === repo)).toHaveLength(1);
+  });
+
   test("no root work on another platform", async () => {
     _srtBackendDeps.platform = () => "darwin";
 
