@@ -131,7 +131,26 @@ describe.skipIf(!probe.available)(`#3038 mandatory denies at a root that is not 
     },
   ];
 
+  // Linux only: srt's scan stops at depth 3 (`--max-depth 3`), so `sub/.claude/commands/x.md` and
+  // `nested/.git/hooks/x` (depth 4) are never found, even with cwd == root. "Nothing stricter
+  // than cwd == root" then means the same outcome in both modes, whatever it is.
+  const BEYOND_LINUX_SCAN_DEPTH = new Set(["sub/.claude/commands/x.md", "nested/.git/hooks/pre-commit"]);
+
   for (const { name, seed, command } of NESTED) {
+    if (process.platform !== "darwin" && BEYOND_LINUX_SCAN_DEPTH.has(name)) {
+      test(`${name}: beyond srt's scan depth, so the outcome is the same as with cwd == root`, async () => {
+        const outcome: string[] = [];
+        for (const where of [root, elsewhere]) {
+          for (const rel of seed) {
+            mkdirSync(dirname(join(root, rel)), { recursive: true });
+            writeFileSync(join(root, rel), "seed\n");
+          }
+          outcome.push(await run(where, command));
+        }
+        expect(outcome[1]).toBe(outcome[0] as string);
+      }, 90_000);
+      continue;
+    }
     for (const [label, where] of [
       ["the root", () => root],
       ["elsewhere", () => elsewhere],
