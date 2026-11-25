@@ -420,8 +420,8 @@ describe("createRunMemory", () => {
     await memory.close();
 
     expect({ before, after: memory.summary() }).toEqual({
-      before: { saved: 0, pending: 0 },
-      after: { saved: 0, pending: 0 },
+      before: { saved: 0, pending: 0, refusedFull: 0 },
+      after: { saved: 0, pending: 0, refusedFull: 0 },
     });
   });
 
@@ -431,7 +431,7 @@ describe("createRunMemory", () => {
 
       await runTool(memory, "save", REPLAY_BUDGET_INPUT);
 
-      expect(memory.summary()).toEqual({ saved: 1, pending: 0 });
+      expect(memory.summary()).toEqual({ saved: 1, pending: 0, refusedFull: 0 });
     });
 
     test("counts a pending save as both saved and pending", async () => {
@@ -439,7 +439,7 @@ describe("createRunMemory", () => {
 
       await runTool(memory, "save", REPLAY_BUDGET_INPUT);
 
-      expect(memory.summary()).toEqual({ saved: 1, pending: 1 });
+      expect(memory.summary()).toEqual({ saved: 1, pending: 1, refusedFull: 0 });
     });
 
     test("counts nothing for a save the store refused", async () => {
@@ -447,7 +447,7 @@ describe("createRunMemory", () => {
 
       await runTool(memory, "save", REPLAY_BUDGET_INPUT);
 
-      expect(memory.summary()).toEqual({ saved: 0, pending: 0 });
+      expect(memory.summary()).toEqual({ saved: 0, pending: 0, refusedFull: 0 });
     });
 
     test("does not count a refusal after a save the store took", async () => {
@@ -463,7 +463,7 @@ describe("createRunMemory", () => {
 
       await runTool(memory, "save", { ...REPLAY_BUDGET_INPUT, slug: "replay-window" });
 
-      expect(memory.summary()).toEqual({ saved: 1, pending: 0 });
+      expect(memory.summary()).toEqual({ saved: 1, pending: 0, refusedFull: 0 });
     });
 
     test("leaves the counts alone when a forget runs", async () => {
@@ -479,9 +479,9 @@ describe("createRunMemory", () => {
       const forgotten = await runTool(memory, "forget", { slug: "replay-budget", reason: "stale" });
 
       expect({ before, forgotten, after: memory.summary() }).toEqual({
-        before: { saved: 2, pending: 1 },
+        before: { saved: 2, pending: 1, refusedFull: 0 },
         forgotten: { content: JSON.stringify(FORGET_RESULT) },
-        after: { saved: 2, pending: 1 },
+        after: { saved: 2, pending: 1, refusedFull: 0 },
       });
     });
 
