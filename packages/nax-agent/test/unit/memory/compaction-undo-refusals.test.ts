@@ -15,6 +15,7 @@
  * stayed green.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry, NaxError } from "@nathapp/nax-agent";
@@ -322,6 +323,36 @@ describe("undoMemoryCompaction: a note changed since the compaction", () => {
       for (const slug of ARCHIVED_SLUGS) expect(await h.store.readNote("project", slug)).not.toBeNull();
     });
   });
+
+  test("M1: the check reads the mirror once, not once per note", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      await changeMergedNote(h);
+      // Two notes to judge: the created one, whose `updatedAt` moved, and an archived slug the
+      // mirror holds again. Both are answered from the same listing.
+      await h.store.writeNote({ ...originalOf(h, "retired"), updatedAt: LATER_STAMP });
+      const reads = { list: 0, single: 0 };
+      const counted = {
+        ...h.store,
+        listNotes: async (scope: Parameters<Harness["store"]["listNotes"]>[0]) => {
+          reads.list += 1;
+          return await h.store.listNotes(scope);
+        },
+        readNote: async (scope: Parameters<Harness["store"]["readNote"]>[0], slug: string) => {
+          reads.single += 1;
+          return await h.store.readNote(scope, slug);
+        },
+      };
+
+      // The refusal happens before any write, so every read it took is the check's own.
+      const refusal = await refusalOf(undo(h, { store: counted }));
+
+      expect(refusal.code).toBe("MEMORY_COMPACT_CHANGED");
+      expect(refusal.context?.slugs).toEqual(["merged", "retired"]);
+      expect(reads).toEqual({ list: 1, single: 0 });
+    });
+  });
 });
 
 describe("undoMemoryCompaction: no target to undo", () => {
@@ -438,6 +469,64 @@ describe("undoMemoryCompaction: no target to undo", () => {
       const refusal = await refusalOf(undo(h, { id: COMPACTION_ID }));
 
       expect(refusal.code).toBe("MEMORY_COMPACT_NOT_FOUND");
+    });
+  });
+
+  test("B4: refuses a compaction already undone with no log line, even with force", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // The first crash window's other half: the apply finished but its log line never landed, so
+      // an undo recovers it from the manifest alone and there is no line to mark when it does.
+      await rm(h.store.paths.compactionsLog, { force: true });
+      await undo(h, { id: COMPACTION_ID });
+      expect((await compactionManifest(h)).status).toBe("undone");
+      expect(existsSync(h.store.paths.compactionsLog)).toBe(false);
+      // Somebody edits a restored note after the undo.
+      await h.store.writeNote({ ...(await requiredNote(h, "source-a")), body: "edited after the undo" });
+
+      const refusal = await refusalOf(undo(h, { id: COMPACTION_ID, force: true }));
+
+      // The terminal manifest is the record that this compaction was already reversed, and no log
+      // line can say so here — so the manifest does. `force` accepts a changed note; it is not a
+      // licence to write the archived originals over a mirror a later session has moved.
+      expect(refusal.code).toBe("MEMORY_COMPACT_NOT_FOUND");
+      expect((await requiredNote(h, "source-a")).body).toBe("edited after the undo");
+    });
+  });
+
+  test("B4: refuses a compaction whose undo completed as a rollback, with no log line either", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // The other crash window: the process died during the apply, so the manifest says
+      // `applying`, there is no log line, and the undo recovers it as `rolled_back`.
+      await patchManifest(h, { status: "applying", created: undefined, notesAfter: undefined });
+      await rm(h.store.paths.compactionsLog, { force: true });
+      await undo(h, { id: COMPACTION_ID });
+      expect((await compactionManifest(h)).status).toBe("rolled_back");
+
+      const refusal = await refusalOf(undo(h, { id: COMPACTION_ID, force: true }));
+
+      expect(refusal.code).toBe("MEMORY_COMPACT_NOT_FOUND");
+    });
+  });
+
+  test("B4: an undone manifest whose log line is still open is resumed, not refused", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // An undo that died between rewriting the manifest and marking the log line: the line is
+      // open, so this one is unfinished work rather than a completed undo, and re-running it is
+      // what clears the line every later undo would otherwise be blocked behind.
+      await patchManifest(h, { status: "undone" });
+
+      const result = await undo(h, { id: COMPACTION_ID });
+
+      expect(result.id).toBe(COMPACTION_ID);
+      const [line] = (await logText(h)).trim().split("\n");
+      assertDefined(line, "the compaction's log line");
+      expect(JSON.parse(line)).toMatchObject({ id: COMPACTION_ID, undone: true });
     });
   });
 });

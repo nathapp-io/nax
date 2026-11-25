@@ -14,7 +14,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { MemoryNote, MemoryOutboxEntry } from "@nathapp/nax-agent";
+import type { MemoryNote, MemoryOutbox, MemoryOutboxEntry } from "@nathapp/nax-agent";
 import type { MemoryCompactionPlan } from "@nathapp/nax-agent/internal";
 import { type MemoryUndoInput, type MemoryUndoResult, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import {
@@ -288,6 +288,91 @@ describe("undoMemoryCompaction: the notes the compaction created", () => {
       await undo(h);
 
       expect(await entriesFor(h, "forget", "source-a")).toHaveLength(0);
+    });
+  });
+});
+
+// ─── the forget a merged note's removal owes the provider (B2) ───────────────
+//
+// Deleting the merged note and queuing its forget are two steps, and only one of their orders
+// converges. Deleted-then-queued leaves a mirror with no note and a provider that still holds it
+// when the queue fails: the re-run finds nothing to delete, skips the step, and never queues the
+// forget — so the note the apply wrote comes back on the next pull, or the apply's own still-queued
+// save resurrects it. The queue comes first now, and an absent note is still bookkeeping.
+
+describe("undoMemoryCompaction: the removal's delivery bookkeeping", () => {
+  test("B2: a merged note already gone still gets its forget queued", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // The state a delete-then-queue undo leaves when the queue step failed: no note, no request.
+      await h.store.deleteNote("project", MERGED_SLUG);
+      expect(await entriesFor(h, "forget", MERGED_SLUG)).toHaveLength(0);
+
+      const result = await undo(h);
+
+      // Nothing was removed by this run — but the provider is still told the note is gone.
+      expect(result.removed).toEqual([]);
+      const forgets = await entriesFor(h, "forget", MERGED_SLUG);
+      expect(forgets).toHaveLength(1);
+      expect(forgets[0]?.reason).toBe(`undo compaction ${COMPACTION_ID}`);
+    });
+  });
+
+  test("B2: a forget already queued for that note is not queued a second time", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // An earlier run queued the forget and then died before deleting the note.
+      await h.outbox.enqueue({
+        kind: "forget",
+        scope: "project",
+        slug: MERGED_SLUG,
+        writeMode: "direct",
+        reason: `undo compaction ${COMPACTION_ID}`,
+      });
+
+      const result = await undo(h);
+
+      expect(result.removed).toEqual([MERGED_SLUG]);
+      expect(await h.store.readNote("project", MERGED_SLUG)).toBeNull();
+      // One request, not two: the re-run recognizes the intent an interrupted run recorded.
+      expect(await entriesFor(h, "forget", MERGED_SLUG)).toHaveLength(1);
+    });
+  });
+
+  test("B2: a queue that refuses the forget leaves the note in place, and the re-run converges", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // The queue holds its saves and refuses the forget: the one failure the old order could not
+      // recover from, because the note had already been deleted when it happened.
+      const refusing = {
+        ...h.outbox,
+        enqueue: async (request: Parameters<MemoryOutbox["enqueue"]>[0]) =>
+          request.kind === "forget"
+            ? await Promise.reject(new Error("outbox is full"))
+            : await h.outbox.enqueue(request),
+      };
+
+      const outcome = await undo(h, { outbox: refusing }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      expect(outcome).toBeInstanceOf(Error);
+      // Nothing was deleted before its request existed, so the re-run has a note to remove.
+      expect(await h.store.readNote("project", MERGED_SLUG)).not.toBeNull();
+      expect(await entriesFor(h, "forget", MERGED_SLUG)).toHaveLength(0);
+
+      // The notes an interrupted undo restored are in the mirror again, so the re-run is the
+      // `--force` retry the spec describes.
+      const redo = await undo(h, { force: true });
+
+      expect(redo.removed).toEqual([MERGED_SLUG]);
+      expect(await h.store.readNote("project", MERGED_SLUG)).toBeNull();
+      expect(await entriesFor(h, "forget", MERGED_SLUG)).toHaveLength(1);
+      expect((await compactionManifest(h)).status).toBe("undone");
     });
   });
 });

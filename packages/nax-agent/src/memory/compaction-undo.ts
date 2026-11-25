@@ -26,14 +26,18 @@
  * wrote what it wrote, so a mirror that disagrees with either has moved on, and the undo refuses
  * with the slugs it would have lost — `force` is the caller saying it knows. And it will not
  * guess at a target: no open log line, an id the archive could not have minted, a line already
- * undone, a pruned archive or a manifest that is not one are all `MEMORY_COMPACT_NOT_FOUND`,
- * with nothing read outside the archive and nothing written. A sync of this process in flight
- * refuses with `MEMORY_BUSY` before anything is read at all; every other writer is a lock this
- * waits for like any other.
+ * undone, a pruned archive, a manifest that is not one or one that already says the compaction is
+ * finished (unless the log still holds the open line an interrupted undo left) are all
+ * `MEMORY_COMPACT_NOT_FOUND`, with nothing read outside the archive and nothing written. A sync
+ * of this process in flight refuses with `MEMORY_BUSY` before anything is read at all; every
+ * other writer is a lock this waits for like any other.
  *
- * Nothing here is transactional on purpose. Every step is a whole-note write or delete, so an
- * undo that dies part-way leaves a mirror a re-run converges on rather than one caught between
- * two states, and the re-run is what `force` exists for.
+ * Nothing here is transactional on purpose. Every step is a whole-note write or delete, and the
+ * one wait it does not leave behind — the removal of a merged note — is queued as a forget before
+ * the note goes, so an undo that dies part-way leaves a mirror and an outbox a re-run converges
+ * on rather than either caught between two states. `force` is for the mirror half of that
+ * convergence: a note that changed since is the caller's to accept. It is never permission to
+ * undo a compaction that has already been undone.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -55,6 +59,7 @@ import { refreshIndex } from "./operations-support.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryStore } from "./store.ts";
 import type { MemoryNote, MemoryTimers } from "./types.ts";
+import { memoryNoteKey } from "./types.ts";
 
 const ERROR_STAGE = "memory";
 
@@ -113,10 +118,32 @@ async function newestOpenLine(store: MemoryStore): Promise<MemoryCompactionLogLi
   return null;
 }
 
+/** What the compaction log says about one id. */
+type LogState = "absent" | "open" | "undone";
+
+/**
+ * The log's answer about one compaction: an open line, a line already marked undone, or no line
+ * at all.
+ *
+ * A malformed line is not this module's business — `readCompactionLogLines` drops those — and an
+ * id the log holds twice answers `undone` if either line says so, because the refusal it protects
+ * is the irreversible one.
+ */
+async function logState(store: MemoryStore, id: string): Promise<LogState> {
+  const lines = await readCompactionLogLines(store);
+  let open = false;
+  for (const line of lines) {
+    if (line.id !== id) continue;
+    if (line.undone) return "undone";
+    open = true;
+  }
+  return open ? "open" : "absent";
+}
+
 /**
  * The compaction this undo acts on, with its manifest read from the archive.
  *
- * An explicit id is answered from its manifest and nothing else, which is what makes the two
+ * An explicit id is answered from its manifest and the log together, which is what makes the two
  * crash windows recoverable: the log line is a record of a *finished* apply, and the states an
  * undo most needs to reach are exactly the ones no line describes. Without an id the log picks
  * the newest compaction still open, and the archive it names is then read the same way — so the
@@ -127,7 +154,7 @@ async function resolveTarget(input: MemoryUndoInput): Promise<UndoTarget> {
   if (input.id === undefined) {
     const newest = await newestOpenLine(input.store);
     if (newest === null) throw targetNotFound(input);
-    return await manifestTarget(input, newest.id);
+    return await manifestTarget(input, newest.id, "open");
   }
   return await namedTarget(input, input.id);
 }
@@ -146,18 +173,19 @@ async function resolveTarget(input: MemoryUndoInput): Promise<UndoTarget> {
  * changed. The line — not the manifest's own `status` — is what says so, because the log is
  * marked last: an undo that died between rewriting the manifest and marking the line leaves a
  * manifest that says `undone` and a line that is still open, and refusing that one would leave
- * the open line blocking every later undo. Re-running it converges instead.
+ * the open line blocking every later undo. Re-running it converges instead. An id with no line at
+ * all is answered by the manifest, which is the whole of what the two crash windows have.
  */
 async function namedTarget(input: MemoryUndoInput, id: string): Promise<UndoTarget> {
   if (!MEMORY_COMPACTION_ID_RE.test(id)) throw targetNotFound(input, id);
-  if (await lineIsUndone(input.store, id)) throw targetNotFound(input, id);
-  return await manifestTarget(input, id);
+  const state = await logState(input.store, id);
+  if (state === "undone") throw targetNotFound(input, id);
+  return await manifestTarget(input, id, state);
 }
 
-/** Whether the log records this compaction as already undone. */
-async function lineIsUndone(store: MemoryStore, id: string): Promise<boolean> {
-  const lines = await readCompactionLogLines(store);
-  return lines.some((line) => line.id === id && line.undone);
+/** Whether a manifest's status says the compaction is finished, one way or the other. */
+function isFinished(status: MemoryCompactionManifestStatus): boolean {
+  return status === "undone" || status === "rolled_back";
 }
 
 /**
@@ -168,10 +196,20 @@ async function lineIsUndone(store: MemoryStore, id: string): Promise<boolean> {
  * it rewrites — so a manifest whose own `id` names a different compaction is a directory that
  * is not the one asked for, however well-formed the file is. Acting on it would read one
  * compaction's notes, delete another's merge targets and write the status to a third path.
+ *
+ * A manifest that already says the compaction is finished — `undone`, or `rolled_back` — is only
+ * actionable while the log still holds an *open* line for it, which is the one unfinished step of
+ * an undo that died between rewriting the manifest and marking the log. Anything else is a
+ * compaction this undo has already completed or reversed, and repeating it would write the
+ * archived originals back over whatever has happened since: `nax memory undo <id> --force` on a
+ * log-less compaction an earlier run had already undone overwrote a note edited after it, instead
+ * of answering `MEMORY_COMPACT_NOT_FOUND` (review B4). `force` is the caller accepting that a
+ * note changed, never a licence to undo twice, so this check runs before it is consulted.
  */
-async function manifestTarget(input: MemoryUndoInput, id: string): Promise<UndoTarget> {
+async function manifestTarget(input: MemoryUndoInput, id: string, state: LogState): Promise<UndoTarget> {
   const manifest = await readCompactionManifest({ store: input.store, id });
   if (manifest === null || manifest.id !== id) throw targetNotFound(input, id);
+  if (isFinished(manifest.status) && state !== "open") throw targetNotFound(input, id);
   return { id, manifest };
 }
 
@@ -217,6 +255,13 @@ function changedSince(input: MemoryUndoInput, target: UndoTarget, slugs: readonl
  *
  * A created note the mirror no longer holds is not a change: there is nothing left for the
  * undo to overwrite, and the removal step answers with no removal rather than inventing one.
+ *
+ * Both checks read the mirror through one `listNotes`, not one `readNote` per slug: each of those
+ * resolves the notes directory, pins it and reads a file on its own, so a batch undo of thirty
+ * notes paid for thirty directory walks — the check scales with the mirror, not with the notes it
+ * asks about (review M1). The listing's own contract applies to what it reads: a note it could
+ * not read is reported once and skipped, which reads as "not there" here, exactly as a note the
+ * mirror does not hold does.
  */
 async function changedSlugs(
   input: MemoryUndoInput,
@@ -224,15 +269,16 @@ async function changedSlugs(
   originals: readonly MemoryNote[],
 ): Promise<readonly string[]> {
   const created = target.manifest.created ?? [];
+  const mirror = new Map((await input.store.listNotes("project")).map((note) => [note.slug, note]));
   const changed: string[] = [];
   for (const written of created) {
-    const held = await input.store.readNote("project", written.slug);
-    if (held !== null && held.updatedAt !== written.updatedAt) changed.push(written.slug);
+    const held = mirror.get(written.slug);
+    if (held !== undefined && held.updatedAt !== written.updatedAt) changed.push(written.slug);
   }
   const createdSlugs = new Set(created.map((note) => note.slug));
   for (const original of originals) {
     if (createdSlugs.has(original.slug)) continue;
-    if ((await input.store.readNote("project", original.slug)) !== null) changed.push(original.slug);
+    if (mirror.has(original.slug)) changed.push(original.slug);
   }
   return changed;
 }
@@ -293,8 +339,19 @@ async function restoreNote(input: MemoryUndoInput, original: MemoryNote): Promis
  * original — a merge that kept one of its own source slugs wrote *that* note, and the note the
  * archive holds is the one it has to answer with.
  *
- * A target the mirror does not hold is left alone: there is no note to delete and no note to
- * forget, so the undo answers with no removal instead of inventing one.
+ * The forget is queued *before* the note is deleted, and only when the outbox does not already
+ * hold one for that note, which is what makes a re-run converge (review B2). The two orders are
+ * not interchangeable: an undo that deletes first and then fails to queue the forget — a full
+ * outbox, a write error — leaves a mirror with no note and a provider that still holds it, and the
+ * re-run finds nothing to delete, skips the step, and never queues the forget either. The merge
+ * the apply wrote comes back on the provider's next pull, or the still-queued save for it
+ * resurrects it there. Queuing first makes the intent durable: a queued forget with the note still
+ * present is delivered by the next sync, and a re-run after a failure between the two steps sees
+ * the entry and queues nothing twice. Nothing can deliver it in between — the whole undo runs under
+ * the mirror lock every writer and every sync of this mirror takes.
+ *
+ * A target the mirror does not hold is not a removal, but it is still bookkeeping: the request is
+ * queued if it is not already there, and the slug is not reported as removed by this run.
  */
 async function removeMergedNotes(
   input: MemoryUndoInput,
@@ -302,18 +359,23 @@ async function removeMergedNotes(
   restoredSlugs: ReadonlySet<string>,
 ): Promise<readonly string[]> {
   const removed: string[] = [];
+  const held = new Set(await input.outbox.heldKeys("forget"));
   for (const merge of target.manifest.merged) {
     if (restoredSlugs.has(merge.into)) continue;
+    const key = memoryNoteKey("project", merge.into);
+    if (!held.has(key)) {
+      await input.outbox.enqueue({
+        kind: "forget",
+        clientId: randomUUID(),
+        scope: "project",
+        slug: merge.into,
+        writeMode: "direct",
+        reason: `undo compaction ${target.id}`,
+      });
+      held.add(key);
+    }
     if ((await input.store.readNote("project", merge.into)) === null) continue;
     await input.store.deleteNote("project", merge.into);
-    await input.outbox.enqueue({
-      kind: "forget",
-      clientId: randomUUID(),
-      scope: "project",
-      slug: merge.into,
-      writeMode: "direct",
-      reason: `undo compaction ${target.id}`,
-    });
     removed.push(merge.into);
   }
   return removed;
