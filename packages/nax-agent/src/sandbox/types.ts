@@ -52,6 +52,11 @@ export interface SandboxWrapRequest {
   readonly shell: string;
   readonly policy: SandboxPolicy;
   readonly cwd: string;
+  /**
+   * #3038: the session root the policy was built for. Optional: it is only used to
+   * give a root that is not the process cwd its git excludes (Linux placeholders).
+   */
+  readonly root?: string;
   readonly commandId: string;
 }
 

@@ -11,6 +11,7 @@
 import { mkdir } from "node:fs/promises";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
+import { realOrRaw } from "#src/internal/realpath";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
 import { ensurePlaceholderExcludes } from "./placeholder-excludes.ts";
@@ -152,6 +153,34 @@ async function runLinuxStartupSteps(): Promise<void> {
 }
 
 /**
+ * #3038: the session root's mandatory names are denied AT the root, so bwrap holds
+ * placeholders there even when the process cwd is elsewhere (`nax chat -d <dir>`).
+ * Each distinct root gets the same excludes the process cwd got at start-up, once,
+ * on the first wrap that names it. The promise is stored before it is awaited, so
+ * two wraps racing on a new root share one step.
+ */
+function createRootExcludes(): { ensure(root: string | undefined): Promise<void>; forget(): void } {
+  const handled = new Map<string, Promise<void>>();
+  return {
+    ensure(root) {
+      if (root === undefined || _srtBackendDeps.platform() !== "linux") return Promise.resolve();
+      const key = realOrRaw(root);
+      // A root equal to the process cwd was handled by start-up (see `rootExcludesStep`).
+      if (!handled.has(key)) handled.set(key, rootExcludesStep(root));
+      return handled.get(key) ?? Promise.resolve();
+    },
+    forget() {
+      handled.clear();
+    },
+  };
+}
+
+function rootExcludesStep(root: string): Promise<void> {
+  if (realOrRaw(root) === realOrRaw(_srtBackendDeps.cwd())) return Promise.resolve();
+  return linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(root));
+}
+
+/**
  * #2986 — identifies the placeholders bwrap creates when a wrapped process SPAWNS.
  *
  * `wrap` runs before the spawn, so it can only record candidates as pending; a
@@ -218,6 +247,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
   const startedPoll = createStartedPoll();
+  const rootExcludes = createRootExcludes();
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -242,6 +272,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     },
     async wrap(req: SandboxWrapRequest) {
       const mod = await initialize();
+      await rootExcludes.ensure(req.root);
       // Linux: the ledger records what this wrap may create before it creates it.
       recordPlaceholderCandidates(req.policy);
       // A wrap that throws undoes srt's own count, so it needs no cleanup call.
@@ -284,6 +315,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: srt has dropped its placeholders by now, so the entries whose
       // inode is gone are exactly the ones this prune drops.
       linuxLedger()?.prune();
+      rootExcludes.forget();
       initialized = undefined;
       loaded = undefined;
     },

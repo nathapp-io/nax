@@ -170,7 +170,7 @@ async function runWrapped(
   const commandId = _launcherDeps.newCommandId();
   let argv: readonly string[];
   try {
-    argv = await backend.wrap({ command, shell, policy, cwd: req.cwd, commandId });
+    argv = await backend.wrap({ command, shell, policy, cwd: req.cwd, root: req.root, commandId });
   } catch (err) {
     throw new NaxError(`[sandbox] could not wrap the command: ${errorMessage(err)}`, "SANDBOX_WRAP_FAILED", {
       stage: "sandbox",
