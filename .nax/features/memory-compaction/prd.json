@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T11:08:03.638Z",
+  "updatedAt": "2026-11-25T11:18:06.920Z",
   "userStories": [
     {
       "id": "US-001",
@@ -491,14 +491,17 @@
         "capacity"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small additive hook on an established locked write path. First prove full refusals leave mirror/outbox/provider untouched and legacy, overwrite and sync-fenced paths unchanged."
+        "reasoning": "Small additive hook on an established locked write path. First prove full refusals leave mirror/outbox/provider untouched and legacy, overwrite and sync-fenced paths unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/operations.ts",
@@ -513,7 +516,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "da83f74764f471536efc929b3b404ec38a690aae"
     },
     {
       "id": "US-009",
