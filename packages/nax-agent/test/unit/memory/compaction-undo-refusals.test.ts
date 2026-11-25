@@ -15,7 +15,7 @@
  * stayed green.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry, NaxError } from "@nathapp/nax-agent";
 import {
@@ -116,18 +116,41 @@ async function logText(h: Harness): Promise<string> {
   return await readFile(h.store.paths.compactionsLog, "utf8");
 }
 
-/** What the mirror, the queue and the log hold right now: the state "unchanged" is measured against. */
+/**
+ * What the mirror, the queue, the log and the archive hold right now: the state a refusal may
+ * not change.
+ *
+ * The archive is in it because a refusal that reached far enough to rewrite a manifest, or to
+ * restore a note, would put an archive directory back that the pose had removed — a write no
+ * note/queue comparison could see.
+ */
 interface DiskState {
   readonly notes: Record<string, MemoryNote>;
   readonly outbox: readonly MemoryOutboxEntry[];
   readonly log: string;
+  readonly archive: readonly string[];
 }
 
 /** Read the whole observable state an undo could change, so a refusal can be checked against it. */
 async function diskState(h: Harness): Promise<DiskState> {
   const notes: Record<string, MemoryNote> = {};
   for (const note of await h.store.listNotes("project")) notes[note.slug] = note;
-  return { notes, outbox: await h.outbox.list(), log: await logText(h) };
+  return {
+    notes,
+    outbox: await h.outbox.list(),
+    log: await logText(h),
+    archive: await archiveEntries(h),
+  };
+}
+
+/** The archive directory's own entries, or none when the pose removed the directory. */
+async function archiveEntries(h: Harness): Promise<string[]> {
+  try {
+    return (await readdir(h.store.paths.archiveDir)).sort();
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 /**
@@ -449,10 +472,59 @@ async function noPose(): Promise<void> {
 const REFUSAL_CASES: readonly RefusalCase[] = [
   { name: "a changed merged note", code: "MEMORY_COMPACT_CHANGED", pose: changeMergedNote, run: (h) => undo(h) },
   {
+    name: "a changed archived slug",
+    code: "MEMORY_COMPACT_CHANGED",
+    pose: async (h) => {
+      await h.store.writeNote({
+        ...originalOf(h, "retired"),
+        id: "id-written-after-the-compaction",
+        body: "written after the compaction",
+        updatedAt: LATER_STAMP,
+      });
+    },
+    run: (h) => undo(h),
+  },
+  {
+    name: "no open log line",
+    code: "MEMORY_COMPACT_NOT_FOUND",
+    pose: async (h) => {
+      await undo(h);
+    },
+    run: (h) => undo(h),
+  },
+  {
     name: "an id that is not a compaction id",
     code: "MEMORY_COMPACT_NOT_FOUND",
     pose: noPose,
     run: (h) => undo(h, { id: BAD_ID }),
+  },
+  {
+    name: "a traversal id",
+    code: "MEMORY_COMPACT_NOT_FOUND",
+    pose: async (h) => {
+      // The manifest one directory above the archive that "../outside" resolves to: a refusal
+      // that read it would be a read this case cannot see, but one that acted on it would write.
+      const outside = join(h.store.paths.projectDir, "outside");
+      await mkdir(outside, { recursive: true });
+      await writeFile(join(outside, "manifest.json"), await readFile(manifestPath(h), "utf8"));
+    },
+    run: (h) => undo(h, { id: TRAVERSAL_ID }),
+  },
+  {
+    name: "an id whose log line is already undone",
+    code: "MEMORY_COMPACT_NOT_FOUND",
+    pose: async (h) => {
+      await undo(h, { id: COMPACTION_ID });
+    },
+    run: (h) => undo(h, { id: COMPACTION_ID }),
+  },
+  {
+    name: "a pruned archive",
+    code: "MEMORY_COMPACT_NOT_FOUND",
+    pose: async (h) => {
+      await rm(join(h.store.paths.archiveDir, COMPACTION_ID), { recursive: true, force: true });
+    },
+    run: (h) => undo(h, { id: COMPACTION_ID }),
   },
   {
     name: "an id with no archive",
@@ -465,14 +537,6 @@ const REFUSAL_CASES: readonly RefusalCase[] = [
     code: "MEMORY_COMPACT_NOT_FOUND",
     pose: async (h) => {
       await writeFile(manifestPath(h), "{ this is not json");
-    },
-    run: (h) => undo(h, { id: COMPACTION_ID }),
-  },
-  {
-    name: "a log line already undone",
-    code: "MEMORY_COMPACT_NOT_FOUND",
-    pose: async (h) => {
-      await undo(h, { id: COMPACTION_ID });
     },
     run: (h) => undo(h, { id: COMPACTION_ID }),
   },
