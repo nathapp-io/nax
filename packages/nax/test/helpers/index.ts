@@ -61,6 +61,25 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
+export {
+  COMPACT_CANDIDATES,
+  COMPACT_CONFIG,
+  COMPACT_FACTS,
+  COMPACT_INDEX,
+  COMPACT_INDEX_AFTER,
+  COMPACT_PENDING_NOTE,
+  COMPACT_PLAN,
+  COMPACT_PREVIEW,
+  COMPACT_REPO_ROOT,
+  COMPACT_RESULT,
+  COMPACT_REUSE_PLAN,
+  type CompactApplyInput,
+  type CompactProjectCalls,
+  type CompactProjectHarness,
+  type CompactProjectOptions,
+  compactNote,
+  makeCompactProjectHarness,
+} from "./compact-project";
 export { opSelector } from "./config-selector";
 export {
   _confinedDeps,

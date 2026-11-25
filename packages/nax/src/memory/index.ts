@@ -7,6 +7,12 @@
 
 export type { MemoryCompactFacts } from "./compact-facts";
 export { _compactFactsDeps, readMemoryCompactFacts } from "./compact-facts";
+export type {
+  CompactProjectMemoryInput,
+  MemoryCompactOutcome,
+  MemoryCompactPreview,
+} from "./compact-project";
+export { _compactProjectDeps, compactProjectMemory } from "./compact-project";
 export { memoryIndexFill, memoryNearlyFull } from "./fill";
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
