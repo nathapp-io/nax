@@ -11,6 +11,7 @@ import {
   gitCommitTool,
   registerBuiltinCodingTools,
 } from "@nathapp/nax-agent/internal";
+import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
 import {
   cleanupTempDir,
   makeSpawn,
@@ -388,6 +389,38 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
     expect(result.content).toContain("REFUSED");
     expect(result.content).toContain(".nax/scratchpad/other.md");
     expect(result.content).toContain("exited 128");
+  });
+});
+
+describe("gitCommitTool — a placeholder is never committed (US-006)", () => {
+  withDepsRestore(_placeholderDeps);
+
+  test("AC-9: the commit holds notes.md and not the 0444 empty .mcp.json", async () => {
+    const repo = await makeRepo();
+    const ledgerRoot = makeTempDir("nax-git-commit-ledgers-");
+    mkdirSync(join(ledgerRoot, "ledgers"));
+    _placeholderDeps.ledgerDir = () => join(ledgerRoot, "ledgers");
+    try {
+      writeFileSync(join(repo, ".mcp.json"), "");
+      chmodSync(join(repo, ".mcp.json"), 0o444);
+      writeFileSync(join(repo, "notes.md"), "notes\n");
+
+      const result = await gitCommitTool.run(
+        { message: "feat: placeholder beside notes", paths: [".mcp.json", "notes.md"] },
+        toolContext(repo),
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(git(repo, "log", "-1", "--format=%s").stdout.trim()).toBe("feat: placeholder beside notes");
+      // The commit is the repository's root commit (the fixture commits nothing),
+      // so list its whole tree rather than a diff against a parent.
+      const committed = git(repo, "ls-tree", "-r", "--name-only", "HEAD").stdout.trim();
+      expect(committed.split("\n")).toEqual(["notes.md"]);
+      expect(isTracked(repo, ".mcp.json")).toBe(false);
+      expect(git(repo, "status", "--porcelain").stdout).toContain("?? .mcp.json");
+    } finally {
+      cleanupTempDir(ledgerRoot);
+    }
   });
 });
 

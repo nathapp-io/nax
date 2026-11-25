@@ -28,6 +28,7 @@ import {
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
+import { placeholderLedgerDirForPolicy } from "#src/sandbox/placeholder-ledger";
 import type { ProtectedPathsPolicy } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 
@@ -137,8 +138,13 @@ export async function resolveSessionSandbox(args: {
     runTmpRoot: args.runTmpRoot,
     tmpDir: args.tmpDir,
   });
-  const policyFor = async (root: string, tmpDirInForce: boolean) =>
-    buildSandboxPolicy({
+  const policyFor = async (root: string, tmpDirInForce: boolean) => {
+    // US-005: the placeholder ledger directory, when this host keeps a ledger.
+    // Read per build, like every other entry, and omitted entirely when there is
+    // none (darwin, or a ledger this process could not create) -- no ledger, no
+    // deny. The ledger has already created its 0700 directory by now.
+    const placeholderLedgerDir = placeholderLedgerDirForPolicy();
+    return buildSandboxPolicy({
       root,
       git,
       // Per build, like the .nax entries: a worktree added mid-run gets its denies too.
@@ -159,6 +165,9 @@ export async function resolveSessionSandbox(args: {
       ...(args.protectedPaths.trustStoreFile !== undefined
         ? { trustStoreFile: args.protectedPaths.trustStoreFile }
         : {}),
+      // US-005: a command inside the sandbox must not be able to forge or erase
+      // the placeholder ledger the cleanup trusts.
+      ...(placeholderLedgerDir !== undefined ? { placeholderLedgerDir } : {}),
       home: _sessionSandboxDeps.homedir(),
       tempRoots,
       // #2301: the RESOLVED confinement, not `config.filesystem.allowSharedTmp`.
@@ -180,6 +189,7 @@ export async function resolveSessionSandbox(args: {
       platform: _sessionSandboxDeps.platform(),
       config,
     });
+  };
   // Review #17: literal() refuses a glob character in any policy path, and the
   // probe builds its own policy, so a repo path like `re[x]po` passed the probe
   // and then failed every command. Build the policy once here instead.

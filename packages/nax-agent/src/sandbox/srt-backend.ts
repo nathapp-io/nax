@@ -9,8 +9,14 @@
  * process.env itself and is DISCARDED here (spec F6).
  */
 import { mkdir } from "node:fs/promises";
+import { errorMessage } from "#src/infra/errors";
+import { getSafeLogger } from "#src/infra/index";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
+import { ensurePlaceholderExcludes } from "./placeholder-excludes.ts";
+import { type PlaceholderLedger, placeholderLedger } from "./placeholder-ledger.ts";
+import { candidatePaths } from "./placeholder-paths.ts";
+import { sweepStalePlaceholders } from "./placeholder-sweep.ts";
 import type { SandboxBackend, SandboxPolicy, SandboxWrapRequest } from "./types.ts";
 
 type SrtModule = typeof import("@anthropic-ai/sandbox-runtime");
@@ -39,7 +45,44 @@ export const _srtBackendDeps = {
   load: (): Promise<SrtModuleSlice> => import("@anthropic-ai/sandbox-runtime"),
   platform: (): NodeJS.Platform => process.platform,
   mkdir,
+  sweep: sweepStalePlaceholders,
+  /**
+   * US-007: hide the shell-startup placeholders srt holds from a repository's
+   * `git status`, once per initialize. Replaced with a no-op for the whole test
+   * suite by `test/preload.ts`, so no test writes its checkout's exclude file.
+   */
+  ensureExcludes: ensurePlaceholderExcludes,
+  /**
+   * US-003: the directory srt resolves its mandatory write-deny names against,
+   * and therefore the directory bwrap creates placeholders in. Process cwd, NOT
+   * the request's `cwd`: srt pins these names to `process.cwd()` itself, so a
+   * candidacy computed from any other anchor would miss real placeholders.
+   */
+  // biome-ignore lint/plugin: this seam mirrors srt, which pins its own mandatory denies to process.cwd(); threading nax's resolved root in instead would describe placeholders that never appear. Tests override it.
+  cwd: (): string => process.cwd(),
 };
+
+/**
+ * US-003 — the ledger wiring below is Linux-only. Seatbelt creates no
+ * placeholders, and every other platform gets srt's own count and cleanup
+ * exactly as before.
+ */
+function linuxLedger(): PlaceholderLedger | undefined {
+  return _srtBackendDeps.platform() === "linux" ? placeholderLedger() : undefined;
+}
+
+/**
+ * Record every path this wrap may create a placeholder at, then identify the
+ * ones already on disk. Both happen BEFORE srt wraps: a placeholder that appears
+ * later is already recorded as pending, and `observe` is what turns a pending
+ * entry into the inode identity the sweep and `prune` compare against.
+ */
+function recordPlaceholderCandidates(policy: SandboxPolicy): void {
+  const ledger = linuxLedger();
+  if (ledger === undefined) return;
+  ledger.recordAbsent(candidatePaths(_srtBackendDeps.cwd(), policy));
+  ledger.observe();
+}
 
 /**
  * Open network = `network` WITHOUT `allowedDomains`. srt's type requires the
@@ -76,6 +119,25 @@ function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
   };
 }
 
+/**
+ * One Linux start-up step, caught on its own: a failed sweep must not suppress
+ * the excludes (and the reverse), and neither may fail the wrap that triggered
+ * it — a command still runs with stale placeholders or an untracked `.bashrc`.
+ */
+async function linuxStep(message: string, step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    getSafeLogger()?.warn("sandbox", message, { error: errorMessage(error) });
+  }
+}
+
+/** US-004 and US-007: the placeholder work that only a Linux start-up does. */
+async function runLinuxStartupSteps(): Promise<void> {
+  await linuxStep("placeholder sweep initialization failed", () => _srtBackendDeps.sweep());
+  await linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(_srtBackendDeps.cwd()));
+}
+
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
@@ -84,6 +146,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
+      if (_srtBackendDeps.platform() === "linux") await runLinuxStartupSteps();
       await mod.SandboxManager.initialize({
         network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
         filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
@@ -102,6 +165,8 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     },
     async wrap(req: SandboxWrapRequest) {
       const mod = await initialize();
+      // Linux: the ledger records what this wrap may create before it creates it.
+      recordPlaceholderCandidates(req.policy);
       // A wrap that throws undoes srt's own count, so it needs no cleanup call.
       const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
         req.command,
@@ -124,10 +189,20 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // deletion while another wrapped command still runs, so it must hear about
       // EVERY finished command. A second, nax-side gate here leaked srt's count
       // after any overlap and left the placeholders in the user's directory.
+      //
+      // US-003: the ledger must hold the placeholder's identity BEFORE that
+      // deletion happens (`observe`), so a placeholder srt removes is still known
+      // by inode; `prune` afterwards is what then drops the entries srt removed.
+      const ledger = linuxLedger();
+      ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();
+      ledger?.prune();
     },
     async reset() {
       if (loaded !== undefined) await loaded.SandboxManager.reset();
+      // US-003: srt has dropped its placeholders by now, so the entries whose
+      // inode is gone are exactly the ones this prune drops.
+      linuxLedger()?.prune();
       initialized = undefined;
       loaded = undefined;
     },

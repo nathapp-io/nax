@@ -29,6 +29,7 @@ describe("RESERVED_PROJECT_NAMES", () => {
       "memory",
       "hooks",
       "_archive",
+      "sandbox",
     ]);
   });
 });
@@ -60,6 +61,15 @@ describe("validateProjectName — reserved names", () => {
 });
 
 describe("NaxConfigSchema — reserved names", () => {
+  it("US-008 AC2: rejects name 'sandbox' with the reserved issue on the name path", () => {
+    const result = NaxConfigSchema.safeParse({ name: "sandbox" });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("expected the reserved name to be rejected");
+    const issue = result.error.issues.find((entry) => entry.path[0] === "name");
+    expect(issue?.path).toEqual(["name"]);
+    expect(issue?.message).toBe("name 'sandbox' is reserved");
+  });
+
   it("US-005 AC6: rejects name 'runs' with an issue on the name path", () => {
     const result = NaxConfigSchema.safeParse({ name: "runs" });
     expect(result.success).toBe(false);

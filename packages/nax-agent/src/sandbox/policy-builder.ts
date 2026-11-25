@@ -39,6 +39,14 @@ export interface SandboxPolicyInput {
   readonly approvalsFile?: string;
   /** US-006 — the trust store (`trustStorePath()`), denied so a command cannot rewrite its own trust. */
   readonly trustStoreFile?: string;
+  /**
+   * US-005 — this process's Linux placeholder ledger directory
+   * (`placeholderLedgerDirForPolicy()`), denied so a sandboxed command cannot
+   * forge or erase the record the placeholder sweep trusts. Absent on every
+   * host that keeps no ledger, which is why it is optional rather than empty:
+   * no ledger, no deny.
+   */
+  readonly placeholderLedgerDir?: string;
   readonly home: string;
   readonly tempRoots: readonly string[];
   /**
@@ -206,6 +214,11 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...input.gitGuardFiles,
     ...(input.approvalsFile !== undefined ? [input.approvalsFile] : []),
     ...(input.trustStoreFile !== undefined ? [input.trustStoreFile] : []),
+    // US-005: the placeholder ledger directory, present exactly when a ledger is
+    // kept (Linux only). A command that could write there could rewrite the
+    // record the placeholder sweep trusts, so this deny holds the safety rule the
+    // whole feature exists for: cleanup never removes a user's own file.
+    ...(input.placeholderLedgerDir !== undefined ? [input.placeholderLedgerDir] : []),
     // US-006: the two session-root Claude settings files. One canonical list
     // with the native tool policy that refuses the same paths (B1) -- see
     // ./claude-settings.ts for why each is denied and why `.claude` is not.

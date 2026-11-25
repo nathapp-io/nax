@@ -1,0 +1,557 @@
+{
+  "project": "nax-monorepo",
+  "feature": "sandbox-placeholders",
+  "branchName": "feat/sandbox-placeholders",
+  "createdAt": "2026-11-24T11:27:31.990Z",
+  "updatedAt": "2026-11-24T16:16:06.266Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add placeholder candidates, identities, proc parsers and deps",
+      "description": "**Goal** — Add the shared Linux placeholder path, identity and /proc foundations and injectable host defaults.\n\n**Motivation** — For a deny path that is absent and whose deepest existing ancestor is inside an allowed write root, bwrap creates a placeholder at the first missing path component: an empty regular file with mode 0444 and one link (leaf), or an empty directory (intermediate component).\n\n**Approach** — Implement the following design verbatim.\n\n### Test seams\n`packages/nax-agent/src/sandbox/placeholder-deps.ts` (US-001) exports one deps object, `_placeholderDeps`, which every new module reads. It is not re-exported from `src/internal.ts`.\n\n| Field | Default | Shape |\n|:---|:---|:---|\n| `platform()` | `process.platform` | `NodeJS.Platform` |\n| `ledgerDir()` | `join(credentialsConfig().configDir(), \"sandbox\", \"placeholders\")` | `string`; may throw |\n| `bootId()` | trimmed `/proc/sys/kernel/random/boot_id` | `string`; may throw |\n| `startTicks(pid)` | `parseStartTicks(<content of /proc/<pid>/stat>)` | `number`; throws with errno `ENOENT` when the process is gone, other codes when unreadable |\n| `isProcessAlive(pid)` | `isProcessAlive` from `internal/process-alive.ts` | `boolean` |\n| `uid()` | `process.getuid()` | `number` |\n| `homedir()` | `os.homedir()` | `string` |\n| `proc` | real `/proc` reader | `{ listPids(): number[]; realUid(pid): number; mountNs(pid): string; mountinfo(pid): string }`. `realUid` is the first number of the `Uid:` line of `/proc/<pid>/status` (readable for every process, unlike `/proc/<pid>` ownership, which turns to root for non-dumpable processes). `mountNs` is the target of the `/proc/<pid>/ns/mnt` link. Each method may throw with an errno `code`. |\n| `remove(path, kind)` | `unlinkSync` for `file`, `rmdirSync` for `dir` | `void`; may throw |\n| `onExit(listener)` | `process.once(\"exit\", listener)` | `void` |\n| `lockTimeoutMs` | `2000` | `number` |\n\nnax-agent is a Node library and these modules use synchronous `node:fs` calls, as `sandbox/session-tmp.ts` does, because `commandFinished` and the exit listener are synchronous.\n\n### Placeholder shape and identity (US-001)\nA path is **placeholder-shaped** when `lstat` (no symlink follow) shows either:\n\n- a regular file with `size === 0`, `(mode & 0o222) === 0` and `nlink === 1`, or\n- a directory with zero entries.\n\nIts **identity** (`placeholderIdentity(path)`) is `{ kind: \"file\" | \"dir\", dev, ino }` from that `lstat`, or `undefined` when the path is not placeholder-shaped. A recorded entry **matches** the disk when `placeholderIdentity(path)` returns the same `kind`, `dev` and `ino`.\n\n### Candidate paths (US-001)\n`candidatePaths(cwd, policy)` (`packages/nax-agent/src/sandbox/placeholder-paths.ts`) returns absolute, normalised paths, deduplicated, in this order:\n\n1. `SRT_MANDATORY_DENY_FILES` resolved against `cwd`, then `SRT_MANDATORY_DENY_DIRS` resolved against `cwd`. Both are new constants in `packages/nax-agent/src/sandbox/defaults.ts`, mirroring srt's `DANGEROUS_FILES` (`.gitconfig`, `.gitmodules`, `.bashrc`, `.bash_profile`, `.zshrc`, `.zprofile`, `.profile`, `.ripgreprc`, `.mcp.json`) and `getDangerousDirectories()` (`.vscode`, `.idea`, `.claude/commands`, `.claude/agents`).\n2. `join(cwd, \".git/hooks\")` and `join(cwd, \".git/config\")` when `<cwd>/.git` is a directory.\n3. Every `policy.denyWrite` entry.\n\nEach candidate is mapped to its **first missing component**: walk up from the path while the parent does not exist, so `<cwd>/.claude/commands` maps to `<cwd>/.claude` when `.claude` is absent. A candidate whose path already exists is dropped. A candidate is also dropped unless its deepest existing ancestor is equal to or inside one of `policy.writeRoots` (srt makes no placeholder elsewhere).\n\n### `/proc` parsers (US-001)\n- `parseStartTicks(statLine): number` returns field 22 of a `/proc/<pid>/stat` line, counting fields after the LAST `)` (the command name may hold spaces and parentheses). It throws when the line has no `)` or too few fields.\n- `parseMountPoints(mountinfoText): string[]` returns field 5 of every non-empty line, with the octal escapes `\\040` (space), `\\011` (tab), `\\012` (newline) and `\\134` (backslash) decoded.\n\n**Scope** — In: the two constants, placeholder-deps.ts, placeholder-paths.ts and their named tests. Out: the process ledger (US-002), backend wiring (US-003), deletion sweep (US-004), policy deny (US-005), staging (US-006), excludes (US-007) and name reservation (US-008). Confirming the real `/proc` readers against a live bwrap sandbox (for example that `realUid` and `mountinfo` of a sandboxed process are readable) is a manual Linux live check after merge, not an AC. Upgrading `@anthropic-ai/sandbox-runtime` from 0.0.77 is not part of this feature.\n\n**Interface** — `candidatePaths(cwd, policy)`; `isPlaceholderShaped`; `placeholderIdentity(path)` returns `{ kind: \"file\" | \"dir\", dev, ino }` or `undefined`; `parseStartTicks(statLine): number`; `parseMountPoints(mountinfoText): string[]`; `_placeholderDeps` has the exact shapes in the table. Unless an AC overrides the fixture, candidate-path tests use a real empty temp cwd, writeRoots: [cwd], denyWrite: [], denyRead: [] and network: {}; shape and identity tests create the specified real files or directories. Tests use injected platform facts; the real-defaults /proc check alone is Linux-only. Show regression tests fail before implementing.",
+      "acceptanceCriteria": [
+        "[unit] candidatePaths(cwd, policy) with an empty cwd, writeRoots: [cwd] and an empty denyWrite returns the nine SRT_MANDATORY_DENY_FILES names joined to cwd, then join(cwd, '.vscode'), join(cwd, '.idea') and join(cwd, '.claude').",
+        "[unit] candidatePaths lists join(cwd, '.claude') once although both .claude/commands and .claude/agents map to it.",
+        "[unit] With a real <cwd>/.bashrc present, candidatePaths omits join(cwd, '.bashrc').",
+        "[unit] candidatePaths returns an empty array when no entry of policy.writeRoots is cwd or an ancestor of cwd.",
+        "[unit] With <cwd>/.git a directory without hooks, candidatePaths includes join(cwd, '.git/hooks').",
+        "[unit] With <cwd>/.git a file, candidatePaths includes neither join(cwd, '.git/hooks') nor join(cwd, '.git/config').",
+        "[unit] With <cwd>/.claude absent, a policy.denyWrite entry <cwd>/.claude/settings.json maps to <cwd>/.claude.",
+        "[unit] With <cwd>/.claude present as a directory, the same entry is returned as <cwd>/.claude/settings.json.",
+        "[unit] isPlaceholderShaped returns true for an empty 0444 file and for an empty directory.",
+        "[unit] isPlaceholderShaped returns false for each of: an empty 0644 file, a 0444 file holding one byte, a 0444 empty file with a second hard link, a symlink to a 0444 empty file, and a directory holding one entry.",
+        "[unit] placeholderIdentity of an empty 0444 file returns kind 'file' with that file's dev and ino, and returns undefined for an empty 0644 file.",
+        "[unit] parseStartTicks of the line '4242 (a) b (c) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 777 19' returns 777.",
+        "[unit] parseStartTicks throws for a line with no ')'.",
+        "[unit] parseMountPoints of a two-line mountinfo sample whose fifth fields are '/' and '/home/u/my\\040repo/.zprofile' returns ['/', '/home/u/my repo/.zprofile'].",
+        "[unit] parseMountPoints decodes \\134 to a backslash and \\011 to a tab.",
+        "[unit] SRT_MANDATORY_DENY_FILES equals srt 0.0.77's DANGEROUS_FILES, imported from @anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-utils.js.",
+        "[unit] SRT_MANDATORY_DENY_DIRS equals srt 0.0.77's getDangerousDirectories() result.",
+        "[integration] Linux only (skipped elsewhere): the real _placeholderDeps.startTicks(process.pid) returns a positive integer, _placeholderDeps.proc.realUid(process.pid) equals process.getuid(), and parseMountPoints(_placeholderDeps.proc.mountinfo(process.pid)) includes '/'."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "security",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two small utility modules and additive constants implement specified filesystem predicates, parsers and host defaults; strict security TDD remains necessary because identity and real-UID facts protect sandbox deny mounts during later cleanup.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/defaults.ts",
+        "packages/nax-agent/src/sandbox/session-tmp.ts",
+        "packages/nax-agent/src/internal/process-alive.ts",
+        "packages/nax-agent/src/infra/credentials-config.ts",
+        "packages/nax-agent/src/sandbox/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-deps.ts",
+        "packages/nax-agent/src/sandbox/placeholder-paths.ts",
+        "packages/nax-agent/test/unit/sandbox/placeholder-paths.test.ts",
+        "packages/nax-agent/test/unit/sandbox/placeholder-deps.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseStartTicks throws when a stat line has a closing ')' but too few subsequent fields to supply field 22.",
+        "parseMountPoints decodes \\012 to a newline in a mount point and ignores empty lines."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/sandbox/defaults.ts",
+          "reason": "gains `SRT_MANDATORY_DENY_FILES` and `SRT_MANDATORY_DENY_DIRS`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5498169170064c012530b583f714b4231c2e0ddb"
+    },
+    {
+      "id": "US-002",
+      "title": "Persist the trusted process placeholder ledger",
+      "description": "**Goal** — Add a private process-wide ledger that records absent paths and subsequently observed placeholder identities without deleting user paths.\n\n**Motivation** — nax can tell them apart, because it can record the exact inode it saw appear.\n\n**Approach** — Implement the following ledger design verbatim.\n\n### Ledger file (US-002)\n`<ledgerDir>/<pid>.json`, mode 0600, written atomically (a temp file named `.<pid>.tmp` in the same directory, then rename). The ledger directory is created (`mkdir -p`, mode 0700) when the ledger is first created, before any `wrapWithSandboxArgv` call of the process, so it exists before any policy denies it.\n\n```json\n{\n  \"version\": 1,\n  \"pid\": 41237,\n  \"bootId\": \"8c1e2a4f-0d6b-4a57-9d0e-3f1b7c2a9e10\",\n  \"startTicks\": 1234567,\n  \"entries\": [\n    { \"path\": \"/home/u/repo/.zprofile\", \"kind\": \"file\", \"dev\": 2049, \"ino\": 3801123 },\n    { \"path\": \"/home/u/repo/.claude\" }\n  ]\n}\n```\n\nAn entry without `kind`/`dev`/`ino` is **pending**: the path was absent at wrap time and no placeholder has been seen there yet.\n\n`readLedgerFile(path): LedgerFile | undefined` (`placeholder-ledger.ts`) is the only reader and performs the **trust check**: the file must be a regular file (by `lstat`) owned by `_placeholderDeps.uid()` with `(mode & 0o077) === 0`; its content must parse as JSON with `version` 1; its base name must equal `<pid>.json` for its `pid`; and every entry `path` must be absolute and equal to its normalised form. On any failure it returns `undefined` and logs one warn naming the file.\n\n`placeholderLedger(): PlaceholderLedger | undefined` returns the process-wide ledger, created on first call. It returns `undefined` (and logs one debug `sandbox: placeholder ledger disabled`) when `_placeholderDeps.platform()` is not `\"linux\"`, or `ledgerDir()`, `bootId()` or `startTicks(process.pid)` throws. On creation it registers, through `_placeholderDeps.onExit`, one listener that deletes the process's ledger file and ignores any error. All methods are synchronous:\n\n- `recordAbsent(paths)`: adds each path not already in the ledger as a pending entry; writes the file only when it changed.\n- `observe()`: for each pending entry whose path now has a `placeholderIdentity`, records that identity. Writes only when changed.\n- `prune()`: drops every entry with an identity that no longer matches the disk. Pending entries are kept (another wrapped command may still be starting). Deletes the file when no entries remain; otherwise writes it when changed.\n\n`_resetPlaceholderLedgerForTests()` (US-002) clears the process ledger singleton and its exit-hook flag, following `_resetSandboxRegistryForTests` in `registry.ts`.\n\nnax-agent is a Node library and these modules use synchronous `node:fs` calls, as `sandbox/session-tmp.ts` does, because `commandFinished` and the exit listener are synchronous. All new modules share _placeholderDeps; it is not re-exported from src/internal.ts.\n\nFailure handling: `ledgerDir()`, `bootId()` or `startTicks(process.pid)` throws → `placeholderLedger()` returns `undefined`; no ledger, no deny, wrapping proceeds; one `debug` log `sandbox: placeholder ledger disabled`. Writing the ledger file fails → One `warn` log per process, `sandbox: placeholder ledger write failed`; the command still runs; later writes are still attempted. Deleting the ledger file at exit fails → Ignored; the next sweep finds a dead owner. A ledger fails the trust check → `readLedgerFile` returns `undefined` with one warn naming the file; the sweep leaves it untouched and the staging guard ignores it.\n\n**Scope** — In: placeholder-ledger.ts, its trust-checking reader, singleton/reset, synchronous lifecycle methods, atomic persistence and test fixture. Out: backend lifecycle integration (US-003), stale deletion (US-004), placeholderLedgerDirForPolicy and policy denies (US-005), staging (US-006), git excludes (US-007). US-002 only: a process killed after a wrap and before any later `observe()` leaves only pending entries; those placeholders are not removed by the sweep (srt 0.0.77's own re-adoption still removes leftover files in the same cwd). US-002 only: an empty directory that a user or editor creates at a recorded pending name, between a wrap and the next `observe()`, is indistinguishable from a bwrap placeholder directory; if the process is then killed and the directory is still empty at the next sweep, it is removed. Accepted: it is an empty directory at a protected name.\n\n**Interface** — `readLedgerFile(path): LedgerFile | undefined`; `placeholderLedger(): PlaceholderLedger | undefined`; `recordAbsent(paths)`; `observe()`; `prune()`; `_resetPlaceholderLedgerForTests()`. Use the shared fixture facts in analysis, reset before each test and record onExit without installing real process listeners. Tests operate on private real temp files; no source changes by the test-writing session.",
+      "acceptanceCriteria": [
+        "[unit] readLedgerFile returns the parsed ledger for a mode 0600 file named 999.json holding version 1, pid 999 and one absolute entry.",
+        "[unit] readLedgerFile returns undefined for that file with mode 0644.",
+        "[unit] readLedgerFile returns undefined when _placeholderDeps.uid returns a uid other than the file's owner.",
+        "[unit] readLedgerFile returns undefined for a file holding invalid JSON.",
+        "[unit] readLedgerFile returns undefined for a file holding version 2.",
+        "[unit] readLedgerFile returns undefined for the valid content saved as 123.json.",
+        "[unit] readLedgerFile returns undefined for an entry path 'rel/.zprofile', and for an entry path '/a/../b'.",
+        "[unit] After placeholderLedger()!.recordAbsent([join(cwd, '.zprofile')]), the file <ledgerDir>/<process.pid>.json has mode 0600 and holds pid process.pid, bootId 'boot-A', startTicks 100 and the entry { path: join(cwd, '.zprofile') }.",
+        "[unit] observe() after making a placeholder at a pending path records that placeholder's kind, dev and ino in the file.",
+        "[unit] A pending path that the user then creates as a 0644 file with content stays pending through observe().",
+        "[unit] prune() drops an identified entry whose file was deleted, and deletes the ledger file when that was its last entry.",
+        "[unit] prune() keeps a pending entry whose path does not exist.",
+        "[unit] placeholderLedger() returns the same instance on two calls, and onExit records exactly one listener.",
+        "[unit] Calling the recorded exit listener deletes <ledgerDir>/<process.pid>.json even while its entries still match placeholders on disk.",
+        "[unit] Calling the recorded exit listener when the ledger file is already gone does not throw.",
+        "[unit] placeholderLedger() returns undefined when _placeholderDeps.platform returns 'darwin'.",
+        "[unit] placeholderLedger() returns undefined when ledgerDir() throws an error with code CREDENTIALS_NOT_CONFIGURED.",
+        "[unit] placeholderLedger() returns undefined when bootId() throws.",
+        "[unit] placeholderLedger() returns undefined when startTicks(process.pid) throws.",
+        "[unit] When <ledgerDir>/<process.pid>.json is an existing directory, two recordAbsent calls with new paths do not throw and 'sandbox: placeholder ledger write failed' is logged at warn exactly once.",
+        "[unit] When placeholderLedger() is disabled by a non-Linux platform or a throwing ledgerDir(), bootId() or startTicks(process.pid), it emits one debug log 'sandbox: placeholder ledger disabled'.",
+        "[unit] When readLedgerFile rejects a ledger during its trust check, it emits one warn log naming that file.",
+        "[unit] When a ledger write initially fails and the obstruction is removed, a later recordAbsent call with a new path writes the ledger file rather than permanently disabling writes.",
+        "[unit] When deleting the process ledger fails in the recorded exit listener, calling that listener does not throw."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "security",
+        "ledger"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Private trusted persistence and process-wide lifecycle bookkeeping authorize later filesystem deletion; security-critical trust checks and exit behavior require strict test isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-deps.ts",
+        "packages/nax-agent/src/sandbox/placeholder-paths.ts",
+        "packages/nax-agent/src/sandbox/registry.ts",
+        "packages/nax-agent/src/sandbox/session-tmp.ts",
+        "packages/nax-agent/src/infra/credentials-config.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
+        "packages/nax-agent/test/unit/sandbox/placeholder-ledger.test.ts"
+      ],
+      "suggestedCriteria": [
+        "readLedgerFile returns undefined for a symlink to an otherwise trusted ledger file.",
+        "recordAbsent called again with only paths already recorded leaves the ledger file bytes and modification time unchanged.",
+        "prune drops an identified entry when its path has been replaced with a different-inode placeholder-shaped file, without removing the replacement."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "096f919839cba75cebade9ab96b0fb470401ade9"
+    },
+    {
+      "id": "US-003",
+      "title": "Record placeholders through the Linux srt lifecycle",
+      "description": "**Goal** — Connect the real process ledger to Linux srt wrapping, completion and reset while preserving existing cleanup counts and non-Linux behavior.\n\n**Motivation** — The deferral is a security requirement: unlinking the host path while another bwrap runs detaches that sandbox's bind mount, and the deny stops applying inside it.\n\n**Approach** — Implement these integration targets verbatim.\n\n- `_srtBackendDeps` gains `cwd: () => process.cwd()` (US-003).\n- Each `wrap` obtains the process ledger with `placeholderLedger()` (US-002); when it is defined, `wrap` calls `ledger.recordAbsent(candidatePaths(deps.cwd(), req.policy))` and `ledger.observe()` before `wrapWithSandboxArgv`. `commandFinished` calls `ledger.observe()` BEFORE `cleanupAfterCommand()` and `ledger.prune()` after it. `reset` calls `ledger.prune()` after `SandboxManager.reset()`.\n- On every other platform none of this runs and srt is called exactly as before.\n\nAll of the above ledger wiring is conditional on `platform()` being `\"linux\"`. `_srtBackendDeps` is currently `{ load, platform, mkdir }`; keep those existing functions and only add cwd in this story. Candidate paths resolve against process cwd, not req.cwd, because srt's mandatory denies use process cwd.\n\nSymbols this feature only reads:\n- `packages/nax-agent/src/sandbox/types.ts`: `SandboxBackend` (`wrap(req)`, `commandFinished()`, `reset()`), `SandboxWrapRequest` (`command`, `shell`, `policy`, `cwd`, `commandId`), `SandboxPolicy` (`writeRoots`, `denyWrite`, `denyRead`, `network`).\n- `packages/nax-agent/src/sandbox/launcher.ts`: `runWrapped` calls `backend.wrap(...)`, runs the argv, and calls `backend.commandFinished()` in a `finally`; a `wrap` that throws gets no `commandFinished`.\n\nIf ledgerDir(), bootId() or startTicks(process.pid) throws, no ledger or ledger-directory deny is enabled and wrapping proceeds, with the ledger's single debug log. Ledger write failures are nonfatal and later writes are retried by US-002. This story must never delete host placeholders directly: srt remains responsible for activeSandboxCount and cleanupAfterCommand on EVERY finished command.\n\n**Scope** — In: srt-backend.ts ledger wiring, cwd seam and real-file regression additions in the existing srt-backend.test.ts. Out: sweep initialization (US-004), policy denies (US-005), staging (US-006) and exclude initialization (US-007). Placeholders stay visible on disk while any sandboxed command is running (for example a background `Bash` task); removing them then would detach a live sandbox's deny. Changing the deny mechanism (for example an overlay) is srt's, not nax's. A process that resolves srt's mandatory denies from a directory other than the project root (for example `nax chat -d <dir>` launched elsewhere) is not changed here. The issue's earlier hypothesis that chat leaves placeholders on SIGHUP was disproved (`nax chat` already exits through `process.exit()` on SIGTERM and SIGHUP), so no signal-handling change is made.\n\n**Interface** — `createSrtBackend(network)` and `_srtBackendDeps` in srt-backend.ts; `cwd: () => process.cwd()`; `placeholderLedger(): PlaceholderLedger | undefined`; `candidatePaths(cwd, policy)`; backend `wrap(req)`, `commandFinished()`, `reset()` retain their existing contracts. Exercise the real ledger through the backend using the real temp directory and stub srt fixture described in analysis. Preserve the existing overlap/count/failure regression tests, proving new tests fail against old code before implementation.",
+      "acceptanceCriteria": [
+        "[integration] After backend.wrap(req) in an empty cwd, <ledgerDir>/<process.pid>.json holds a pending entry { path: join(cwd, '.zprofile') }.",
+        "[integration] After wrap, making a placeholder at <cwd>/.zprofile, then backend.commandFinished(), the ledger entry for <cwd>/.zprofile carries that file's dev and ino.",
+        "[integration] After wrap, making a placeholder at <cwd>/.zprofile, then backend.commandFinished(), the ledger file content that the stub cleanupAfterCommand reads when it is called already holds that identity.",
+        "[integration] After wrap, a placeholder at <cwd>/.zprofile, a first commandFinished(), deleting <cwd>/.zprofile (as srt's cleanup would) and a second commandFinished(), the ledger has no entry for <cwd>/.zprofile.",
+        "[integration] A <cwd>/.bashrc with content that existed before the first wrap never appears in the ledger through two wrap and two commandFinished calls.",
+        "[integration] After a placeholder was identified, backend.reset() with the placeholder deleted leaves no entry for it in the ledger.",
+        "[integration] With _srtBackendDeps.platform and _placeholderDeps.platform returning 'darwin', wrap and commandFinished create no ledger directory or file, and the stub's wrapWithSandboxArgv and cleanupAfterCommand are each called once per call.",
+        "[integration] When ledgerDir() throws an error with code CREDENTIALS_NOT_CONFIGURED, wrap resolves ['true'] and no file exists under the temp directory's ledger path.",
+        "[integration] When the process ledger file path is an existing directory and ledger writes fail, backend.wrap(req) still resolves ['true']."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "security",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small existing-backend integration with security-critical observe/cleanup ordering and overlapping sandbox sessions; strict security TDD overrides medium defaults.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/srt-backend.ts",
+        "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
+        "packages/nax-agent/src/sandbox/placeholder-paths.ts",
+        "packages/nax-agent/src/sandbox/launcher.ts",
+        "packages/nax-agent/test/unit/sandbox/srt-backend.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/sandbox/srt-backend.ts",
+          "reason": "`createSrtBackend` gains the Linux-only ledger wiring and `_srtBackendDeps.cwd`; on darwin and other platforms `wrap`, `commandFinished` and `reset` call srt exactly as before."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3b224d83360308f4b694d1a8eb6511b7b811be5f"
+    },
+    {
+      "id": "US-004",
+      "title": "Sweep dead-owner ledgers without detaching live mounts",
+      "description": "**Goal** — Reclaim only identity-matching stale placeholders from dead owners during Linux backend initialization.\n\n**Motivation** — They stay behind only when the process dies without an `exit` event (SIGKILL, OOM, power loss).\n\n**Approach** — Implement the stale sweep algorithm verbatim.\n\n### Stale sweep (US-004)\n`sweepStalePlaceholders()` (`packages/nax-agent/src/sandbox/placeholder-sweep.ts`):\n\n1. List the `*.json` files in `_placeholderDeps.ledgerDir()`. Skip the current process's own file. A missing directory means nothing to do.\n2. Read each with `readLedgerFile`; an `undefined` result leaves the file untouched and removes nothing from it.\n3. **Owner check**: the owner is **dead** when `bootId` differs from `bootId()`, or `isProcessAlive(pid)` is false, or `startTicks(pid)` throws `ENOENT`, or returns a value different from the recorded one. When `startTicks(pid)` throws with any other code, the owner is treated as alive. A live owner's ledger is left untouched.\n4. For a dead owner, under `withPathFileLock(<ledger path>, ..., { timeoutMs: lockTimeoutMs })`, re-read the file with `readLedgerFile` (skip it if it is gone: another sweep handled it). Every entry with an identity that matches the disk is a removal candidate. Pending entries, entries that no longer match, and entries whose fields are malformed are dropped without touching the disk.\n5. If there is at least one candidate, read the **live mount set** once with `readLiveMountPoints()`: for every pid in `proc.listPids()` with `proc.realUid(pid) === uid()`, read `proc.mountNs(pid)`; for each namespace not yet seen, read `proc.mountinfo(pid)` and add `parseMountPoints(...)`. A method throwing `ENOENT` or `ESRCH` (the process left) skips that pid. Any other throw makes the set **unknown**.\n6. When the set is unknown, nothing is removed and the ledger is left unchanged. Otherwise, for each candidate whose path (compared after `realOrRaw` of its parent) is not in the set: re-check `placeholderIdentity(path)` against the entry immediately before calling `remove(path, kind)`, in the same synchronous step; a mismatch keeps the file and drops the entry. A candidate in the set, or whose `remove` throws, is kept.\n7. The ledger file is deleted when no entries are kept, otherwise rewritten with the kept entries.\n8. One `info` log `sandbox: removed stale placeholders` with `{ removed: [paths] }` when anything was removed.\n\nIntegration target for this story: `_srtBackendDeps` gains `sweep: sweepStalePlaceholders` (US-004). When `platform()` is `\"linux\"`, `initialize` runs `deps.sweep()` before `SandboxManager.initialize`; an error is caught and logged at warn, never thrown. It runs once per initialize (again after a `reset`). On every other platform none of this runs and srt is called exactly as before. US-007 later inserts ensureExcludes after this sweep. Preserve the async lock helper; identity re-check and remove are synchronous with no intervening await.\n\nFailure handling: `startTicks(pid)` of another owner throws other than `ENOENT` → That owner is treated as alive; its ledger is left untouched. The ledger was deleted between listing and locking → Skipped silently. The live mount set is unknown → Nothing removed; the ledger left unchanged; one `debug` log. The identity re-check right before removal fails → The file is kept and its entry dropped. `remove(path, kind)` throws → The entry is kept in the ledger; the sweep continues with the next entry. The ledger lock is not taken within `lockTimeoutMs` → That ledger is skipped for this sweep. The sweep throws → Caught in `initialize`, logged at warn, and `wrap` proceeds. A ledger fails the trust check → Leave it untouched.\n\nTest fixture: The \"stale fixture\": a placeholder made at `<cwd>/.zprofile`; a ledger file `<ledgerDir>/999999.json` with mode 0600, `version` 1, `pid` 999999, `bootId` `\"boot-A\"`, `startTicks` 5, and one entry with the `kind`, `dev` and `ino` of that placeholder; `_placeholderDeps.isProcessAlive` reports 999999 dead; `_placeholderDeps.proc` lists one pid whose `realUid` is `uid()` and whose mountinfo has no mount at `<cwd>/.zprofile`. Each AC triggers the sweep through the first `backend.wrap(req)` of a fresh backend. Use this fixture for every reference to the stale fixture below.\n\n**Scope** — In: placeholder-sweep.ts, readLiveMountPoints, safe trusted-ledger rewriting, sweep seam/initialize integration and the named real-file backend-driven tests. Out: policy changes (US-005), staging (US-006) and exclude initialization (US-007). macOS and every non-Linux platform: seatbelt creates no placeholders; no ledger, sweep, deny or exclude runs there. Confirming the real `/proc` readers against a live bwrap sandbox (for example that `realUid` and `mountinfo` of a sandboxed process are readable) is a manual Linux live check after merge, not an AC. US-004 only: mounts held by processes of other users are not inspected; only processes whose real uid is the current uid are read. US-004 only: the live mount set is read once per sweep; a sandbox of another process that starts between that read and the `remove` call is not re-checked. US-004 only: the sweep runs at backend initialize; it does not run on a timer or at `nax` startup without a sandboxed command.\n\n**Interface** — `sweepStalePlaceholders()`; `readLiveMountPoints()`; `_srtBackendDeps.sweep`; `withPathFileLock(targetPath, operation, { timeoutMs })`; `isProcessAlive(pid): boolean`; shared `readLedgerFile(path): LedgerFile | undefined` and `placeholderIdentity(path)`. The suite must inject all proc facts and preserve actual ledger/file bytes for unchanged assertions, including rename-over replacement tests that explicitly prove different inodes. The separate post-merge real bwrap/proc check remains manual.",
+      "acceptanceCriteria": [
+        "[integration] In the stale fixture, the first wrap removes <cwd>/.zprofile.",
+        "[integration] In the stale fixture, the first wrap deletes <ledgerDir>/999999.json.",
+        "[integration] In the stale fixture where the placeholder was replaced before the sweep by a new 0444 empty file created under a temp name and renamed over the path (the test asserts the two inodes differ), the first wrap leaves the file on disk.",
+        "[integration] In the stale fixture with one byte written to <cwd>/.zprofile, the first wrap leaves the file on disk with its content.",
+        "[integration] In the stale fixture where proc.mountinfo also replaces <cwd>/.zprofile with a new 0444 empty file (a different inode) when it is called, the first wrap leaves that new file on disk (the identity re-check right before removal).",
+        "[integration] In the stale fixture with the injected mountinfo listing a mount at <cwd>/.zprofile, the first wrap leaves the file on disk and keeps that entry in <ledgerDir>/999999.json.",
+        "[integration] In the stale fixture with proc.mountinfo throwing an error with code EACCES for the one pid, the first wrap removes nothing and leaves <ledgerDir>/999999.json byte for byte unchanged.",
+        "[integration] In the stale fixture with a second listed pid whose proc.mountinfo throws code ENOENT, the first wrap still removes <cwd>/.zprofile.",
+        "[integration] In the stale fixture with a second listed pid whose realUid is another uid, proc.mountinfo is never called for that pid.",
+        "[integration] In the stale fixture with two same-uid pids sharing one mountNs value, proc.mountinfo is called once.",
+        "[integration] In the stale fixture with isProcessAlive(999999) true and startTicks(999999) returning 5, the first wrap leaves the file and the ledger untouched.",
+        "[integration] In the stale fixture with isProcessAlive(999999) true and startTicks(999999) returning 6 (pid reuse), the first wrap removes the placeholder.",
+        "[integration] In the stale fixture with isProcessAlive(999999) true and startTicks(999999) throwing code EACCES, the first wrap leaves the file and the ledger untouched.",
+        "[integration] In the stale fixture with the ledger's bootId 'boot-B', the first wrap removes the placeholder although isProcessAlive reports 999999 alive.",
+        "[integration] An empty placeholder directory recorded with kind 'dir' is removed by the sweep; the same directory holding one file is left on disk.",
+        "[integration] A pending entry (no ino) in a dead owner's ledger is dropped and its placeholder-shaped path is left on disk.",
+        "[integration] The stale fixture's ledger with mode 0644 is left on disk byte for byte and <cwd>/.zprofile is left on disk.",
+        "[integration] In the stale fixture extended with a second identity-matching, unmounted placeholder at <cwd>/.bashrc, when _placeholderDeps.remove throws only for <cwd>/.zprofile, <cwd>/.zprofile stays and its entry stays in the rewritten ledger, while <cwd>/.bashrc is removed by the same sweep.",
+        "[integration] In the stale fixture with the ledger's lock file held by the test and lockTimeoutMs 50, the first wrap resolves and leaves the file and the ledger untouched.",
+        "[integration] In the stale fixture where the ledger file is deleted by isProcessAlive when it is called (a concurrent sweep), the first wrap resolves and <cwd>/.zprofile stays, without logging an error for the disappeared ledger.",
+        "[integration] With _srtBackendDeps.sweep replaced by a function that throws, wrap resolves ['true'], with the initialization failure logged at warn.",
+        "[integration] With _srtBackendDeps.sweep replaced by a counting function, three wrap calls on one backend call it once, and a wrap after backend.reset() calls it a second time.",
+        "[integration] When the live mount set is unknown because a proc reader throws EACCES, the sweep emits one debug log.",
+        "[integration] When the identity re-check immediately before removal finds a replacement inode, the dead owner's ledger no longer retains that entry."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "security",
+        "cleanup",
+        "concurrency"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Destructive cross-process cleanup combines inode provenance, PID reuse, boot identity, lock contention and live mount namespaces; mistakes can remove user data or detach sandbox deny mounts.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
+        "packages/nax-agent/src/sandbox/placeholder-paths.ts",
+        "packages/nax-agent/src/internal/path-file-lock.ts",
+        "packages/nax-agent/src/sandbox/srt-backend.ts",
+        "packages/nax-agent/src/internal/realpath.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-sweep.ts",
+        "packages/nax-agent/test/unit/sandbox/placeholder-sweep.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When startTicks(999999) throws ENOENT for an owner otherwise reported alive, the first backend wrap removes its identity-matching unmounted placeholder.",
+        "When a listed same-uid process disappears with ESRCH during proc inspection, the sweep can still remove an unrelated stale placeholder.",
+        "When the ledger directory is absent, sweepStalePlaceholders resolves without creating it.",
+        "When a trusted dead-owner ledger has malformed identity fields on an entry, the sweep drops that entry without removing its path.",
+        "When the sweep removes multiple stale placeholders, it emits one info log 'sandbox: removed stale placeholders' whose removed array contains those paths."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/sandbox/srt-backend.ts",
+          "reason": "`_srtBackendDeps` gains `sweep`; `initialize` runs it once on Linux before `SandboxManager.initialize` and catches any error from it."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "185d1eb68f9afca55a042499a49a0527b16aa3e8"
+    },
+    {
+      "id": "US-005",
+      "title": "Protect the active ledger directory in sandbox policies",
+      "description": "**Goal** — Deny sandboxed writes to the ledger directory exactly when the Linux process ledger is enabled.\n\n**Motivation** — The user's safety requirement (2026-11-24): cleanup must never remove a user's own file.\n\n**Approach** — Implement the policy integration and helper design verbatim.\n\n- `SandboxPolicyInput` and `buildSandboxPolicy` (`packages/nax-agent/src/sandbox/policy-builder.ts`).\n  - Target: `SandboxPolicyInput` gains `readonly placeholderLedgerDir?: string`; when present, `buildSandboxPolicy` appends it to `denyWrite` (after `trustStoreFile`). `resolveSessionSandbox`'s `policyFor` (`packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts`) passes `placeholderLedgerDirForPolicy()` (US-005) when it returns a path.\n\n### Ledger directory deny (US-005)\n`placeholderLedgerDirForPolicy(): string | undefined` (`placeholder-ledger.ts`) returns `ledgerDir()` only when `placeholderLedger()` is defined, so the deny exists exactly when a ledger does (never on darwin, never when the ledger is disabled).\n\nUse buildSandboxPolicy's existing literal()/realOrRaw normalization, preserve deny order after trustStoreFile and omit the optional input completely when no helper path is returned. The ledger must already have created its 0700 directory before policy application. If ledgerDir(), bootId() or startTicks(process.pid) throws, no ledger, no deny, wrapping proceeds; one debug log `sandbox: placeholder ledger disabled` belongs to the existing ledger implementation. Do not change the resolved permission mode or any existing temp, git, credential or project-state denies.\n\n**Scope** — In: the helper in placeholder-ledger.ts, the optional input and deny in policy-builder.ts, conditional passage from resolveSessionSandbox.policyFor and additions to the existing policy-builder and coding-tool-sandbox tests. Out: backend recording (US-003), sweep (US-004), staging (US-006) and excludes (US-007). macOS and every non-Linux platform: seatbelt creates no placeholders; no ledger, sweep, deny or exclude runs there.\n\n**Interface** — `readonly placeholderLedgerDir?: string`; `placeholderLedgerDirForPolicy(): string | undefined`; `buildSandboxPolicy`; `resolveSessionSandbox`'s `policyFor`. For all resolver criteria, keep the sandbox enabled and available and use real temp ledger directories; vary only the platform or throwing ledger prerequisite named by the AC. Exercise the real helper through resolveSessionSandbox, assert the policy actually carries or omits realOrRaw(D), and retain the old denyWrite fixture unchanged when the new input is absent. Follow strict three-session security TDD.",
+      "acceptanceCriteria": [
+        "[integration] resolveSessionSandbox with an available sandbox, _placeholderDeps.platform returning 'linux' and ledgerDir returning a temp path D yields a policy whose denyWrite includes realOrRaw(D).",
+        "[integration] With _placeholderDeps.platform returning 'darwin', the policy's denyWrite omits realOrRaw(D).",
+        "[integration] With bootId() throwing (ledger disabled), the policy is still built and its denyWrite omits realOrRaw(D).",
+        "[unit] buildSandboxPolicy with placeholderLedgerDir absent returns the same denyWrite as before the change for the existing policy-builder fixture.",
+        "[integration] When ledgerDir() or startTicks(process.pid) throws and disables the ledger, resolveSessionSandbox still builds a policy whose denyWrite omits the injected ledger directory."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "security",
+        "policy"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "An additive optional policy field spans three existing modules and directly changes sandbox write access to trusted cleanup metadata; the security override requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
+        "packages/nax-agent/src/sandbox/policy-builder.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts",
+        "packages/nax-agent/test/unit/sandbox/policy-builder.test.ts",
+        "packages/nax-agent/test/unit/coding-tools/coding-tool-sandbox.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/sandbox/policy-builder.ts",
+          "reason": "`SandboxPolicyInput` gains optional `placeholderLedgerDir`, appended to `denyWrite` when present; a policy built without it is unchanged."
+        },
+        {
+          "path": "packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts",
+          "reason": "`policyFor` passes `placeholderLedgerDir` when `placeholderLedgerDirForPolicy()` returns a path."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4a7dd2a1b6199ad61e2505d9be5af8cbc2cdc97b"
+    },
+    {
+      "id": "US-006",
+      "title": "Exclude untracked placeholder files from shared staging",
+      "description": "**Goal** — Prevent broad nax staging and GitCommit from adding untracked placeholder-shaped files at mandatory or trusted-ledger paths.\n\n**Motivation** — A placeholder present at that moment would be committed as an empty `.mcp.json`, `.gitmodules`, `.claude/settings.json` or `.bashrc`.\n\n**Approach** — Implement the staging design verbatim.\n\n### Staging guard (US-006)\n`stagingPlaceholderPaths(cwd, trackedPaths): string[]` (`packages/nax-agent/src/sandbox/staging-placeholders.ts`, synchronous) returns paths relative to `cwd`:\n\n- Sources: `SRT_MANDATORY_DENY_FILES` resolved against `cwd`, plus every entry `path` (pending or identified) of every ledger in `_placeholderDeps.ledgerDir()` that `readLedgerFile` accepts, when the path is inside `cwd`, whatever the owner's state.\n- Filter: `placeholderIdentity(path)` is a `file` identity, and the path relative to `cwd` is not in `trackedPaths`.\n- When `ledgerDir()` throws or the directory cannot be read, only the mandatory names are used. When `lstat` of a source path fails, that path is not returned.\n\n- `gitlinkSafeAdd(git, cwd, opts)` (`packages/nax-agent/src/internal/git-add.ts`).\n  - Target: also appends `:(exclude,literal)<rel>` for every path in `stagingPlaceholderPaths(cwd, trackedPaths)` (US-006), where `trackedPaths` are the paths the existing `ls-files --stage` call printed.\n\n`gitlinkSafeAdd` appends `:(exclude,literal)` pathspecs for `stagingPlaceholderPaths(cwd, trackedPaths)` after the gitlink excludes; an argv for a tree with no placeholder is unchanged, because the list is empty there. Derive every tracked path from the existing NUL-delimited stage listing, not just mode-160000 entries, and retain its existing failure/timeout handling and update-index gitlink restaging. The staging helper reads shared _placeholderDeps and readLedgerFile; invalid/untrusted ledgers are ignored, and directory-read failure cannot disable mandatory-name filtering. No live-owner check belongs in this staging guard.\n\nExisting GitCommit uses gitlinkSafeAdd after protectedPaths filtering; exercise that real tool without bypassing its existing guard. Other broad callers (auto-commit, finish and review snapshots) already go through the helper and require no source changes in nax.\n\n**Scope** — In: staging-placeholders.ts, shared git-add.ts integration, its new named real-repository test file and additions to existing git-add/GitCommit tests. Out: placeholder cleanup (US-004), policy changes (US-005) and git excludes (US-007). US-006 only: placeholder directories are not handled by the staging guard, because git never stages an empty directory.\n\n**Interface** — `stagingPlaceholderPaths(cwd, trackedPaths): string[]` is synchronous; `gitlinkSafeAdd(git, cwd, opts)` retains the existing contract and adds `:(exclude,literal)<rel>` excludes. Test real temporary repositories with gitWithTimeout, including a committed .gitmodules modification, a writable empty mandatory name, an arbitrary read-only empty file, private versus 0644 ledgers, inaccessible ledger fallback and GitCommit using testProtectedPaths. For every gitlinkSafeAdd criterion asserting that notes.md is staged, create notes.md in that repository before invoking the helper; the helper-only empty-directory criterion keeps its separately stated fixture. Demonstrate regressions against old code; retain the existing nested-repo filter-driver protection tests.",
+      "acceptanceCriteria": [
+        "[integration] In a temp git repository with an untracked 0444 empty .mcp.json at the root and an untracked notes.md, gitlinkSafeAdd(gitWithTimeout, root, { flags: ['-A'] }) stages notes.md and leaves .mcp.json untracked.",
+        "[integration] The same repository with .mcp.json as an untracked 0644 empty file stages .mcp.json.",
+        "[integration] An untracked 0444 empty .claude/settings.json that is the path of an entry in a trusted ledger in the injected ledger directory is left untracked by gitlinkSafeAdd with -A.",
+        "[integration] An untracked 0444 empty docs/x listed only in a ledger file with mode 0644 is staged.",
+        "[integration] An untracked 0444 empty docs/readme.txt that is neither a mandatory-deny name nor a ledger entry is staged.",
+        "[integration] A committed .gitmodules that is changed to a 0444 empty file is staged as that change.",
+        "[integration] With _placeholderDeps.ledgerDir throwing, gitlinkSafeAdd with -A still leaves an untracked 0444 empty .mcp.json untracked and stages notes.md.",
+        "[unit] stagingPlaceholderPaths(cwd, []) returns ['.mcp.json'] for a directory holding only a 0444 empty .mcp.json, and [] for an empty directory.",
+        "[integration] The GitCommit tool run with protectedPaths from testProtectedPaths in a temp repository, asked to commit .mcp.json (a 0444 empty untracked file) and notes.md, creates a commit that holds notes.md and not .mcp.json.",
+        "[integration] When the injected ledger directory cannot be read, gitlinkSafeAdd with -A still excludes the untracked 0444 empty mandatory .mcp.json and stages unrelated notes.md."
+      ],
+      "tags": [
+        "sandbox",
+        "git",
+        "security",
+        "staging"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One synchronous path scanner extends the existing gitlinkSafeAdd adapter and reaches GitCommit through its existing call site; strict TDD protects the hardened unsandboxed staging guard while preserving tracked files and gitlink exclusions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/git-add.ts",
+        "packages/nax-agent/src/sandbox/placeholder-ledger.ts",
+        "packages/nax-agent/test/unit/internal/git-add.test.ts",
+        "packages/nax-agent/src/tools/git-commit.ts",
+        "packages/nax-agent/test/unit/tools/git-commit.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/staging-placeholders.ts",
+        "packages/nax-agent/test/unit/sandbox/staging-placeholders.test.ts"
+      ],
+      "suggestedCriteria": [
+        "stagingPlaceholderPaths ignores a trusted ledger's path outside cwd even when that path is a placeholder-shaped file.",
+        "stagingPlaceholderPaths omits a mandatory-name symlink to an empty read-only file.",
+        "gitlinkSafeAdd emits the existing add argv unchanged when stagingPlaceholderPaths returns no paths.",
+        "When a source path disappears before lstat, stagingPlaceholderPaths omits it without throwing."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/internal/git-add.ts",
+          "reason": "`gitlinkSafeAdd` appends `:(exclude,literal)` pathspecs for `stagingPlaceholderPaths(cwd, trackedPaths)` after the gitlink excludes; an argv for a tree with no placeholder is unchanged, because the list is empty there."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "50fd8b70b210f245deac733c423e912e16b96cfe"
+    },
+    {
+      "id": "US-007",
+      "title": "Append Linux shell-placeholder git excludes at repository roots",
+      "description": "**Goal** — Hide six untracked shell-startup mount-point names through additive local root-anchored excludes during Linux backend initialization.\n\n**Motivation** — So placeholders must stay on disk while any sandboxed command, such as a background `Bash` task, still runs.\n\n**Approach** — Implement the git exclude design verbatim.\n\n### git excludes (US-007)\n`ensurePlaceholderExcludes(cwd)` (`packages/nax-agent/src/sandbox/placeholder-excludes.ts`):\n\n- Skipped when `cwd` is `_placeholderDeps.homedir()` or `/`, when `resolveGitLayout(cwd)` is `none`, or when `gitWithTimeout([\"rev-parse\", \"--show-toplevel\"], cwd, ...)` does not print `cwd` (compared after `realOrRaw`): root-anchored patterns only match at the top level.\n- The info dir is `<commonDir>/info` for a worktree and `<gitDir>/info` otherwise; it is created when absent. Under `withPathFileLock(<info>/exclude)`, it appends any of `PLACEHOLDER_EXCLUDE_ENTRIES` not already present as an exact trimmed line, under the header `# nax: Linux sandbox mount points`. A file whose content does not end with a newline gets one first. Existing lines are never rewritten or reordered.\n- `PLACEHOLDER_EXCLUDE_ENTRIES` = `/.bashrc`, `/.bash_profile`, `/.profile`, `/.zshrc`, `/.zprofile`, `/.ripgreprc`. `.gitconfig`, `.gitmodules`, `.mcp.json`, `.vscode`, `.idea` and `.claude` are deliberately absent, because repositories commit them.\n\nIntegration target: `_srtBackendDeps` gains `ensureExcludes: ensurePlaceholderExcludes` (US-007). When `platform()` is `\"linux\"`, `initialize` runs `deps.sweep()` and then `deps.ensureExcludes(deps.cwd())` before `SandboxManager.initialize`; an error from either is caught and logged at warn, never thrown. They run once per initialize (again after a `reset`). On every other platform none of this runs and srt is called exactly as before. Catch the two steps independently so a failed sweep cannot suppress excludes.\n\nModify `packages/nax-agent/test/preload.ts`: replaces `_srtBackendDeps.ensureExcludes` with a no-op for the whole suite, so the existing srt-backend and allow-local-binding tests on Linux never write the real checkout's git exclude file; the US-007 tests restore the real function themselves. Read the additive, line-exact locked update precedent in packages/nax/src/worktree/manager.ts but do not import nax code into nax-agent.\n\nFailure handling: `ensurePlaceholderExcludes` cannot write the exclude file → One `warn` log `sandbox: could not update git excludes`; nothing else changes. The excludes step throws → Caught in `initialize`, logged at warn, and `wrap` proceeds.\n\nUnless an AC explicitly replaces the ensureExcludes seam to test failure handling, each AC triggers the step through the first `backend.wrap(req)` of a fresh backend, with `_srtBackendDeps.ensureExcludes` set to the real `ensurePlaceholderExcludes` and `_placeholderDeps.homedir` returning a separate temp directory. Use the shared Linux backend fixture and real git repositories, including a linked worktree and real git status assertions.\n\n**Scope** — In: placeholder-excludes.ts, constant, locked additive write, initialize seam and preload isolation plus the named consumer tests. Out: deleting placeholders (US-004), policy protection (US-005), staging exclusions (US-006) and reserved-name validation (US-008). macOS and every non-Linux platform: seatbelt creates no placeholders; no ledger, sweep, deny or exclude runs there. US-007 only: entries written to `.git/info/exclude` are never removed by nax; in a repository that tracks dotfiles, a new untracked `.zshrc` or `.profile` at the root is hidden from `git status` once the entries exist.\n\n**Interface** — `ensurePlaceholderExcludes(cwd)`; `PLACEHOLDER_EXCLUDE_ENTRIES`; `_srtBackendDeps.ensureExcludes`; `resolveGitLayout(root): Promise<GitLayout>` (`none` / `main { gitDir }` / `worktree { gitDir, commonDir }`); `gitWithTimeout(args, cwd, timeoutMs)`; `withPathFileLock(targetPath, operation, { timeoutMs })`. Write failing behavior tests first for the additive update and backend initialization wiring, then implement them; preserve user exclude bytes and line ordering except for the required newline and appended section.",
+      "acceptanceCriteria": [
+        "[integration] With cwd a fresh temp git repository, .git/info/exclude ends with the header '# nax: Linux sandbox mount points' followed by /.bashrc, /.bash_profile, /.profile, /.zshrc, /.zprofile, /.ripgreprc, one per line.",
+        "[integration] An exclude file holding user lines and /.profile, with no trailing newline, keeps every existing line unchanged and in order, and gains the header and the five missing entries on new lines.",
+        "[integration] A second backend in the same repository leaves the exclude file byte for byte unchanged.",
+        "[integration] In a linked worktree, the entries are written to <commonDir>/info/exclude.",
+        "[integration] With cwd a subdirectory of the repository, the exclude file is not changed.",
+        "[integration] With cwd equal to the injected home directory, the exclude file is not changed.",
+        "[integration] With cwd a directory that is not a git repository, no exclude file is created.",
+        "[integration] After the step, git status --porcelain lists no untracked .bashrc at the root, and still lists untracked .gitconfig and .mcp.json files created there.",
+        "[integration] When .git/info/exclude is a directory, wrap resolves ['true'] and 'sandbox: could not update git excludes' is logged at warn.",
+        "[integration] With _srtBackendDeps.ensureExcludes replaced by a function that throws, wrap resolves ['true'].",
+        "[integration] When _srtBackendDeps.ensureExcludes throws during Linux initialize, initialize logs that failure at warn."
+      ],
+      "tags": [
+        "sandbox",
+        "linux",
+        "git",
+        "excludes"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An additive exclude-file updater reuses existing git-layout, hardened git and path-lock helpers with a small backend/preload seam change; it changes local ignore visibility, not permissions or session contracts, so failing behavior tests in one session suffice.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/policy-inputs.ts",
+        "packages/nax-agent/src/internal/git-exec.ts",
+        "packages/nax-agent/src/sandbox/srt-backend.ts",
+        "packages/nax-agent/test/preload.ts",
+        "packages/nax/src/worktree/manager.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/placeholder-excludes.ts",
+        "packages/nax-agent/test/unit/sandbox/placeholder-excludes.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When cwd is '/', ensurePlaceholderExcludes leaves the filesystem unchanged.",
+        "Three wraps on one Linux backend call ensureExcludes once, and a wrap after reset calls it again.",
+        "On darwin, backend.wrap never calls the ensureExcludes seam.",
+        "When the sweep seam throws, Linux backend initialization still calls ensureExcludes before SandboxManager.initialize."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/sandbox/srt-backend.ts",
+          "reason": "`_srtBackendDeps` gains `ensureExcludes`; `initialize` runs it once on Linux after the sweep and catches any error from it."
+        },
+        {
+          "path": "packages/nax-agent/test/preload.ts",
+          "reason": "replaces `_srtBackendDeps.ensureExcludes` with a no-op for the whole suite, so the existing srt-backend and allow-local-binding tests on Linux never write the real checkout's git exclude file; the US-007 tests restore the real function themselves."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a7c8c2ebcbc95883fab74ef22c3fabd9fc13f5bc"
+    },
+    {
+      "id": "US-008",
+      "title": "Reserve sandbox as a global directory name",
+      "description": "**Goal** — Reserve the sandbox project name so project config cannot collide with global placeholder-ledger storage.\n\n**Motivation** — The user's safety requirement (2026-11-24): cleanup must never remove a user's own file.\n\n**Approach** — Implement the reserved-name target verbatim.\n\n- `RESERVED_PROJECT_NAMES` (`packages/nax/src/config/paths/index.ts`).\n  - Target: the same nine followed by `sandbox`, with a doc-comment line `sandbox — packages/nax-agent/src/sandbox/placeholder-ledger.ts (placeholder ledgers)`.\n\n`packages/nax/src/config/paths/index.ts` — `RESERVED_PROJECT_NAMES` gains `sandbox` after `_archive`, and the doc-comment list gains its owner line.\n`packages/nax/test/unit/config/reserved-project-names.test.ts` — the \"lists every global directory nax owns, in order\" assertion becomes the ten names `global`, `profiles`, `runs`, `events`, `plugins`, `acp`, `memory`, `hooks`, `_archive`, `sandbox`.\n\nUse the existing shared list consumed by validateProjectName and NaxConfigSchema; do not create a second validation rule. The schema must report `name 'sandbox' is reserved` through its existing reserved-name mechanism.\n\n**Scope** — In: the shared constant, owner comment and existing reserved-name tests. Out: all sandbox implementation and git changes (US-001 through US-007), config renaming or migration automation. Reserving `sandbox` makes an existing project config named `sandbox` fail validation, like the other reserved names; such a project must be renamed.\n\n**Interface** — `RESERVED_PROJECT_NAMES` retains `readonly string[]` with the existing nine entries in unchanged order followed by `sandbox`; existing project-name validators remain the consumers. Add the failing order and config-validation regressions first, then change the shared list; no new files are required.",
+      "acceptanceCriteria": [
+        "[unit] RESERVED_PROJECT_NAMES equals the ten names global, profiles, runs, events, plugins, acp, memory, hooks, _archive, sandbox, in that order.",
+        "[unit] NaxConfigSchema.safeParse({ name: 'sandbox' }) fails with an issue on the name path whose message is \"name 'sandbox' is reserved\", using the same reserved-name error the other reserved names produce."
+      ],
+      "tags": [
+        "config",
+        "validation",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One additive shared-list entry changes existing validation behavior without new abstractions or dependencies; the existing test file proves list order and the reserved-name error.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/cli/init.ts",
+        "packages/nax/test/unit/config/reserved-project-names.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/paths/index.ts",
+          "reason": "`RESERVED_PROJECT_NAMES` gains `sandbox` after `_archive`, and the doc-comment list gains its owner line."
+        },
+        {
+          "path": "packages/nax/test/unit/config/reserved-project-names.test.ts",
+          "reason": "the \"lists every global directory nax owns, in order\" assertion becomes the ten names `global`, `profiles`, `runs`, `events`, `plugins`, `acp`, `memory`, `hooks`, `_archive`, `sandbox`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "020f9de1b7201ffb0f5d8afd123a67745fa79325"
+    }
+  ],
+  "analysis": "Goal and completion: close #2986 by recording Linux srt/bwrap placeholders before any destructive cleanup, reclaiming only proven stale identities without live same-user mounts, keeping untracked placeholder files out of broad staging, and hiding six shell-startup names through local git excludes. Implement exactly US-001 through US-008 with the specified dependency graph; no srt upgrade or chat signal changes. Existing code is an enhancement, not greenfield. Discovery used direct reads and text search because codebase-memory MCP tools are unavailable in this session. The authoritative feature source exists at .nax/features/sandbox-placeholders/spec.md:1. No implementation or test execution is part of this PRD-drafting task.\n\nArchitecture and current integration: packages/nax-agent/src/sandbox/srt-backend.ts:38 currently exposes only load/platform/mkdir; createSrtBackend at :79 caches initialization in a Promise at :83, wraps at :103, calls cleanupAfterCommand at :121, and resets loaded/initialized at :129. Keep that one initialization boundary and srt's process-wide activeSandboxCount; never add a second cleanup gate or eagerly unlink a live placeholder. Add cwd in US-003, sweep in US-004, and ensureExcludes in US-007. Candidate discovery must use deps.cwd() (process cwd), not req.cwd; the latter remains the command execution directory passed to srt. On Linux, initialize must await sweep, then ensureExcludes, then SandboxManager.initialize, with independent nonfatal warn handling so a failed sweep does not suppress excludes. Each runs once per initialize and repeats after reset. On other platforms retain the existing srt behavior, including the darwin mkdir. packages/nax-agent/src/sandbox/types.ts:50 defines SandboxWrapRequest and :58 defines SandboxBackend; their signatures stay unchanged. packages/nax-agent/src/sandbox/launcher.ts:172 wraps before the execution try/finally, and :216 calls commandFinished in finally; a throwing wrap must not acquire an extra cleanup call. It is read-only context, not a target. packages/nax-agent/src/sandbox/registry.ts:23 caches the backend, :31 caches its probe, :62 resets the backend, and :68 demonstrates resetting process singleton state for tests.\n\nUS-001 foundations: packages/nax-agent/src/sandbox/defaults.ts:1 currently holds cache, credential and macOS tmp constants; append independent mandatory-deny constants without altering those lists. packages/nax-agent/package.json:41 pins @anthropic-ai/sandbox-runtime to 0.0.77. Compare the new lists against that version's sandbox-utils exports in tests, without introducing another shipped runtime importer; srt-backend.ts:1 explicitly documents the single-importer gate. packages/nax-agent/src/sandbox/session-tmp.ts:25 uses synchronous node:fs, and :37 demonstrates an injectable deps object, so synchronous identity/proc/ledger operations fit this Node library. Add placeholder-deps.ts and placeholder-paths.ts plus the two named tests. Candidate discovery must preserve ordering, map intermediate missing components, distinguish a .git pointer file from a directory, deduplicate .claude, omit existing user files and require the deepest existing ancestor to be in a write root. lstat must reject symlinks, nonempty files, writable files, extra hard links and nonempty directories. /proc stat parsing must find the last ')' before counting field 22; mountinfo field 5 must decode the specified octal escapes. Real proc ownership must read the real Uid value from status, not /proc directory ownership. The production defaults may throw; do not silently equate unreadability with process death.\n\nUS-002 ledger: placeholder-ledger.ts does not exist today. Create a process singleton with pending and identified entries, synchronous recordAbsent/observe/prune, 0700 directory creation before wrapping, atomic same-directory .<pid>.tmp to <pid>.json writes at 0600, one exit callback and resettable test state. Credentials are injected by the host: packages/nax-agent/src/infra/credentials-config.ts:24 throws CREDENTIALS_NOT_CONFIGURED when unset; resolve the configDir lazily, not at module import. The absence of credentials, boot id or process start ticks disables bookkeeping nonfatally, with the specified debug log. readLedgerFile is the sole trust-checking reader for sweep and staging. Validate regular-file ownership, private permission bits, version, filename/pid agreement and absolute normalized entry paths; malformed identity fields cannot authorize removal. Warn on invalid ledgers without changing them. Track write-warning suppression separately from retries; a failed first write cannot disable later attempts. Exit deletes the ledger only, not placeholders, leaving srt responsible for live cleanup. The new _placeholderDeps is deliberately module-local to this feature and is not re-exported from src/internal.ts, as specified. Do not add these helpers to the public package entry or expose underscore names there.\n\nUS-003 lifecycle: wire recordAbsent and observe before wrapWithSandboxArgv, observe before cleanupAfterCommand, and prune after cleanup and after reset. Observing before cleanup is essential because srt may delete the last placeholder immediately. Existing pre-wrap .bashrc content must never become ledger entries. Preserve pending entries for commands still starting. Tests at packages/nax-agent/test/unit/sandbox/srt-backend.test.ts:41 onward already assert cleanup on every finished command, overlap deferral, wrap failure and commandFinished before wrap; extend rather than replace those regression anchors. The tests use a narrowed SandboxManager slice, so avoid unsafe module casts.\n\nUS-004 stale cleanup: packages/nax-agent/src/internal/process-alive.ts:43 only ESRCH proves a process absent; reuse it through _placeholderDeps. bootId plus startTicks prevent stale boot/PID reuse mistakes. packages/nax-agent/src/internal/path-file-lock.ts:26 wraps asynchronous withFileLock and locks <target>.lock; use it unchanged with the configurable 2000ms timeout, re-read inside the operation, and skip lock contention nonfatally. Sweeping and excludes can be async for locks/git, while identity re-check plus remove must remain synchronous without an intervening await. Read a same-real-UID live mount set lazily once per sweep; deduplicate namespaces, tolerate only ENOENT/ESRCH process departure and treat every other proc error as unknown. Unknown must preserve original ledger bytes, not rewrite filtered entries. Resolve the parent with packages/nax-agent/src/internal/realpath.ts:93 realOrRaw for mount comparison, retaining lstat's no-follow identity semantics for the leaf. :105 isInside supplies symlink-aware containment precedent. Remove with unlink/rmdir only, never recursive removal. Keep mounted paths and failed removals for retry, discard pending/mismatched/malformed records without touching disk, and log removed paths once. Tests must drive the real sweep through a fresh backend's first wrap using a fake proc reader and real temp filesystem; no live bwrap or kernel mount dependency is needed.\n\nUS-005 policy protection: packages/nax-agent/src/sandbox/policy-builder.ts:27 declares SandboxPolicyInput, :78 normalizes all literal policy paths with realOrRaw, :90 protects git config/hooks/info, and :202 assembles denyWrite with trustStoreFile at :208. Add the optional placeholderLedgerDir immediately after trustStoreFile in both input grouping and deny composition. packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts:97 resolves session sandbox availability and :140 builds policyFor repeatedly; pass the helper result only when defined, preserving all unavailable/disabled, tmp-confinement, trust-store and per-command policy behavior. The helper must create/obtain the ledger first so its directory exists before the deny is applied. Tests already inspect real policies at packages/nax-agent/test/unit/coding-tools/coding-tool-sandbox.test.ts:138 and use realOrRaw-normalized temp paths at packages/nax-agent/test/unit/sandbox/policy-builder.test.ts:21. SandboxPolicyInput and buildSandboxPolicy are already exported from packages/nax-agent/src/index.ts:315 and :345; the change is additive, not a new root-export name. Do not expand the public API to publish the new helpers.\n\nUS-006 staging impact: packages/nax-agent/src/internal/git-add.ts:43 parses mode-160000 records and :53 performs ls-files --stage -z with requested pathspecs, fails closed on listing failure, appends literal gitlink excludes and restages gitlinks through update-index. Derive all tracked paths from the same tab-delimited, NUL-separated listing; do not issue another tracked-file command, split records on whitespace, or mistake only gitlinks for tracked paths. Append placeholder excludes after gitlink excludes and keep the argv identical when no placeholder exists. Never suppress legitimate tracked-file modifications (especially .gitmodules), arbitrary empty read-only files or writable empty mandatory names. Trusted ledger paths must be contained within cwd, and fallback still checks mandatory files when ledger lookup/listing fails. Existing nested-repository filter-driver safety tests at packages/nax-agent/test/unit/internal/git-add.test.ts:94 must retain their protections. The shared helper is already exported internally and used by auto-commit at packages/nax/src/utils/git.ts:298, finish at packages/nax/src/finish/commit.ts:91, review tree snapshots at packages/nax/src/review/fix-review/tree-snapshot/index.ts:174, and GitCommit at packages/nax-agent/src/tools/git-commit.ts:210. Therefore those broad staging consumers gain the guard without cross-package source edits. GitCommit first applies its protectedPaths filter (:175 onward); retain it and use the existing testProtectedPaths fixture from packages/nax-agent/test/unit/tools/git-commit.test.ts:66 for the real commit assertion.\n\nUS-007 excludes: packages/nax-agent/src/sandbox/policy-inputs.ts:51 already resolves main versus linked-worktree git directories; use commonDir/info for worktrees. packages/nax-agent/src/internal/git-exec.ts:86 provides hardened gitWithTimeout and routes all spawns through the runtime slot; use it for --show-toplevel rather than raw child_process. packages/nax/src/worktree/manager.ts:138 is the lock-protected, exact-trimmed-line exclude update precedent, with mkdir before lock at :151 and exact matching at :165; read it for the pattern but do not import across packages, copy its retired-line deletion, or rewrite existing lines. New excludes are purely additive and root-anchored, must skip home, /, nonrepos and repo subdirectories, and intentionally omit committed config names. packages/nax-agent/test/preload.ts:16 provisions isolated global config and :43 configures credentials; it does not currently protect the real checkout's excludes. Add the specified process-wide no-op ensureExcludes seam there; US-007 tests explicitly install the real function and restore state. Older backend and allow-local-binding tests can initialize Linux srt from process cwd, so this protection prevents accidental checkout mutation. Consumer ACs must reach the real function through backend.wrap, not merely assert stub invocation.\n\nUS-008 config impact/migration: packages/nax/src/config/paths/index.ts:67 documents global reserved-directory ownership and :94 holds the existing nine names. Append sandbox after _archive and add the exact owner comment. The list already feeds init validation at packages/nax/src/cli/init.ts:56 and the schema reserved-name error at packages/nax/src/config/schemas.ts:105; migration commands use that same validation. packages/nax/test/unit/config/reserved-project-names.test.ts:20 asserts list order and :61 covers schema errors; update the ten-name assertion and add sandbox validation there. This intentionally breaks an existing project named sandbox; it must be renamed, with no automatic config migration or directory move. Other project names and caller APIs stay compatible. Existing unledgered leftovers cannot safely be adopted/deleted by nax and remain untouched. Exclude entries persist once written. No package versions, dependency pins, generated agent instructions or signal handlers should change.\n\nTesting and delivery constraints: use Node-compatible ESM shipped code in nax-agent, #src imports or explicit .ts relative extensions, synchronous node:fs for identity/ledger/exit callbacks, and existing runtime/git/locking ports rather than new direct spawns. Respect the package dependency boundary; only US-008 touches nax. New source/helpers should stay feature-local, avoid import cycles between deps, parsers and consumers, and preserve existing git hardening and permission SSOT. Read docs/architecture/ARCHITECTURE.md:1 and package instructions before implementation. Show regressions fail against old code, then implement them; use three-session-tdd for sandbox access-control and ledger-trust stories. Every consumer AC uses real temp files/repos. Fixture conventions: cwd is a real temp dir; inject _placeholderDeps.platform='linux', temp ledgerDir, bootId='boot-A', startTicks(process.pid)=100, current uid and an onExit recorder; reset the ledger singleton before each test. Backend fixtures additionally inject linux platform, cwd, and a narrowed srt module whose wrapWithSandboxArgv resolves {argv:['true'],env:{}}; writeRoots=[cwd]. Placeholder files are empty chmod 0444, directories empty. Restore every patched deps object and singleton; the only host-specific automated test is the explicitly Linux-only real /proc default check. Source test files are the spec-listed unit paths even where assertions are integration-level. Run scoped Bun test paths from the story package, never bare bun test or bun run nax. Build/typecheck/check:all are pipeline gates, not acceptance criteria. Coverage gates exist separately; do not run nax coverage inside NAX_SANDBOXED=1. The post-merge Linux live bwrap/proc check is explicitly manual and is not a delivery AC.\n\nRisk model: the primary risk is deleting user data or detaching another sandbox's deny mount. Preserve the absence-to-identity provenance, private trusted ledgers, boot/start identity, owner liveness, same-user mount checks, second identity check, and conservative unknown/error handling together. Secondary risks are filtered tracked config changes, altered gitlink safety, lost user excludes, wrong worktree common-dir writes, real checkout mutation in tests, singleton leakage and non-Linux regressions. The accepted pending-empty-directory and once-read mount-set races are retained exactly as exclusions rather than expanded scope. All failure-table rows are represented by behavioral criteria in their owning stories, including log levels, retry behavior and nonfatal initialization failures; the binding eight-story structure remains unchanged.\n\nRefine-pass audit: re-read all design/context/Creates/Modifies/Seams sections and all numbered acceptance criteria against the draft and the current backend, shared staging adapter, async lock, policy builder/resolver, preload, git-layout resolver and reserved-name tests. The 93 numbered spec criteria are preserved in their original stories and at their original ordinals: US-001 AC1-18, US-002 AC1-20, US-003 AC1-8, US-004 AC1-22, US-005 AC1-4, US-006 AC1-9, US-007 AC1-10, US-008 AC1-2. Their existing-file, same-error, same-denyWrite/as-before/existing-fixture, already-before-cleanup, unchanged-bytes, different-inode, ignored-name and non-Linux regression qualifiers remain intact. Additional failure-table criteria remain separate from the numbered inventory. Each story already has an observable negative path: malformed stat/shape rejection (001), ledger trust/write/exit failures (002), unconfigured/write-failing ledger wrapping (003), proc/removal/lock errors (004), disabled ledger policy (005), untrusted/unreadable ledgers (006), unwritable/throwing excludes (007), reserved config name (008). No speculative extra negative criterion was needed. All fourteen feature-level exclusions remain verbatim in outOfScope; the US-prefixed exclusions are retained at feature level because the spec actually locates them there, not beneath story acceptance criteria. Binding ids, workdirs and dependency arrays remain exactly unchanged; no nonexistent dependency or own-output context path was found. New-file inventories remain 4/2/0/2/0/2/2/0. Restored the spec-recommended read-only worktree manager context for US-007 at the expense of its redundant lock-helper context slot; this is not permission to import or modify nax from that story. Reduced utility/scanner/exclude routing to medium where existing ports make the implementation standard; retained strict TDD for identity/trust/access-control paths and expert routing for destructive mount-safe sweeping, while using tdd-simple for additive git visibility changes. Clarified US-007's real-function fixture exception for its deliberately throwing seam AC, made US-004 removal-error continuation observable using a second identified unmounted path, made US-008's reserved-name assertion concrete through NaxConfigSchema.safeParse while retaining its same-error regression anchor, and clarified fixture preconditions without changing the specified algorithms or consumer data flow. No implementation tests or executable JSON validation were run during this document-only audit.",
+  "outOfScope": [
+    "Placeholders stay visible on disk while any sandboxed command is running (for example a background `Bash` task); removing them then would detach a live sandbox's deny. Changing the deny mechanism (for example an overlay) is srt's, not nax's.",
+    "macOS and every non-Linux platform: seatbelt creates no placeholders; no ledger, sweep, deny or exclude runs there.",
+    "Upgrading `@anthropic-ai/sandbox-runtime` from 0.0.77 is not part of this feature.",
+    "The issue's earlier hypothesis that chat leaves placeholders on SIGHUP was disproved (`nax chat` already exits through `process.exit()` on SIGTERM and SIGHUP), so no signal-handling change is made.",
+    "A process that resolves srt's mandatory denies from a directory other than the project root (for example `nax chat -d <dir>` launched elsewhere) is not changed here.",
+    "Reserving `sandbox` makes an existing project config named `sandbox` fail validation, like the other reserved names; such a project must be renamed.",
+    "Confirming the real `/proc` readers against a live bwrap sandbox (for example that `realUid` and `mountinfo` of a sandboxed process are readable) is a manual Linux live check after merge, not an AC.",
+    "US-002 only: a process killed after a wrap and before any later `observe()` leaves only pending entries; those placeholders are not removed by the sweep (srt 0.0.77's own re-adoption still removes leftover files in the same cwd).",
+    "US-002 only: an empty directory that a user or editor creates at a recorded pending name, between a wrap and the next `observe()`, is indistinguishable from a bwrap placeholder directory; if the process is then killed and the directory is still empty at the next sweep, it is removed. Accepted: it is an empty directory at a protected name.",
+    "US-004 only: mounts held by processes of other users are not inspected; only processes whose real uid is the current uid are read.",
+    "US-004 only: the live mount set is read once per sweep; a sandbox of another process that starts between that read and the `remove` call is not re-checked.",
+    "US-004 only: the sweep runs at backend initialize; it does not run on a timer or at `nax` startup without a sandboxed command.",
+    "US-006 only: placeholder directories are not handled by the staging guard, because git never stages an empty directory.",
+    "US-007 only: entries written to `.git/info/exclude` are never removed by nax; in a repository that tracks dotfiles, a new untracked `.zshrc` or `.profile` at the root is hidden from `git status` once the entries exist."
+  ],
+  "routingProfile": "native-codex-ds"
+}
