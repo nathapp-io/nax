@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T13:40:45.362Z",
+  "updatedAt": "2026-11-25T13:55:25.150Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1067,14 +1067,17 @@
       "dependencies": [
         "US-014"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Asynchronous single-flight state, session suppression and non-blocking forwarding require temporal assertions. Use deferred cards/checks to prove save latency and warning isolation."
+        "reasoning": "Asynchronous single-flight state, session suppression and non-blocking forwarding require temporal assertions. Use deferred cards/checks to prove save latency and warning isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/close-confirm.ts",
@@ -1091,7 +1094,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3578cc5c2245970f07625860fa64b3e488be7706"
     },
     {
       "id": "US-018",
