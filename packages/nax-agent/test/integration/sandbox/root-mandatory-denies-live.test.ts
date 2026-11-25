@@ -98,4 +98,12 @@ describe.skipIf(!probe.available)(`#3038 mandatory denies at a root that is not 
       expect(existsSync(join(root, name))).toBe(false);
     }, 90_000);
   }
+
+  // With no `.claude/` at all the settings-file denies already cover the path, so
+  // the command dir is only reached when the project keeps a `.claude/` of its own.
+  test(".claude/commands/evil.md: denied under an existing .claude/ when the process cwd is elsewhere", async () => {
+    mkdirSync(join(root, ".claude"));
+    expect(await run(elsewhere, "mkdir -p .claude/commands && echo x > .claude/commands/evil.md")).toBe("DENIED");
+    expect(existsSync(join(root, ".claude", "commands", "evil.md"))).toBe(false);
+  }, 90_000);
 });
