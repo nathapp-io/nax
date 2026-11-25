@@ -91,7 +91,7 @@ describe("promptForConfirmation", () => {
       return true;
     };
 
-    const pending = promptForConfirmation("go?", "stderr");
+    const pending = promptForConfirmation("go?", { channel: "stderr" });
     h.emit("data", "y");
 
     expect(await pending).toBe(true);
@@ -241,5 +241,118 @@ describe("promptForConfirmation", () => {
     expect(h.listenerCount("data")).toBe(0);
     expect(h.listenerCount("end")).toBe(0);
     expect(h.listenerCount("error")).toBe(0);
+  });
+});
+
+// ─── the default-no question (B3) ────────────────────────────────────────────
+//
+// `nax memory compact` and `nax memory mirrors --prune` both advertise `[y/N]`, and both were
+// driven through this prompt's default-yes mode: it rendered a second, contradictory `[Y/n]`
+// suffix and resolved true for Enter and for any key that was not an `n`. A destructive question
+// needs the other shape — only an explicit yes may authorize it.
+
+describe("promptForConfirmation — defaultAnswer no", () => {
+  let original: typeof _confirmDeps.stdin;
+  let originalWrite: typeof _confirmDeps.write;
+  let originalExit: typeof _confirmDeps.exit;
+  let written: string[];
+  let exitCodes: number[];
+
+  beforeEach(() => {
+    original = _confirmDeps.stdin;
+    originalWrite = _confirmDeps.write;
+    originalExit = _confirmDeps.exit;
+    written = [];
+    exitCodes = [];
+    _confirmDeps.write = (text: string) => {
+      written.push(text);
+      return true;
+    };
+    _confirmDeps.exit = (code: number) => {
+      exitCodes.push(code);
+    };
+  });
+
+  afterEach(() => {
+    _confirmDeps.stdin = original;
+    _confirmDeps.write = originalWrite;
+    _confirmDeps.exit = originalExit;
+  });
+
+  /** One prompt asked under the default-no mode, and the key that answers it. */
+  async function ask(question: string, key: string): Promise<boolean> {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+    const pending = promptForConfirmation(question, { defaultAnswer: "no" });
+    h.emit("data", key);
+    return await pending;
+  }
+
+  test.each([
+    ["y", true],
+    ["Y", true],
+    ["y\r", true],
+    ["\r", false],
+    ["n", false],
+    ["N", false],
+    [" ", false],
+    ["\u001b", false],
+  ])("resolves %o as %o", async (key, expected) => {
+    expect(await ask("Apply? [y/N]", key)).toBe(expected);
+  });
+
+  test("renders one suffix: the caller's own [y/N], not a second [Y/n] beside it", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("Apply? [y/N]", { defaultAnswer: "no" });
+    h.emit("data", "y");
+    await pending;
+
+    expect(written.join("")).not.toContain("[Y/n]");
+    expect(written.join("").match(/\[y\/N\]/g)).toHaveLength(1);
+  });
+
+  test("appends [y/N] to a question that does not state a default itself", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("Remove 2 mirrors?", { defaultAnswer: "no" });
+    h.emit("data", "y");
+    await pending;
+
+    expect(written.join("")).toContain("Remove 2 mirrors? [y/N]");
+  });
+
+  test("the default-yes question keeps rendering [Y/n]", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("go?");
+    h.emit("data", "\r");
+    expect(await pending).toBe(true);
+
+    expect(written.join("")).toContain("go? [Y/n]");
+  });
+
+  test("refuses on a non-TTY instead of taking an unattended yes", async () => {
+    const h = makeStdin(false);
+    _confirmDeps.stdin = h.stdin;
+
+    expect(await promptForConfirmation("Apply? [y/N]", { defaultAnswer: "no" })).toBe(false);
+    expect(h.rawModeCalls).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  test("Ctrl+C still cancels and exits 130 rather than answering", async () => {
+    const h = makeStdin();
+    _confirmDeps.stdin = h.stdin;
+
+    const pending = promptForConfirmation("Apply? [y/N]", { defaultAnswer: "no" });
+    h.emit("data", ETX);
+
+    expect(await pending).toBe(false);
+    expect(exitCodes).toEqual([130]);
+    expect(h.rawModeCalls).toEqual([true, false]);
   });
 });

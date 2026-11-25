@@ -26,15 +26,21 @@
  *
  * The listing is read before the question and the removals happen after it, so the mirror is asked
  * twice: each removal is taken under that mirror's own `sync.lock` — the file its saves, forgets,
- * approvals, syncs and compactions all contend on — and read again while the lock is held. A mirror
- * another writer owns is left alone ("another writer holds it"), as is one that gained a note while
- * the person was reading the question ("it is no longer empty"): the listing is a snapshot, and
- * deleting a directory on a snapshot is the one mistake a prune cannot take back.
+ * approvals, syncs and compactions all contend on — and read again while the lock is held. That
+ * second read names the mirror's own directory (`readMemoryMirror`) rather than listing the
+ * projects directory again, because the listing answers "no mirrors" both for a mirror that is
+ * gone and for a directory it could not read, and a removal must never take the second for the
+ * first: only a positively read, prunable inventory authorizes a delete. A mirror another writer
+ * owns is left alone ("another writer holds it"), as is one that gained a note while the person
+ * was reading the question ("it is no longer empty") and one this process could not read ("it
+ * could not be read"). The listing is a snapshot, and deleting a directory on a snapshot is the
+ * one mistake a prune cannot take back.
  *
  * Asking follows `compact`'s rule exactly: `--yes` answers in advance, a TTY asks through the seam,
- * and no TTY without `--yes` aborts on stderr before the inventory is even read. A declined question
- * removes nothing and exits 1. Any throw is the group's error contract — `Error: <message>` on
- * stderr and exit 1.
+ * and no TTY without `--yes` aborts on stderr before the inventory is even read. Both questions
+ * offer `[y/N]`, so both run the prompt in its default-no mode, where only an explicit `y`
+ * authorizes the removal. A declined question removes nothing and exits 1. Any throw is the
+ * group's error contract — `Error: <message>` on stderr and exit 1.
  */
 import { rm } from "node:fs/promises";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -45,7 +51,9 @@ import {
   lockMemoryMirror,
   type MemoryLogger,
   type MemoryMirrorInfo,
+  type MemoryMirrorRead,
   memoryProjectsDir,
+  readMemoryMirror,
 } from "@/memory";
 import { promptForConfirmation } from "./confirm";
 
@@ -71,6 +79,10 @@ const SKIPPED_PREFIX = "Skipped ";
 const BUSY_REASON = "another writer holds it";
 /** Why a mirror was skipped: it is not empty any more. */
 const FILLED_REASON = "it is no longer empty";
+/** Why a mirror was skipped: this process could not read it, so its contents are unknown. */
+const UNREADABLE_REASON = "it could not be read";
+/** Why a mirror was skipped: the directory itself is no longer there. */
+const GONE_REASON = "it is already gone";
 /** The code a run that succeeded becomes. */
 const OK_CODE = 0;
 /** The code an abort, a refusal or a throw becomes. */
@@ -89,6 +101,14 @@ export interface MemoryMirrorsCliDeps {
   confirm(question: string): Promise<boolean>;
   projectsDir(): string;
   listMemoryMirrors: typeof listMemoryMirrors;
+  /**
+   * Read one mirror by its own directory: the recheck a removal is decided on.
+   *
+   * Not `listMemoryMirrors` again: a projects directory that cannot be listed answers "no
+   * mirrors" there, which is the same answer as "this mirror is gone", and a removal decided on
+   * it deletes a mirror that was merely unreadable (review round 1, B1).
+   */
+  readMirror: typeof readMemoryMirror;
   /**
    * Take the mirror's shared writer lock, or answer `null` when another writer holds it.
    *
@@ -113,12 +133,15 @@ export const _memoryMirrorsCliDeps: MemoryMirrorsCliDeps = {
     process.exit(code);
   },
   isTTY: () => process.stdin.isTTY === true,
-  confirm: promptForConfirmation,
   projectsDir: memoryProjectsDir,
   listMemoryMirrors,
+  readMirror: readMemoryMirror,
   // The protocol reports a takeover and a failed release through a logger; on this command's
   // surface that is the same stderr every other `[memory]` line goes to.
   lockMirror: (dir) => lockMemoryMirror({ dir, logger: mirrorLockLogger((msg) => _memoryMirrorsCliDeps.logErr(msg)) }),
+  // The one question this command asks offers `[y/N]`, so a bare Enter is a no: the prompt runs
+  // in its default-no mode, where only an explicit `y` authorizes removing mirrors (review B3).
+  confirm: (question) => promptForConfirmation(question, { defaultAnswer: "no" }),
   removeDir: (dir) => rm(dir, { recursive: true, force: true }),
 };
 
@@ -180,20 +203,23 @@ function removeQuestion(count: number): string {
 }
 
 /**
- * The mirror as it is now, or `null` when it is gone, with this run's own lock discounted.
+ * The mirror as it is now, read by its own directory, with this run's own lock discounted.
  *
- * The lock this run holds is a file inside the mirror, so the inventory reports the mirror as
- * `inUse` — that is this process's lock, not another writer's, and the recheck is about what the
- * mirror *holds*. Everything else the inventory reads is left as it was found.
+ * The lock this run holds is a file inside the mirror, so the read reports the mirror as `inUse`
+ * — that is this process's lock, not another writer's, and the recheck is about what the mirror
+ * *holds*. Everything else the read finds is left as it was found. The three answers the read can
+ * give are passed through unchanged, because the caller's decision turns on which one it is.
  */
-async function readAgain(mirror: MemoryMirrorInfo, deps: MemoryMirrorsCliDeps): Promise<MemoryMirrorInfo | null> {
-  const inventory = await deps.listMemoryMirrors(deps.projectsDir());
-  const found = inventory.find((candidate) => candidate.dir === mirror.dir);
-  return found === undefined ? null : { ...found, inUse: false };
+async function readAgain(mirror: MemoryMirrorInfo, deps: MemoryMirrorsCliDeps): Promise<MemoryMirrorRead> {
+  const current = await deps.readMirror(mirror.dir);
+  return current.kind === "read" ? { kind: "read", mirror: { ...current.mirror, inUse: false } } : current;
 }
 
-/** What one guarded removal decided: it went, another writer owns it, or it is not empty now. */
-type Removal = "removed" | "busy" | "filled";
+/**
+ * What one guarded removal decided: it went, another writer owns it, it is not empty now, it could
+ * not be read, or the directory was already gone.
+ */
+type Removal = "removed" | "busy" | "filled" | "unreadable" | "gone";
 
 /**
  * Remove one mirror, or leave it alone, under that mirror's own writer lock.
@@ -204,6 +230,13 @@ type Removal = "removed" | "busy" | "filled";
  * A mirror another writer holds is not waited for — a sync takes as long as its provider does —
  * and neither is one that is no longer empty: both are reported and left in place.
  *
+ * That second read names the mirror's own directory instead of listing the projects directory
+ * again, because the listing cannot tell "this mirror is gone" from "I could not read the
+ * directory the mirrors live in": both answer "no mirrors" there, and the first version of this
+ * check read the second as the first and deleted a mirror it had just been unable to look at.
+ * The three answers are kept apart — gone (nothing to remove, and said so), read (ask
+ * `isPrunableMirror`), and unreadable (leave it alone and say so).
+ *
  * The lock is handed back whatever happens, including a removal that throws; the caller's error
  * still reaches the group's contract.
  */
@@ -212,7 +245,11 @@ async function removeOne(mirror: MemoryMirrorInfo, deps: MemoryMirrorsCliDeps): 
   if (release === null) return "busy";
   try {
     const current = await readAgain(mirror, deps);
-    if (current !== null && !isPrunableMirror(current)) return "filled";
+    if (current.kind === "unreadable") return "unreadable";
+    if (current.kind === "read" && !isPrunableMirror(current.mirror)) return "filled";
+    // `absent`: the directory went while the question was open, so there is nothing to remove and
+    // nothing that could be lost — reported as gone rather than as a removal this run did not do.
+    if (current.kind === "absent") return "gone";
     await deps.removeDir(mirror.dir);
     return "removed";
   } finally {
@@ -228,7 +265,21 @@ async function removeAll(mirrors: readonly MemoryMirrorInfo[], deps: MemoryMirro
       deps.log(`${REMOVED_PREFIX}${mirror.name}`);
       continue;
     }
-    deps.logErr(`${SKIPPED_PREFIX}${mirror.name}: ${removal === "busy" ? BUSY_REASON : FILLED_REASON}`);
+    deps.logErr(`${SKIPPED_PREFIX}${mirror.name}: ${skipReason(removal)}`);
+  }
+}
+
+/** Why one mirror was left in place: the one line a skipped row prints. */
+function skipReason(removal: Exclude<Removal, "removed">): string {
+  switch (removal) {
+    case "busy":
+      return BUSY_REASON;
+    case "filled":
+      return FILLED_REASON;
+    case "unreadable":
+      return UNREADABLE_REASON;
+    case "gone":
+      return GONE_REASON;
   }
 }
 

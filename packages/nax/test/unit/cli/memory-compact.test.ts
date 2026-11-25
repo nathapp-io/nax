@@ -13,13 +13,12 @@
  * threshold is 0.65, which is not the schema's default, so a `Still at` line proves it was read.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeFakeMemoryHost, makeNaxConfig } from "@test/helpers";
+import { answeringStdin, assertDefined, makeFakeMemoryHost, makeNaxConfig } from "@test/helpers";
 import { Command } from "commander";
 import {
   _confirmDeps,
   _memoryCompactCliDeps,
   type ConfirmChannel,
-  type ConfirmStdin,
   type MemoryCliDeps,
   type MemoryCompactCliDeps,
   type MemoryCompactOptions,
@@ -224,28 +223,6 @@ function jsonDocument(h: Harness): Record<string, unknown> {
   const [line] = h.out;
   assertDefined(line, "the --json document");
   return JSON.parse(line);
-}
-
-/**
- * A TTY stdin that answers the first prompt with `key` as soon as it is listened to.
- *
- * The prompt is driven for real in the one case that measures which channel its own text goes
- * to; every other case stubs the seam. Nothing else about the terminal matters here, so the
- * bookkeeping `confirm.test.ts` records is left out.
- */
-function answeringStdin(key: string): ConfirmStdin {
-  return {
-    isTTY: true,
-    setRawMode: () => undefined,
-    resume: () => undefined,
-    pause: () => undefined,
-    setEncoding: () => undefined,
-    on: (_event, listener) => {
-      queueMicrotask(() => listener(key));
-    },
-    once: () => undefined,
-    removeListener: () => undefined,
-  };
 }
 
 // ─── the confirmation gate ───────────────────────────────────────────────────
@@ -481,7 +458,7 @@ describe("nax memory compact --json", () => {
     expect(h.channels).toEqual(["stderr"]);
   });
 
-  describe("the real prompt (F1)", () => {
+  describe("the real prompt (F1, B3)", () => {
     let saved: Pick<typeof _confirmDeps, "stdin" | "write" | "writeErr">;
 
     beforeEach(() => {
@@ -492,29 +469,63 @@ describe("nax memory compact --json", () => {
       Object.assign(_confirmDeps, saved);
     });
 
-    test("AC-19: the question lands on stderr, so stdout holds the document alone", async () => {
-      const stdoutWrites: string[] = [];
-      const stderrWrites: string[] = [];
+    /** Drive the real prompt with `key` and keep what it wrote, on either channel. */
+    function answerPrompt(key: string): { stdout: string[]; stderr: string[] } {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
       Object.assign(_confirmDeps, {
-        stdin: answeringStdin("y"),
+        stdin: answeringStdin(key),
         write: (text: string) => {
-          stdoutWrites.push(text);
+          stdout.push(text);
           return true;
         },
         writeErr: (text: string) => {
-          stderrWrites.push(text);
+          stderr.push(text);
           return true;
         },
       });
+      return { stdout, stderr };
+    }
+
+    test("AC-19: the question lands on stderr, so stdout holds the document alone", async () => {
+      const writes = answerPrompt("y");
       const h = harness({ confirm: _memoryCompactCliDeps.confirm });
 
       expect(await run(h, { json: true })).toBe(0);
 
       // The prompt's own text — question and newline — never reaches the stdout writer.
-      expect(stdoutWrites).toEqual([]);
-      expect(stderrWrites.join("")).toContain(APPLY_QUESTION);
+      expect(writes.stdout).toEqual([]);
+      expect(writes.stderr.join("")).toContain(APPLY_QUESTION);
       expect(h.out).toHaveLength(1);
       expect(jsonDocument(h).outcome).toBe("applied");
+    });
+
+    test("B3: Enter declines — the question offers [y/N], so a bare return applies nothing", async () => {
+      const writes = answerPrompt("\r");
+      const h = harness({ confirm: _memoryCompactCliDeps.confirm });
+
+      expect(await run(h)).toBe(1);
+      expect(h.events).toContain("answered:false");
+      expect(h.err).toEqual(["Aborted"]);
+      // One suffix, the command's own: never a second [Y/n] contradicting it.
+      expect(writes.stdout.join("")).toContain(`${APPLY_QUESTION} `);
+      expect(writes.stdout.join("")).not.toContain("[Y/n]");
+    });
+
+    test("B3: a key that is neither y nor n declines too", async () => {
+      answerPrompt("x");
+      const h = harness({ confirm: _memoryCompactCliDeps.confirm });
+
+      expect(await run(h)).toBe(1);
+      expect(h.events).toContain("answered:false");
+    });
+
+    test("B3: an explicit y still applies the plan", async () => {
+      answerPrompt("y");
+      const h = harness({ confirm: _memoryCompactCliDeps.confirm });
+
+      expect(await run(h)).toBe(0);
+      expect(h.events).toContain("answered:true");
     });
   });
 });

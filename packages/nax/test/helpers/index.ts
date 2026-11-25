@@ -93,6 +93,7 @@ export {
   SANDBOXED_ENV,
   USAGE_EXIT,
 } from "./confined";
+export { answeringStdin } from "./confirm-stdin";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";
@@ -202,6 +203,16 @@ export {
   writtenConfig,
   writtenConfigText,
 } from "./memory-admin-link";
+export {
+  emptyMirror,
+  type MirrorsFixture,
+  type MirrorsHarness,
+  makeMirrorsHarness,
+  PROBE_MIRROR,
+  PROJECTS_DIR,
+  probe,
+  runMirrors,
+} from "./memory-mirrors";
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { mockFetch } from "./mock-fetch";

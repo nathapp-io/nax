@@ -81,7 +81,8 @@ export interface MemoryCompactCliDeps extends MemoryCliDeps {
   isTTY(): boolean;
   /**
    * Ask the one question. `channel` is where the prompt's own text goes: `stderr` under
-   * `--json`, whose stdout belongs to the document alone.
+   * `--json`, whose stdout belongs to the document alone. The default answer is the
+   * implementation's business — the real one offers `[y/N]` and needs an explicit `y`.
    */
   confirm(question: string, channel?: ConfirmChannel): Promise<boolean>;
   compactProjectMemory: typeof compactProjectMemory;
@@ -90,7 +91,11 @@ export interface MemoryCompactCliDeps extends MemoryCliDeps {
 /** The real terminal, the real prompt, and the real orchestration. */
 export const _memoryCompactCliDeps: Omit<MemoryCompactCliDeps, keyof MemoryCliDeps> = {
   isTTY: () => process.stdin.isTTY === true,
-  confirm: promptForConfirmation,
+  // `Apply? [y/N]` is a default-no question: only an explicit `y` applies a plan. The prompt runs
+  // in that mode, so a bare Enter or a stray key declines instead of authorizing a change nothing
+  // asked for (review B3).
+  confirm: (question, channel) =>
+    promptForConfirmation(question, { channel: channel ?? "stdout", defaultAnswer: "no" }),
   compactProjectMemory,
 };
 

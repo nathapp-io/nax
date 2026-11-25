@@ -29,7 +29,7 @@
  */
 import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir, readFile, stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { ORIGIN_FILE } from "./mirror-origin";
 
@@ -89,6 +89,19 @@ export interface MemoryMirrorInfo {
    */
   readonly unreadable: readonly string[];
 }
+
+/**
+ * One mirror read by its own directory: what it holds, that it is not there, or that it could
+ * not be read.
+ *
+ * Three answers rather than a nullable one, because the two ways a mirror can fail to produce
+ * an inventory mean opposite things to a caller about to delete it — a directory that is gone
+ * has nothing to lose, and one this process cannot read may hold everything.
+ */
+export type MemoryMirrorRead =
+  | { readonly kind: "read"; readonly mirror: MemoryMirrorInfo }
+  | { readonly kind: "absent" }
+  | { readonly kind: "unreadable" };
 
 /** Whether an error is the filesystem saying the entry is not there at all. */
 function isMissing(error: unknown): boolean {
@@ -307,6 +320,45 @@ export async function listMemoryMirrors(projectsDir: string): Promise<readonly M
     .map((entry) => ({ dir: join(projectsDir, entry.name), name: entry.name }))
     .sort((left, right) => byCodePoint(left.name, right.name));
   return await Promise.all(mirrors.map((mirror) => readMirror(mirror.dir, mirror.name)));
+}
+
+/** Whether one path is there at all, is not there, or is there and cannot be looked at. */
+type Presence = "present" | "absent" | "unreadable";
+
+/** `lstat`'s answer about one path: absence and "will not say" are different answers. */
+async function presenceOf(path: string): Promise<Presence> {
+  try {
+    await lstat(path);
+    return "present";
+  } catch (error) {
+    // Only a path that is not there is absent. Anything else — a permission this process does
+    // not have, a mount that went away — is a mirror this read cannot vouch for.
+    return isMissing(error) ? "absent" : "unreadable";
+  }
+}
+
+/**
+ * One mirror, read by its own directory rather than through the projects-directory listing.
+ *
+ * This is the read a caller takes a decision on, and the reason it does not go through
+ * `listMemoryMirrors` is the listing's one fail-open: a projects directory that cannot be
+ * listed answers "no mirrors", which is indistinguishable there from a mirror that is gone. A
+ * caller about to delete the mirror cannot afford that reading. Naming the directory asks the
+ * mirror itself, so the three answers are distinct — it is there and fully read, it is not
+ * there, or it is there and this process could not read all of it — and "cannot read" is never
+ * "empty".
+ *
+ * A mirror whose own directory cannot be stated at all answers `unreadable` for the same
+ * reason: the deletion decision is exactly where an unknown must not become a yes.
+ *
+ * @param dir - The mirror's absolute directory (`MemoryMirrorInfo.dir`)
+ */
+export async function readMemoryMirror(dir: string): Promise<MemoryMirrorRead> {
+  const presence = await presenceOf(dir);
+  if (presence === "absent") return { kind: "absent" };
+  if (presence === "unreadable") return { kind: "unreadable" };
+  const mirror = await readMirror(dir, basename(dir));
+  return mirror.unreadable.length === 0 ? { kind: "read", mirror } : { kind: "unreadable" };
 }
 
 /**

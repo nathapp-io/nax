@@ -12,26 +12,41 @@
  * `~/.nax/memory/projects` and is the same whichever repository the terminal sits in, so the command
  * opens no config and no host. The last describe is the exception — it runs the real inventory over a
  * real directory, to prove a mirror the listing could not read all of survives `--prune --yes`.
+ *
+ * The second read a removal is decided on — the one taken under the mirror's lock after the question
+ * — has its own file, `memory-mirrors-recheck.test.ts`, because it is a concern of its own: only a
+ * positively read mirror may be deleted, and the listing cannot say "gone" apart from "unreadable".
+ * The harness both files drive the command through is `@test/helpers`' `makeMirrorsHarness`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  answeringStdin,
+  assertDefined,
+  cleanupTempDir,
+  emptyMirror,
+  type MirrorsHarness,
+  makeMirrorsHarness,
+  makeNaxConfig,
+  makeTempDir,
+  PROBE_MIRROR,
+  PROJECTS_DIR,
+  probe,
+  runMirrors,
+} from "@test/helpers";
 import { Command } from "commander";
 import {
+  _confirmDeps,
   _memoryMirrorsCliDeps,
   type MemoryCliDeps,
   type MemoryMirrorsCliDeps,
-  type MemoryMirrorsOptions,
   memoryMirrorsCommand,
   registerMemoryCommand,
 } from "@/cli";
-import { listMemoryMirrors, type MemoryMirrorInfo, memoryProjectsDir } from "@/memory";
+import { listMemoryMirrors, type MemoryMirrorInfo, memoryProjectsDir, readMemoryMirror } from "@/memory";
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
-
-/** The global projects directory every stubbed case lists. */
-const PROJECTS_DIR = "/global/nax/memory/projects";
 
 /** The repository the one mirror with a live origin belongs to. */
 const ORIGIN_ROOT = "/src/api";
@@ -56,141 +71,12 @@ const API_MIRROR: MemoryMirrorInfo = {
   unreadable: [],
 };
 
-/** A mirror nothing has opened since the feature shipped: no origin, no sync, no content. */
-const PROBE_MIRROR: MemoryMirrorInfo = {
-  dir: join(PROJECTS_DIR, "probe-89abcdef"),
-  name: "probe-89abcdef",
-  notes: 0,
-  outbox: 0,
-  provider: null,
-  originRoot: null,
-  rootExists: null,
-  indexBytes: 0,
-  inUse: false,
-  hasArchive: false,
-  decisions: 0,
-  pendingForgets: 0,
-  unreadable: [],
-};
-
 /** Those two as the terminal prints them, one row each. */
 const API_LINE = "api-01234567  notes 4  outbox 2  provider koda:rs-stock  index 512 bytes  origin /src/api";
 const PROBE_LINE = "probe-89abcdef  notes 0  outbox 0  provider none  index 0 bytes  origin unknown";
 
-/** An empty mirror whose own name is the only difference from {@link PROBE_MIRROR}. */
-function emptyMirror(name: string): MemoryMirrorInfo {
-  return { ...PROBE_MIRROR, dir: join(PROJECTS_DIR, name), name };
-}
-
-/** {@link PROBE_MIRROR} with the fields a case varies over. */
-function probe(overrides: Partial<MemoryMirrorInfo>): MemoryMirrorInfo {
-  return { ...PROBE_MIRROR, ...overrides };
-}
-
-// ─── harness ─────────────────────────────────────────────────────────────────
-
-/** What one case varies. Absent means the harness default, never a different shape. */
-interface Fixture {
-  /** The inventory `listMemoryMirrors` answers; {@link PROBE_MIRROR} alone by default. */
-  readonly mirrors?: readonly MemoryMirrorInfo[];
-  /** Whether the terminal is interactive; `true` by default, so the question is reachable. */
-  readonly isTTY?: boolean;
-  /** What `deps.confirm` answers; `true` by default. */
-  readonly confirmAnswer?: boolean;
-  /**
-   * What the inventory answers from its second read on — the mirror a writer changed between the
-   * listing and the removal. Absent means the first inventory, read again.
-   */
-  readonly refilled?: readonly MemoryMirrorInfo[];
-  /** Directories another writer holds, so `lockMirror` answers `null` for them. */
-  readonly heldByOther?: readonly string[];
-  /** Rejects the removal of this directory, as an unwritable filesystem would. */
-  readonly removeRejects?: string;
-}
-
-/** Everything a case measures: both channels, every seam the run reached, and the order of them. */
-interface Harness {
-  readonly deps: MemoryMirrorsCliDeps;
-  /** stdout lines. */
-  readonly out: string[];
-  /** stderr lines. */
-  readonly err: string[];
-  /** Every code handed to `exit`. */
-  readonly codes: number[];
-  /** Every directory handed to `removeDir`, in the order it was removed. */
-  readonly removed: string[];
-  /** Every question that reached `deps.confirm`. */
-  readonly asks: string[];
-  /** Every directory `listMemoryMirrors` was asked for. */
-  readonly listed: string[];
-  /** Every directory `lockMirror` was asked to lock, in the order it was asked. */
-  readonly locked: string[];
-  /** Every directory whose lock was handed back. */
-  readonly released: string[];
-  /** Every line written and every question asked, in the order it happened. */
-  readonly events: string[];
-}
-
-/** The CLI with every external call stubbed: one inventory, one projects directory, no filesystem. */
-function harness(fixture: Fixture = {}): Harness {
-  const mirrors = fixture.mirrors ?? [PROBE_MIRROR];
-  const out: string[] = [];
-  const err: string[] = [];
-  const codes: number[] = [];
-  const removed: string[] = [];
-  const asks: string[] = [];
-  const listed: string[] = [];
-  const locked: string[] = [];
-  const released: string[] = [];
-  const events: string[] = [];
-  let reads = 0;
-  const deps: MemoryMirrorsCliDeps = {
-    log: (msg) => {
-      out.push(msg);
-      events.push(`out:${msg}`);
-    },
-    logErr: (msg) => {
-      err.push(msg);
-      events.push(`err:${msg}`);
-    },
-    exit: (code) => codes.push(code),
-    isTTY: () => fixture.isTTY ?? true,
-    confirm: async (question) => {
-      asks.push(question);
-      events.push(`ask:${question}`);
-      return fixture.confirmAnswer ?? true;
-    },
-    projectsDir: () => PROJECTS_DIR,
-    listMemoryMirrors: async (dir) => {
-      listed.push(dir);
-      reads += 1;
-      return reads > 1 && fixture.refilled !== undefined ? fixture.refilled : mirrors;
-    },
-    lockMirror: async (dir) => {
-      locked.push(dir);
-      events.push(`lock:${dir}`);
-      if (fixture.heldByOther?.includes(dir) === true) return null;
-      return async () => {
-        released.push(dir);
-        events.push(`release:${dir}`);
-      };
-    },
-    removeDir: async (dir) => {
-      if (fixture.removeRejects === dir) throw new Error(`EACCES: ${dir}`);
-      removed.push(dir);
-      events.push(`removed:${dir}`);
-    },
-  };
-  return { deps, out, err, codes, removed, asks, listed, locked, released, events };
-}
-
-/** `nax memory mirrors` with the given flags. */
-function run(h: Harness, opts: Partial<MemoryMirrorsOptions> = {}): Promise<number> {
-  return memoryMirrorsCommand({ ...opts }, h.deps);
-}
-
 /** The one document a `--json` run writes, parsed. */
-function jsonDocument(h: Harness): readonly MemoryMirrorInfo[] {
+function jsonDocument(h: MirrorsHarness): readonly MemoryMirrorInfo[] {
   const [line] = h.out;
   assertDefined(line, "the --json document");
   return JSON.parse(line);
@@ -213,58 +99,60 @@ function groupDeps(): MemoryCliDeps {
 
 describe("nax memory mirrors — the listing", () => {
   test("AC-1: one row per mirror, in the inventory's order, and exit 0", async () => {
-    const h = harness({ mirrors: [API_MIRROR, PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [API_MIRROR, PROBE_MIRROR] });
 
-    expect(await run(h)).toBe(0);
+    expect(await runMirrors(h)).toBe(0);
     expect(h.out).toEqual([API_LINE, PROBE_LINE]);
     expect(h.err).toEqual([]);
   });
 
   test("AC-1: it lists the global projects directory, not the caller's repository", async () => {
-    const h = harness();
+    const h = makeMirrorsHarness();
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.listed).toEqual([PROJECTS_DIR]);
   });
 
   test("an inventory with no mirrors prints nothing and still exits 0", async () => {
-    const h = harness({ mirrors: [] });
+    const h = makeMirrorsHarness({ mirrors: [] });
 
-    expect(await run(h)).toBe(0);
+    expect(await runMirrors(h)).toBe(0);
     expect(h.out).toEqual([]);
     expect(h.err).toEqual([]);
   });
 
   test("AC-2: a recorded root that is gone is marked (missing) after the root", async () => {
-    const h = harness({ mirrors: [probe({ name: "gone-01234567", originRoot: GONE_ROOT, rootExists: false })] });
+    const h = makeMirrorsHarness({
+      mirrors: [probe({ name: "gone-01234567", originRoot: GONE_ROOT, rootExists: false })],
+    });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.out).toEqual([expect.stringContaining(`origin ${GONE_ROOT} (missing)`)]);
     expect(h.out[0]).toBe("gone-01234567  notes 0  outbox 0  provider none  index 0 bytes  origin /src/gone (missing)");
   });
 
   test("AC-2: a recorded root that still exists carries no mark", async () => {
-    const h = harness({ mirrors: [probe({ originRoot: ORIGIN_ROOT, rootExists: true })] });
+    const h = makeMirrorsHarness({ mirrors: [probe({ originRoot: ORIGIN_ROOT, rootExists: true })] });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.out[0]).toBe("probe-89abcdef  notes 0  outbox 0  provider none  index 0 bytes  origin /src/api");
   });
 
   test("AC-3: a mirror whose sync.lock exists ends with (in use)", async () => {
-    const h = harness({ mirrors: [probe({ inUse: true })] });
+    const h = makeMirrorsHarness({ mirrors: [probe({ inUse: true })] });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.out[0]).toBe("probe-89abcdef  notes 0  outbox 0  provider none  index 0 bytes  origin unknown (in use)");
   });
 
   test("AC-2 and AC-3: both marks appear, the missing root first", async () => {
-    const h = harness({ mirrors: [probe({ originRoot: GONE_ROOT, rootExists: false, inUse: true })] });
+    const h = makeMirrorsHarness({ mirrors: [probe({ originRoot: GONE_ROOT, rootExists: false, inUse: true })] });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.out[0]).toBe(
       "probe-89abcdef  notes 0  outbox 0  provider none  index 0 bytes  origin /src/gone (missing) (in use)",
@@ -272,9 +160,9 @@ describe("nax memory mirrors — the listing", () => {
   });
 
   test("AC-4: a mirror with no origin prints origin unknown", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.out[0]).toContain("origin unknown");
     expect(h.out[0]).not.toContain("(missing)");
@@ -285,17 +173,17 @@ describe("nax memory mirrors — the listing", () => {
 
 describe("nax memory mirrors --json", () => {
   test("AC-11: one JSON array of MemoryMirrorInfo objects, and nothing else on stdout", async () => {
-    const h = harness({ mirrors: [API_MIRROR, PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [API_MIRROR, PROBE_MIRROR] });
 
-    expect(await run(h, { json: true })).toBe(0);
+    expect(await runMirrors(h, { json: true })).toBe(0);
     expect(h.out).toHaveLength(1);
     expect(jsonDocument(h)).toEqual([API_MIRROR, PROBE_MIRROR]);
   });
 
   test("AC-11: an empty inventory is still one array, not no output", async () => {
-    const h = harness({ mirrors: [] });
+    const h = makeMirrorsHarness({ mirrors: [] });
 
-    expect(await run(h, { json: true })).toBe(0);
+    expect(await runMirrors(h, { json: true })).toBe(0);
     expect(h.out).toEqual(["[]"]);
   });
 });
@@ -314,96 +202,97 @@ describe("nax memory mirrors --prune", () => {
   }
 
   test("AC-5: --yes removes every mirror isPrunableMirror accepts, once each", async () => {
-    const h = harness({ mirrors: mixedInventory() });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory() });
 
-    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(await runMirrors(h, { prune: true, yes: true })).toBe(0);
     expect(h.removed).toEqual([join(PROJECTS_DIR, "probe-01234567"), join(PROJECTS_DIR, "probe-89abcdef")]);
   });
 
   test("AC-6: each removal prints Removed <name>", async () => {
-    const h = harness({ mirrors: mixedInventory() });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory() });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.out).toContain("Removed probe-01234567");
     expect(h.out).toContain("Removed probe-89abcdef");
   });
 
   test("AC-7: a mirror holding notes is never removed", async () => {
-    const h = harness({ mirrors: mixedInventory() });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory() });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.removed).not.toContain(API_MIRROR.dir);
   });
 
   test("AC-7: a mirror that is in use is never removed", async () => {
-    const h = harness({ mirrors: mixedInventory() });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory() });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.removed).not.toContain(join(PROJECTS_DIR, "busy-01234567"));
   });
 
   test("the prunable mirrors are listed before anything is removed", async () => {
-    const h = harness({ mirrors: mixedInventory() });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory() });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     const firstRemoval = h.events.findIndex((event) => event.startsWith("removed:"));
     expect(h.events.slice(0, firstRemoval)).toEqual([
       "out:probe-01234567  notes 0  outbox 0  provider none  index 0 bytes  origin unknown",
       `out:${PROBE_LINE}`,
       "lock:/global/nax/memory/projects/probe-01234567",
+      "read:/global/nax/memory/projects/probe-01234567",
     ]);
   });
 
   test("AC-8: on a TTY it asks Remove <K> mirrors? [y/N] and removes nothing when told no", async () => {
-    const h = harness({ mirrors: mixedInventory(), confirmAnswer: false });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory(), confirmAnswer: false });
 
-    expect(await run(h, { prune: true })).toBe(1);
+    expect(await runMirrors(h, { prune: true })).toBe(1);
     expect(h.asks).toEqual(["Remove 2 mirrors? [y/N]"]);
     expect(h.removed).toEqual([]);
     expect(h.err).toEqual(["Aborted"]);
   });
 
   test("AC-8: that question counts the mirrors actually prunable, not the inventory", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
 
-    await run(h, { prune: true });
+    await runMirrors(h, { prune: true });
 
     expect(h.asks).toEqual(["Remove 1 mirrors? [y/N]"]);
   });
 
   test("a confirmed question removes them and exits 0", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR], confirmAnswer: true });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR], confirmAnswer: true });
 
-    expect(await run(h, { prune: true })).toBe(0);
+    expect(await runMirrors(h, { prune: true })).toBe(0);
     expect(h.removed).toEqual([PROBE_MIRROR.dir]);
     expect(h.out).toContain("Removed probe-89abcdef");
   });
 
   test("AC-9: without a TTY and without --yes it aborts on stderr, exits 1 and removes nothing", async () => {
-    const h = harness({ mirrors: mixedInventory(), isTTY: false });
+    const h = makeMirrorsHarness({ mirrors: mixedInventory(), isTTY: false });
 
-    expect(await run(h, { prune: true })).toBe(1);
+    expect(await runMirrors(h, { prune: true })).toBe(1);
     expect(h.err).toEqual(["Aborted"]);
     expect(h.removed).toEqual([]);
     expect(h.asks).toEqual([]);
   });
 
   test("AC-10: with nothing prunable it says Nothing to prune and exits 0", async () => {
-    const h = harness({ mirrors: [API_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [API_MIRROR] });
 
-    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(await runMirrors(h, { prune: true, yes: true })).toBe(0);
     expect(h.out).toEqual(["Nothing to prune"]);
     expect(h.removed).toEqual([]);
   });
 
   test("--yes asks no one", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.asks).toEqual([]);
   });
@@ -423,9 +312,9 @@ describe("nax memory mirrors --prune — the mirror lock", () => {
   const PROBE_B = join(PROJECTS_DIR, "probe-89abcdef");
 
   test("F1: it takes the lock of every mirror it removes, before removing it", async () => {
-    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.locked).toEqual([PROBE_A, PROBE_B]);
     expect(h.events.indexOf(`lock:${PROBE_A}`)).toBeLessThan(h.events.indexOf(`removed:${PROBE_A}`));
@@ -433,17 +322,17 @@ describe("nax memory mirrors --prune — the mirror lock", () => {
   });
 
   test("F1: it hands every lock back, so the mirror is writable again", async () => {
-    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR] });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.released).toEqual([PROBE_A, PROBE_B]);
   });
 
   test("F1: a mirror another writer holds is left alone", async () => {
-    const h = harness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR], heldByOther: [PROBE_A] });
+    const h = makeMirrorsHarness({ mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR], heldByOther: [PROBE_A] });
 
-    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(await runMirrors(h, { prune: true, yes: true })).toBe(0);
     expect(h.removed).toEqual([PROBE_B]);
     expect(h.err).toEqual(["Skipped probe-01234567: another writer holds it"]);
     expect(h.released).toEqual([PROBE_B]);
@@ -451,52 +340,55 @@ describe("nax memory mirrors --prune — the mirror lock", () => {
 
   test("F1: a mirror that gained a note since the listing is not removed", async () => {
     const filled = { ...emptyMirror("probe-01234567"), notes: 1 };
-    const h = harness({
+    const h = makeMirrorsHarness({
       mirrors: [emptyMirror("probe-01234567"), PROBE_MIRROR],
-      refilled: [filled, PROBE_MIRROR],
+      recheck: (dir) => ({ kind: "read", mirror: dir === PROBE_A ? filled : PROBE_MIRROR }),
     });
 
-    expect(await run(h, { prune: true, yes: true })).toBe(0);
+    expect(await runMirrors(h, { prune: true, yes: true })).toBe(0);
     expect(h.removed).toEqual([PROBE_B]);
     expect(h.err).toEqual(["Skipped probe-01234567: it is no longer empty"]);
   });
 
   test("F1: the recheck happens under the lock, before the removal", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.events).toEqual([
       `out:${PROBE_LINE}`,
       `lock:${PROBE_B}`,
+      `read:${PROBE_B}`,
       `removed:${PROBE_B}`,
       `release:${PROBE_B}`,
       "out:Removed probe-89abcdef",
     ]);
-    // The inventory is read again once the lock is held: the listing and the removal are two reads.
-    expect(h.listed).toEqual([PROJECTS_DIR, PROJECTS_DIR]);
+    // The mirror is read again once the lock is held, by its own directory: the listing the
+    // question was asked from is one read, and the removal is decided on another.
+    expect(h.listed).toEqual([PROJECTS_DIR]);
+    expect(h.reread).toEqual([PROBE_B]);
   });
 
   test("F1: the lock is handed back when the removal throws", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR], removeRejects: PROBE_B });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR], removeRejects: PROBE_B });
 
-    expect(await run(h, { prune: true, yes: true })).toBe(1);
+    expect(await runMirrors(h, { prune: true, yes: true })).toBe(1);
     expect(h.err).toEqual([`Error: EACCES: ${PROBE_B}`]);
     expect(h.released).toEqual([PROBE_B]);
   });
 
   test("F1: a prune with nothing to remove takes no lock at all", async () => {
-    const h = harness({ mirrors: [API_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [API_MIRROR] });
 
-    await run(h, { prune: true, yes: true });
+    await runMirrors(h, { prune: true, yes: true });
 
     expect(h.locked).toEqual([]);
   });
 
   test("F1: a plain listing takes no lock at all", async () => {
-    const h = harness({ mirrors: [PROBE_MIRROR] });
+    const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
 
-    await run(h);
+    await runMirrors(h);
 
     expect(h.locked).toEqual([]);
   });
@@ -541,7 +433,7 @@ describe("registerMemoryCommand — mirrors", () => {
     });
 
     test("AC-12: the mirrors action runs through the deps the command holds", async () => {
-      const h = harness({ mirrors: [PROBE_MIRROR] });
+      const h = makeMirrorsHarness({ mirrors: [PROBE_MIRROR] });
       Object.assign(_memoryMirrorsCliDeps, {
         log: h.deps.log,
         logErr: h.deps.logErr,
@@ -561,12 +453,49 @@ describe("registerMemoryCommand — mirrors", () => {
     test("the real seams are the global projects directory, the real inventory and fs.rm", async () => {
       expect(_memoryMirrorsCliDeps.projectsDir()).toBe(memoryProjectsDir());
       expect(_memoryMirrorsCliDeps.listMemoryMirrors).toBe(listMemoryMirrors);
+      expect(_memoryMirrorsCliDeps.readMirror).toBe(readMemoryMirror);
       expect(_memoryMirrorsCliDeps.isTTY()).toBe(process.stdin.isTTY === true);
 
       const dir = makeTempDir("nax-mirrors-rm-");
       await _memoryMirrorsCliDeps.removeDir(dir);
       expect(existsSync(dir)).toBe(false);
       cleanupTempDir(dir);
+    });
+
+    test("B3: the real confirm offers [y/N], so a bare Enter removes nothing", async () => {
+      const h = makeMirrorsHarness({ confirm: _memoryMirrorsCliDeps.confirm });
+      const written: string[] = [];
+      const savedConfirm = { stdin: _confirmDeps.stdin, write: _confirmDeps.write };
+      _confirmDeps.stdin = answeringStdin("\r");
+      _confirmDeps.write = (text: string) => {
+        written.push(text);
+        return true;
+      };
+      try {
+        expect(await runMirrors(h, { prune: true })).toBe(1);
+      } finally {
+        Object.assign(_confirmDeps, savedConfirm);
+      }
+
+      expect(h.removed).toEqual([]);
+      expect(h.err).toEqual(["Aborted"]);
+      expect(written.join("")).toContain("Remove 1 mirrors? [y/N] ");
+      // The prompt renders one suffix: no second, contradictory [Y/n] beside the caller's own.
+      expect(written.join("")).not.toContain("[Y/n]");
+    });
+
+    test("B3: an explicit y on the real confirm is what authorizes the removal", async () => {
+      const h = makeMirrorsHarness({ confirm: _memoryMirrorsCliDeps.confirm });
+      const savedConfirm = { stdin: _confirmDeps.stdin, write: _confirmDeps.write };
+      _confirmDeps.stdin = answeringStdin("y");
+      _confirmDeps.write = () => true;
+      try {
+        expect(await runMirrors(h, { prune: true })).toBe(0);
+      } finally {
+        Object.assign(_confirmDeps, savedConfirm);
+      }
+
+      expect(h.removed).toEqual([PROBE_MIRROR.dir]);
     });
 
     test("F1: the real lock seam takes the mirror's own sync.lock", async () => {
@@ -610,12 +539,14 @@ describe("nax memory mirrors --prune --yes — a mirror with an unfollowable out
     mkdirSync(join(linked, "outbox"), { recursive: true });
     symlinkSync(join(linked, "absent-target"), join(linked, "outbox", "00000001-c_one.json"));
     const empty = mirrorDir("empty-89abcdef");
-    const h = harness({ mirrors: [] });
+    const h = makeMirrorsHarness({ mirrors: [] });
     const deps: MemoryMirrorsCliDeps = {
       ...h.deps,
-      // The real inventory over the real directory: the listing is what must refuse here.
+      // The real reads over the real directory: the listing and the recheck are what must refuse
+      // here, and the recheck is the one that decides.
       projectsDir: () => projectsDir,
       listMemoryMirrors,
+      readMirror: readMemoryMirror,
     };
 
     expect(await memoryMirrorsCommand({ prune: true, yes: true }, deps)).toBe(0);
@@ -630,8 +561,13 @@ describe("nax memory mirrors --prune --yes — a mirror with an unfollowable out
     mkdirSync(join(dir, "outbox"), { recursive: true });
     writeFileSync(join(dir, "outbox", "00000001-c_one.json"), "{}\n");
     symlinkSync(join(dir, "absent-target"), join(dir, "outbox", "00000002-c_two.json"));
-    const h = harness({ mirrors: [] });
-    const deps: MemoryMirrorsCliDeps = { ...h.deps, projectsDir: () => projectsDir, listMemoryMirrors };
+    const h = makeMirrorsHarness({ mirrors: [] });
+    const deps: MemoryMirrorsCliDeps = {
+      ...h.deps,
+      projectsDir: () => projectsDir,
+      listMemoryMirrors,
+      readMirror: readMemoryMirror,
+    };
 
     expect(await memoryMirrorsCommand({ prune: true, yes: true }, deps)).toBe(0);
 
