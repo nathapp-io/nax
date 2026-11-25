@@ -48,6 +48,17 @@ export * from "#src/internal/shell-quote";
 export * from "#src/internal/sort";
 export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
+export { memoryCompactionCandidates } from "#src/memory/compaction-plan";
+export {
+  MEMORY_COMPACTION_ID_RE,
+  MEMORY_COMPACTION_SOURCE,
+  type MemoryCompactionMerge,
+  type MemoryCompactionPlan,
+  type MemoryCompactionPlanCheck,
+  type MemoryCompactionResult,
+  type MemoryCompactionRetire,
+  type MemoryUndoResult,
+} from "#src/memory/compaction-types";
 export { parseMemoryNoteRecord } from "#src/memory/note";
 export { _memoryStoreDeps } from "#src/memory/store";
 export { rewindPullCursor } from "#src/memory/sync-drain";

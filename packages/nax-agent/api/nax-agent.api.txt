@@ -706,12 +706,20 @@ MAX_UNDELIVERED_CONTROL_EVENTS
 MCP_INSTRUCTIONS_MAX_CHARS_PER_SERVER
 MCP_INSTRUCTIONS_MAX_CHARS_TOTAL
 MCP_RULE_TOOL
+MEMORY_COMPACTION_ID_RE
+MEMORY_COMPACTION_SOURCE
 MIN_COMPACT_AT_TOKENS
 MODEL_MAX_BYTES
 MODEL_MAX_LINES
 MODEL_MAX_LINE_CHARS
 type MaskResult
+type MemoryCompactionMerge
+type MemoryCompactionPlan
+type MemoryCompactionPlanCheck
+type MemoryCompactionResult
+type MemoryCompactionRetire
 type MemoryTranscriptStore
+type MemoryUndoResult
 type ModelTruncationOptions
 NATIVE_AGENT
 NATIVE_AGENT_NAME
@@ -1019,6 +1027,7 @@ loginProviderIds
 markNativeTurnOutcome
 maskForPrompt
 mcpRuleAdmits
+memoryCompactionCandidates
 namespacedToolName
 narrowGrants
 nativeSessionId
