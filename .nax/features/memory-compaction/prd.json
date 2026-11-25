@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T12:07:23.292Z",
+  "updatedAt": "2026-11-25T12:27:38.157Z",
   "userStories": [
     {
       "id": "US-001",
@@ -746,14 +746,17 @@
         "US-008",
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-package host composition, capped-file extraction and exact projection parity are integration-sensitive. Test seam forwarding, proposal refusals, sync warning behavior and real local-mirror capacity with both scopes/repository shadows."
+        "reasoning": "Cross-package host composition, capped-file extraction and exact projection parity are integration-sensitive. Test seam forwarding, proposal refusals, sync warning behavior and real local-mirror capacity with both scopes/repository shadows.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -772,7 +775,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1e6f8093f60af77e245ed33af00260282b95075c"
     },
     {
       "id": "US-013",
