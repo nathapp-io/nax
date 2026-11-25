@@ -341,6 +341,39 @@ describe("undoMemoryCompaction: the removal's delivery bookkeeping", () => {
     });
   });
 
+  test("B2: a forget queued before the compaction's save does not stand in for the undo's own", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      // Somebody's forget for the slug the merge is about to write, taken before the compaction
+      // ran: it sits *ahead* of the apply's save in the delivery order, so a removal that treated
+      // it as the request it owes would deliver the save after it and bring the merged note back.
+      await h.outbox.enqueue({
+        kind: "forget",
+        scope: "project",
+        slug: MERGED_SLUG,
+        writeMode: "direct",
+        reason: "superseded by a merge somebody expected",
+      });
+      await h.apply();
+      const heldBefore = await entriesFor(h, "forget", MERGED_SLUG);
+      expect(heldBefore).toHaveLength(1);
+
+      const result = await undo(h);
+
+      expect(result.removed).toEqual([MERGED_SLUG]);
+      // Two requests now: the one that was already there, and the one this undo owes the
+      // provider — recognized as its own by the compaction it names, not by the slug alone.
+      const forgets = await entriesFor(h, "forget", MERGED_SLUG);
+      expect(forgets).toHaveLength(2);
+      const undoForget = forgets.find((entry) => entry.reason === `undo compaction ${COMPACTION_ID}`);
+      assertDefined(undoForget, `the undo's own forget for "${MERGED_SLUG}"`);
+      // …and it is queued after the compaction's save, so delivery cannot resurrect the note.
+      const [save] = await entriesFor(h, "save", MERGED_SLUG);
+      assertDefined(save, `the compaction's save for "${MERGED_SLUG}"`);
+      expect(undoForget.seq).toBeGreaterThan(save.seq);
+    });
+  });
+
   test("B2: a queue that refuses the forget leaves the note in place, and the re-run converges", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);

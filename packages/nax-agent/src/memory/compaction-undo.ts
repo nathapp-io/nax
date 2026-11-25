@@ -59,7 +59,6 @@ import { refreshIndex } from "./operations-support.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryStore } from "./store.ts";
 import type { MemoryNote, MemoryTimers } from "./types.ts";
-import { memoryNoteKey } from "./types.ts";
 
 const ERROR_STAGE = "memory";
 
@@ -256,12 +255,14 @@ function changedSince(input: MemoryUndoInput, target: UndoTarget, slugs: readonl
  * A created note the mirror no longer holds is not a change: there is nothing left for the
  * undo to overwrite, and the removal step answers with no removal rather than inventing one.
  *
- * Both checks read the mirror through one `listNotes`, not one `readNote` per slug: each of those
- * resolves the notes directory, pins it and reads a file on its own, so a batch undo of thirty
- * notes paid for thirty directory walks — the check scales with the mirror, not with the notes it
- * asks about (review M1). The listing's own contract applies to what it reads: a note it could
- * not read is reported once and skipped, which reads as "not there" here, exactly as a note the
- * mirror does not hold does.
+ * Each affected slug is read on its own with `readNote`, never through `listNotes`. The listing
+ * reports a note it cannot read once and skips it, which here would read as "the mirror does not
+ * hold this slug" — and an archived slug somebody recreated and then made unreadable would be
+ * overwritten by the restore instead of stopping the undo (review B5). Whether a note the check
+ * cannot read is changed is not a question this check may answer on the caller's behalf, so the
+ * read error propagates and nothing is written. Only the slugs the compaction touched are asked
+ * for, each exactly once, whether it created the slug, archived it or both — the check reads what
+ * it judges, not the whole mirror (review M1).
  */
 async function changedSlugs(
   input: MemoryUndoInput,
@@ -269,16 +270,19 @@ async function changedSlugs(
   originals: readonly MemoryNote[],
 ): Promise<readonly string[]> {
   const created = target.manifest.created ?? [];
-  const mirror = new Map((await input.store.listNotes("project")).map((note) => [note.slug, note]));
+  const createdSlugs = new Set(created.map((note) => note.slug));
+  const watched = new Set<string>(createdSlugs);
+  for (const original of originals) watched.add(original.slug);
+  const held = new Map<string, MemoryNote | null>();
+  for (const slug of watched) held.set(slug, await input.store.readNote("project", slug));
   const changed: string[] = [];
   for (const written of created) {
-    const held = mirror.get(written.slug);
-    if (held !== undefined && held.updatedAt !== written.updatedAt) changed.push(written.slug);
+    const note = held.get(written.slug) ?? null;
+    if (note !== null && note.updatedAt !== written.updatedAt) changed.push(written.slug);
   }
-  const createdSlugs = new Set(created.map((note) => note.slug));
   for (const original of originals) {
     if (createdSlugs.has(original.slug)) continue;
-    if (mirror.has(original.slug)) changed.push(original.slug);
+    if ((held.get(original.slug) ?? null) !== null) changed.push(original.slug);
   }
   return changed;
 }
@@ -334,21 +338,48 @@ async function restoreNote(input: MemoryUndoInput, original: MemoryNote): Promis
   });
 }
 
+/** The reason one undo's removal carries: what tells its own request from any other forget. */
+function undoReason(id: string): string {
+  return `undo compaction ${id}`;
+}
+
+/**
+ * The slugs the outbox already holds *this* compaction's undo removal for.
+ *
+ * A request is this undo's own when it is the pair the entry itself records: the compaction id in
+ * the reason, and the slug it names. A forget for the slug alone is not equivalent, and treating
+ * one as equivalent is what let an earlier run lose the removal (review B2, second pass). A
+ * forget queued before the compaction ran sits *ahead* of the apply's save in the delivery order,
+ * so a removal that counted it queued nothing, delivery then replayed the save after it, and the
+ * merged note came back on the provider — even though the mirror no longer held it. A request that
+ * names this compaction can only have been taken by an undo of it, and it is always behind that
+ * save, so a re-run recognizes it and queues nothing twice.
+ */
+async function heldUndoRemovals(input: MemoryUndoInput, target: UndoTarget): Promise<Set<string>> {
+  const reason = undoReason(target.id);
+  const held = new Set<string>();
+  for (const entry of await input.outbox.list()) {
+    if (entry.state !== "queued" || entry.kind !== "forget") continue;
+    if (entry.scope === "project" && entry.reason === reason) held.add(entry.slug);
+  }
+  return held;
+}
+
 /**
  * Take the merge targets the compaction created out of the mirror, unless one is an archived
  * original — a merge that kept one of its own source slugs wrote *that* note, and the note the
  * archive holds is the one it has to answer with.
  *
- * The forget is queued *before* the note is deleted, and only when the outbox does not already
- * hold one for that note, which is what makes a re-run converge (review B2). The two orders are
- * not interchangeable: an undo that deletes first and then fails to queue the forget — a full
- * outbox, a write error — leaves a mirror with no note and a provider that still holds it, and the
- * re-run finds nothing to delete, skips the step, and never queues the forget either. The merge
- * the apply wrote comes back on the provider's next pull, or the still-queued save for it
- * resurrects it there. Queuing first makes the intent durable: a queued forget with the note still
- * present is delivered by the next sync, and a re-run after a failure between the two steps sees
- * the entry and queues nothing twice. Nothing can deliver it in between — the whole undo runs under
- * the mirror lock every writer and every sync of this mirror takes.
+ * The forget is queued *before* the note is deleted, and only when this undo's own request for
+ * that note is not already in the outbox, which is what makes a re-run converge (review B2). The
+ * two orders are not interchangeable: an undo that deletes first and then fails to queue the
+ * forget — a full outbox, a write error — leaves a mirror with no note and a provider that still
+ * holds it, and the re-run finds nothing to delete, skips the step, and never queues the forget
+ * either. The merge the apply wrote comes back on the provider's next pull, or the still-queued
+ * save for it resurrects it there. Queuing first makes the intent durable: a queued forget with
+ * the note still present is delivered by the next sync, and a re-run after a failure between the
+ * two steps sees the entry and queues nothing twice. Nothing can deliver it in between — the whole
+ * undo runs under the mirror lock every writer and every sync of this mirror takes.
  *
  * A target the mirror does not hold is not a removal, but it is still bookkeeping: the request is
  * queued if it is not already there, and the slug is not reported as removed by this run.
@@ -359,20 +390,19 @@ async function removeMergedNotes(
   restoredSlugs: ReadonlySet<string>,
 ): Promise<readonly string[]> {
   const removed: string[] = [];
-  const held = new Set(await input.outbox.heldKeys("forget"));
+  const queued = await heldUndoRemovals(input, target);
   for (const merge of target.manifest.merged) {
     if (restoredSlugs.has(merge.into)) continue;
-    const key = memoryNoteKey("project", merge.into);
-    if (!held.has(key)) {
+    if (!queued.has(merge.into)) {
       await input.outbox.enqueue({
         kind: "forget",
         clientId: randomUUID(),
         scope: "project",
         slug: merge.into,
         writeMode: "direct",
-        reason: `undo compaction ${target.id}`,
+        reason: undoReason(target.id),
       });
-      held.add(key);
+      queued.add(merge.into);
     }
     if ((await input.store.readNote("project", merge.into)) === null) continue;
     await input.store.deleteNote("project", merge.into);

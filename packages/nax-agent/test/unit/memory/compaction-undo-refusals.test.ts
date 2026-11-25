@@ -16,7 +16,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry, NaxError } from "@nathapp/nax-agent";
 import {
@@ -324,23 +324,23 @@ describe("undoMemoryCompaction: a note changed since the compaction", () => {
     });
   });
 
-  test("M1: the check reads the mirror once, not once per note", async () => {
+  test("M1/B5: the check reads each affected slug once, and reads nothing else", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
       await h.apply();
       await changeMergedNote(h);
       // Two notes to judge: the created one, whose `updatedAt` moved, and an archived slug the
-      // mirror holds again. Both are answered from the same listing.
+      // mirror holds again. The mirror also holds `unrelated`, which the check does not ask about.
       await h.store.writeNote({ ...originalOf(h, "retired"), updatedAt: LATER_STAMP });
-      const reads = { list: 0, single: 0 };
+      const reads: string[] = [];
       const counted = {
         ...h.store,
         listNotes: async (scope: Parameters<Harness["store"]["listNotes"]>[0]) => {
-          reads.list += 1;
+          reads.push(`list:${scope}`);
           return await h.store.listNotes(scope);
         },
         readNote: async (scope: Parameters<Harness["store"]["readNote"]>[0], slug: string) => {
-          reads.single += 1;
+          reads.push(`${scope}:${slug}`);
           return await h.store.readNote(scope, slug);
         },
       };
@@ -350,7 +350,55 @@ describe("undoMemoryCompaction: a note changed since the compaction", () => {
 
       expect(refusal.code).toBe("MEMORY_COMPACT_CHANGED");
       expect(refusal.context?.slugs).toEqual(["merged", "retired"]);
-      expect(reads).toEqual({ list: 1, single: 0 });
+      // The four slugs the compaction touched, each asked for once, and no full listing: the
+      // check reads what it judges (one read is what makes each answer strict — review B5).
+      expect(reads).toEqual(["project:merged", "project:retired", "project:source-a", "project:source-b"]);
+    });
+  });
+});
+
+// ─── a note the check cannot read (B5) ───────────────────────────────────────
+//
+// `listNotes` reports a note it cannot read once and carries on, which is right for the index
+// and wrong here: the note reads as "the mirror does not hold this slug", and the restore then
+// writes the archived original over whatever the note says. The check reads each affected slug
+// on its own instead, so a read error reaches the caller and nothing is written.
+
+describe("undoMemoryCompaction: a note the check cannot read", () => {
+  test("B5: refuses when an archived slug the mirror holds again cannot be read", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // Somebody recreated an archived slug after the compaction, and this process cannot read it.
+      await h.store.writeNote({
+        ...originalOf(h, "retired"),
+        id: "id-written-after-the-compaction",
+        body: "written after the compaction",
+        updatedAt: LATER_STAMP,
+      });
+      const path = join(h.store.paths.notesDir, "retired.md");
+      await chmod(path, 0o000);
+
+      // The premise the failing check rests on: the listing skips the note, and asking for the
+      // slug directly is the only answer that refuses. (A process that can read the file anyway —
+      // root ignores the mode — cannot pose this case, and the assertions below would say so.)
+      expect((await h.store.listNotes("project")).map((note) => note.slug)).not.toContain("retired");
+      const direct = await h.store.readNote("project", "retired").then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(direct).toBeInstanceOf(Error);
+      const before = await diskState(h);
+
+      const refused = await refusalOf(undo(h));
+
+      // The read error itself is the refusal: not `MEMORY_COMPACT_CHANGED`, which `force`
+      // overrides — `force` over a note nobody could read is exactly the overwrite this is about.
+      expect(refused.code).toBe("EACCES");
+      // Nothing was restored, removed, queued or marked: the undo stopped where the read failed.
+      expect(await diskState(h)).toEqual(before);
+      await chmod(path, 0o600);
+      expect(await readFile(path, "utf8")).toContain("written after the compaction");
     });
   });
 });
