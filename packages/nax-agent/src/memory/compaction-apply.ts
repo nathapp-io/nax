@@ -46,7 +46,7 @@ import {
   type MemoryCompactionPlan,
   type MemoryCompactionResult,
 } from "./compaction-types.ts";
-import { clockOf, mirrorSyncInFlight, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
+import { clockOf, mirrorBusy, mirrorSyncInFlight, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
 import { refreshIndex } from "./operations-support.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryStore } from "./store.ts";
@@ -78,18 +78,6 @@ export interface MemoryCompactionApplyInput {
   readonly newId?: () => string;
   readonly timers?: MemoryTimers;
   readonly isAlive?: (pid: number) => boolean;
-}
-
-/**
- * The refusal a mirror with a sync in flight answers with: nothing was written, and the same
- * plan applies unchanged once the sync is done.
- */
-function mirrorBusy(store: MemoryStore): NaxError {
-  return new NaxError(
-    "memory compaction refused: a sync of this process is in flight for this mirror; retry when it finishes",
-    "MEMORY_BUSY",
-    { stage: ERROR_STAGE, projectDir: store.paths.projectDir },
-  );
 }
 
 /**

@@ -130,6 +130,24 @@ export function mirrorSyncInFlight(store: MemoryStore): boolean {
   return storeLockTargets(store).some((target) => syncInFlight(target.path));
 }
 
+/**
+ * The refusal a mirror with a sync of this process in flight answers with: nothing was written,
+ * and the same work succeeds unchanged once the sync finishes.
+ *
+ * A writer that waited would be a writer the caller cannot bound — a sync drains for as long as
+ * the provider takes — so contention here is a result, and retrying is the caller's move.
+ */
+export function mirrorBusy(store: MemoryStore): NaxError {
+  return new NaxError(
+    "memory is busy: a sync of this process is in flight for this mirror; retry when it finishes",
+    "MEMORY_BUSY",
+    {
+      stage: "memory",
+      projectDir: store.paths.projectDir,
+    },
+  );
+}
+
 /** The liveness probe a lock holder is judged by: the caller's, or the real one. */
 function livenessOf(input: MirrorLockInput): (pid: number) => boolean {
   return input.isAlive ?? isProcessAlive;
