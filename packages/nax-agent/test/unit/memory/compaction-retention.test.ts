@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createMemoryStore } from "@nathapp/nax-agent";
@@ -8,17 +9,25 @@ import {
   writeCompactionManifest,
 } from "#src/memory/compaction-archive";
 import { _memoryStoreDeps } from "#src/memory/store";
+import { acquireSessionLock } from "#src/session-store/session-lock";
 import {
   assertNaxError,
   COMPACTION_ID,
+  COMPACTION_STAMP,
   compactionFailure,
   compactionManifest,
   makeCompactionHarness,
+  makeFakeClock,
+  waitForCondition,
   withTempDir,
 } from "#test/helpers/index";
 
 const archive = { ..._compactionArchiveDeps };
-afterEach(() => Object.assign(_compactionArchiveDeps, archive));
+const storeDeps = { ..._memoryStoreDeps };
+afterEach(() => {
+  Object.assign(_compactionArchiveDeps, archive);
+  Object.assign(_memoryStoreDeps, storeDeps);
+});
 type Harness = Awaited<ReturnType<typeof makeCompactionHarness>>;
 const EARLIER = ["20261122T101500Z-000001", "20261123T101500Z-000002", "20261124T101500Z-000003"];
 
@@ -142,6 +151,90 @@ describe("applyMemoryCompaction archive retention and ordering", () => {
         expect(failure.reason.message).toContain("retired");
       }
       expect(await names(h)).toEqual([COMPACTION_ID]);
+    });
+  });
+
+  test("F1: concurrent successful applies cannot prune each other's current archives", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const pruning = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let scans = 0;
+      _memoryStoreDeps.readdir = async (path, options) => {
+        if (path === h.store.paths.archiveDir && ++scans === 1) {
+          pruning.resolve();
+          await release.promise;
+        }
+        return storeDeps.readdir(path, options);
+      };
+      const first = h.apply({
+        keepArchives: 1,
+        plan: { retire: [{ slug: "retired", reason: "obsolete" }], merge: [] },
+      });
+      await pruning.promise;
+      const nextId = "20261126T101500Z-000004";
+      let secondFinished = false;
+      const second = h
+        .apply({
+          store: createMemoryStore({ projectDir: h.store.paths.projectDir, logger: h.logger }),
+          keepArchives: 1,
+          newId: () => nextId,
+          plan: { retire: [{ slug: "unrelated", reason: "also obsolete" }], merge: [] },
+        })
+        .finally(() => {
+          secondFinished = true;
+        });
+      // A bounded observation of absence, as in mirror-lock.test.ts: let the second apply
+      // reach retention if it can, without deadlocking the serialized implementation.
+      let overlapped: boolean;
+      try {
+        overlapped = await waitForCondition(() => secondFinished, 1_000).then(
+          () => true,
+          () => false,
+        );
+      } finally {
+        release.resolve();
+      }
+      const results = await Promise.all([first, second]);
+      expect(results.map((result) => result.id)).toEqual([COMPACTION_ID, nextId]);
+      expect(await names(h)).toEqual([nextId]);
+      expect(overlapped).toBe(false);
+      expect(scans).toBe(2);
+    });
+  });
+
+  test("F1: an apply waits for another process's compaction lifecycle lock", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const foreignPid = 8412;
+      const lockPath = join(h.store.paths.projectDir, "compaction.lock");
+      const isAlive = (pid: number) => pid === foreignPid;
+      const unlock = acquireSessionLock(
+        lockPath,
+        {
+          dir: h.store.paths.projectDir,
+          pid: foreignPid,
+          now: () => new Date(COMPACTION_STAMP),
+          logger: h.logger,
+          isAlive,
+        },
+        isAlive,
+      );
+      const clock = makeFakeClock();
+      let finished = false;
+      const applying = h.apply({ timers: clock, isAlive }).finally(() => {
+        finished = true;
+      });
+      try {
+        await waitForCondition(() => clock.pending() > 0 || finished, 5_000);
+        expect(clock.pending()).toBeGreaterThan(0);
+        expect(existsSync(h.store.paths.archiveDir)).toBe(false);
+      } finally {
+        await unlock();
+        await clock.advance(10);
+        await applying;
+      }
+      expect(existsSync(lockPath)).toBe(false);
     });
   });
 

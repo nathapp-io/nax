@@ -34,6 +34,7 @@ import {
   type MemoryCompactionManifestNote,
   pruneCompactionArchives,
   readCompactionLog,
+  withCompactionRetentionLock,
   writeCompactionArchive,
   writeCompactionManifest,
 } from "./compaction-archive.ts";
@@ -379,7 +380,11 @@ function archivedSlugs(plan: MemoryCompactionPlan): ReadonlySet<string> {
  */
 export async function applyMemoryCompaction(input: MemoryCompactionApplyInput): Promise<MemoryCompactionResult> {
   if (mirrorSyncInFlight(input.store)) throw mirrorBusy(input.store);
-  const result = await orderedByMirrorLocks(input.store, () => withMirrorLock(input, () => applyLocked(input)));
-  await pruneCompactionArchives({ ...input, id: result.id });
-  return result;
+  return await orderedByMirrorLocks(input.store, () =>
+    withCompactionRetentionLock(input, async () => {
+      const result = await withMirrorLock(input, () => applyLocked(input));
+      await pruneCompactionArchives({ ...input, id: result.id });
+      return result;
+    }),
+  );
 }

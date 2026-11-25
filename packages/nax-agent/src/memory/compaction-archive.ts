@@ -28,8 +28,10 @@ import { join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
+import { type MirrorLockInput, withMirrorLocks } from "./mirror-lock.ts";
 import { serializeMemoryNote } from "./note.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { NOTES_DIR } from "./store-paths.ts";
@@ -188,8 +190,21 @@ function warnRetention(logger: AgentLogger, path: string, error: unknown): void 
 }
 
 /**
- * Outside the mirror lock, retain only applied, id-named directories. The current archive
- * owns one slot even if the caller's clock sorts it before another id (or the limit is zero).
+ * Serialize the entire apply/retention lifecycle across processes, not merely the pruning
+ * passes: otherwise one pass can delete the next apply's archive before its pass starts.
+ * Acquire before the mirror lock; release after pruning, which still runs without the mirror
+ * lock. Call inside orderedByMirrorLocks so another caller of this process waits too.
+ * Reuse the mirror protocol's wait, heartbeat and stale-holder recovery with the input seams.
+ */
+export function withCompactionRetentionLock<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
+  const dir = realOrRaw(input.store.paths.projectDir);
+  return withMirrorLocks(input, [{ dir, path: join(dir, "compaction.lock") }], work);
+}
+
+/**
+ * Outside the mirror lock (but inside the compaction lifecycle lock), retain only applied,
+ * id-named directories. The current archive owns one slot even if the caller's clock sorts
+ * it before another id (or the limit is zero).
  */
 export async function pruneCompactionArchives(input: {
   readonly store: MemoryStore;
