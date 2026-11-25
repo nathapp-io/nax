@@ -11,8 +11,10 @@
 import { mkdir } from "node:fs/promises";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
+import { realOrRaw } from "#src/internal/realpath";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
+import { rootMandatoryDenyGlobs } from "./mandatory-deny-globs.ts";
 import { ensurePlaceholderExcludes } from "./placeholder-excludes.ts";
 import { type PlaceholderLedger, placeholderLedger } from "./placeholder-ledger.ts";
 import { candidatePaths } from "./placeholder-paths.ts";
@@ -118,12 +120,22 @@ function srtNetwork(allowedDomains: readonly string[] | undefined, allowLocalBin
   return open as SrtNetwork;
 }
 
-function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
+/**
+ * #3038: on darwin, srt's nested mandatory denies are cwd-anchored patterns it cannot
+ * re-anchor, so the session root's own are added here, where srt's glob dialect is
+ * known. Never on Linux: bwrap drops a glob, and the policy carries literals instead.
+ */
+function nestedRootDenies(root: string | undefined): string[] {
+  if (root === undefined || _srtBackendDeps.platform() !== "darwin") return [];
+  return rootMandatoryDenyGlobs(realOrRaw(root));
+}
+
+function customConfig(policy: SandboxPolicy, root: string | undefined): Partial<SrtRuntimeConfig> {
   return {
     filesystem: {
       denyRead: [...policy.denyRead],
       allowWrite: [...policy.writeRoots],
-      denyWrite: [...policy.denyWrite],
+      denyWrite: [...policy.denyWrite, ...nestedRootDenies(root)],
     },
     // US-002: `allowLocalBinding` is deliberately NOT here. srt applies it
     // process-wide, from the `initialize` config, so a copy on the per-command
@@ -149,6 +161,34 @@ async function linuxStep(message: string, step: () => Promise<void>): Promise<vo
 async function runLinuxStartupSteps(): Promise<void> {
   await linuxStep("placeholder sweep initialization failed", () => _srtBackendDeps.sweep());
   await linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(_srtBackendDeps.cwd()));
+}
+
+/**
+ * #3038: the session root's mandatory names are denied AT the root, so bwrap holds
+ * placeholders there even when the process cwd is elsewhere (`nax chat -d <dir>`).
+ * Each distinct root gets the same excludes the process cwd got at start-up, once,
+ * on the first wrap that names it. The promise is stored before it is awaited, so
+ * two wraps racing on a new root share one step.
+ */
+function createRootExcludes(): { ensure(root: string | undefined): Promise<void>; forget(): void } {
+  const handled = new Map<string, Promise<void>>();
+  return {
+    ensure(root) {
+      if (root === undefined || _srtBackendDeps.platform() !== "linux") return Promise.resolve();
+      const key = realOrRaw(root);
+      // A root equal to the process cwd was handled by start-up (see `rootExcludesStep`).
+      if (!handled.has(key)) handled.set(key, rootExcludesStep(root));
+      return handled.get(key) ?? Promise.resolve();
+    },
+    forget() {
+      handled.clear();
+    },
+  };
+}
+
+function rootExcludesStep(root: string): Promise<void> {
+  if (realOrRaw(root) === realOrRaw(_srtBackendDeps.cwd())) return Promise.resolve();
+  return linuxStep("git excludes initialization failed", () => _srtBackendDeps.ensureExcludes(root));
 }
 
 /**
@@ -218,6 +258,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
   const startedPoll = createStartedPoll();
+  const rootExcludes = createRootExcludes();
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -242,13 +283,14 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     },
     async wrap(req: SandboxWrapRequest) {
       const mod = await initialize();
+      await rootExcludes.ensure(req.root);
       // Linux: the ledger records what this wrap may create before it creates it.
       recordPlaceholderCandidates(req.policy);
       // A wrap that throws undoes srt's own count, so it needs no cleanup call.
       const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
         req.command,
         req.shell,
-        customConfig(req.policy),
+        customConfig(req.policy, req.root),
         undefined,
         req.cwd,
         { commandId: req.commandId },
@@ -284,6 +326,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: srt has dropped its placeholders by now, so the entries whose
       // inode is gone are exactly the ones this prune drops.
       linuxLedger()?.prune();
+      rootExcludes.forget();
       initialized = undefined;
       loaded = undefined;
     },
