@@ -15,7 +15,7 @@
  * stayed green.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry, NaxError } from "@nathapp/nax-agent";
 import {
@@ -59,6 +59,8 @@ const BAD_ID = "not-a-compaction-id";
 const TRAVERSAL_ID = "../outside";
 /** A well-formed id no compaction has ever used: the archive has no directory and the log no line. */
 const UNKNOWN_ID = "20260101T000000Z-abcdef";
+/** An archive directory copied beside the real one, whose manifest still names `COMPACTION_ID`. */
+const OTHER_ID = "20261126T101500Z-cccccc";
 
 /** One undo over a harness's mirror, with the harness's clock and timers unless overridden. */
 function undo(h: Harness, overrides: Partial<MemoryUndoInput> = {}): Promise<MemoryUndoResult> {
@@ -525,6 +527,18 @@ const REFUSAL_CASES: readonly RefusalCase[] = [
       await rm(join(h.store.paths.archiveDir, COMPACTION_ID), { recursive: true, force: true });
     },
     run: (h) => undo(h, { id: COMPACTION_ID }),
+  },
+  {
+    name: "an archive naming another compaction",
+    code: "MEMORY_COMPACT_NOT_FOUND",
+    pose: async (h) => {
+      // A directory the caller names that holds this compaction's notes but a manifest still
+      // saying `id: <COMPACTION_ID>`: the two spellings of the target disagree.
+      await cp(join(h.store.paths.archiveDir, COMPACTION_ID), join(h.store.paths.archiveDir, OTHER_ID), {
+        recursive: true,
+      });
+    },
+    run: (h) => undo(h, { id: OTHER_ID }),
   },
   {
     name: "an id with no archive",
