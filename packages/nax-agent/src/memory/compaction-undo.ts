@@ -122,10 +122,18 @@ async function resolveTarget(input: MemoryUndoInput): Promise<UndoTarget> {
   return await manifestTarget(input, input.id);
 }
 
-/** One id as a target, refusing when the archive holds no manifest this module can act on. */
+/**
+ * One id as a target, refusing when the archive holds no manifest this module can act on.
+ *
+ * The manifest also has to *be* this archive's: the id the caller asked for is what every step
+ * keys on — the `notes/` directory it restores from, the log line it marks, the manifest path
+ * it rewrites — so a manifest whose own `id` names a different compaction is a directory that
+ * is not the one asked for, however well-formed the file is. Acting on it would read one
+ * compaction's notes, delete another's merge targets and write the status to a third path.
+ */
 async function manifestTarget(input: MemoryUndoInput, id: string): Promise<UndoTarget> {
   const manifest = await readCompactionManifest({ store: input.store, id });
-  if (manifest === null) throw targetNotFound(input, id);
+  if (manifest === null || manifest.id !== id) throw targetNotFound(input, id);
   return { id, manifest };
 }
 

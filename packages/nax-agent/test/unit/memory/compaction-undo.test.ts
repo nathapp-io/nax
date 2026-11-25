@@ -12,13 +12,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry } from "@nathapp/nax-agent";
 import type { MemoryCompactionPlan } from "@nathapp/nax-agent/internal";
 import { type MemoryUndoInput, type MemoryUndoResult, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
+  assertNaxError,
   COMPACTION_ID,
   compactionManifest,
   makeCompactionHarness,
@@ -33,6 +34,8 @@ const ARCHIVED_SLUGS = ["retired", "source-a", "source-b"];
 const MERGED_SLUG = "merged";
 /** The note neither the plan nor the undo touches. */
 const KEPT_SLUG = "unrelated";
+/** An archive directory named like a compaction whose manifest still names another one. */
+const OTHER_ID = "20261126T101500Z-cccccc";
 /** A log line written before the compaction, which the undo must leave byte for byte. */
 const EARLIER_LINE =
   '{"id":"20250101T000000Z-aaaaaa","createdAt":"2025-01-01T00:00:00.000Z","retired":0,"merged":0,"notesBefore":1,"notesAfter":1,"fillBefore":0,"undone":false}';
@@ -463,6 +466,36 @@ describe("undoMemoryCompaction: an applied compaction with no log line", () => {
       for (const slug of ARCHIVED_SLUGS) expect(await h.store.readNote("project", slug)).not.toBeNull();
       expect(await h.store.readNote("project", MERGED_SLUG)).toBeNull();
       expect((await compactionManifest(h)).status).toBe("undone");
+    });
+  });
+});
+
+describe("undoMemoryCompaction: the target's archive", () => {
+  test("F1: an archive whose manifest names another compaction is no target, and nothing is written", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      // A directory the caller names that holds this compaction's notes but a manifest still
+      // saying `id: <COMPACTION_ID>`: the two spellings of the target disagree, so reading the
+      // notes from one of them and acting on the manifest of the other is not a compaction.
+      await cp(join(h.store.paths.archiveDir, COMPACTION_ID), join(h.store.paths.archiveDir, OTHER_ID), {
+        recursive: true,
+      });
+      const mirrorBefore = await h.store.listNotes("project");
+
+      const outcome: { result: MemoryUndoResult | null; error: unknown } = await undo(h, {
+        id: OTHER_ID,
+      }).then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: null, error }),
+      );
+
+      expect(outcome.result).toBeNull();
+      assertNaxError(outcome.error, "the undo's refusal");
+      expect(outcome.error.code).toBe("MEMORY_COMPACT_NOT_FOUND");
+      expect(await h.store.listNotes("project")).toEqual(mirrorBefore);
+      expect(await logLineFor(h, COMPACTION_ID)).toMatchObject({ undone: false });
+      expect((await compactionManifest(h)).status).toBe("applied");
     });
   });
 });
