@@ -844,7 +844,7 @@ None. `createMemoryHost` gains a side effect (writing `origin.json` in the isola
 - [unit] During a successful apply, `<archiveDir>/<id>/notes/<slug>.md` is written for every retired slug.
 - [unit] During a successful apply, `<archiveDir>/<id>/notes/<slug>.md` is written for every merge-source slug.
 - [unit] `parseMemoryNote` of each archived file equals the note the mirror held before the apply.
-- [unit] When a later step throws before the manifest is rewritten (the outbox stub throws on its first `enqueue`), `<archiveDir>/<id>/manifest.json` has `status: "applying"`, the plan's `retired` and `merged`, `provider`, `model`, `notesBefore` and `fillBefore`, and no `created`.
+- [unit] When the outbox stub throws on its first `enqueue`, the snapshot of `<archiveDir>/<id>/manifest.json` captured at that failure boundary before rollback has `status: "applying"`, the plan's `retired` and `merged`, `provider`, `model`, `notesBefore` and `fillBefore`, and no `created`. After handled rollback, the manifest has `status: "rolled_back"`.
 - [unit] With no `newId`, the compaction id matches `MEMORY_COMPACTION_ID_RE`.
 - [unit] With `newId`, the archive directory is named by the id `newId` returned.
 
@@ -982,7 +982,7 @@ None. `createMemoryHost` gains a side effect (writing `origin.json` in the isola
 - [unit] `buildMemoryCompactPrompt` with no commit subjects returns text with no commit section.
 - [unit] `buildMemoryCompactPrompt` with branch names lists each branch name.
 - [unit] `buildMemoryCompactPrompt` returns text that describes the JSON reply shape with `retire` and `merge` arrays.
-- [unit] `buildMemoryCompactPrompt` returns text that says `feedback` and `user` notes are never candidates and only listed slugs may be named.
+- [unit] `buildMemoryCompactPrompt` returns text that says `feedback` and `user` notes are never candidates and only listed slugs may be named in `retire.slug` or `merge.from`, while `merge.into.slug` may be a valid new target under the validator's collision rules.
 - [unit] `buildMemoryCompactPrompt` is importable from `@/prompts`.
 
 ### US-011: Compaction operation
@@ -1053,7 +1053,7 @@ None. `createMemoryHost` gains a side effect (writing `origin.json` in the isola
 - [unit] `compactProjectMemory` calls the `close` that `buildCallContext` returned once, after the op resolves.
 - [unit] `compactProjectMemory` calls that `close` when `callOp` throws, and rejects with the thrown error.
 - [unit] `compactProjectMemory` returns `{ kind: "unparseable" }` when the op returns `null`, and calls neither `confirm` nor `host.applyCompaction`.
-- [unit] `compactProjectMemory` returns `{ kind: "invalid", reasons }` with `validateMemoryCompactionPlan`'s reasons when the plan merges into an existing note's slug, and does not call `confirm`.
+- [unit] `compactProjectMemory` returns `{ kind: "invalid", reasons }` with `validateMemoryCompactionPlan`'s reasons when the plan merges into an existing note's slug that is not one of that merge's own `from` slugs, and does not call `confirm`. Reusing one of that merge's own `from` slugs is not rejected as a target collision.
 - [unit] `compactProjectMemory` with `dryRun: true` returns `{ kind: "dry-run", preview }` and calls neither `confirm` nor `host.applyCompaction`.
 - [unit] `compactProjectMemory` returns `{ kind: "declined", preview }` when `confirm` resolves false, and does not call `host.applyCompaction`.
 - [unit] The preview's `notesAfter` equals `notesBefore` minus the retired and merged-away notes plus the merged notes written under new slugs.
@@ -1138,7 +1138,7 @@ None. `createMemoryHost` gains a side effect (writing `origin.json` in the isola
 - [unit] `close()` logs no refused line when `refusedFull` is 0.
 - [unit] `close()` logs `Memory for <project> is <P>% full; run nax memory compact.` at info, stage `run`, `storyId: "_run"`, when the host's index is nearly full under `memory.compact.threshold`.
 - [unit] `close()` logs no nearly-full line when the host's index is not nearly full.
-- [unit] `close()` logs, in order, the save-count line, the refused line and the nearly-full line, and then closes the host.
+- [unit] Given `refusedFull > 0` and a nearly-full host index, `close()` logs, in order, the save-count line, the refused line and the nearly-full line, and then closes the host.
 - [unit] When `host.renderIndex()` throws at close, `close()` logs no nearly-full line and logs one `warn`.
 - [unit] When `host.renderIndex()` throws at close, `close()` still closes the host.
 - [unit] Neither `createRunMemory` nor `close()` calls the host's `applyCompaction` member, even with a nearly-full index.

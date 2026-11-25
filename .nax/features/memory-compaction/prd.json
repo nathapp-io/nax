@@ -155,7 +155,7 @@
         "[unit] During a successful apply, <archiveDir>/<id>/notes/<slug>.md is written for every retired slug.",
         "[unit] During a successful apply, <archiveDir>/<id>/notes/<slug>.md is written for every merge-source slug.",
         "[unit] parseMemoryNote of each archived file equals the note the mirror held before the apply.",
-        "[unit] When a later step throws before the manifest is rewritten (the outbox stub throws on its first enqueue), the snapshot of <archiveDir>/<id>/manifest.json observed at that failure boundary before rollback has status: \"applying\", the plan's retired and merged, provider, model, notesBefore and fillBefore, and no created.",
+        "[unit] When the outbox stub throws on its first enqueue, the snapshot of <archiveDir>/<id>/manifest.json captured at that failure boundary before rollback has status: \"applying\", the plan's retired and merged, provider, model, notesBefore and fillBefore, and no created. After handled rollback, the manifest has status: \"rolled_back\".",
         "[unit] With no newId, the compaction id matches MEMORY_COMPACTION_ID_RE.",
         "[unit] With newId, the archive directory is named by the id newId returned.",
         "[unit] memoryStorePaths(projectDir, userDir) retains the pre-existing index, notesDir, decisions, pendingForgets, syncState, lock, outboxDir, userIndex and userNotesDir path values when archiveDir and compactionsLog are added."
@@ -607,7 +607,7 @@
         "[unit] buildMemoryCompactPrompt with no commit subjects returns text with no commit section.",
         "[unit] buildMemoryCompactPrompt with branch names lists each branch name.",
         "[unit] buildMemoryCompactPrompt returns text that describes the JSON reply shape with retire and merge arrays.",
-        "[unit] buildMemoryCompactPrompt returns text that says feedback and user notes are never candidates and only listed slugs may be named in retire.slug or merge.from, while merge.into.slug may be a new valid target.",
+        "[unit] buildMemoryCompactPrompt returns text that says feedback and user notes are never candidates and only listed slugs may be named in retire.slug or merge.from, while merge.into.slug may be a valid new target under the validator's collision rules.",
         "[unit] buildMemoryCompactPrompt is importable from @/prompts.",
         "[unit] When a note body contains Markdown backtick fences, buildMemoryCompactPrompt keeps the entire body within the labelled note-data block rather than allowing it to terminate that block."
       ],
@@ -849,7 +849,7 @@
         "[unit] compactProjectMemory calls the close that buildCallContext returned once, after the op resolves.",
         "[unit] compactProjectMemory calls that close when callOp throws, and rejects with the thrown error.",
         "[unit] compactProjectMemory returns { kind: \"unparseable\" } when the op returns null, and calls neither confirm nor host.applyCompaction.",
-        "[unit] compactProjectMemory returns { kind: \"invalid\", reasons } with validateMemoryCompactionPlan's reasons when the plan merges into an existing note's slug that is not one of that merge's own from slugs, and does not call confirm.",
+        "[unit] compactProjectMemory returns { kind: \"invalid\", reasons } with validateMemoryCompactionPlan's reasons when the plan merges into an existing note's slug that is not one of that merge's own from slugs, and does not call confirm. Reusing one of that merge's own from slugs is not rejected as a target collision.",
         "[unit] compactProjectMemory with dryRun: true returns { kind: \"dry-run\", preview } and calls neither confirm nor host.applyCompaction.",
         "[unit] compactProjectMemory returns { kind: \"declined\", preview } when confirm resolves false, and does not call host.applyCompaction.",
         "[unit] The preview's notesAfter equals notesBefore minus the retired and merged-away notes plus the merged notes written under new slugs.",
