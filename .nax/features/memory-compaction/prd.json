@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T14:07:22.313Z",
+  "updatedAt": "2026-11-25T14:21:03.111Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1173,14 +1173,17 @@
         "US-009",
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Established counting/close lifecycle gains one counter and guarded reporting. Extend existing run-memory tests for refusal rethrow, ordered logs, render failure cleanup and zero compaction calls."
+        "reasoning": "Established counting/close lifecycle gains one counter and guarded reporting. Extend existing run-memory tests for refusal rethrow, ordered logs, render failure cleanup and zero compaction calls.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/run-memory.ts",
@@ -1198,7 +1201,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8bb527330b159c7cc0aadeaa41844899ba84083e"
     },
     {
       "id": "US-020",
