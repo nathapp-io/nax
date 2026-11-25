@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
 import { createCommandLauncher, probeSandbox } from "#src/sandbox/index";
+import { listNestedMandatoryDenies } from "#src/sandbox/nested-mandatory-denies";
 import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
 import { buildSandboxPolicy } from "#src/sandbox/policy-builder";
 import { createSrtBackend } from "#src/sandbox/srt-backend";
@@ -63,6 +64,8 @@ describe.skipIf(!probe.available)(`#3038 mandatory denies at a root that is not 
       backend,
       policyFor: async () =>
         buildSandboxPolicy({
+          // The production wiring (`resolveSessionSandbox`): the scan is Linux-only.
+          nestedMandatoryDenies: process.platform === "linux" ? await listNestedMandatoryDenies(root) : [],
           root,
           git: { kind: "none" },
           gitGuardFiles: [],
