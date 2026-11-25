@@ -65,8 +65,8 @@ describe("sandbox exec", () => {
   });
   test("#2986: the backend hears commandStarted with the wrap's commandId, after the spawn", async () => {
     await sandboxExecCommand("policy", "exit 3");
-    const wrapped = (backend.wrap as ReturnType<typeof mock>).mock.calls[0]?.[0] as { commandId: string };
-    expect(backend.started).toEqual([wrapped.commandId]);
+    expect(backend.started).toHaveLength(1);
+    expect(backend.wrap).toHaveBeenCalledWith(expect.objectContaining({ commandId: backend.started[0] }));
     expect(backend.finished).toBe(1);
   });
   test("#2986: a commandStarted that throws does not change the exit status", async () => {
