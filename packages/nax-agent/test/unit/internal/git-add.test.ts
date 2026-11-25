@@ -9,8 +9,9 @@ import {
   hasStagedChanges,
   parseGitlinks,
 } from "@nathapp/nax-agent/internal";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
 import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
-import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
+import { cleanupTempDir, makeLogger, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 const OK: GitRunResult = { stdout: "", stderr: "", exitCode: 0 };
 
@@ -95,13 +96,20 @@ describe("gitlinkSafeAdd argv", () => {
   describe("with a placeholder in the tree (US-006)", () => {
     withDepsRestore(_placeholderDeps);
     let cwd: string;
+    const log = makeLogger();
+    const realLogger = getSafeLogger();
 
     beforeEach(() => {
       cwd = makeTempDir("git-add-placeholders-");
+      log.reset();
+      setAgentLogger(log);
       // An absent ledger directory: these cases are about the mandatory names.
       _placeholderDeps.ledgerDir = () => join(cwd, "no-ledgers");
     });
-    afterEach(() => cleanupTempDir(cwd));
+    afterEach(() => {
+      setAgentLogger(realLogger);
+      cleanupTempDir(cwd);
+    });
 
     test("appends one exclude per untracked placeholder-shaped path", async () => {
       writeFileSync(join(cwd, ".mcp.json"), "");
@@ -112,7 +120,7 @@ describe("gitlinkSafeAdd argv", () => {
 
       expect(calls).toEqual([
         ["ls-files", "--stage", "-z", "--", ":/"],
-        ["check-ignore", "--", ".mcp.json"],
+        ["-c", "core.quotePath=false", "check-ignore", "--", ".mcp.json"],
         ["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"],
       ]);
     });
@@ -125,7 +133,7 @@ describe("gitlinkSafeAdd argv", () => {
       const calls: string[][] = [];
       const run = async (args: string[]) => {
         calls.push(args);
-        return args[0] === "check-ignore" ? { ...OK, stdout: ".bashrc\n" } : OK;
+        return args.includes("check-ignore") ? { ...OK, stdout: ".bashrc\n" } : OK;
       };
 
       await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
@@ -141,12 +149,15 @@ describe("gitlinkSafeAdd argv", () => {
         const calls: string[][] = [];
         const run = async (args: string[]) => {
           calls.push(args);
-          return args[0] === "check-ignore" ? { ...answer, stdout: ".mcp.json\n" } : OK;
+          return args.includes("check-ignore") ? { ...answer, stdout: ".mcp.json\n" } : OK;
         };
 
         await gitlinkSafeAdd(run, cwd, { flags: ["-A"] });
 
         expect(calls.at(-1)).toEqual(["add", "-A", "--", ":/", ":(exclude,literal).mcp.json"]);
+        const logged = log.calls.filter((c) => c.level === "debug" && c.message.includes("check-ignore"));
+        expect(logged).toHaveLength(1);
+        expect(logged[0]?.data).toMatchObject({ exitCode: answer.exitCode });
       },
     );
 

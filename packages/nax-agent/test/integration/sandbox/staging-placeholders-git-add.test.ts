@@ -280,3 +280,32 @@ describe("gitlinkSafeAdd leaves an .idea / .vscode placeholder untracked (#2986)
     expect(await staged(root)).toEqual(["notes.md"]);
   });
 });
+
+describe("gitlinkSafeAdd with non-ASCII and nested paths (#2986)", () => {
+  test("a placeholder at a non-ASCII path git already ignores exits 0 (git octal-quotes it by default)", async () => {
+    placeholder(join(root, "项目", ".bashrc"));
+    writeLedger([join(root, "项目", ".bashrc")]);
+    excludeLocally(root, "项目/.bashrc");
+    writeFileSync(join(root, "notes.md"), "notes\n");
+
+    const result = await addAll(root);
+
+    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(await staged(root)).toEqual(["notes.md"]);
+  });
+
+  test("run from a repository subdirectory (the tree-snapshot case): ignored and un-ignored placeholders", async () => {
+    const sub = join(root, "pkg");
+    mkdirSync(sub);
+    writeFileSync(join(sub, "keep.txt"), "k\n");
+    placeholder(join(sub, ".bashrc"));
+    placeholder(join(sub, ".mcp.json"));
+    excludeLocally(root, "pkg/.bashrc");
+
+    const result = await gitlinkSafeAdd(gitWithTimeout, sub, { flags: ["-A"] });
+
+    expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(await staged(root)).toEqual(["pkg/keep.txt"]);
+    expect(isTracked(root, "pkg/.mcp.json")).toBe(false);
+  });
+});

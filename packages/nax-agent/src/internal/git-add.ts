@@ -31,6 +31,7 @@
  * its exclude is dropped, found with one batched `git check-ignore`. That call
  * fails safe: when it times out or errors, every exclude stays.
  */
+import { getSafeLogger } from "#src/infra/index";
 import { stagingPlaceholderPaths } from "../sandbox/staging-placeholders.ts";
 
 export interface GitRunResult {
@@ -87,10 +88,19 @@ async function ignoredPaths(
   timeoutMs: number | undefined,
 ): Promise<Set<string>> {
   if (paths.length === 0) return new Set();
-  const r = await git(["check-ignore", "--", ...paths], cwd, timeoutMs);
-  if (r.timedOut || (r.exitCode !== 0 && r.exitCode !== 1)) return new Set();
-  // Newline-separated (`-z` needs `--stdin`, which a GitRunner cannot feed). A path git
-  // C-quotes (a quote, backslash or control byte) never matches here, so its exclude stays.
+  // `core.quotePath=false`: git octal-quotes every non-ASCII path by default, which would
+  // never match the path it was asked about.
+  const r = await git(["-c", "core.quotePath=false", "check-ignore", "--", ...paths], cwd, timeoutMs);
+  if (r.timedOut || (r.exitCode !== 0 && r.exitCode !== 1)) {
+    getSafeLogger()?.debug("sandbox", "git check-ignore failed; keeping every placeholder exclude", {
+      exitCode: r.exitCode,
+      timedOut: r.timedOut === true,
+    });
+    return new Set();
+  }
+  // Newline-separated (`-z` needs `--stdin`, which a GitRunner cannot feed). Git still
+  // C-quotes a path holding a quote, a backslash or a control byte; that never matches
+  // here, so its exclude stays.
   return new Set(r.stdout.split("\n").filter((p) => p !== ""));
 }
 
