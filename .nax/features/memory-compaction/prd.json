@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T12:42:27.950Z",
+  "updatedAt": "2026-11-25T13:02:18.709Z",
   "userStories": [
     {
       "id": "US-001",
@@ -868,14 +868,17 @@
         "US-012",
         "US-013"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One deterministic orchestration module composes already-tested host, facts, parser and validator APIs, following setup.ts for runtime lifetime; it introduces no locking algorithm. Stub callOp/context and write failing outcome, cleanup and profile-forwarding tests first."
+        "reasoning": "One deterministic orchestration module composes already-tested host, facts, parser and validator APIs, following setup.ts for runtime lifetime; it introduces no locking algorithm. Stub callOp/context and write failing outcome, cleanup and profile-forwarding tests first.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/setup.ts",
@@ -893,7 +896,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e44ada036685afc8fc27de1ff4a8a7345e99ff3d"
     },
     {
       "id": "US-015",
