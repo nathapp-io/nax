@@ -3,7 +3,7 @@
   "feature": "memory-compaction",
   "branchName": "feat/memory-compaction",
   "createdAt": "2026-11-25T07:10:06.829Z",
-  "updatedAt": "2026-11-25T09:25:13.163Z",
+  "updatedAt": "2026-11-25T09:42:47.316Z",
   "userStories": [
     {
       "id": "US-001",
@@ -240,14 +240,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Ordered mirror/outbox mutations and durable index/manifest/log completion require integration of several modules. Extend upstream apply tests with fresh-id, source-reuse and serialized-result assertions without provider calls."
+        "reasoning": "Ordered mirror/outbox mutations and durable index/manifest/log completion require integration of several modules. Extend upstream apply tests with fresh-id, source-reuse and serialized-result assertions without provider calls.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/compaction-apply.ts",
@@ -260,7 +263,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "139c1b811152bea627fae3f5c66a92a27c39f574"
     },
     {
       "id": "US-005",
