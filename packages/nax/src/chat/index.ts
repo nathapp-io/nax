@@ -109,6 +109,11 @@ export {
   readJobPanelView,
 } from "./jobs";
 export {
+  _memoryCompactOfferDeps,
+  createMemoryCompactOffer,
+  type MemoryCompactOffer,
+} from "./memory-compact-offer";
+export {
   _chatMemorySamplerDeps,
   type ChatMemorySampler,
   type ChatMemorySamplerOptions,
