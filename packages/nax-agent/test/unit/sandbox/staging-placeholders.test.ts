@@ -113,6 +113,35 @@ describe("stagingPlaceholderPaths", () => {
     expect(stagingPlaceholderPaths(cwd, ["docs/x"])).toEqual([]);
   });
 
+  test.each([".idea", ".vscode", ".claude/commands", ".claude/agents"])(
+    "returns an empty 0444 FILE at the dangerous-directory name %s (#2986)",
+    (name) => {
+      mkdirSync(join(cwd, ".claude"), { recursive: true });
+      placeholder(join(cwd, name));
+
+      expect(stagingPlaceholderPaths(cwd, [])).toEqual([name]);
+    },
+  );
+
+  test("does not return a dangerous-directory name that is a directory", () => {
+    mkdirSync(join(cwd, ".idea"));
+    mkdirSync(join(cwd, ".vscode"));
+
+    expect(stagingPlaceholderPaths(cwd, [])).toEqual([]);
+  });
+
+  test("does not return a dangerous-directory name that is a real, non-empty file", () => {
+    writeFileSync(join(cwd, ".idea"), "x\n");
+
+    expect(stagingPlaceholderPaths(cwd, [])).toEqual([]);
+  });
+
+  test("does not return a placeholder-shaped dangerous-directory name that git tracks", () => {
+    placeholder(join(cwd, ".idea"));
+
+    expect(stagingPlaceholderPaths(cwd, [".idea"])).toEqual([]);
+  });
+
   test("lists a path once when a mandatory name is also a ledger entry", () => {
     placeholder(join(cwd, ".mcp.json"));
     writeLedger(424242, [{ path: join(cwd, ".mcp.json") }]);
