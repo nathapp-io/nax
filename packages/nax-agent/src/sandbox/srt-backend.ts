@@ -14,6 +14,7 @@ import { getSafeLogger } from "#src/infra/index";
 import { realOrRaw } from "#src/internal/realpath";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
 import { SRT_MACOS_TMPDIR } from "./defaults.ts";
+import { rootMandatoryDenyGlobs } from "./mandatory-deny-globs.ts";
 import { ensurePlaceholderExcludes } from "./placeholder-excludes.ts";
 import { type PlaceholderLedger, placeholderLedger } from "./placeholder-ledger.ts";
 import { candidatePaths } from "./placeholder-paths.ts";
@@ -119,12 +120,22 @@ function srtNetwork(allowedDomains: readonly string[] | undefined, allowLocalBin
   return open as SrtNetwork;
 }
 
-function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
+/**
+ * #3038: on darwin, srt's nested mandatory denies are cwd-anchored patterns it cannot
+ * re-anchor, so the session root's own are added here, where srt's glob dialect is
+ * known. Never on Linux: bwrap drops a glob, and the policy carries literals instead.
+ */
+function nestedRootDenies(root: string | undefined): string[] {
+  if (root === undefined || _srtBackendDeps.platform() !== "darwin") return [];
+  return rootMandatoryDenyGlobs(realOrRaw(root));
+}
+
+function customConfig(policy: SandboxPolicy, root: string | undefined): Partial<SrtRuntimeConfig> {
   return {
     filesystem: {
       denyRead: [...policy.denyRead],
       allowWrite: [...policy.writeRoots],
-      denyWrite: [...policy.denyWrite],
+      denyWrite: [...policy.denyWrite, ...nestedRootDenies(root)],
     },
     // US-002: `allowLocalBinding` is deliberately NOT here. srt applies it
     // process-wide, from the `initialize` config, so a copy on the per-command
@@ -279,7 +290,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
         req.command,
         req.shell,
-        customConfig(req.policy),
+        customConfig(req.policy, req.root),
         undefined,
         req.cwd,
         { commandId: req.commandId },

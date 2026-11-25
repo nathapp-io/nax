@@ -10,8 +10,8 @@
  * Skipped, with the probe's reason in the title, where no sandbox runs.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
 import { createCommandLauncher, probeSandbox } from "#src/sandbox/index";
@@ -106,4 +106,45 @@ describe.skipIf(!probe.available)(`#3038 mandatory denies at a root that is not 
     expect(await run(elsewhere, "mkdir -p .claude/commands && echo x > .claude/commands/evil.md")).toBe("DENIED");
     expect(existsSync(join(root, ".claude", "commands", "evil.md"))).toBe(false);
   }, 90_000);
+
+  // srt also denies the same names at any depth beneath the process cwd. On Linux that is
+  // a ripgrep scan of names that EXIST (an absent nested name is never denied, even with
+  // cwd == root), so every case seeds its target first; on darwin the denies are patterns
+  // and would hold either way. Seeding keeps one fixture honest on both.
+  const NESTED: ReadonlyArray<{
+    readonly name: string;
+    readonly seed: readonly string[];
+    readonly command: string;
+  }> = [
+    { name: "sub/.mcp.json", seed: ["sub/.mcp.json"], command: "echo x > sub/.mcp.json" },
+    { name: "sub/.vscode/tasks.json", seed: ["sub/.vscode/tasks.json"], command: "echo y > sub/.vscode/tasks.json" },
+    {
+      name: "sub/.claude/commands/x.md",
+      seed: ["sub/.claude/commands/x.md"],
+      command: "echo y > sub/.claude/commands/x.md",
+    },
+    { name: "sub/.bashrc", seed: ["sub/.bashrc"], command: "echo y > sub/.bashrc" },
+    {
+      name: "nested/.git/hooks/pre-commit",
+      seed: ["nested/.git/hooks/pre-commit.sample"],
+      command: "echo y > nested/.git/hooks/pre-commit",
+    },
+  ];
+
+  for (const { name, seed, command } of NESTED) {
+    for (const [label, where] of [
+      ["the root", () => root],
+      ["elsewhere", () => elsewhere],
+    ] as const) {
+      test(`${name}: denied when the process cwd is ${label}`, async () => {
+        for (const rel of seed) {
+          mkdirSync(dirname(join(root, rel)), { recursive: true });
+          writeFileSync(join(root, rel), "seed\n");
+        }
+        expect(await run(where(), command)).toBe("DENIED");
+        for (const rel of seed) expect(readFileSync(join(root, rel), "utf8")).toBe("seed\n");
+        expect(existsSync(join(root, name))).toBe(seed.includes(name));
+      }, 90_000);
+    }
+  }
 });
