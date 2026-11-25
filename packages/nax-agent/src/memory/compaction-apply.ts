@@ -19,10 +19,9 @@
  * The archive (see `compaction-archive.ts`) is the order the writes are safe in. Step by step:
  * revalidate; archive the notes the plan touches and record an `applying` manifest; stage the
  * merges and the retires; refresh the index; rewrite the manifest `applied`; append the log
- * line. A failure after the archive leaves a manifest that says what the apply was doing and
- * every note it touched on disk. Repairing the mirror from it is a separate step that this
- * module does not yet take: a failure propagates with the archive and the `applying` manifest
- * left behind, which is exactly what an undo reads to put the mirror back.
+ * line. A failure after the archive restores the notes and removes only this apply's queued
+ * requests, failed log bytes and new merge targets. The archive remains recoverable with a
+ * `rolled_back` manifest. Successful applies prune old applied archives outside the lock.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -33,10 +32,13 @@ import {
   type MemoryCompactionManifest,
   type MemoryCompactionManifestMerge,
   type MemoryCompactionManifestNote,
+  pruneCompactionArchives,
+  readCompactionLog,
   writeCompactionArchive,
   writeCompactionManifest,
 } from "./compaction-archive.ts";
 import { memoryCompactionCandidates, validateMemoryCompactionPlan } from "./compaction-plan.ts";
+import { type CompactionStaging, compactionFailed, rollbackCompaction } from "./compaction-rollback.ts";
 import {
   MEMORY_COMPACTION_SOURCE,
   type MemoryCompactionMerge,
@@ -134,8 +136,24 @@ async function validatedMirror(input: MemoryCompactionApplyInput): Promise<Mirro
 /** The locked half of an apply: revalidate, archive, stage, and record what it did. */
 async function applyLocked(input: MemoryCompactionApplyInput): Promise<MemoryCompactionResult> {
   const view = await validatedMirror(input);
-  const applying = await archiveBefore(input, view);
-  return await stageAndRecord(input, applying);
+  let applying: Applying;
+  try {
+    applying = await archiveBefore(input, view);
+  } catch (cause) {
+    throw compactionFailed(cause);
+  }
+  const staging: CompactionStaging = { writtenSlugs: new Set(), enqueuedIds: new Set() };
+  try {
+    return await stageAndRecord({ ...input, staging }, applying);
+  } catch (cause) {
+    const complete = await rollbackCompaction({
+      ...input,
+      staging,
+      originals: applying.originals,
+      manifest: applyingManifest(input, applying),
+    });
+    throw compactionFailed(cause, { id: applying.id, ...(complete ? {} : { rollback: "incomplete" }) });
+  }
 }
 
 /** One apply as its later steps know it: the id it was minted, when, and the note count it found. */
@@ -143,6 +161,7 @@ interface Applying {
   readonly id: string;
   readonly createdAt: string;
   readonly notesBefore: number;
+  readonly originals: readonly MemoryNote[];
 }
 
 /** The mirror as the apply found it under the lock: what a plan may act on, and every note it holds. */
@@ -154,13 +173,14 @@ interface MirrorView {
 /** Step 3: keep every note the plan touches, then record that the apply has begun. */
 async function archiveBefore(input: MemoryCompactionApplyInput, view: MirrorView): Promise<Applying> {
   const createdAt = clockOf(input)();
+  const touched = archivedSlugs(input.plan);
   const applying: Applying = {
     id: input.newId?.() ?? mintCompactionId(createdAt),
     createdAt: createdAt.toISOString(),
     notesBefore: view.projectNotes.length,
+    originals: view.candidates.filter((note) => touched.has(note.slug)),
   };
-  const touched = view.candidates.filter((note) => archivedSlugs(input.plan).has(note.slug));
-  await writeCompactionArchive({ store: input.store, id: applying.id, notes: touched });
+  await writeCompactionArchive({ store: input.store, id: applying.id, notes: applying.originals });
   await writeCompactionManifest({ store: input.store, manifest: applyingManifest(input, applying) });
   return applying;
 }
@@ -207,7 +227,9 @@ function mintCompactionId(at: Date): string {
  * that already delivers them. The index is refreshed before the manifest is completed, so the
  * manifest's `applied` status never describes a mirror whose index still lists a retired note.
  */
-async function stageAndRecord(input: MemoryCompactionApplyInput, applying: Applying): Promise<MemoryCompactionResult> {
+type StagingInput = MemoryCompactionApplyInput & { readonly staging: CompactionStaging };
+
+async function stageAndRecord(input: StagingInput, applying: Applying): Promise<MemoryCompactionResult> {
   const created: MemoryCompactionManifestNote[] = [];
   for (const merge of input.plan.merge) created.push(await stageMerge(input, merge));
   for (const retire of input.plan.retire) await retireSlug(input, retire.slug, retire.reason);
@@ -218,6 +240,7 @@ async function stageAndRecord(input: MemoryCompactionApplyInput, applying: Apply
     store: input.store,
     manifest: appliedManifest(input, applying, { created, notesAfter }),
   });
+  input.staging.logBefore = await readCompactionLog(input.store);
   await appendCompactionLog({ store: input.store, line: logLineOf(input, applying, notesAfter) });
   return resultOf(input.plan, applying, notesAfter);
 }
@@ -282,12 +305,11 @@ function mergedNote(merge: MemoryCompactionMerge, updatedAt: string): MemoryNote
  * The note's own id is the request's client id, so the note, the request and the write a later
  * sync delivers are named by one id — the same binding a save makes.
  */
-async function stageMerge(
-  input: MemoryCompactionApplyInput,
-  merge: MemoryCompactionMerge,
-): Promise<MemoryCompactionManifestNote> {
+async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Promise<MemoryCompactionManifestNote> {
   const note = mergedNote(merge, clockOf(input)().toISOString());
+  input.staging.writtenSlugs.add(note.slug);
   await input.store.writeNote(note);
+  input.staging.enqueuedIds.add(note.id);
   await input.outbox.enqueue({
     kind: "save",
     clientId: note.id,
@@ -306,11 +328,13 @@ async function stageMerge(
  * against a live note; the entry is what makes the retire durable, and it is written with the
  * reason the person confirmed.
  */
-async function retireSlug(input: MemoryCompactionApplyInput, slug: string, reason: string): Promise<void> {
+async function retireSlug(input: StagingInput, slug: string, reason: string): Promise<void> {
   await input.store.deleteNote("project", slug);
+  const clientId = randomUUID();
+  input.staging.enqueuedIds.add(clientId);
   await input.outbox.enqueue({
     kind: "forget",
-    clientId: randomUUID(),
+    clientId,
     scope: "project",
     slug,
     writeMode: "direct",
@@ -324,7 +348,7 @@ async function retireSlug(input: MemoryCompactionApplyInput, slug: string, reaso
  * A merge that keeps one of its own source slugs leaves that note in place — the merged note
  * *is* it — so it is the one source a merge does not forget.
  */
-async function retireMergeSources(input: MemoryCompactionApplyInput, merge: MemoryCompactionMerge): Promise<void> {
+async function retireMergeSources(input: StagingInput, merge: MemoryCompactionMerge): Promise<void> {
   for (const from of merge.from) {
     if (from === merge.into.slug) continue;
     await retireSlug(input, from, `merged into ${merge.into.slug}`);
@@ -355,5 +379,7 @@ function archivedSlugs(plan: MemoryCompactionPlan): ReadonlySet<string> {
  */
 export async function applyMemoryCompaction(input: MemoryCompactionApplyInput): Promise<MemoryCompactionResult> {
   if (mirrorSyncInFlight(input.store)) throw mirrorBusy(input.store);
-  return await orderedByMirrorLocks(input.store, () => withMirrorLock(input, () => applyLocked(input)));
+  const result = await orderedByMirrorLocks(input.store, () => withMirrorLock(input, () => applyLocked(input)));
+  await pruneCompactionArchives({ ...input, id: result.id });
+  return result;
 }

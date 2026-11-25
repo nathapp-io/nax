@@ -43,6 +43,13 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
+export {
+  COMPACTION_ID,
+  COMPACTION_STAMP,
+  compactionFailure,
+  compactionManifest,
+  makeCompactionHarness,
+} from "./compaction";
 export { CONFINED_TEST_ENV, isConfinedTestRun, SANDBOXED_ENV } from "./confined";
 export {
   type MemoryProviderMock,

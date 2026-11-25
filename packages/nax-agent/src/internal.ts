@@ -49,6 +49,7 @@ export * from "#src/internal/sort";
 export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
 export { applyMemoryCompaction, type MemoryCompactionApplyInput } from "#src/memory/compaction-apply";
+export { _compactionArchiveDeps } from "#src/memory/compaction-archive";
 export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "#src/memory/compaction-plan";
 export {
   MEMORY_COMPACTION_ID_RE,

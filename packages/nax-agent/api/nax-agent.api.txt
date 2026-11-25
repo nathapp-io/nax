@@ -860,6 +860,7 @@ _boundedIoDeps
 _clientDeps
 _codingToolDeps
 _commandShadowDeps
+_compactionArchiveDeps
 _editDeps
 _externalHandlerDeps
 _fileLockDeps

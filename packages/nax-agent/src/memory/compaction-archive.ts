@@ -16,19 +16,27 @@
  *
  * A note file is published atomically (`writeFileAtomic`), like every other file this package
  * publishes: a crash mid-archive leaves the previous file or none, never a torn one. The log
- * is appended rather than rewritten, because it is history — a line that was written stays.
+ * is appended on success. A failed append is restored to its pre-append bytes while the
+ * writer lock is still held, so even a partial failed record cannot become history.
  *
  * The manifest's shape is its own type rather than a re-use of `MemoryCompactionResult`: the
  * file outlives the run that wrote it and is read by a later process (`nax memory undo`), so
  * it changes only when the on-disk format does.
  */
-import { appendFile } from "node:fs/promises";
+import { appendFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import type { AgentLogger } from "#src/infra/agent-logger";
+import { errorMessage } from "#src/infra/errors";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { byCodePoint } from "#src/internal/sort";
+import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
 import { serializeMemoryNote } from "./note.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { NOTES_DIR } from "./store-paths.ts";
 import type { MemoryNote } from "./types.ts";
+
+/** Filesystem seams for log recovery and archive pruning. */
+export const _compactionArchiveDeps = { appendFile, readFile, rm };
 
 /** The file each archive directory keeps its manifest in. */
 export const MANIFEST_FILE = "manifest.json";
@@ -129,8 +137,8 @@ export async function writeCompactionManifest(input: {
 /**
  * Append one line to the mirror's compaction log.
  *
- * Appended, never rewritten: the log is the history an undo reads to pick its default target,
- * so an earlier line describes a compaction that happened and stays as it was written. The
+ * The log is the history an undo reads to pick its default target. A successful append
+ * preserves every earlier byte; a failed append is taken back by the apply's rollback. The
  * project directory is created first, because a mirror with no notes has no directory yet.
  */
 export async function appendCompactionLog(input: {
@@ -138,5 +146,81 @@ export async function appendCompactionLog(input: {
   readonly line: MemoryCompactionLogLine;
 }): Promise<void> {
   await _memoryStoreDeps.mkdir(input.store.paths.projectDir, { recursive: true });
-  await appendFile(input.store.paths.compactionsLog, `${JSON.stringify(input.line)}\n`, "utf8");
+  await _compactionArchiveDeps.appendFile(input.store.paths.compactionsLog, `${JSON.stringify(input.line)}\n`, "utf8");
+}
+
+/** Snapshot only immediately before append, under the writer lock. */
+export async function readCompactionLog(store: MemoryStore): Promise<Uint8Array | null> {
+  try {
+    return await _compactionArchiveDeps.readFile(store.paths.compactionsLog);
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** Restore earlier lines byte-for-byte, removing a newly created log when there was none. */
+export async function restoreCompactionLog(store: MemoryStore, before: Uint8Array | null): Promise<void> {
+  if (before === null) await _compactionArchiveDeps.rm(store.paths.compactionsLog, { force: true });
+  else await writeFileAtomic(store.paths.compactionsLog, before);
+}
+
+/** An unreadable or malformed manifest is not proof that its archive is safe to prune. */
+async function isAppliedArchive(store: MemoryStore, id: string): Promise<boolean> {
+  try {
+    const manifest: unknown = JSON.parse(
+      await _compactionArchiveDeps.readFile(compactionManifestPath(store, id), "utf8"),
+    );
+    return typeof manifest === "object" && manifest !== null && "status" in manifest && manifest.status === "applied";
+  } catch {
+    // Retain archives whose state cannot be established, including a concurrent disappearance.
+    return false;
+  }
+}
+
+/** Warn without letting an optional retention pass change a successful apply's result. */
+function warnRetention(logger: AgentLogger, path: string, error: unknown): void {
+  try {
+    logger.warn("memory", "memory compaction could not prune archive", { path, error: errorMessage(error) });
+  } catch {
+    // The compaction has succeeded; a broken logger cannot change that answer.
+  }
+}
+
+/**
+ * Outside the mirror lock, retain only applied, id-named directories. The current archive
+ * owns one slot even if the caller's clock sorts it before another id (or the limit is zero).
+ */
+export async function pruneCompactionArchives(input: {
+  readonly store: MemoryStore;
+  readonly id: string;
+  readonly keepArchives: number;
+  readonly logger: AgentLogger;
+}): Promise<void> {
+  const { store, logger } = input;
+  try {
+    const applied: string[] = [];
+    const entries = await _memoryStoreDeps.readdir(store.paths.archiveDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (
+        entry.isDirectory() &&
+        MEMORY_COMPACTION_ID_RE.test(entry.name) &&
+        (await isAppliedArchive(store, entry.name))
+      ) {
+        if (entry.name !== input.id) applied.push(entry.name);
+      }
+    }
+    applied.sort((left, right) => byCodePoint(right, left));
+    const otherSlots = Math.max(0, Math.floor(input.keepArchives) - 1);
+    for (const id of applied.slice(otherSlots)) {
+      const path = compactionArchiveDir(store, id);
+      try {
+        await _compactionArchiveDeps.rm(path, { recursive: true, force: true });
+      } catch (error) {
+        warnRetention(logger, path, error);
+      }
+    }
+  } catch (error) {
+    warnRetention(logger, store.paths.archiveDir, error);
+  }
 }
