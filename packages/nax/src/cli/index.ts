@@ -166,6 +166,13 @@ export {
   withMemoryHost,
 } from "./memory-cli-deps";
 export {
+  _memoryCompactCliDeps,
+  type MemoryCompactCliDeps,
+  type MemoryCompactOptions,
+  memoryCompactCommand,
+  registerMemoryCompactCommands,
+} from "./memory-compact";
+export {
   type MemoryShowOptions,
   memoryShowCommand,
   memorySyncCommand,

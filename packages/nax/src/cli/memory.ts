@@ -5,8 +5,8 @@
  * chat session has neither, so this group is the other surface. This file registers the group
  * and holds the two listing subcommands — `status` reports what the mirror holds, `list`
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
- * (`show`, `sync`), `memory-write.ts` (`save`, `forget`, `approve`) and `memory-admin.ts`
- * (`link`).
+ * (`show`, `sync`), `memory-write.ts` (`save`, `forget`, `approve`), `memory-admin.ts`
+ * (`link`), `memory-rejected.ts` (`requeue`, `discard`) and `memory-compact.ts` (`compact`).
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —
@@ -37,6 +37,7 @@ import {
   withMemoryErrors,
   withMemoryHost,
 } from "./memory-cli-deps";
+import { _memoryCompactCliDeps, registerMemoryCompactCommands } from "./memory-compact";
 import { registerMemoryReadCommands } from "./memory-read";
 import { registerMemoryRejectedCommands } from "./memory-rejected";
 import { registerMemoryWriteCommands } from "./memory-write";
@@ -200,5 +201,6 @@ export function registerMemoryCommand(program: Command, deps: MemoryCliDeps = _m
   registerMemoryWriteCommands(memory, deps);
   registerMemoryAdminCommands(memory, deps);
   registerMemoryRejectedCommands(memory, deps);
+  registerMemoryCompactCommands(memory, { ..._memoryCompactCliDeps, ...deps });
   return memory;
 }
