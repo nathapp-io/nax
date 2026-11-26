@@ -277,6 +277,23 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     wrapsInFlight = Math.max(0, wrapsInFlight - 1);
   }
 
+  /**
+   * The prune a wrap's end performs, chosen by how many wraps are still in flight
+   * (US-004). At zero nothing is left to identify a pending candidate, so the
+   * pending entries are abandoned — left behind, one would let a user file created
+   * later at that path be adopted by the next `observe`. While another wrap runs
+   * they stay: it may still be starting the placeholder this one has not seen yet.
+   *
+   * Called from `commandFinished` AND from a `wrapWithSandboxArgv` failure, which
+   * no `commandFinished` follows (F1): a failed wrap that was the only one must not
+   * leave its own candidates for a later `observe` to adopt.
+   */
+  function prunePlaceholderCandidates(): void {
+    const ledger = linuxLedger();
+    if (wrapsInFlight === 0) ledger?.prune({ abandonPending: true });
+    else ledger?.prune();
+  }
+
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
@@ -314,8 +331,9 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       wrapsInFlight += 1;
       // A wrap that throws undoes srt's own count, so it needs no cleanup call —
       // and no `commandFinished` follows it either, so the in-flight count it just
-      // took is given back here (US-004). Otherwise one failed wrap would keep
-      // every later wrap's pending entries alive forever.
+      // took is given back here, together with the same end-of-wrap prune (US-004,
+      // F1). Otherwise one failed wrap would keep every later wrap's pending
+      // entries alive forever, and its own would be adopted by the next observe.
       try {
         const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
           req.command,
@@ -328,6 +346,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
         return argv;
       } catch (error) {
         wrapFinished();
+        prunePlaceholderCandidates();
         throw error;
       }
     },
@@ -358,8 +377,7 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();
       wrapFinished();
-      if (wrapsInFlight === 0) ledger?.prune({ abandonPending: true });
-      else ledger?.prune();
+      prunePlaceholderCandidates();
     },
     async reset() {
       if (loaded !== undefined) await loaded.SandboxManager.reset();

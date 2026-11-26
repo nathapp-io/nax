@@ -203,6 +203,51 @@ describe("srt backend: abandoning pending placeholder candidates (US-004)", () =
     expect(ledgerDirPaths()).not.toContain(target);
   });
 
+  // F1: a failed wrap that was the ONLY wrap leaves nothing to identify its own
+  // candidates, so it must abandon them at the failure — not wait for a
+  // `commandFinished` that will never come.
+  test("US-004 AC-13: a failed wrap with nothing else in flight abandons its candidates at once", async () => {
+    stubSrt({ throwOnWrap: 1 });
+    const backend = createSrtBackend({});
+    const target = join(cwd, ".zprofile");
+
+    await expect(backend.wrap(ledgerRequest("a"))).rejects.toThrow("bwrap profile too long");
+
+    expect(ledgerDirPaths()).not.toContain(target);
+  });
+
+  // F1, the race the finding names: the pending entry a failed wrap left behind is
+  // what lets the NEXT commandFinished's observe adopt a user's own 0444 empty file
+  // as a placeholder, before that same call prunes.
+  test("US-004 AC-13: a user file created after a failed wrap is never adopted by a later commandFinished", async () => {
+    stubSrt({ throwOnWrap: 1 });
+    const backend = createSrtBackend({});
+    const target = join(cwd, ".zprofile");
+    await expect(backend.wrap(ledgerRequest("a"))).rejects.toThrow("bwrap profile too long");
+
+    // The path is no longer a candidate, so this file is simply the user's...
+    makePlaceholderFile(target);
+    // ...and the next commandFinished observes before it prunes.
+    backend.commandFinished();
+
+    expect(ledgerDirPaths()).not.toContain(target);
+  });
+
+  test("US-004 AC-13: a failed wrap leaves the candidates alone while another wrap is in flight", async () => {
+    stubSrt({ throwOnWrap: 2 });
+    const backend = createSrtBackend({});
+    const target = join(cwd, ".zprofile");
+    await backend.wrap(ledgerRequest("a"));
+    await expect(backend.wrap(ledgerRequest("b"))).rejects.toThrow("bwrap profile too long");
+
+    // Wrap `a` is still running and may yet start a placeholder: nothing is abandoned.
+    expect(ledgerEntries()).toContainEqual({ path: target });
+
+    backend.commandFinished("a");
+
+    expect(ledgerDirPaths()).not.toContain(target);
+  });
+
   test("US-004: an identified placeholder that still matches its inode survives the abandon", async () => {
     stubSrt();
     const backend = createSrtBackend({});
