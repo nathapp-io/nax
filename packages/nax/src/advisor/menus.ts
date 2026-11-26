@@ -216,6 +216,8 @@ export function buildMenu(facts: MenuFacts): AdviceOption[] {
       ]);
     case "residual":
       return withIds(residualDrafts(facts));
+    case "bot-fix-chain":
+      return withIds([{ type: "fix" }, { type: "waive" }, { type: "hold" }]);
     case "preflight":
       return withIds(preflightDrafts(facts));
   }

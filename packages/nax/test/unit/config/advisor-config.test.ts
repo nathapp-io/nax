@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import {
   ADVISOR_DEFAULTS,
   advisorConfigSelector,
@@ -15,7 +16,13 @@ describe("advisor config", () => {
       model: "powerful",
       fallbackModels: [],
       memory: "stateless",
-      callers: { finishJudgment: false, fixCycleGiveUp: false, uncategorisedFailure: false, finishApproval: false },
+      callers: {
+        finishJudgment: false,
+        fixCycleGiveUp: false,
+        uncategorisedFailure: false,
+        finishApproval: false,
+        botFixChain: false,
+      },
       maxRulingsPerStory: 2,
       notify: { headsUp: true },
     });
@@ -36,8 +43,28 @@ describe("advisor config", () => {
       fixCycleGiveUp: false,
       uncategorisedFailure: false,
       finishApproval: false,
+      botFixChain: false,
     });
     expect(parsed.advisor?.model).toBe("powerful");
+  });
+
+  test("botFixChain defaults off, can be turned on alone, and rejects a non-boolean", () => {
+    expect(NaxConfigSchema.parse({}).advisor.callers.botFixChain).toBe(false);
+    expect(ADVISOR_DEFAULTS.callers.botFixChain).toBe(false);
+    expect(NaxConfigSchema.parse({ advisor: { callers: { botFixChain: true } } }).advisor.callers).toEqual({
+      finishJudgment: false,
+      fixCycleGiveUp: false,
+      uncategorisedFailure: false,
+      finishApproval: false,
+      botFixChain: true,
+    });
+    const r = NaxConfigSchema.safeParse({ advisor: { callers: { botFixChain: "yes" } } });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0]?.path).toEqual(["advisor", "callers", "botFixChain"]);
+  });
+
+  test("botFixChain has a config description", () => {
+    expect(FIELD_DESCRIPTIONS["advisor.callers.botFixChain"]?.length).toBeGreaterThan(0);
   });
 
   test("resolveAdvisorConfig falls back to defaults when the block is absent", () => {

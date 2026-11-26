@@ -6,7 +6,8 @@ export type AdviceQuestionKind =
   | "finish-approval"
   | "preflight"
   | "implementer-question"
-  | "residual";
+  | "residual"
+  | "bot-fix-chain";
 
 export interface AdviceEvidence {
   source:
@@ -171,4 +172,5 @@ export type MenuFacts =
     }
   | { kind: "implementer-question"; configChanges?: readonly ConfigChangeCandidate[] }
   | { kind: "residual"; dependents: string[]; scope?: "story" | "branch" }
+  | { kind: "bot-fix-chain" }
   | { kind: "preflight"; acRef?: { storyId: string; acId: string }; specSection?: string };
