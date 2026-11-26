@@ -174,6 +174,75 @@ describe("readyStep open finding hold (US-004)", () => {
   });
 });
 
+describe("readyStep held chain rulings (US-009)", () => {
+  const KEY = "f-1";
+  const blocking: AgreedItem = { kind: "finding", key: KEY, issue: "Lock leaks", severity: "important", trigger: "normal" };
+
+  async function readyWithRulings(opts: {
+    agreed: readonly AgreedItem[];
+    chainRulings?: BotFixEnv["chainRulings"];
+    settled?: readonly string[];
+  }) {
+    const base = makeBotFixDraftEnv();
+    const env: BotFixEnv = {
+      ...base,
+      review: { ...base.review, agreed: opts.agreed },
+      ...(opts.chainRulings === undefined ? {} : { chainRulings: opts.chainRulings }),
+    };
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "green", detail: "all checks passed" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "readHeadGateNames").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "readSettledKeys").mockResolvedValue(new Set<string>(opts.settled ?? []));
+    spyOn(_fixReportDeps, "readConfirmedKeys").mockResolvedValue(new Set<string>());
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    return readyStep(env, { step: "ready", timings: {} });
+  }
+
+  test("AC-1/AC-2 a held ruling absent from agreed blocks readiness and is named", async () => {
+    const result = await readyWithRulings({
+      agreed: [],
+      chainRulings: [{ key: KEY, outcome: "held", text: "needs a product call" }],
+    });
+
+    expect(result.patch.markedReady).not.toBe(true);
+    expect(result.patch.readyHeld).toContain(KEY);
+  });
+
+  test.each(["fix", "waived"] as const)("AC-3/AC-4 a %s ruling does not hold readiness", async (outcome) => {
+    const result = await readyWithRulings({ agreed: [], chainRulings: [{ key: KEY, outcome, text: "reason" }] });
+
+    expect(result.patch.readyHeld ?? "").not.toContain(KEY);
+  });
+
+  test("AC-5 a key both agreed and held is named once", async () => {
+    const result = await readyWithRulings({
+      agreed: [blocking],
+      chainRulings: [{ key: KEY, outcome: "held", text: "needs a product call" }],
+    });
+
+    expect(result.patch.readyHeld?.split(KEY).length).toBe(2);
+  });
+
+  test("AC-6 a held key settled on the pull request does not hold", async () => {
+    const result = await readyWithRulings({
+      agreed: [],
+      chainRulings: [{ key: KEY, outcome: "held", text: "needs a product call" }],
+      settled: [KEY],
+    });
+
+    expect(result.patch.readyHeld ?? "").not.toContain(KEY);
+  });
+
+  test("AC-7 without chainRulings an unresolved agreed finding still holds", async () => {
+    const result = await readyWithRulings({ agreed: [blocking] });
+
+    expect(result.patch.readyHeld).toContain(KEY);
+  });
+});
+
 describe("reportStep ledger push (US-009)", () => {
   test("AC-14–16 reports ledger head, next review and main-checkout pull hint", async () => {
     const env = makeBotFixEnv();
