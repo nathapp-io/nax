@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T06:57:00.716Z",
+  "updatedAt": "2026-11-26T07:04:39.767Z",
   "userStories": [
     {
       "id": "US-001",
@@ -520,14 +520,17 @@
         "US-006",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Connects routing across orchestration, fix session input and summaries, and proves the real service's severity/session safety boundary with strict isolated TDD."
+        "reasoning": "Connects routing across orchestration, fix session input and summaries, and proves the real service's severity/session safety boundary with strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -548,6 +551,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "24f3c08b742268a259fd9de840e4ea7e66560b61",
       "outOfScope": [
         "US-008 only: an end-to-end run with a real advisor model session. The advisor's model call is stubbed at `_advisorServiceDeps.callOp` or at `createAdvisor`."
       ]
