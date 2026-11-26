@@ -12,6 +12,15 @@
  * write for a different key is answered, which proves the fault is the entry's and not the
  * provider's (#2793). A contract mismatch answers every write badly and parks nothing.
  *
+ * An entry may also name the entry it waits on (`awaits`), which is how a merge's source
+ * retirement is held behind the save of the replacement it was folded into. The drain reads the
+ * outbox's current state of that id when it reaches the entry: refused, the entry is refused
+ * with it and never pushed, and the scope's pull goes back to the beginning (a rejected entry
+ * holds no key, so the provider's still-live source is the mirror's only copy); still queued,
+ * the entry waits — not pushed, not counted, and the drain carries on; gone, there is nothing
+ * to wait for and it is pushed as any other. A write that waits on a held entry is never used
+ * as a proof either: its answer says nothing about the entry it is waiting on.
+ *
  * Split from `sync.ts`, which owns the lock, the probe, the pull and the run's result.
  */
 
@@ -126,6 +135,66 @@ function entryKey(entry: MemoryOutboxEntry): string {
   return `${entry.scope}/${entry.slug}`;
 }
 
+/** The client ids the outbox currently holds, rejected entries included. */
+async function heldIds(outbox: MemoryOutbox): Promise<ReadonlySet<string>> {
+  return new Set((await outbox.list()).map((entry) => entry.clientId));
+}
+
+/** Whether `entry` waits on an id the outbox still holds: such an entry is never a proof. */
+function waitsOnHeld(entry: MemoryOutboxEntry, held: ReadonlySet<string>): boolean {
+  return entry.awaits !== undefined && held.has(entry.awaits);
+}
+
+/** What the entry an `awaiting` one names means for it right now. */
+type AwaitsOutcome =
+  | { readonly kind: "free" }
+  | { readonly kind: "waiting" }
+  | { readonly kind: "refused"; readonly slug: string };
+
+/**
+ * Whether `entry` may be pushed now, must wait, or has been refused along with its dependency.
+ *
+ * The question is answered against the outbox as it is *now*, not against the queue this drain
+ * read at the start: an entry refused a moment ago in this very drain is a refusal the write
+ * behind it must see. An id the outbox no longer holds — delivered, or dropped as superseded —
+ * is not a reason to wait, because nothing can arrive under it any more.
+ */
+async function awaitsOutcome(input: MemoryDrainInput, entry: MemoryOutboxEntry): Promise<AwaitsOutcome> {
+  const awaitedId = entry.awaits;
+  if (awaitedId === undefined) return { kind: "free" };
+  const awaited = (await input.outbox.list()).find((held) => held.clientId === awaitedId);
+  if (awaited === undefined) return { kind: "free" };
+  if (awaited.state === "rejected") return { kind: "refused", slug: awaited.slug };
+  return { kind: "waiting" };
+}
+
+/**
+ * Mark `entry` rejected without ever pushing it, because the write it waits on was refused.
+ *
+ * A rejected entry holds no key, so the note this entry never delivered is still the provider's
+ * to keep: the scope's pull goes back to the beginning and the next sync writes it back into
+ * the mirror in full, exactly as `park` does for an entry the provider keeps answering badly.
+ */
+async function refuseUnsent(
+  input: MemoryDrainInput,
+  entry: MemoryOutboxEntry,
+  awaitedSlug: string,
+  tally: DrainTally,
+): Promise<DrainTally> {
+  const reason = `not sent: the replacement it waits on (${awaitedSlug}) was refused`;
+  await input.outbox.markRejected(entry.clientId, reason);
+  await rewindPullCursor(input.store, entry.scope);
+  warnQuietly(input.logger, "memory sync refused an outbox entry whose replacement was refused", {
+    clientId: entry.clientId,
+    kind: entry.kind,
+    scope: entry.scope,
+    slug: entry.slug,
+    awaits: entry.awaits,
+    reason,
+  });
+  return { ...tally, rejected: tally.rejected + 1 };
+}
+
 /**
  * Apply one answered push: a refusal is kept on the entry with its reason, a delivery is
  * mirrored and removed. Answers the tally with the entry counted.
@@ -175,7 +244,8 @@ export { rewindPullCursor };
  *
  * `list()` answers with the rejected entries too — they are the record of a refusal —
  * so only `queued` entries are pushed: nothing here retries a permanent one. An entry a
- * proof already delivered (see `proveAndPark`) is not pushed a second time.
+ * proof already delivered (see `proveAndPark`) is not pushed a second time. An entry that
+ * waits on another (`awaits`) is asked about first, and a refused dependency refuses it.
  */
 export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
@@ -184,6 +254,14 @@ export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult>
   let tally: DrainTally = { pushed: 0, rejected: 0, parked: [] };
   for (const [index, entry] of queue.entries()) {
     if (proven.has(entry.clientId)) continue;
+    const waits = await awaitsOutcome(input, entry);
+    // A write still waiting on another one is neither sent nor counted: it is queued work the
+    // order has not reached, and the entry it waits on is somewhere on this same queue.
+    if (waits.kind === "waiting") continue;
+    if (waits.kind === "refused") {
+      tally = await refuseUnsent(input, entry, waits.slug, tally);
+      continue;
+    }
     const outcome = await pushEntry(input, entry, timers);
     if (outcome.kind !== "failed") {
       tally = await settle(input, entry, outcome, tally);
@@ -231,7 +309,12 @@ async function proveAndPark(
   const { head, rest, proven, error, timers } = candidate;
   const count = await input.outbox.recordBadResponse(head.clientId, error);
   if (count < MEMORY_PUSH_MAX_BAD_RESPONSES) return { kind: "stopped", answered: true };
-  const proof = rest.find((entry) => !proven.has(entry.clientId) && entryKey(entry) !== entryKey(head));
+  // A write that waits on an entry the outbox still holds is not a proof: the head's fault
+  // cannot be read from an answer to work whose own fate is not settled yet.
+  const held = await heldIds(input.outbox);
+  const proof = rest.find(
+    (entry) => !proven.has(entry.clientId) && entryKey(entry) !== entryKey(head) && !waitsOnHeld(entry, held),
+  );
   if (proof === undefined) return { kind: "stopped", answered: true };
   const outcome = await pushEntry(input, proof, timers);
   if (outcome.kind === "failed") return { kind: "stopped", answered: outcome.badResponse };

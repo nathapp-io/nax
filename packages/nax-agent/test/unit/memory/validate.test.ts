@@ -4,10 +4,11 @@ import {
   MEMORY_DESCRIPTION_MAX_CHARS,
   MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_NOTE_BODY_MAX_BYTES,
+  type MemoryNote,
   type MemoryNoteWrite,
   validateMemoryNoteWrite,
 } from "@nathapp/nax-agent";
-import { forgetReasonRefusal } from "#src/memory/index";
+import { forgetReasonRefusal, validateMemoryCompactionPlan } from "#src/memory/index";
 
 /** A write that every check accepts; each test overrides the field it exercises. */
 const VALID: MemoryNoteWrite = {
@@ -109,6 +110,59 @@ describe("validateMemoryNoteWrite: body", () => {
 
   test("accepts a body of exactly MEMORY_NOTE_BODY_MAX_BYTES", () => {
     expect(validateMemoryNoteWrite({ ...VALID, body: "a".repeat(MEMORY_NOTE_BODY_MAX_BYTES) }, SOURCE)).toBeNull();
+  });
+});
+
+describe("validateMemoryNoteWrite: a blank body", () => {
+  test("AC-18: refuses a body of spaces, a newline and a tab as blank", () => {
+    expect(validateMemoryNoteWrite({ ...VALID, body: "  \n\t" }, SOURCE)).toEqual({
+      field: "body",
+      reason: "body must not be blank",
+    });
+  });
+
+  test("AC-20 (control): accepts a one-character body", () => {
+    expect(validateMemoryNoteWrite({ ...VALID, body: "x" }, SOURCE)).toBeNull();
+  });
+});
+
+describe("validateMemoryCompactionPlan: a blank merged body", () => {
+  /** One candidate the plan's merge may fold: two project notes of the same type. */
+  function candidate(slug: string): MemoryNote {
+    return {
+      id: `mem_${slug}`,
+      slug,
+      type: "project",
+      scope: "project",
+      description: `note ${slug}`,
+      source: "nax-chat",
+      updatedAt: "2026-11-02T08:11:00.000Z",
+      status: "active",
+      body: `Body of ${slug}.`,
+    };
+  }
+
+  const TARGET = "budget-merged";
+
+  test("AC-19: a merge whose body is a single space names the target and the blank body", () => {
+    const plan = {
+      retire: [],
+      merge: [
+        {
+          from: ["budget-a", "budget-b"],
+          into: { slug: TARGET, type: "project" as const, description: "budgets", body: " " },
+        },
+      ],
+    };
+
+    const check = validateMemoryCompactionPlan(
+      plan,
+      [candidate("budget-a"), candidate("budget-b")],
+      new Set(["budget-a", "budget-b"]),
+    );
+
+    expect(check.ok).toBe(false);
+    expect(check.ok ? [] : check.reasons).toContain(`merge target "${TARGET}": body must not be blank`);
   });
 });
 

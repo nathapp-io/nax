@@ -265,10 +265,13 @@ function mintCompactionId(at: Date): string {
 type StagingInput = MemoryCompactionApplyInput & { readonly staging: CompactionStaging };
 
 async function stageAndRecord(input: StagingInput, applying: Applying): Promise<MemoryCompactionResult> {
-  const created: MemoryCompactionManifestNote[] = [];
-  for (const merge of input.plan.merge) created.push(await stageMerge(input, merge));
+  const staged: StagedMerge[] = [];
+  for (const merge of input.plan.merge) staged.push(await stageMerge(input, merge));
   for (const retire of input.plan.retire) await retireSlug(input, retire.slug, retire.reason);
-  for (const merge of input.plan.merge) await retireMergeSources(input, merge);
+  // Every merge's saves are declared before any of their sources is forgotten, so a source
+  // forget is always behind the save it names.
+  for (const merge of staged) await retireMergeSources(input, merge);
+  const created = staged.map((merge) => merge.record);
   await refreshIndex({ store: input.store, outbox: input.outbox });
   const notesAfter = (await input.store.listNotes("project")).length;
   await writeCompactionManifest({
@@ -339,12 +342,25 @@ function mergedNote(merge: MemoryCompactionMerge, updatedAt: string): MemoryNote
 }
 
 /**
+ * One merge as its later steps know it: the merge itself, the manifest record of the note it
+ * wrote, and the client id its save took — which is the note's own id, and what its sources'
+ * forgets wait on.
+ */
+interface StagedMerge {
+  readonly merge: MemoryCompactionMerge;
+  readonly record: MemoryCompactionManifestNote;
+  readonly clientId: string;
+}
+
+/**
  * Step 4 for one merge: write the merged note and declare its save, as a direct save would.
  *
  * The note's own id is the request's client id, so the note, the request and the write a later
- * sync delivers are named by one id — the same binding a save makes.
+ * sync delivers are named by one id — the same binding a save makes. That id is also what the
+ * merge's source forgets name in `awaits`: the retirement of a source is not delivered before
+ * the replacement it was folded into has been answered.
  */
-async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Promise<MemoryCompactionManifestNote> {
+async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Promise<StagedMerge> {
   const note = mergedNote(merge, clockOf(input)().toISOString());
   input.staging.writtenSlugs.add(note.slug);
   await input.store.writeNote(note);
@@ -357,11 +373,12 @@ async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Pr
     writeMode: "direct",
     note,
   });
-  return {
+  const record: MemoryCompactionManifestNote = {
     slug: note.slug,
     updatedAt: note.updatedAt,
     contentHash: contentIdentity(parseMemoryNote(serializeMemoryNote(note))),
   };
+  return { merge, record, clientId: note.id };
 }
 
 /**
@@ -369,9 +386,10 @@ async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Pr
  *
  * The note goes first because a forget of a slug the mirror still holds would be replayed
  * against a live note; the entry is what makes the retire durable, and it is written with the
- * reason the person confirmed.
+ * reason the person confirmed. `awaits` names the write this one must not be delivered before:
+ * a merge's replacement save, or nothing at all for a retire the plan stated.
  */
-async function retireSlug(input: StagingInput, slug: string, reason: string): Promise<void> {
+async function retireSlug(input: StagingInput, slug: string, reason: string, awaits?: string): Promise<void> {
   await input.store.deleteNote("project", slug);
   const clientId = randomUUID();
   input.staging.enqueuedIds.add(clientId);
@@ -382,6 +400,7 @@ async function retireSlug(input: StagingInput, slug: string, reason: string): Pr
     slug,
     writeMode: "direct",
     reason,
+    ...(awaits === undefined ? {} : { awaits }),
   });
 }
 
@@ -389,12 +408,15 @@ async function retireSlug(input: StagingInput, slug: string, reason: string): Pr
  * Step 5 for one merge: retire every source that is not the slug the merge wrote.
  *
  * A merge that keeps one of its own source slugs leaves that note in place — the merged note
- * *is* it — so it is the one source a merge does not forget.
+ * *is* it — so it is the one source a merge does not forget. Each forget waits on the merge's
+ * save, because a source retired from the provider while the replacement was refused is a note
+ * the provider has lost with nothing in its place (#3052).
  */
-async function retireMergeSources(input: StagingInput, merge: MemoryCompactionMerge): Promise<void> {
-  for (const from of merge.from) {
-    if (from === merge.into.slug) continue;
-    await retireSlug(input, from, `merged into ${merge.into.slug}`);
+async function retireMergeSources(input: StagingInput, staged: StagedMerge): Promise<void> {
+  const target = staged.merge.into.slug;
+  for (const from of staged.merge.from) {
+    if (from === target) continue;
+    await retireSlug(input, from, `merged into ${target}`, staged.clientId);
   }
 }
 

@@ -30,6 +30,13 @@
  * Reads, directory creation and removal go through the mirror store's
  * filesystem seam, `_memoryStoreDeps`; the write path is `writeFileAtomic`, whose
  * own seam is `_atomicWriteDeps`. Temp names are never spelled here.
+ *
+ * One entry may name another in `awaits`: the client id it must not be delivered before. A
+ * merge stages one save for the replacement it wrote and one forget per source it folded, and
+ * the reconcile step (`sync-drain.ts`) is what enforces the order — the queue only records it.
+ * The dependency is therefore bookkeeping, not content: it is validated when the entry is taken
+ * (an id the queue could never hold is refused with the entry's own id check) and it is never
+ * part of the request a provider is handed.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -52,8 +59,15 @@ const ENTRY_SUFFIX = ".json";
 /** A link at an entry name is not an entry this outbox wrote, so reads never follow one. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
-/** The write the caller hands over: it owns the content, the outbox may own the id. */
-type OutboxRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string };
+/** The write the caller hands over: it owns the content, the outbox may own the ids. */
+type OutboxRequest = Omit<MemoryWriteRequest, "clientId"> & {
+  clientId?: string;
+  /** The client id of an entry this one must not be delivered before. */
+  awaits?: string;
+};
+
+/** A request the outbox has settled: its client id is known and its dependency may be carried. */
+type PreparedRequest = MemoryWriteRequest & { readonly awaits?: string };
 
 /** One queued write as the outbox holds it: the request plus where it sits in the order. */
 export type MemoryOutboxEntry = MemoryWriteRequest & {
@@ -68,6 +82,14 @@ export type MemoryOutboxEntry = MemoryWriteRequest & {
   readonly badResponses?: number;
   /** The message of the last bad response, kept so a parked entry can say why. */
   readonly lastError?: string;
+  /**
+   * The client id of the entry this one waits on: a merge's source retire names the save of the
+   * replacement it was folded into. It is queue bookkeeping, so it never reaches a provider
+   * (`requestOf` in `sync-drain.ts` projects the request from the fields the two shapes share)
+   * and it is read only by the drain, which refuses to deliver this entry once that one is gone
+   * or refused.
+   */
+  readonly awaits?: string;
 };
 
 /** The durable queue of unacknowledged writes. */
@@ -76,7 +98,8 @@ export interface MemoryOutbox {
    * Take one write, stamped with its sequence. A request the queue cannot carry is refused
    * before any file is written: `MEMORY_WRITE_REFUSED` for a reason past
    * `MEMORY_FORGET_REASON_MAX_CHARS` (or empty, or spanning lines) and
-   * `MEMORY_CLIENT_ID_INVALID` for an id that is not one.
+   * `MEMORY_CLIENT_ID_INVALID` for an id that is not one — its own client id, or the id it
+   * `awaits`.
    */
   enqueue(request: OutboxRequest): Promise<MemoryOutboxEntry>;
   list(): Promise<MemoryOutboxEntry[]>;
@@ -117,6 +140,7 @@ const EntrySchema = z.object({
   requestReason: z.string().optional(),
   badResponses: z.number().int().positive().optional(),
   lastError: z.string().optional(),
+  awaits: z.string().regex(MEMORY_CLIENT_ID_RE).optional(),
   seq: z.number().int().positive(),
   enqueuedAt: z.string().min(1),
   state: z.enum(["queued", "rejected"]),
@@ -291,10 +315,15 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return (await entryFiles()).filter((file) => file.clientId === clientId);
   }
 
-  /** The request with its client id settled: a supplied id is kept, a missing one is minted. */
-  function withClientId(request: OutboxRequest): MemoryWriteRequest {
+  /** The request with its ids settled: a supplied client id is kept, a missing one is minted. */
+  function withClientId(request: OutboxRequest): PreparedRequest {
     const clientId = request.clientId ?? randomUUID();
     if (!MEMORY_CLIENT_ID_RE.test(clientId)) throw clientIdInvalid(clientId);
+    // The awaited id names an entry of this same queue, so it is held to the same shape — and
+    // refused before anything is written, exactly as the entry's own id is. A dependency the
+    // queue could never hold would be a wait that never ends.
+    if (request.awaits !== undefined && !MEMORY_CLIENT_ID_RE.test(request.awaits))
+      throw clientIdInvalid(request.awaits);
     return { ...request, clientId };
   }
 
@@ -305,7 +334,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   }
 
   /** Write one entry file, creating the directory only now that there is something to store. */
-  async function writeEntry(request: MemoryWriteRequest): Promise<MemoryOutboxEntry> {
+  async function writeEntry(request: PreparedRequest): Promise<MemoryOutboxEntry> {
     const seq = (await highestSeq()) + 1;
     const entry: MemoryOutboxEntry = { ...request, seq, enqueuedAt: now().toISOString(), state: "queued" };
     await _memoryStoreDeps.mkdir(dir, { recursive: true });

@@ -32,8 +32,8 @@ function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
   };
 }
 
-/** What `enqueue` takes: a write request whose client id it may assign itself. */
-type EnqueueRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string };
+/** What `enqueue` takes: a write request whose client id it may assign itself, plus its dependency. */
+type EnqueueRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string; awaits?: string };
 
 /** A `save` request ready to enqueue. */
 function saveRequest(overrides: Partial<EnqueueRequest> = {}): EnqueueRequest {
@@ -193,6 +193,45 @@ describe("memory outbox", () => {
       assertNaxError(error, "enqueue with a traversal client id");
       expect(error).toMatchObject({ code: "MEMORY_CLIENT_ID_INVALID", context: { stage: "memory" } });
       expect(await readdir(outDir)).toEqual(["00000001-my-client_1.json"]);
+    });
+  });
+
+  test("[US-001 AC-3] enqueue refuses an awaits that is not a client id with MEMORY_CLIENT_ID_INVALID", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+
+      const error = await caught(outbox.enqueue(forgetRequest({ awaits: "not a client id!" })));
+
+      assertNaxError(error, "enqueue with an invalid awaits");
+      expect(error).toMatchObject({ code: "MEMORY_CLIENT_ID_INVALID", context: { stage: "memory" } });
+    });
+  });
+
+  test("[US-001 AC-4] an enqueue refused for its awaits leaves the outbox empty", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+
+      expect(await caught(outbox.enqueue(forgetRequest({ awaits: "not a client id!" })))).not.toBeNull();
+
+      // The dependency is settled before any entry exists, exactly as the client id is.
+      expect(await outbox.list()).toEqual([]);
+      expect(existsSync(outDir)).toBe(false);
+    });
+  });
+
+  test("[US-001 AC-5] an entry's awaits is listed by a second outbox opened over the same directory", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const save = await outbox.enqueue(saveRequest());
+      const forget = await outbox.enqueue(forgetRequest({ awaits: save.clientId }));
+
+      const reopened = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const listed = await reopened.list();
+
+      expect(listed).toEqual([save, forget]);
+      expect(listed.map((entry) => entry.awaits)).toEqual([undefined, save.clientId]);
     });
   });
 
