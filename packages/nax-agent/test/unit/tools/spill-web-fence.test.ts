@@ -61,12 +61,18 @@ describe("a truncated web result keeps its closing fence", () => {
     expect(lastLine(out)).toBe(WEB_CONTENT_CLOSE_LINE);
   });
 
-  test("AC-7: that result is still within MODEL_MAX_LINES lines", async () => {
+  test("AC-7: that result, fence included, is still within MODEL_MAX_LINES lines", async () => {
     const body = fenced(pageText(1_103));
 
     const out = await applyModelTruncationPolicy(body, { toolName: FETCH, callId: "web-2" });
+    const lines = linesOf(out);
 
-    expect(linesOf(out).length).toBeLessThanOrEqual(MODEL_MAX_LINES);
+    // The cap is asserted on the result that HAS its fence, not on one that lost it: the
+    // trailer's line is paid for out of MODEL_MAX_LINES, so a fence appended on top of the
+    // budget would land at 1,001 lines (999 head + marker + fence) and fail here. Counting
+    // alone would also pass a result that never restored the fence at all.
+    expect(lines.length).toBeLessThanOrEqual(MODEL_MAX_LINES);
+    expect(lastLine(out)).toBe(WEB_CONTENT_CLOSE_LINE);
   });
 
   test("AC-8: the line before the closing fence is the truncation marker", async () => {
@@ -87,10 +93,25 @@ describe("a truncated web result keeps its closing fence", () => {
 
     const out = await applyModelTruncationPolicy(body, { toolName: FETCH, callId: "web-4", maxBytes: 4_000 });
 
+    // Measured across the head, the marker AND the fence the policy puts back — a budget
+    // assertion on a result that had lost its fence would say nothing about the fence.
     expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(4_000);
-    // Not vacuous: this is the composed result, not the untouched body, so the cap below is
-    // measured across the head, the marker AND the fence the policy puts back.
+    expect(lastLine(out)).toBe(WEB_CONTENT_CLOSE_LINE);
     expect(out).toContain("... [truncated");
+  });
+
+  test("AC-9 (tight cap): a result that fills the byte cap still ends with its fence", async () => {
+    // The ceiling only binds when the head is big enough to reach it, which one capped
+    // paragraph is not (stage 1 shortens it to 2,000 characters). Many short lines do reach
+    // it, and there the trailer's bytes have to come out of the SAME budget: reserving only
+    // the marker for a 400-byte ceiling puts the result at 414 bytes.
+    const body = fenced(pageText(200));
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(400);
+
+    const out = await applyModelTruncationPolicy(body, { toolName: FETCH, callId: "web-8", maxBytes: 400 });
+
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(400);
+    expect(lastLine(out)).toBe(WEB_CONTENT_CLOSE_LINE);
   });
 
   test("AC-10: that byte-capped result still ends with '</web-content>'", async () => {
