@@ -23,7 +23,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("runBotFix ledger carry seam", () => {
-  test.each(["mode", "index", "install-failure", "cost-stop", "already-committed", "add", "commit"])(
+  test.each(["mode", "index", "install-failure", "cost-stop", "already-committed", "hash-object", "update-ref"])(
     "in-place decision persistence: %s",
     async (scenario) => {
       await withTempDir(async (repo) => {
@@ -58,7 +58,7 @@ describe("runBotFix ledger carry seam", () => {
             throw new NaxError("install failed", "PRE_RUN_FAILED", { stage: "install" });
         });
         try {
-          const persistenceFailure = scenario === "add" || scenario === "commit";
+          const persistenceFailure = scenario === "hash-object" || scenario === "update-ref";
           if (persistenceFailure)
             spyOn(_ledgerCarryDeps, "runGit").mockImplementation(async (args, cwd) =>
               args[0] === scenario ? { exitCode: 1, stdout: "", stderr: "failed" } : botGit(args, cwd),

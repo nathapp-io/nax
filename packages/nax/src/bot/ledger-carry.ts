@@ -1,4 +1,6 @@
 /** Carry only an append-only main-checkout advisor ledger into the PR checkout. */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { ledgerPath } from "@/advisor";
@@ -6,9 +8,10 @@ import { featureDir, PROJECT_FEATURES_DIR } from "@/config";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
+import { gitWithTimeout } from "@/utils/git";
 import { ledgerCommitMessage, readHead } from "../workflow/git";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
-import { botGit } from "./git";
+import { BOT_GIT_HOOKS_OFF, botGit } from "./git";
 
 export async function readLedgerText(path: string): Promise<string | null> {
   try {
@@ -24,8 +27,18 @@ export function isLedgerAppend(before: string | null, after: string | null): aft
   return after !== null && after.length > prefix.length && after.startsWith(prefix);
 }
 
+/** Git against a throwaway index, so the user's index and working file are never read for the commit. */
+function indexGit(args: string[], cwd: string, indexFile: string): ReturnType<typeof gitWithTimeout> {
+  // nax-git-env-allow: handed to gitWithTimeout, which hardens it
+  const argv = ["git", ...BOT_GIT_HOOKS_OFF, ...args];
+  return gitWithTimeout(args, cwd, undefined, undefined, argv, { GIT_INDEX_FILE: indexFile });
+}
+
 export const _ledgerCarryDeps = {
   runGit: botGit,
+  runIndexGit: indexGit,
+  makeTempDir: (prefix: string): Promise<string> => mkdtemp(prefix),
+  removeDir: (path: string): Promise<void> => rm(path, { recursive: true, force: true }),
   readHead,
   readText: readLedgerText,
   writeText: async (path: string, text: string): Promise<void> => {
@@ -51,8 +64,11 @@ export function ledgerFeature(env: BotFixEnv): string | undefined {
     : undefined;
 }
 
-async function git(args: string[], cwd: string): Promise<void> {
-  const result = await _ledgerCarryDeps.runGit(args, cwd);
+async function git(args: string[], cwd: string, indexFile?: string): Promise<string> {
+  const result =
+    indexFile === undefined
+      ? await _ledgerCarryDeps.runGit(args, cwd)
+      : await _ledgerCarryDeps.runIndexGit(args, cwd, indexFile);
   if (result.exitCode !== 0) {
     throw new NaxError(`[bot-fix] Advisor ledger git ${args[0]} failed`, "BOT_LEDGER_CARRY_FAILED", {
       stage: "bot-fix",
@@ -62,6 +78,7 @@ async function git(args: string[], cwd: string): Promise<void> {
       exitCode: result.exitCode,
     });
   }
+  return result.stdout.trim();
 }
 
 function warn(env: BotFixEnv, message: string, error?: unknown): void {
@@ -111,6 +128,90 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
   }
 }
 
+const TEMP_LEDGER_PREFIX = "nax-bot-ledger-";
+const DEFAULT_FILE_MODE = "100644";
+/** Regular-file modes only: a symlink or gitlink ledger is never rewritten as one. */
+const LEDGER_FILE_MODES: ReadonlySet<string> = new Set([DEFAULT_FILE_MODE, "100755"]);
+
+/** `commit-tree` ignores `commit.gpgSign`, so the signing `git commit` would apply is passed explicitly. */
+async function signFlag(cwd: string): Promise<string[]> {
+  const args = ["config", "--type=bool", "--get", "commit.gpgSign"];
+  const result = await _ledgerCarryDeps.runGit(args, cwd);
+  // Exit 1 is "not set"; anything else that is not 0 is an unreadable config, which refuses persistence.
+  if (result.exitCode === 1) return [];
+  if (result.exitCode !== 0) {
+    throw new NaxError("[bot-fix] Advisor ledger git config failed", "BOT_LEDGER_CARRY_FAILED", {
+      stage: "bot-fix",
+      cwd,
+      args,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+    });
+  }
+  return result.stdout.trim() === "true" ? ["-S"] : [];
+}
+
+async function ledgerMode(cwd: string, rel: string, index: string): Promise<string> {
+  const mode = (await git(["ls-files", "-s", "--", `:(literal)${rel}`], cwd, index)).split(" ")[0] || DEFAULT_FILE_MODE;
+  if (!LEDGER_FILE_MODES.has(mode)) {
+    throw new NaxError("[bot-fix] Advisor ledger is not a regular file", "BOT_LEDGER_CARRY_FAILED", {
+      stage: "bot-fix",
+      rel,
+      mode,
+    });
+  }
+  return mode;
+}
+
+/** The real index entry follows the new HEAD, as `git commit -- <path>` would leave it. */
+async function refreshIndexEntry(env: BotFixEnv, rel: string): Promise<void> {
+  const args = ["reset", "-q", "HEAD", "--", `:(literal)${rel}`];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await git(args, env.checkout.worktree);
+      return;
+    } catch (error) {
+      // A held index.lock (the user's own git or editor) is the likely cause; one retry, then say what to run.
+      if (attempt === 1)
+        warn(
+          env,
+          `Advisor ledger committed, but the index still holds the old ledger: run git reset -q HEAD -- ${rel}`,
+          error,
+        );
+    }
+  }
+}
+
+/**
+ * #3047: commit exactly `text` at `rel` on top of HEAD. The blob is hashed from a private copy and the
+ * tree is built in a throwaway index, so a concurrent edit to the live file can neither change what
+ * is committed nor be overwritten: it stays in the working tree. HEAD moves by compare-and-swap.
+ */
+async function commitExactText(input: { env: BotFixEnv; rel: string; text: string; message: string }): Promise<void> {
+  const { env, rel, text, message } = input;
+  const cwd = env.checkout.worktree;
+  const dir = await _ledgerCarryDeps.makeTempDir(join(tmpdir(), TEMP_LEDGER_PREFIX));
+  try {
+    const copy = join(dir, "ledger");
+    const index = join(dir, "index");
+    await _ledgerCarryDeps.writeText(copy, text);
+    const blob = await git(["hash-object", "-w", `--path=${rel}`, "--", copy], cwd);
+    const parent = await git(["rev-parse", "--verify", "HEAD^{commit}"], cwd);
+    await git(["read-tree", parent], cwd, index);
+    const mode = await ledgerMode(cwd, rel, index);
+    await git(["update-index", "--add", "--cacheinfo", `${mode},${blob},${rel}`], cwd, index);
+    const tree = await git(["write-tree"], cwd, index);
+    // Already committed (e.g. by the user): nothing to persist.
+    if (tree === (await git(["rev-parse", `${parent}^{tree}`], cwd))) return;
+    const sign = await signFlag(cwd);
+    const commit = await git(["commit-tree", ...sign, tree, "-p", parent, "-m", message], cwd);
+    await git(["update-ref", "-m", `commit: ${message}`, "HEAD", commit, parent], cwd);
+    await refreshIndexEntry(env, rel);
+  } finally {
+    await _ledgerCarryDeps.removeDir(dir).catch(() => {});
+  }
+}
+
 /** The in-place ledger is authoritative. Never undo an append if Git cannot persist it. */
 export async function commitInPlaceAppend(
   env: BotFixEnv,
@@ -121,8 +222,7 @@ export async function commitInPlaceAppend(
   const rel = relative(cwd, path);
   try {
     if ((await _ledgerCarryDeps.readText(path)) !== appended.after) return false;
-    await git(["add", "-f", "--", rel], cwd);
-    await git(["commit", "--no-verify", "-m", ledgerCommitMessage(appended.feature), "--", rel], cwd);
+    await commitExactText({ env, rel, text: appended.after, message: ledgerCommitMessage(appended.feature) });
     return true;
   } catch (error) {
     // A concurrent commit (or one reported as failed) may already contain the decision.
