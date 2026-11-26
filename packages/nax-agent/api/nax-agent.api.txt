@@ -855,8 +855,11 @@ UNIVERSAL_CODING_TOOLS
 type UnknownPathResult
 WEB_SEARCH_KEY_ENV
 WEB_SEEN_URL_CAP
+type WebCallAssessment
 type WebExposure
+type WebExposureGuard
 type WebExposureSnapshot
+type WebGuardDecision
 type WebSearchBackendId
 type WebSearchResult
 type WebToolProviderOptions
@@ -978,6 +981,7 @@ createTerminalAuthInteraction
 createToolAuditSink
 createTurnAccumulator
 createWebExposure
+createWebExposureGuard
 createWebToolProvider
 credentialFaultCode
 credentialFilePath

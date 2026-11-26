@@ -10,6 +10,12 @@
  */
 export { extractWebUrls, normalizeWebUrl } from "./content.ts";
 export { createWebExposure, type WebExposure } from "./exposure.ts";
+export {
+  createWebExposureGuard,
+  type WebCallAssessment,
+  type WebExposureGuard,
+  type WebGuardDecision,
+} from "./guard.ts";
 export { createWebToolProvider, type WebToolProviderOptions } from "./provider.ts";
 export { createSearchBackend, type SearchBackend, WEB_SEARCH_KEY_ENV } from "./search-backend.ts";
 export {
