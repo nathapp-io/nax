@@ -3,7 +3,7 @@
   "feature": "review-f32f-fixes",
   "branchName": "feat/review-f32f-fixes",
   "createdAt": "2026-11-26T13:17:09.742Z",
-  "updatedAt": "2026-11-26T13:17:09.742Z",
+  "updatedAt": "2026-11-26T13:53:33.767Z",
   "userStories": [
     {
       "id": "US-001",
@@ -42,14 +42,17 @@
         "outbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Durable queue dependency state spans compaction staging, rejection recovery, proof selection and cursor rewind; real apply-to-drain integration is essential."
+        "reasoning": "Durable queue dependency state spans compaction staging, rejection recovery, proof selection and cursor rewind; real apply-to-drain integration is essential.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/compaction-apply.ts",
@@ -63,7 +66,11 @@
         "packages/nax-agent/test/integration/memory/compaction-refused-replacement.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bcac960275e26722f5f4cc7d9eb73ab7d067dd11"
     },
     {
       "id": "US-002",
@@ -117,7 +124,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -165,7 +175,10 @@
         "packages/nax-agent/test/unit/tools/spill-web-fence.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -240,7 +253,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -292,7 +308,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -342,7 +361,10 @@
         "packages/nax/test/unit/memory/host-compact-koda-mode.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -398,7 +420,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a bounded corrective enhancement to existing TypeScript code, closing #3052, #3053, #3054, #3055, #3056, #3057, #3058, #3059, #3060, #3061, #3062 and #3063. Preserve exactly seven independent implementation stories, with no dependencies: US-001 through US-004 are wholly in packages/nax-agent; US-005 through US-007 are wholly in packages/nax. No nax-ai or nax-agent-acp implementation changes are needed. Graph navigation was unavailable in this host, so findings below were obtained by direct reads and targeted text searches, not an indexed graph. The external review report was not available and was not independently inspected.\n\nArchitecture and constraints: docs/architecture/ARCHITECTURE.md:145 documents the 600-line hard source cap and 400-line soft limit; the spec specifically requires runtime.ts (currently 599 lines), chat-host.ts (595), and memory/host.ts (600) to remain within 600 without changing the baseline. Put runtime helper logic in runtime-full-network.ts, chat steering recording in host-steer-compact.ts and URL parsing in session-web.ts; replace the memory host provider argument without growing host.ts. ChatApp.tsx is exempt from this cap. nax-agent is a Node-compatible ESM library: use Node APIs, runtimeSpawn/getAgentRuntime rather than direct child_process/Bun spawn, #src imports, explicit .ts extensions on relative source imports, and exported _deps seams for external calls (packages/nax-agent/AGENTS.md:117). nax is Bun-native with React TUI and its own @/ aliases (packages/nax/AGENTS.md:21). Keep package boundaries, dependency direction and named public exports. Internal-only helper exports do not imply root public API additions; inspect whether changed public declarations require the normal nax-agent API snapshot update, rather than exporting implementation helpers from the public entry. All package commands run from their package directory; never bare bun test. Regression tests must demonstrate failure against the old implementation, with the spec's control cases retained. Existing fixtures should be extended rather than duplicated. No source changes or tests were run during PRD drafting.\n\nUS-001 findings: packages/nax-agent/src/memory/outbox.ts:59 defines OutboxRequest without dependencies, :62 defines MemoryOutboxEntry, :117 defines the durable EntrySchema, and :291 prepares ids before writes. withClientId/writeEntry currently type the prepared request as MemoryWriteRequest; propagate the new queue-only awaits field through the enqueue preparation and persistence types so it is neither erased on reload nor accidentally forwarded to a provider. The outbox writes one atomic JSON entry per request; rejected records remain and heldKeys includes only queued records (outbox.ts:378). packages/nax-agent/src/memory/sync-drain.ts:55 already projects a provider request explicitly; preserve that projection to keep awaits private. drainOutbox at :182 snapshots queued entries, settle at :138 removes delivered entries or preserves permanent rejections, and proveAndPark at :225 currently chooses any later different-key entry. Dependency checks must use the CURRENT outbox, not the original queue snapshot, so a save refused earlier in the same drain blocks its forgets, a save accepted and removed releases them, and a prior rejected save is also respected. Exclude blocked dependents from bad-response proof selection or a forget can delete a source while being used to justify parking its replacement. park at :253 already demonstrates the cursor rewind needed when an unsent dependent is rejected. packages/nax-agent/src/memory/compaction-apply.ts:276 stages saves, standalone retires and source forgets separately; stageMerge at :357 mints the note id and enqueues save with that clientId, while retireMergeSources at :407 currently passes no relationship. Retain each merge's save id across those phases without changing rollback tracking, archives, locking, manifest contents or standalone retire behavior. validate.ts:74 checks only body size, and validateMemoryNoteWrite at :118 composes validation in order; blank-body validation must precede body size and flow through compaction plan writeReasons. Consumers include memory/sync.ts:64, memory/index.ts:1 and internal.ts:51. Reuse test/helpers/memory-provider.ts:97's scripted push/pull mocks and existing unit/memory/outbox.test.ts, validate.test.ts and compaction-apply-staged-writes.test.ts. Add the specified unit drain and public apply-plus-drain integration files; do not stub the producer/consumer seam. Migration is additive: optional awaits means old entry files remain readable and drain unchanged; no backfill, revival or undo dependency rewrite. Rejected source notes reappear through the next pull after rewind, not an immediate mirror rewrite.\n\nUS-002 findings: packages/nax-agent/src/tools/runtime.ts:385 resolves only explicit unsandboxed requests before policy.check. Its runTool closure at :432 builds ToolRunContext; the policy ask at :507, command-guard ask at :558 and exposure-only ask at :579 must all receive the same sandbox.askOption. runtime-web-guard.ts:76's exposure-only route currently has no unsandboxed parameter, whereas resolveWebAwareAskOutcome at :130 already passes through resolveAskOutcome parameters. runtime-calltool.ts:217 handles explicit escape enablement and error variants; convertUnsandboxedAllow at :254 is deliberately separate from ordinary full-network exposure asks and must remain unchanged. ask-request.ts:89 holds the exact private suffix prefix to export. ToolRunContext is at registry.ts:95. bash.ts:400 re-reads exposure at launch, causing the assessment/launch race; pass the runtime's true OR false decision and use nullish fallback only for direct calls without context. Explicit input.unsandboxed === true remains authoritative. The runtime helper should depend on runtime-calltool/runtime-web-guard and use type-only runtime references where needed to avoid an initialization cycle. session/session-ask-port.ts:54 forwards unsandboxed asks as never auto-decided, so exposed full-network commands now wait for humans even in full-mode chats. This is an intended approval change, not a policy-mode rewrite. Existing unit/tools/bash-full-network.test.ts:30 captures launcher.unwrapped; integration/web/network-runtime.test.ts:103 asserts the old exact reason and must assert the new suffix and flag. New runtime-level regressions must use a real Bash tool and fake launcher, including exposure changes inside the ask resolver, not a tool double that misses the context seam. This is security-sensitive access-control/session execution work: strict three-session-tdd.\n\nUS-003 findings: packages/nax-agent/src/web/provider.ts:226 builds fetchTool without summaryFields; runFetch at :202 already fences content and at :222 optionally appends the byte-truncation line, defining the trailer that must survive shaping. Provider adaptation must retain summaryFields so askSummary sees the destination; test the adapted scope and an actual runtime ask. search-request.ts:263 sends all backends through _webSearchDeps.fetch; assertStatus at :276 already maps non-2xx to WEB_SEARCH_FAILED with backend/status, but default redirect following bypasses it. Add redirect: manual after spreading request.init so an adapter cannot override it. Preserve deadline, cancellation, response parsing and existing 401/403/429 classifications. content.ts:71 defines fenceWebContent and imports nothing: export WEB_CONTENT_CLOSE_LINE there without introducing a cycle. spill.ts:185 composes head results from already shaped text; applyModelTruncationPolicy at :272 calls truncateForModel before composition, so extract the last eligible closing-line trailer from ORIGINAL body, not shaped.content. Reserve trailer separators, bytes and lines alongside marker budgeting; respect UTF-8 byte cutting and the 1,000-line limit while preserving the optional fetch byte-cap line. Do not generalize closing-fence handling to arbitrary XML or change command-tail composition at spill.ts:205. Both runtime.ts:319 and the native after_tool policy use this shared shaping surface; regressions must preserve non-web and nontruncated behavior, spill recovery and existing marker semantics. Extend search-backend-exa-searxng.test.ts and existing provider/runtime coverage, plus the specified spill-web-fence test file. Security-sensitive approval and untrusted-content boundaries justify strict three-session-tdd, despite otherwise straightforward fetch/search edits.\n\nUS-004 findings: packages/nax-agent/src/sandbox/staging-placeholders.ts:82 combines mandatory deny names and trusted ledger paths on all platforms. Gate ONLY mandatory-name sources on _placeholderDeps.platform() === linux; ledger-derived sources and tracked-path protection remain unchanged everywhere. internal/git-add.ts:35 imports this helper, so the fix reaches broad staging, gitCommitTool and callers without parallel platform checks. placeholder-excludes.ts:239's atomic temp write currently relies on a mode masked by umask; chmod the temp after write and before rename, preserving unique wx creation, symlink-target resolution, existing content and lock behavior. placeholder-ledger.ts:65 defines prune(), and :313 preserves every pending candidate; add optional abandonPending while preserving no-option semantics and inode identity checks. The ledger is process-wide, private, Linux-only, and trusted by sweeps (placeholder-ledger.ts:173, :340). srt-backend.ts:96 records candidates before wrapping at :296; commandFinished at :321 observes before cleanup and then prunes; reset at :336 prunes after reset. Count wraps from candidate recording, not only spawned commands: createStartedPoll at :207 tracks a different lifecycle and cannot substitute. Decrement on wrap failure as well as command completion, clamp at zero, and abandon pending entries when no wrapped command can still create them or on reset. Avoid an early abandon while an overlapping wrap is still live, and prevent abandoned paths from being adopted by later observe. Use real temporary files with injected host facts, as unit/sandbox/placeholder-ledger.test.ts:54 does; restore umask and _deps after tests. Update Linux assumptions in staging-placeholders.test.ts, unit/internal/git-add.test.ts:96, integration/sandbox/staging-placeholders-git-add.test.ts, unit/tools/git-commit.test.ts:398 and policy-builder-root-denies.test.ts. Adjust unit/sandbox/srt-backend.test.ts:331 to inspect .zprofile during an in-flight wrap, not after the final completion. Add the specified backend-abandon test file. No ledger-version migration or blanket removal of identified files is authorized. This changes a security-sensitive sandbox trust/lifecycle boundary: strict three-session-tdd.\n\nUS-005 findings: packages/nax/src/chat/session-web.ts:29 records URLs in every wrapped session send and wraps events with persistence drains. Remove ONLY recording from that wrapper, preserve the synchronous send delegation, proxy bindings and drain-around-events behavior, and expose recordTypedUrls using the existing internal extractWebUrls plus parseMentionMessage(...).text to exclude attached-file bodies. chat-host-types.ts:56 defines send options and :104 defines optional steer. NativeChatHost.send at chat-host.ts:451 rejects CHAT_TURN_BUSY at :460, then synchronously claims the turn before runChatTurn; insert human-only recording after rejection and before session send. Its steering composition at :125 currently only supplies session, and steer at :537 delegates one argument. host-steer-compact.ts:26-44 is the low-line-cost place to receive web and record only status accepted for nonautomatic text; an accepted steer is the recording boundary, not later resolution of applied. Native and session-level callers must remain distinguishable. ChatApp.tsx:187 defines ComposedSend, :1167 builds send options, :1246 delivers all queued job/task notices with no origin flag; add automatic only for generated sends, retaining typed sends' exact call shape, image handling, title behavior and drafts. use-jobs.ts:132 currently steers raw task notices; mark those automatic, while the typed steer at ChatApp.tsx:999 stays a one-argument call. The shared idle deliver callback also covers jobs/run notices, which must not create seen URLs. Existing unit/chat/open-chat-session-web.test.ts:117 and :132 assert the old wrapper behavior: move typed/attachment assertions to host-level tests and retain direct-session forwarding assertions. test/ui/chat/task-notices.test.tsx:18 supplies the mounted host fixture and at :334 exercises busy steering; extend these actual producer-to-host seams with exact { automatic: true } assertions. Add chat-host-web-urls.test.ts. New options are optional for compatibility with hand-built hosts; recording now belongs to the human-input host boundary. Security-sensitive session URL allowlisting requires strict three-session-tdd.\n\nUS-006 findings: packages/nax/src/memory/koda-provider.ts:189 currently returns MemoryProvider; reachable at :228 already reads the effective write-mode endpoint but swallows failures and returns a boolean. The new effectiveWriteMode must perform a fresh lookup every call, validate direct/proposal, throw MEMORY_KODA_BAD_RESPONSE for malformed answers and propagate client errors unchanged; reachable must retain its existing boolean probe semantics. The project-id lookup at :195 is separately memoized for save requests and should not be changed. Narrow/discover the optional method safely in effectiveWriteModeOf without forcing generic/local MemoryProvider to expose a Koda capability. host-compact.ts:76 currently holds providerId and apply/undo at :120/:140 only check local writeMode. Pass the actual provider, check local proposal first and the optional effective mode before repository reads or mutation operations, and keep the manifest operation's provider label a string provider.id. memory/host.ts:567 composes compaction and :572 supplies providerId; replace that argument in place. memory/index.ts:28 re-exports the factory and host.ts:199 types its _deps seam with typeof factory, so stronger return typing may require attention to provider fixtures while keeping public generic provider contracts compatible. Existing integration/memory/host-compaction.test.ts:1 composes real local hosts and substitutes only operations/sync; preserve this local-provider regression and add the Koda-host hand-off case using a Koda client stub. unit/memory/koda-provider-save.test.ts:1 uses real createKodaClient over a fetch seam, suitable for fresh-lookup and malformed-response assertions. Add host-compact-koda-mode.test.ts. No mode cache, no proposal-mode compaction support, no lower-level nax-agent dependency on Koda. Policy-derived write access is security-sensitive: strict three-session-tdd.\n\nUS-007 findings: packages/nax/src/bot/ledger-carry.ts:24 exports isLedgerAppend, used also by bot/chain-advise.ts:22, so retain its existing character-prefix contract and add mergedLedgerText separately. carry at :106 currently rejects divergent ledgers; replace its append-only selection with a complete-line merge while retaining normal missing/equal short-circuit behavior, PR order, add/commit flow and rollback at :91. Existing unit/bot/ledger-carry.test.ts:64 groups divergent with equal/missing/shorter: split divergent into the new successful carry case, preserving others. refreshIndexEntry at ledger-carry.ts:169 unconditionally resets the real index after commitExactText's compare-and-swap update-ref at :218. Obtain the parent ledger blob before committing; AFTER update-ref inspect the REAL current index, not the throwaway commit index, and refresh only if it still matches parent/new blob or both old and index are absent. Preserve a different staged version and warn on unreadable index without converting a committed append into failure. The failure-table wording mentions an index read before the in-place commit, but the explicit design and ACs require observing concurrent staging just before update-ref: inspect after update-ref, and preserve successful commit outcomes on read failure. Keep literal pathspecs, private-copy hashing, throwaway index, signing, CAS HEAD, and working-file protection unchanged. The existing implementation still has a narrow read/reset race; do not silently expand this into a redesigned Git transaction beyond the specified blob comparison. fix-run.ts:34 consumes commitInPlaceAppend/ledgerStep and bot/index.ts:84 exposes the ledger seam; no workflow redesign. Extend existing real-repository integration/bot/ledger-in-place.test.ts:87/:113 and separate-worktree integration/bot/ledger-carry.test.ts; inject concurrent staging immediately before update-ref through _ledgerCarryDeps, not by sleeps. No new files are required. Complexity is medium: the blob-comparison guard and pure complete-line merge reuse the existing transaction and _ledgerCarryDeps seams in one source module rather than introduce a new Git architecture. Use tdd-simple with failing real-repository concurrency regressions; this story is not an authentication/permission/session change.\n\nDelivery and migration: keep all seven dependencies arrays empty as bound by the spec. The shared security fixes are independently deployable; US-006 protects Koda proposal-mode compaction without making US-001's general outbox change depend on it. Additive optional fields and options preserve old persisted outboxes and existing callers; no data migration, package version bump or release is part of implementation. Use package-scoped focused tests during TDD, then the normal pipeline gates; source-size constraints belong to implementation review, not behavioral ACs. Coverage must not be manually invoked inside a sandboxed nax session. Verify both regression failures and baseline controls, producer/consumer integration seams, no unrelated changes to read-only integration symbols, and the full feature exclusions below.\n\nRefine audit: checked all 85 numbered spec criteria individually (US-001: 1-18; US-002: 1-10; US-003: 1-11; US-004: 1-12; US-005: 1-10; US-006: 1-9; US-007: 1-15). Every original assertion and control/regression qualifier remains in its assigned story; compound criteria retain their parts under a/b/c labels. All six failure-table rows have behavioral criteria, all twelve feature exclusions remain verbatim, and every contextFiles array matches the spec's recommended list within five paths. The seven binding workdirs and empty dependency arrays are unchanged. The only new non-spec-numbered acceptance criterion is US-002's denied-ask/no-launch failure path, added because the refine request explicitly requires a failure case in every story. Corrected US-006 AC-9 to the real interface: packages/nax/src/memory/host.ts:593 exposes applyCompaction directly on the returned MemoryHost, not under host.compaction; the Koda provider hand-off and proposal refusal are unchanged. Made no-parking, no-staging and skipped-index-reset assertions observable through queued state, unchanged file snapshots and recorded Git commands. US-003 is medium complexity because four bounded edits reuse existing machinery, but keeps strict security TDD. US-007 is medium/tdd-simple because it extends one existing module and reuses its already implemented private-index/CAS transaction; real-Git race tests remain required. No acceptance criterion is a build/lint/coverage gate and no feature exclusion was converted into an acceptance criterion.",
