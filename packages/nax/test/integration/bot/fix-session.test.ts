@@ -386,7 +386,7 @@ describe("runBotFix chain rulings", () => {
     const { root, run } = await setup(env);
     const posted: string[] = [];
     Object.assign(_chainAdviseDeps, {
-      readConfirmedKeys: async () => new Set<string>(),
+      readFindingDispositions: async () => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }),
       buildChainQuestion: async () => ({
         kind: "bot-fix-chain",
         feature: "alpha",

@@ -105,9 +105,29 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
   }
 }
 
+/** In-place: the advisor appended to the checkout's own ledger; commit exactly that so no dirty ledger outlives the run. */
+async function commitInPlaceAppend(env: BotFixEnv): Promise<boolean> {
+  const appended = env.advisorLedger;
+  if (appended === undefined) return false;
+  const path = ledgerPath(env.checkout.worktree, appended.feature);
+  if ((await _ledgerCarryDeps.readText(path)) !== appended.after) return false;
+  const rel = relative(env.checkout.worktree, path);
+  try {
+    await git(["add", "-f", "--", rel], env.checkout.worktree);
+    await git(["commit", "--no-verify", "-m", ledgerCommitMessage(appended.feature), "--", rel], env.checkout.worktree);
+    return true;
+  } catch (error) {
+    await restore(env, path, appended.before);
+    warn(env, "Advisor ledger append not committed", error);
+    return false;
+  }
+}
+
 export async function ledgerStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const patch: { ledgerCarried?: true } = {};
-  if (!env.checkout.inPlace) {
+  if (env.checkout.inPlace) {
+    if (await commitInPlaceAppend(env)) patch.ledgerCarried = true;
+  } else {
     try {
       const feature = ledgerFeature(env);
       if (feature && (await carry(env, feature))) patch.ledgerCarried = true;

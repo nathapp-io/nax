@@ -132,6 +132,8 @@ export interface BotFixEnv {
   readonly waiveStarved?: string;
   /** The advisor's chain rulings made or replayed in this run, in `review.agreed` order (US-006). */
   readonly chainRulings?: readonly ChainRuling[];
+  /** The exact advisor ledger append made while routing: the file text before and after it. */
+  readonly advisorLedger?: { readonly feature: string; readonly before: string | null; readonly after: string };
 }
 
 const PUSH_TIMEOUT_MS = 120_000;

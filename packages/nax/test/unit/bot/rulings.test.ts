@@ -6,6 +6,7 @@ import {
   type RecordRulingsInput,
   readConfirmedKeys,
   readSettledKeys,
+  readWriterSettledKeys,
   recordPrRulings,
 } from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
@@ -454,6 +455,13 @@ describe("readConfirmedKeys", () => {
     const base = withReply(false, "confirm");
     const later: PrThread = { ...base, comments: [...base.comments, comment("7", "waive: by design", "alice")] };
     expect(await readConfirmedKeys(input([later]))).toEqual(new Set());
+  });
+
+  test("B2: an unmarked waiver from the bot's own login still settles the finding", async () => {
+    const t = withReply(false);
+    const login = t.comments[0]?.author ?? "";
+    const waiver: PrThread = { ...t, comments: [...t.comments, comment("9", "waive: by design", login)] };
+    expect((await readWriterSettledKeys(input([waiver]))).has(findingKey)).toBe(true);
   });
 
   test("a thread someone else opened confirms nothing", async () => {

@@ -38,6 +38,7 @@ import {
   type CallerRulingsReport,
   planCallerRulings,
 } from "./caller-rulings";
+import { parseChainRuling } from "./chain-rulings";
 import { isConfirmingRuling, latestFindingRuling, newestOwnChainIndex } from "./finding-rulings";
 import { writerCheck } from "./writers";
 
@@ -483,19 +484,26 @@ export async function readConfirmedKeys(input: SettlementReadInput): Promise<Rea
 
 /**
  * Finding keys an authorized writer explicitly settled (waive, override, fixed) after the bot's newest
- * chain ruling on the thread. A bare thread resolution, or the advisor's own ruling, never counts.
+ * chain ruling on the thread. A bare thread resolution, or the advisor's own ruling, never counts. The
+ * advisor's own ruling is told apart by its chain-ruling body, not by author: a writer sharing the bot's
+ * forge login still counts.
  */
 export async function readWriterSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  return (await readFindingDispositions(input)).writerSettled;
+}
+
+/** Confirmed and writer-settled keys from ONE scan and one permission cache. */
+export async function readFindingDispositions(
+  input: SettlementReadInput,
+): Promise<{ confirmed: ReadonlySet<string>; writerSettled: ReadonlySet<string> }> {
   const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
-  return new Set(
-    found
-      .filter(
-        ({ ruling, thread }) =>
-          ruling !== null &&
-          ruling.reply.author !== input.login &&
-          !isConfirmingRuling(ruling.keyword) &&
-          ruling.index > newestOwnChainIndex(input.login, thread),
-      )
-      .map(({ key }) => key),
-  );
+  const confirmed = new Set<string>();
+  const writerSettled = new Set<string>();
+  for (const { key, thread, ruling } of found) {
+    if (ruling === null) continue;
+    if (isConfirmingRuling(ruling.keyword)) confirmed.add(key);
+    else if (parseChainRuling(ruling.reply.body) === null && ruling.index > newestOwnChainIndex(input.login, thread))
+      writerSettled.add(key);
+  }
+  return { confirmed, writerSettled };
 }

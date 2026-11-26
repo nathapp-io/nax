@@ -55,6 +55,7 @@ async function fixture() {
     sha,
     headSha,
     agreedKeys: ["z", "a"],
+    chainInstructions: [],
     outcome: "baseline-red" as const,
     savedAt: "2026-10-22T03:00:00.000Z",
   };

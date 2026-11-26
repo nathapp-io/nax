@@ -12,7 +12,7 @@ import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
-import { chainRoutingContext, withChainRulings } from "./chain-advise";
+import { withChainRulings } from "./chain-advise";
 import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
@@ -307,13 +307,18 @@ async function inPlaceDirty(env: BotFixEnv): Promise<boolean> {
   const { worktree } = env.checkout;
   const status = await _botFixDeps.runGit(["status", "--porcelain", "--untracked-files=all"], worktree);
   if (status.exitCode !== 0) return true;
-  // The advisor's own ledger append is bot-generated and already accounted for; nothing else is exempt.
-  const feature = chainRoutingContext(env)?.feature;
-  const ledger = feature === undefined ? undefined : relative(worktree, ledgerPath(env.repoRoot, feature));
+  // Only the advisor's recorded ledger append is exempt: the ledger must still hold exactly that text.
+  const appended = env.advisorLedger;
+  const ledger = appended === undefined ? undefined : relative(worktree, ledgerPath(env.repoRoot, appended.feature));
+  const exempt =
+    appended !== undefined &&
+    (await Bun.file(ledgerPath(env.repoRoot, appended.feature))
+      .text()
+      .catch(() => null)) === appended.after;
   return status.stdout
     .split("\n")
     .map((line) => line.trim())
-    .some((line) => line !== "" && line.slice(2).trim() !== ledger);
+    .some((line) => line !== "" && !(exempt && line.slice(2).trim() === ledger));
 }
 
 /**

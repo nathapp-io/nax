@@ -77,7 +77,7 @@ function stub(posted: string[]): void {
   _advisorServiceDeps.readPrdText = async () => "{}";
   _advisorServiceDeps.costTotal = () => 0;
   Object.assign(_chainAdviseDeps, {
-    readConfirmedKeys: async () => new Set<string>(),
+    readFindingDispositions: async () => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }),
     buildChainQuestion: async (_env: BotFixEnv, _f: unknown, feature: string) => ({
       kind: "bot-fix-chain" as const,
       feature,

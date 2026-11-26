@@ -1,6 +1,6 @@
 /** Route a fix-induced chain finding to the advisor: which PRs and which findings qualify (US-004). */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { type AdviceResult, type Advisor, createAdvisor } from "@/advisor";
+import { type AdviceResult, type Advisor, createAdvisor, ledgerPath } from "@/advisor";
 import { resolveAdvisorConfig } from "@/config";
 import {
   type OwnComment,
@@ -21,14 +21,13 @@ import { featureIntentPaths } from "./intent";
 import { ledgerFeature } from "./ledger-carry";
 import type { AgreedItem } from "./post";
 import { reviewBlockingTriggers } from "./review-blocking";
-import { readConfirmedKeys, readWriterSettledKeys } from "./rulings";
+import { readFindingDispositions } from "./rulings";
 
 /** Final shape grows with US-005..US-007; only the dependencies that exist today are listed. */
 export const _chainAdviseDeps = {
   createAdvisor,
   buildChainQuestion,
-  readConfirmedKeys,
-  readWriterSettledKeys,
+  readFindingDispositions,
   replyToThread,
   resolveThread,
   unresolveThread,
@@ -239,6 +238,14 @@ interface AskContext {
   readonly state: RoutingState;
 }
 
+async function readLedgerText(repoRoot: string, feature: string): Promise<string | null> {
+  try {
+    return await Bun.file(ledgerPath(repoRoot, feature)).text();
+  } catch {
+    return null;
+  }
+}
+
 /** Asks the advisor once per own-thread chain finding and applies each outcome; returns the env the fix runs on. */
 export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
   const routing = chainRoutingContext(env);
@@ -246,19 +253,11 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
   const found = selectChainFindings(env);
   if (found.length === 0) return env;
   // An unreadable ruling aborts preparation rather than sending potentially confirmed work to a fixer.
-  const confirmed = await _chainAdviseDeps.readConfirmedKeys({
+  const { confirmed, writerSettled } = await _chainAdviseDeps.readFindingDispositions({
     ref: env.ref,
     login: env.user.login,
     threads: env.threads,
     comments: env.own.filter(({ threadId }) => threadId === undefined).map(({ comment }) => comment),
-    deps: env.forge,
-    cwd: env.repoRoot,
-  });
-  const writerSettled = await _chainAdviseDeps.readWriterSettledKeys({
-    ref: env.ref,
-    login: env.user.login,
-    threads: env.threads,
-    comments: [],
     deps: env.forge,
     cwd: env.repoRoot,
   });
@@ -279,6 +278,7 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
     costReached: false,
   };
   const ctx = { env, advisor, feature: routing.feature, state };
+  const ledgerBefore = await readLedgerText(env.repoRoot, routing.feature);
   for (const entry of found) {
     if (writerSettled.has(entry.item.key)) {
       // An authorized writer disposition outranks the advisor's earlier ruling: drop it without replay.
@@ -288,10 +288,16 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
     if (confirmed.has(entry.item.key) || entry.thread === undefined) continue;
     await ruleOne(ctx, { ...entry, thread: entry.thread });
   }
-  if (state.rulings.size === 0 && state.dropped.size === 0) return env;
+  const ledgerAfter = await readLedgerText(env.repoRoot, routing.feature);
+  const advisorLedger =
+    ledgerAfter !== null && ledgerAfter !== ledgerBefore
+      ? { feature: routing.feature, before: ledgerBefore, after: ledgerAfter }
+      : undefined;
+  const withLedger = advisorLedger === undefined ? env : { ...env, advisorLedger };
+  if (state.rulings.size === 0 && state.dropped.size === 0) return withLedger;
   const ordered = env.review.agreed.flatMap((item) => state.rulings.get(item.key) ?? []);
   return {
-    ...env,
+    ...withLedger,
     review: { ...env.review, agreed: env.review.agreed.filter((item) => !state.dropped.has(item.key)) },
     chainRulings: ordered,
   };

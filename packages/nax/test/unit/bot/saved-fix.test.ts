@@ -14,6 +14,7 @@ const entry = {
   sha,
   headSha,
   agreedKeys: ["a"],
+  chainInstructions: [],
   outcome: "baseline-red" as const,
   savedAt: "2026-10-22T03:00:00.000Z",
 };
@@ -217,9 +218,14 @@ describe("reuseSavedFix chain instructions (B3)", () => {
       current: [{ key: "a", outcome: "fix" as const, text: "do x" }],
     },
     { name: "a removed instruction", saved: [{ key: "a", text: "do x" }], current: [] },
+    { name: "a legacy entry lacks instruction identity", saved: undefined, current: [] },
   ])("does not reuse a saved commit when $name", async ({ saved, current }) => {
     const env = { ...makeBotFixEnv([...blocking]), chainRulings: current };
-    const read = mock(async () => ({ ...entry, headSha: env.info.headSha, chainInstructions: saved }));
+    const read = mock(async () => ({
+      ...entry,
+      headSha: env.info.headSha,
+      chainInstructions: saved ? [...saved] : undefined,
+    }));
     const clear = mock(async () => {});
     _savedFixDeps.runGit = gitOk;
     expect(await reuseSavedFix({ env, outputDir: "/output", savedFix: { read, clear } })).toEqual(fresh);

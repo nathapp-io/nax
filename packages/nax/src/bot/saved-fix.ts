@@ -145,7 +145,10 @@ export async function reuseSavedFix(input: {
     }
     const keys = env.review.agreed.map((item) => item.key).sort();
     if (JSON.stringify([...entry.agreedKeys].sort()) !== JSON.stringify(keys)) return initial;
-    if (JSON.stringify(entry.chainInstructions ?? []) !== JSON.stringify(chainInstructions(env))) {
+    if (
+      entry.chainInstructions === undefined ||
+      JSON.stringify(entry.chainInstructions) !== JSON.stringify(chainInstructions(env))
+    ) {
       await savedFix.clear(location);
       return initial;
     }

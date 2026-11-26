@@ -86,7 +86,7 @@ beforeEach(() => {
   Object.assign(_chainAdviseDeps, {
     createAdvisor,
     buildChainQuestion: async () => DRAFT,
-    readConfirmedKeys: async () => new Set<string>(),
+    readFindingDispositions: async () => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }),
     replyToThread: reply,
     resolveThread: resolve,
     getLogger: () => ({ warn }),

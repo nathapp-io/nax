@@ -86,7 +86,7 @@ beforeEach(() => {
   Object.assign(_chainAdviseDeps, {
     createAdvisor,
     buildChainQuestion: async () => DRAFT,
-    readConfirmedKeys: async () => new Set<string>(),
+    readFindingDispositions: async () => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }),
     replyToThread: reply,
     resolveThread: resolve,
     getLogger: () => ({ warn }),
@@ -128,13 +128,16 @@ function parented(keys: string[], parents: Record<string, string[]>): BotFixEnv 
 }
 const keysOf = (env: BotFixEnv): string[] => env.review.agreed.map((i) => i.key);
 const confirmedWith = (...keys: string[]) => {
-  _chainAdviseDeps.readConfirmedKeys = mock(async () => new Set(keys));
+  _chainAdviseDeps.readFindingDispositions = mock(async () => ({
+    confirmed: new Set(keys),
+    writerSettled: new Set<string>(),
+  }));
 };
 
 describe("confirmed keys", () => {
   test("AC-1 reads confirmed keys once with threads and login", async () => {
-    const read = mock(async (_i: unknown) => new Set<string>());
-    _chainAdviseDeps.readConfirmedKeys = read;
+    const read = mock(async (_i: unknown) => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }));
+    _chainAdviseDeps.readFindingDispositions = read;
     const env = routed();
     await withChainRulings(env);
     expect(read).toHaveBeenCalledTimes(1);
@@ -143,15 +146,15 @@ describe("confirmed keys", () => {
 
   test("AC-2 rejects with the read error", async () => {
     const err = new Error("unreadable");
-    _chainAdviseDeps.readConfirmedKeys = async () => {
+    _chainAdviseDeps.readFindingDispositions = async () => {
       throw err;
     };
     await expect(withChainRulings(routed())).rejects.toBe(err);
   });
 
   test("AC-3 does not read with no chain finding", async () => {
-    const read = mock(async (_i: unknown) => new Set<string>());
-    _chainAdviseDeps.readConfirmedKeys = read;
+    const read = mock(async (_i: unknown) => ({ confirmed: new Set<string>(), writerSettled: new Set<string>() }));
+    _chainAdviseDeps.readFindingDispositions = read;
     await withChainRulings(routed([]));
     expect(read).not.toHaveBeenCalled();
   });
