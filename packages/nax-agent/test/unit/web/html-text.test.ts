@@ -191,6 +191,36 @@ describe("htmlToText text shaping", () => {
     expect(htmlToText('<script>var a = "<script>";</script><p>x</p>', BASE).text).toBe("x");
   });
 
+  test("drops a raw-text element whose attribute carries a quoted tag-shaped value", () => {
+    const page = htmlToText(
+      '<script data-note="> </script>">const secret = 1; <a href="https://hidden.example/">h</a></script><p>x</p>',
+      BASE,
+    );
+    expect(page.text).toBe("x");
+    expect(page.links).toEqual([]);
+  });
+
+  test("ends a style where a quoted tag-shaped attribute value does not", () => {
+    const page = htmlToText('<style data-note="> </style>">p{}</style><p>x</p>', BASE);
+    expect(page.text).toBe("x");
+  });
+
+  test("keeps a custom element whose name only starts with a raw-text element's", () => {
+    expect(htmlToText("<script-demo>shown</script-demo> <style-demo>too</style-demo>", BASE).text).toBe("shown too");
+  });
+
+  test("does not read a raw-text opening tag out of another tag's attribute", () => {
+    expect(htmlToText('<div data-x="<script>">t</div>', BASE).text).toBe("t");
+  });
+
+  test("keeps a closing tag whose name only starts with a raw-text element's", () => {
+    expect(htmlToText("<script>a</scriptx>b</script><p>x</p>", BASE).text).toBe("x");
+  });
+
+  test("treats a closing tag the page never terminates as an element left open", () => {
+    expect(htmlToText("<p>x</p><script>evil()</script", BASE).text).toBe("x");
+  });
+
   test("ignores a doctype", () => {
     expect(htmlToText("<!DOCTYPE html><p>x</p>", BASE).text).toBe("x");
   });

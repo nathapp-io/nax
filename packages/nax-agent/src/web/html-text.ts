@@ -155,19 +155,18 @@ export function htmlToText(html: string, baseUrl: string): HtmlText {
 }
 
 /**
- * Remove the named elements, contents included. A paired element goes whole, however deeply
- * it nests copies of itself; a tag left without its closing tag loses only the tag, so an
- * unclosed `<script>` leaves its contents as text rather than swallowing the rest of the page.
+ * Remove the named elements, contents included. A paired element goes whole, however deeply it
+ * nests copies of itself; an element the page never closes takes the rest of the page with it,
+ * because what follows it is its own contents rather than page text.
  */
 function dropElements(html: string, tags: readonly string[]): string {
   return tags.reduce((text, tag) => dropElement(text, tag), html);
 }
 
-/** Remove one element's paired form, then any tag of that name left over. */
+/** Remove one element's paired form, then any tag of that exact name left over. */
 function dropElement(html: string, tag: string): string {
-  const loneTag = new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi");
   const dropped = RAW_TEXT_TAGS.has(tag) ? dropRawText(html, tag) : dropPaired(html, tag);
-  return dropped.replace(loneTag, "");
+  return dropLoneTags(dropped, tag);
 }
 
 /**
@@ -175,28 +174,90 @@ function dropElement(html: string, tag: string): string {
  * its own closing tag, so a `"<script>"` in a script is text rather than a nested element and
  * the element ends where the browser ends it.
  *
+ * Both ends are found by the quote-aware tokenizer, which is what keeps an attribute that holds
+ * a `>` and a tag-shaped value (`<script data-note="> </script>">`) from being read as the end
+ * of the tag or the start of the element's closing tag.
+ *
  * An opening tag with no closing tag takes the rest of the page with it: the page stopped inside
  * the element -- a byte cap lands there as readily as a malformed document does -- so what
  * follows is that element's own code or style, not page text, and none of it is a link.
  */
 function dropRawText(html: string, tag: string): string {
-  const opening = new RegExp(`<${tag}\\b[^>]*>`, "gi");
-  const closing = new RegExp(`</${tag}\\s*>`, "gi");
   const out: string[] = [];
+  let cursor = 0;
   let keepFrom = 0;
-  for (;;) {
-    opening.lastIndex = keepFrom;
-    const open = opening.exec(html);
+  while (cursor < html.length) {
+    const open = nextTag(html, cursor);
     if (open === null) break;
-    out.push(html.slice(keepFrom, open.index));
-    closing.lastIndex = open.index + open[0].length;
-    const close = closing.exec(html);
+    cursor = open.tag.end;
+    if (open.tag.closing || open.tag.name !== tag) continue;
+    out.push(html.slice(keepFrom, open.start));
+    const close = rawTextEnd(html, open.tag.end, tag);
     // Never closed: everything from the opening tag on is the element's own contents.
     if (close === null) return out.join("");
-    keepFrom = close.index + close[0].length;
+    keepFrom = close;
+    cursor = close;
   }
   out.push(html.slice(keepFrom));
   return out.join("");
+}
+
+/**
+ * Where a `tag` element's own closing tag ends, at or after `from`; `null` when the page has no
+ * such tag left, in which case the element runs to the end of the page.
+ *
+ * Only an end tag of exactly that name counts: a browser ends raw text at `</script` followed by
+ * whitespace, a slash or the tag's `>`, so `</scriptx>` stays part of the contents.
+ */
+function rawTextEnd(html: string, from: number, tag: string): number | null {
+  const closing = new RegExp(`</${tag}`, "gi");
+  closing.lastIndex = from;
+  for (let found = closing.exec(html); found !== null; found = closing.exec(html)) {
+    const after = html.charAt(found.index + found[0].length);
+    if (after !== "" && !/[\s/>]/.test(after)) continue;
+    const end = readTag(html, found.index);
+    if (end === null) return null;
+    if (end.closing && end.name === tag) return end.end;
+  }
+  return null;
+}
+
+/**
+ * Remove every tag of exactly that name, opening or closing, wherever it is left over: the tag
+ * of an element whose contents were already dropped, and a closing tag that opens nothing. A
+ * name that only starts with the tag's (`<script-demo>`) is a different element and is kept.
+ */
+function dropLoneTags(html: string, tag: string): string {
+  const out: string[] = [];
+  let cursor = 0;
+  let keepFrom = 0;
+  while (cursor < html.length) {
+    const found = nextTag(html, cursor);
+    if (found === null) break;
+    cursor = found.tag.end;
+    if (found.tag.name !== tag) continue;
+    out.push(html.slice(keepFrom, found.start));
+    keepFrom = found.tag.end;
+  }
+  out.push(html.slice(keepFrom));
+  return out.join("");
+}
+
+/**
+ * The first tag at or after `from`, with the index it starts at, or `null` when the page has no
+ * tag left. The scan is the tokenizer's, so a `<` inside a quoted attribute is text and not the
+ * start of another tag.
+ */
+function nextTag(html: string, from: number): { readonly tag: Tag; readonly start: number } | null {
+  let cursor = from;
+  while (cursor < html.length) {
+    const start = html.indexOf("<", cursor);
+    if (start === -1) return null;
+    const tag = TAG_START.test(html.charAt(start + 1)) ? readTag(html, start) : null;
+    if (tag !== null) return { tag, start };
+    cursor = start + 1;
+  }
+  return null;
 }
 
 /**
@@ -207,6 +268,9 @@ function dropRawText(html: string, tag: string): string {
  *
  * An element still open when the page ends is removed to the end of the page, not just its tags:
  * the page stopped inside it, so the tail is its contents.
+ *
+ * The tags are the tokenizer's, the same walk `dropRawText` and `dropLoneTags` use, so a `>` or a
+ * tag-shaped value inside a quoted attribute is never mistaken for a tag boundary.
  */
 function dropPaired(html: string, tag: string): string {
   const out: string[] = [];
@@ -215,13 +279,12 @@ function dropPaired(html: string, tag: string): string {
   let openedAt = 0;
   let depth = 0;
   while (cursor < html.length) {
-    const start = html.indexOf("<", cursor);
-    if (start === -1) break;
-    const found = TAG_START.test(html.charAt(start + 1)) ? readTag(html, start) : null;
-    cursor = found === null ? start + 1 : found.end;
-    if (found === null || found.name !== tag) continue;
-    if (!found.closing) {
-      if (depth === 0) openedAt = start;
+    const found = nextTag(html, cursor);
+    if (found === null) break;
+    cursor = found.tag.end;
+    if (found.tag.name !== tag) continue;
+    if (!found.tag.closing) {
+      if (depth === 0) openedAt = found.start;
       depth++;
       continue;
     }
@@ -229,7 +292,7 @@ function dropPaired(html: string, tag: string): string {
     depth--;
     if (depth > 0) continue;
     out.push(html.slice(keepFrom, openedAt));
-    keepFrom = found.end;
+    keepFrom = found.tag.end;
   }
   // An element still open when the page ends holds the rest of it: its contents are not text,
   // so the tail from its opening tag goes with it rather than becoming readable page content.
