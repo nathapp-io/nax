@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T07:45:00.694Z",
+  "updatedAt": "2026-11-26T08:00:14.384Z",
   "userStories": [
     {
       "id": "US-001",
@@ -846,14 +846,17 @@
       "dependencies": [
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Process-wide live sandbox authorization, resumed exposure listeners and approved unwrapped execution are high-risk cross-module security changes."
+        "reasoning": "Process-wide live sandbox authorization, resumed exposure listeners and approved unwrapped execution are high-risk cross-module security changes.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/srt-backend.ts",
@@ -884,7 +887,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d9d952e5040cdd2dce3a5979ea279bb01a754afd"
     },
     {
       "id": "US-014",
