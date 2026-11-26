@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CHAIN_RULING_TEXT_CHARS,
   type ChainRuling,
+  chainInstructions,
   chainRulingKey,
   parseChainRuling,
   renderChainRuling,
@@ -127,5 +128,20 @@ describe("parseChainRuling", () => {
     ["a ruling on the second line", "Fixed in abc1234\nAdvisor ruling — waived: reason"],
   ])("returns null for %s", (_n, body) => {
     expect(parseChainRuling(body)).toBeNull();
+  });
+});
+
+describe("chainInstructions", () => {
+  test("AC-1 maps only the fix entries", () => {
+    const map = chainInstructions({
+      chainRulings: [
+        { key: "f-1", outcome: "fix", text: "a" },
+        { key: "f-2", outcome: "held", text: "b" },
+      ],
+    });
+    expect(Array.from(map.entries())).toEqual([["f-1", "a"]]);
+  });
+  test("AC-2 returns an empty map without rulings", () => {
+    expect(chainInstructions({}).size).toBe(0);
   });
 });

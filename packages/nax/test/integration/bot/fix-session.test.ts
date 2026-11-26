@@ -1,20 +1,36 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeBotFixDeps, makeBotFixEnv, makeTempDir, makeTestRuntime } from "@test/helpers";
+import {
+  cleanupTempDir,
+  makeBotFixDeps,
+  makeBotFixEnv,
+  makeNaxConfig,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
+import type { Advisor } from "@/advisor";
+import { _chainAdviseDeps } from "@/bot/chain-advise";
+import { parseChainRuling } from "@/bot/chain-rulings";
 import { barCommands } from "@/bot/checks";
+import { _fixCarriedDeps } from "@/bot/fix-carried";
 import { _botFixDeps, BOT_FIX_GRAPH, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps, fixStep } from "@/bot/fix-steps";
+import { withNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
 import { renderCheckoutState } from "@/prompts";
 import { botRunDir } from "@/workflow/paths";
 
 const originalFix = { ..._fixStepsDeps };
 const originalRun = { ..._botFixDeps };
+const originalChain = { ..._chainAdviseDeps };
+const originalCarried = { ..._fixCarriedDeps };
 const dirs: string[] = [];
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 afterEach(async () => {
   Object.assign(_fixStepsDeps, originalFix);
   Object.assign(_botFixDeps, originalRun);
+  Object.assign(_chainAdviseDeps, originalChain);
+  Object.assign(_fixCarriedDeps, originalCarried);
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(dirs.splice(0).map(cleanupTempDir));
 });
@@ -239,5 +255,173 @@ describe("runBotFix durable session report", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("runBotFix chain rulings", () => {
+  const chainItem = {
+    kind: "finding" as const,
+    key: "f-1",
+    severity: "important" as const,
+    issue: "Leak",
+    suggestion: "Close it",
+    trigger: "normal" as const,
+    lineage: { generation: 2, parents: ["p-1"], pushSha: "abcdef1" },
+  };
+
+  async function setup(env = makeBotFixEnv([chainItem])) {
+    const root = makeTempDir("bot-fix-chain-");
+    dirs.push(root);
+    const worktree = makeTempDir("bot-fix-chain-wt-");
+    dirs.push(worktree);
+    const full = { ...env, checkout: { ...env.checkout, worktree } };
+    const runtime = makeTestRuntime({ config: full.config });
+    runtimes.push(runtime);
+    const run = mock<typeof _fixStepsDeps.runBranchFix>(async () => ({ dirty: false, autoCommitted: false }));
+    _fixStepsDeps.runBranchFix = run;
+    _fixStepsDeps.readHead = async () => "fix-head";
+    Object.assign(_botFixDeps, makeBotFixDeps(full, runtime), {
+      checkStep: async () => ({ patch: { outcome: "no-change" }, exit: "no-change" }),
+      readyStep: async () => ({ patch: {}, exit: "report" }),
+      reportStep: async () => ({ patch: {}, exit: "done" }),
+    });
+    return { root, run, full };
+  }
+  const go = (root: string, extra: { readyOnly?: boolean } = {}) =>
+    runBotFix({ dir: root, pr: 42, profiles: [], interactive: false, ...extra });
+  const fixRuling = { key: "f-1", outcome: "fix" as const, text: "restore the guard" };
+
+  test("AC-14/15 the prompt carries the ruling and the finding drops its suggestion", async () => {
+    const { root, run, full } = await setup();
+    _botFixDeps.withChainRulings = async (env) => ({ ...env, chainRulings: [fixRuling] });
+    await go(root);
+    const input = run.mock.calls[0]?.[1];
+    expect(input?.prompt).toContain("Advisor ruling: restore the guard");
+    expect(input?.findings).toHaveLength(1);
+    expect(input?.findings[0] && "suggestion" in input.findings[0]).toBe(false);
+    expect(full.review.agreed[0]?.kind).toBe("finding");
+  });
+
+  test("AC-16 no session when the advisor removed the only item", async () => {
+    const { root, run } = await setup();
+    _botFixDeps.withChainRulings = async (env) => ({ ...env, review: { ...env.review, agreed: [] } });
+    await go(root);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-17 a ready-only run skips the routing", async () => {
+    const { root } = await setup();
+    const routing = mock(async (env: Parameters<typeof _botFixDeps.withChainRulings>[0]) => env);
+    _botFixDeps.withChainRulings = routing;
+    await go(root, { readyOnly: true });
+    expect(routing).not.toHaveBeenCalled();
+  });
+
+  test("AC-18 a rejected routing starts no session", async () => {
+    const { root, run } = await setup();
+    _botFixDeps.withChainRulings = async () => {
+      throw new Error("confirmed rulings unreadable");
+    };
+    await expect(go(root)).rejects.toThrow("confirmed rulings unreadable");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-19 the routing sees the carried items merged in", async () => {
+    const base = makeBotFixEnv();
+    const head = "a".repeat(40);
+    const { carriedRecordBody, carriedRecordKey } = await import("@/bot/carried-record");
+    const { ownComments } = await import("@/forge");
+    const { body } = carriedRecordBody({
+      headSha: head,
+      findings: [{ key: "f-carry", severity: "important", issue: "Race", raisedBy: "review-B" }],
+    });
+    const env = {
+      ...base,
+      info: { ...base.info, headSha: head },
+      review: { ...base.review, headSha: head },
+      own: ownComments(
+        [
+          {
+            id: "1",
+            kind: "comment" as const,
+            author: "bot",
+            body: withNaxBotMarker(body, carriedRecordKey(head)),
+            createdAt: "",
+          },
+        ],
+        "bot",
+      ),
+    };
+    const { root } = await setup(env);
+    _fixCarriedDeps.readSettledKeys = async () => new Set();
+    _botFixDeps.listPrComments = async () => env.own.map(({ comment }) => comment);
+    const routing = mock(async (e: Parameters<typeof _botFixDeps.withChainRulings>[0]) => e);
+    _botFixDeps.withChainRulings = routing;
+    await go(root);
+    expect(routing).toHaveBeenCalledTimes(1);
+    expect(routing.mock.calls[0]?.[0].review.agreed.map((i) => i.key)).toEqual(["f-carry"]);
+  });
+
+  test("AC-20/21 the real routing posts a fix ruling and the prompt carries it", async () => {
+    const base = makeBotFixEnv([chainItem]);
+    const env = {
+      ...base,
+      config: makeNaxConfig({ advisor: { enabled: true, callers: { botFixChain: true } } }),
+      threads: [
+        {
+          id: "t1",
+          replyTo: "1",
+          resolved: false,
+          outdated: false,
+          comments: [
+            { id: "c1", kind: "thread" as const, author: "bot", body: withNaxBotMarker("body", "f-1"), createdAt: "" },
+          ],
+        },
+      ],
+      checkout: {
+        ...base.checkout,
+        changedFiles: [".nax/features/alpha/prd.json", ".nax/features/alpha/spec.md"],
+      },
+    };
+    const { root, run } = await setup(env);
+    const posted: string[] = [];
+    Object.assign(_chainAdviseDeps, {
+      readConfirmedKeys: async () => new Set<string>(),
+      buildChainQuestion: async () => ({
+        kind: "bot-fix-chain",
+        feature: "alpha",
+        summary: "s",
+        evidence: [],
+        options: [],
+      }),
+      replyToThread: async (...a: unknown[]) => {
+        posted.push(String(a[2]));
+        return { id: "9" };
+      },
+      createAdvisor: (): Advisor =>
+        ({
+          advise: async () => ({
+            decision: {
+              id: "D-1",
+              questionId: "Q-1",
+              kind: "bot-fix-chain",
+              chosenOptionId: "A",
+              action: { type: "fix", instruction: "restore the guard" },
+              rationale: "r",
+              confidence: "high",
+              reversible: true,
+              needsHumanConfirm: false,
+              decidedAt: "",
+              model: "m",
+              memoryMode: "stateless",
+              auditRef: "",
+            },
+          }),
+        }) as unknown as Advisor,
+    });
+    await go(root);
+    expect(run.mock.calls[0]?.[1].prompt).toContain("Advisor ruling: restore the guard");
+    expect(posted).toHaveLength(1);
+    expect(parseChainRuling(posted[0] ?? "")?.outcome).toBe("fix");
   });
 });

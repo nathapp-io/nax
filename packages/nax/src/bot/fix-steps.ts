@@ -14,7 +14,7 @@ import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gat
 import { runBranchFix } from "../workflow/branch-fix";
 import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
-import type { ChainRuling } from "./chain-rulings";
+import { type ChainRuling, chainInstructions } from "./chain-rulings";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
@@ -176,7 +176,7 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
   if (!hasPushWorthyItem(env)) {
     return { patch: { agreedCount, outcome: "nothing", followUps: followUpsOf(env.review.agreed) }, exit: "nothing" };
   }
-  const findings = toFixFindings(env.review.agreed);
+  const findings = toFixFindings(env.review.agreed, chainInstructions(env));
   const intent = featureIntentPaths(env.checkout);
   const prompt = buildBotPrFixPrompt({
     mode: "fix",
@@ -233,6 +233,7 @@ async function fixPromptFacts(
   // posts, so a summary rewrite that dropped an entry cannot change what the fixer is told.
   const entries = ownLedgerEntries(env.own);
   const blocking = reviewBlockingTriggers(env);
+  const instructions = chainInstructions(env);
   const lineagePushes = lineagePushFacts(env.review.agreed, entries);
   const growth = await outsideDeclaredGrowth({
     ...(prdPath === undefined ? {} : { prdPath }),
@@ -242,7 +243,7 @@ async function fixPromptFacts(
   return {
     findingFacts: env.review.agreed.map((item) => ({
       id: item.key,
-      lines: findingFactLines(item, entries, blocking),
+      lines: findingFactLines(item, entries, blocking, instructions.get(item.key)),
     })),
     ...(lineagePushes.length === 0 ? {} : { lineagePushes }),
     ...(growth === undefined ? {} : { outsideGrowth: growth }),

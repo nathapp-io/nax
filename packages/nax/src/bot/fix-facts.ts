@@ -9,7 +9,8 @@
  *
  * They are reported as facts only. No line here tells the fixer what to do with a trigger or a
  * lineage: a finding that sits on a previous fix is still a real finding, and the decision belongs
- * to the agent reading it.
+ * to the agent reading it. The one exception is `Advisor ruling:`, the instruction the advisor
+ * ruled for a finding on a chain of earlier bot fixes.
  *
  * Nothing here posts or decides anything. A missing PRD, an unreadable one or a failed `git diff`
  * is `undefined` — the fix prompt then carries no growth fact — never a wrong number, because a
@@ -66,17 +67,21 @@ function lineageLines(lineage: FindingLineage, entries: readonly BotPushEntry[])
  * `entries` supplies each parent's issue from the push the lineage names — the ledger is the only
  * record of what an earlier fix fixed, so a parent the ledger no longer holds renders without one
  * rather than with an issue another push recorded for the same recurring key.
+ *
+ * `advisorInstruction`, when given, is stated last as `Advisor ruling: <instruction>`.
  */
 export function findingFactLines(
   item: AgreedItem,
   entries: readonly BotPushEntry[],
   blocking: readonly FindingTrigger[],
+  advisorInstruction?: string,
 ): readonly string[] {
   if (item.kind !== "finding") return [];
   return [
     ...triggerLine(item),
     ...(item.lineage === undefined ? [] : lineageLines(item.lineage, entries)),
     ...(isBlockingFinding(item, blocking) ? [] : [NOT_BLOCKING_LINE]),
+    ...(advisorInstruction === undefined ? [] : [`Advisor ruling: ${advisorInstruction}`]),
   ];
 }
 

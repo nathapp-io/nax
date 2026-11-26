@@ -193,3 +193,21 @@ describe("loadLatestReview writer-checked artifact versions", () => {
     expect(await read({ version: 4, headSha: "h", pr: REF, agreed })).toBeNull();
   });
 });
+
+describe("toFixFindings advised", () => {
+  const two = [
+    { kind: "finding", key: "f-1", severity: "minor", issue: "Leak", suggestion: "Close it" },
+    { kind: "finding", key: "f-2", severity: "minor", issue: "Leak2", suggestion: "Close it too" },
+  ] as const;
+  test("AC-6 drops the suggestion of an advised finding", () => {
+    const first = bot.toFixFindings(two, new Map([["f-1", "restore the guard"]]))[0];
+    expect(first).toBeDefined();
+    expect(first && "suggestion" in first).toBe(false);
+  });
+  test("AC-7 keeps the suggestion of an unadvised finding", () => {
+    expect(bot.toFixFindings(two, new Map([["f-1", "x"]]))[1]?.suggestion).toBe("Close it too");
+  });
+  test("AC-8 keeps every suggestion without a map", () => {
+    expect(bot.toFixFindings(two).map((f) => f.suggestion)).toEqual(["Close it", "Close it too"]);
+  });
+});

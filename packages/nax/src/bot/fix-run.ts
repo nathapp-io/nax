@@ -11,6 +11,7 @@ import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
+import { withChainRulings } from "./chain-advise";
 import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
@@ -66,6 +67,7 @@ export const _botFixDeps = {
     await Bun.write(to, Bun.file(from));
   },
   loadLatestReview,
+  withChainRulings,
   savedFix: { read: readSavedFix, save: saveFix, clear: clearSavedFix },
   resolveBotChecks,
   checkPushAccess,
@@ -493,7 +495,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      const fixEnv = input.readyOnly ? env : await withCarriedFixFindings(env);
+      const fixEnv = input.readyOnly ? env : await deps.withChainRulings(await withCarriedFixFindings(env));
       const result = await executeFix(fixEnv, runtime, input);
       if (!checkout.inPlace && !input.readyOnly && result.outcome !== "refused")
         await persistSavedFix({ env: fixEnv, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });

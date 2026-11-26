@@ -76,3 +76,12 @@ export function parseChainRuling(body: string): Omit<ChainRuling, "key"> | null 
   const proposed = outcome === "held" ? readProposed(kept[1]) : null;
   return proposed ? { outcome, text, proposed } : { outcome, text };
 }
+
+/** Finding key to instruction, for the `fix` entries of `env.chainRulings`; empty when there are none. */
+export function chainInstructions(env: {
+  readonly chainRulings?: readonly ChainRuling[];
+}): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const ruling of env.chainRulings ?? []) if (ruling.outcome === "fix") map.set(ruling.key, ruling.text);
+  return map;
+}

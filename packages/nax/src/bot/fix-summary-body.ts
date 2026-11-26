@@ -88,7 +88,23 @@ function summaryDetails(env: BotFixEnv, state: BotFixState): string[] {
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
+  const advisor = advisorCountLine(env);
+  if (advisor !== undefined) lines.push(advisor);
   return lines;
+}
+
+/** How many chain findings the advisor ruled on, by outcome; zero counts are left out. */
+function advisorCountLine(env: BotFixEnv): string | undefined {
+  const rulings = env.chainRulings ?? [];
+  if (rulings.length === 0) return undefined;
+  const count = (outcome: string): number => rulings.filter((r) => r.outcome === outcome).length;
+  const parts = [
+    [count("fix"), "to fix"],
+    [count("waived"), "waived"],
+    [count("held"), "held for a human"],
+  ].flatMap(([n, label]) => (n === 0 ? [] : [`${n} ${label}`]));
+  const noun = rulings.length === 1 ? "finding that sits" : "findings that sit";
+  return `Advisor ruled on ${rulings.length} ${noun} on earlier nax bot fixes: ${parts.join(", ")}.`;
 }
 
 /**
