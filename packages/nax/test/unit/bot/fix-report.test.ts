@@ -176,7 +176,13 @@ describe("readyStep open finding hold (US-004)", () => {
 
 describe("readyStep held chain rulings (US-009)", () => {
   const KEY = "f-1";
-  const blocking: AgreedItem = { kind: "finding", key: KEY, issue: "Lock leaks", severity: "important", trigger: "normal" };
+  const blocking: AgreedItem = {
+    kind: "finding",
+    key: KEY,
+    issue: "Lock leaks",
+    severity: "important",
+    trigger: "normal",
+  };
 
   async function readyWithRulings(opts: {
     agreed: readonly AgreedItem[];
