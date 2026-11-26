@@ -394,7 +394,11 @@ async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   const carried = carriedReadiness(env.own, review.headSha, blocking);
   if (carried.kind === "held") return carried.reason;
   const reviewed = blockingKeys(review, blocking);
-  const keys = await openKeys(env, [...reviewed, ...carried.keys.filter((key) => !reviewed.includes(key))]);
+  const candidates = [...reviewed, ...carried.keys.filter((key) => !reviewed.includes(key))];
+  // US-009: a finding the advisor held is no longer in `agreed`, yet stays open until a writer rules.
+  for (const ruling of env.chainRulings ?? [])
+    if (ruling.outcome === "held" && !candidates.includes(ruling.key)) candidates.push(ruling.key);
+  const keys = await openKeys(env, candidates);
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");

@@ -1,0 +1,638 @@
+{
+  "project": "nax-monorepo",
+  "feature": "bot-chain-advisor",
+  "branchName": "feat/bot-chain-advisor",
+  "createdAt": "2026-11-26T06:13:21.668Z",
+  "updatedAt": "2026-11-26T07:08:49.485Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add the bot-fix-chain advisor kind, menu and disabled caller switch",
+      "description": "**Goal** — Give the existing advisor a bot-fix-chain question kind, a three-option menu and an opt-in caller switch.\n\n**Motivation** — What is missing is a decision point between the review and the fixer.\n\n**Approach** — `packages/nax/src/config/schemas-advisor.ts`, `callers`.\nBaseline: `{ finishJudgment, fixCycleGiveUp, uncategorisedFailure, finishApproval }`, each `z.boolean().default(false)`.\nTarget: the same four plus `botFixChain: z.boolean().default(false)`. `AdvisorCallersConfig` in `runtime-types-advisor.ts` gains `botFixChain: boolean`.\n\n`packages/nax/src/advisor/types.ts`, `AdviceQuestionKind` and `MenuFacts`.\nBaseline: seven kinds, ending in `\"residual\"`.\nTarget: the same plus `\"bot-fix-chain\"`, and `MenuFacts` gains the member `{ kind: \"bot-fix-chain\" }`.\n\n`packages/nax/src/advisor/menus.ts`, `buildMenu(facts: MenuFacts): AdviceOption[]`.\nTarget: for `{ kind: \"bot-fix-chain\" }` it returns exactly three options, in this order: type `fix`, type `waive`, type `hold`, with ids assigned by the existing `withIds`.\n\nAdds `advisor.callers.botFixChain` (default `false`) to the schema, the runtime type and the config description table. Adds the question kind `\"bot-fix-chain\"`, its `MenuFacts` member and its three-option menu.\n\n`packages/nax/test/unit/config/advisor-config.test.ts` — two assertions pin `advisor.callers` with `toEqual` on exactly four keys (the defaults test and \"a partial block keeps the other defaults\"). Both gain `botFixChain: false`; the invariant that replaces them is that every caller, `botFixChain` included, defaults to `false` and an unnamed caller keeps its default. Extend the existing menu tests and reuse validateAdvisorReply rather than adding bot-specific validation.\n\n**Scope** — In: schema/runtime type, config description, kind/menu, corresponding unit behavior. Out: routing selection (US-004), evidence (US-005), advisor calls (US-006). Turning the caller on by default: `advisor.callers.botFixChain` defaults to `false`. Changing what `needsHumanConfirm` means, when the advisor service sets it, or the severity set `forcedConfirm` reads. Documentation outside the config description table: the bot guide is updated by hand after the feature lands.\n\n**Interface** — `botFixChain: z.boolean().default(false)`; `AdvisorCallersConfig` gains `botFixChain: boolean`; `AdviceQuestionKind` gains `\"bot-fix-chain\"`; `MenuFacts` gains `{ kind: \"bot-fix-chain\" }`; `buildMenu(facts: MenuFacts): AdviceOption[]` retains its signature.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}).advisor.callers.botFixChain is false.",
+        "[unit] NaxConfigSchema.parse({ advisor: { callers: { botFixChain: true } } }).advisor.callers equals { finishJudgment: false, fixCycleGiveUp: false, uncategorisedFailure: false, finishApproval: false, botFixChain: true }.",
+        "[unit] NaxConfigSchema.parse({ advisor: { callers: { botFixChain: \"yes\" } } }) throws a Zod error whose issue path is [\"advisor\", \"callers\", \"botFixChain\"].",
+        "[unit] ADVISOR_DEFAULTS.callers.botFixChain is false.",
+        "[unit] FIELD_DESCRIPTIONS, exported from cli/config-descriptions.ts, has an entry for advisor.callers.botFixChain whose text is a non-empty string.",
+        "[unit] buildMenu({ kind: \"bot-fix-chain\" }) returns three options whose type values are, in order, fix, waive, hold.",
+        "[unit] The three options returned by buildMenu({ kind: \"bot-fix-chain\" }) have three distinct non-empty id values.",
+        "[unit] Each option returned by buildMenu({ kind: \"bot-fix-chain\" }) has a non-empty label.",
+        "[unit] No option returned by buildMenu({ kind: \"bot-fix-chain\" }) carries a fixed field.",
+        "[unit] validateAdvisorReply given the fix option's id from that menu, a rationale, confidence: \"high\", reversible: true, needsHumanConfirm: false and no instruction returns { ok: false } with an error naming instruction.",
+        "[unit] validateAdvisorReply given the waive option's id from that menu and a non-empty reason returns { ok: true } with reply.reason equal to that reason."
+      ],
+      "tags": [
+        "advisor",
+        "config",
+        "bot"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive schema, type and menu changes using established defaults and validation; no new decision or permission policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-advisor.ts",
+        "packages/nax/src/config/runtime-types-advisor.ts",
+        "packages/nax/src/advisor/types.ts",
+        "packages/nax/src/advisor/menus.ts",
+        "packages/nax/test/unit/advisor/menus.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/advisor-config.test.ts",
+          "reason": "two assertions pin `advisor.callers` with `toEqual` on exactly four keys (the defaults test and \"a partial block keeps the other defaults\"). Both gain `botFixChain: false`; the invariant that replaces them is that every caller, `botFixChain` included, defaults to `false` and an unnamed caller keeps its default."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "582a7068ec1141c44c8d76886f66c339b48ffa92"
+    },
+    {
+      "id": "US-002",
+      "title": "Render and parse durable chain ruling comments",
+      "description": "**Goal** — Add a leaf representation and comment grammar for fix, waived and held chain rulings.\n\n**Motivation** — Every step of that human ruling used inputs the bot already has at fix time: the finding, its lineage, the push ledger, and the checkout.\n\n**Approach** — New symbols, in `packages/nax/src/bot/chain-rulings.ts` (US-002; `chainInstructions` is US-008's):\n\n```ts\nexport type ChainOutcome = \"fix\" | \"waived\" | \"held\";\n\nexport interface ChainRuling {\n  /** The finding's own key, `f-…`. */\n  readonly key: string;\n  readonly outcome: ChainOutcome;\n  /** fix: the instruction. waived: the reason. held: why a human must decide. */\n  readonly text: string;\n  /** held only: what the advisor proposed before the forced-confirm rule held it. */\n  readonly proposed?: { readonly outcome: \"fix\" | \"waived\"; readonly text: string };\n}\n\n/** The cap on `text` and on `proposed.text` in a rendered comment. */\nexport const CHAIN_RULING_TEXT_CHARS = 1200;\n\n/** `cr-` plus the finding key without its `f-` prefix. */\nexport function chainRulingKey(findingKey: string): string;\n/** The comment body, without the nax bot header and marker. */\nexport function renderChainRuling(ruling: ChainRuling): string;\n/** Reads a body back, wrapped by `withNaxBotMarker` or bare; `null` for any other text. */\nexport function parseChainRuling(body: string): Omit<ChainRuling, \"key\"> | null;\n```\n\nRendered body, one form per outcome. Every `<…>` is `safeText(<source text with each run of whitespace around a newline replaced by one space>, CHAIN_RULING_TEXT_CHARS)`:\n\n```\nAdvisor ruling — fix: <instruction>\n```\n\n```\nAdvisor ruling — waived: <reason>\nTo change it, reply on this thread.\n```\n\n```\nAdvisor ruling — held: <reason>\nAdvisor proposed — waived: <proposed reason>\nReply `confirm` to have nax fix it as reported, or `waive: <reason>` to close it.\n```\n\nThe `Advisor proposed` line is present only when `proposed` is set, and names `fix` or `waived`.\n\nGrammar `parseChainRuling` reads: split the body on `\\r?\\n`, drop empty lines, the line `**nax bot**` and any line that is a nax bot marker comment. The first remaining line must start with `Advisor ruling — fix: `, `Advisor ruling — waived: ` or `Advisor ruling — held: `; the rest of that line is `text`. For `held`, a second remaining line starting with `Advisor proposed — fix: ` or `Advisor proposed — waived: ` gives `proposed`. Anything else is `null`. The match is a prefix match on a whole line, never a search inside a line. The text read back is the sanitised text that was posted, so an instruction replayed from a comment (composition test 4) is the sanitised one.\n\nA comment counts as a chain ruling only when all three hold: it is an own comment (`ownComments`), its marker key starts with `cr-`, and `parseChainRuling` reads its body.\n\n**Sanitised text is not code-exact.** `safeText` turns backticks into apostrophes, escapes angle brackets, and breaks `@name`, `#<digit>` and `://` with a zero-width space. The instruction the fixer reads is the posted, sanitised one, so an instruction that quotes code reaches the fixer altered in those characters. The advisor's instruction names what to change in words; the fixer reads the code itself.\n\n**Scope** — In: types, key derivation, rendering, bare/wrapped parsing and unit tests in chain-rulings.test.ts. Out: chainInstructions (US-008), trust/settlement integration (US-003), posting or routing (US-006/007).\n\n**Interface** — The TypeScript declarations above are the interface for this story; chainInstructions is deliberately deferred to US-008.",
+      "acceptanceCriteria": [
+        "[unit] chainRulingKey(\"f-ab12cd34\") returns \"cr-ab12cd34\".",
+        "[unit] isNaxBotMarkerKey(chainRulingKey(\"f-ab12cd34\")) is true.",
+        "[unit] renderChainRuling({ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }) returns the single line \"Advisor ruling — fix: restore the guard\".",
+        "[unit] renderChainRuling for outcome waived with text \"base behaviour\" returns two lines: \"Advisor ruling — waived: base behaviour\" then \"To change it, reply on this thread.\".",
+        "[unit] renderChainRuling for outcome held with text \"low confidence\" and no proposed returns exactly the two lines \"Advisor ruling — held: low confidence\" and \"Reply `confirm` to have nax fix it as reported, or `waive: <reason>` to close it.\".",
+        "[unit] renderChainRuling for outcome held with proposed: { outcome: \"waived\", text: \"spec excludes it\" } returns three lines whose second is \"Advisor proposed — waived: spec excludes it\".",
+        "[unit] renderChainRuling for outcome held with proposed: { outcome: \"fix\", text: \"restore it\" } returns three lines whose second is \"Advisor proposed — fix: restore it\".",
+        "[unit] renderChainRuling given a text of first and second separated by a newline renders them on one line as \"first second\".",
+        "[unit] For a text of 3,000 plain letters, the text after \"Advisor ruling — fix: \" in the rendered line equals safeText(text, CHAIN_RULING_TEXT_CHARS).",
+        "[unit] For a text of \"see https://example.com and @octocat\", the text after \"Advisor ruling — fix: \" in the rendered line equals safeText of that text with the cap CHAIN_RULING_TEXT_CHARS.",
+        "[unit] CHAIN_RULING_TEXT_CHARS is 1200.",
+        "[unit] parseChainRuling(renderChainRuling({ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" })) deep-equals { outcome: \"fix\", text: \"restore the guard\" }.",
+        "[unit] parseChainRuling(renderChainRuling({ key: \"f-1\", outcome: \"waived\", text: \"base behaviour\" })) deep-equals { outcome: \"waived\", text: \"base behaviour\" }.",
+        "[unit] parseChainRuling(renderChainRuling({ key: \"f-1\", outcome: \"held\", text: \"low confidence\" })) deep-equals { outcome: \"held\", text: \"low confidence\" }.",
+        "[unit] parseChainRuling of a rendered held ruling with text \"low confidence\" and proposed: { outcome: \"waived\", text: \"spec excludes it\" } deep-equals { outcome: \"held\", text: \"low confidence\", proposed: { outcome: \"waived\", text: \"spec excludes it\" } }.",
+        "[unit] parseChainRuling(withNaxBotMarker(renderChainRuling(ruling), chainRulingKey(\"f-1\"))) deep-equals parseChainRuling(renderChainRuling(ruling)).",
+        "[unit] parseChainRuling(\"Recorded: waived — reason\") returns null.",
+        "[unit] parseChainRuling(\"Advisor ruling — settled: reason\") returns null.",
+        "[unit] parseChainRuling(\"Fixed in abc1234: Advisor ruling — waived: reason\") returns null.",
+        "[unit] parseChainRuling of a body whose first line is \"Fixed in abc1234\" and whose second line is \"Advisor ruling — waived: reason\" returns null."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "comments"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "New pure leaf codec and tests with fixed grammar; delegates existing text neutralisation and does not change authorization.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/render.ts",
+        "packages/nax/src/forge/marker.ts",
+        "packages/nax/src/forge/marker-grammar.ts",
+        "packages/nax/src/workflow/item-threads.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/test/unit/bot/chain-rulings.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "27fccef1c29589b555444f034431fef406c84262",
+      "outOfScope": [
+        "US-002 only: redaction, link breaking and mention neutralising themselves are `safeText`'s behaviour and are not re-tested here; the ACs assert that the rendered text is what `safeText` returns."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Apply advisor waives through the existing finding settlement rule",
+      "description": "**Goal** — Let an own advisor waived comment settle a finding with newest-writer precedence and no redundant echo.\n\n**Motivation** — The loop ended only when a human read the base branch, the spec's Out of Scope and the README, restored the lines to the base behaviour, and waived the root finding.\n\n**Approach** — **An advisor waive settles the finding the way a writer's waive does (US-003).** `latestFindingRuling` is the one place that decides which reply rules a finding thread. It gains one case: an own comment whose marker key starts with `cr-` and whose body `parseChainRuling` reads as outcome `waived` is a ruling with disposition `waived`. Scanning stays newest-first, so a writer's later reply (`confirm`, `waive:`, `override:`) outranks the advisor, and the advisor's comment outranks any older writer reply. Every reader that goes through `latestFindingRuling` follows with no further change: `recordFindingRulings`, `readSettledKeys`, `readConfirmedKeys`.\n\n`packages/nax/src/bot/finding-rulings.ts`, `latestFindingRuling(input, thread): Promise<FindingRulingCandidate | null>`.\nBaseline: skips every own comment; returns the newest non-own reply that parses as a ruling keyword and whose author may rule.\nTarget: same signature. Scanning newest-first, an own comment whose marker key starts with `cr-` and for which `parseChainRuling` returns outcome `waived` is returned as a candidate with `keyword: { disposition: \"waived\", reason: <the ruling text> }`, that comment as `reply`, and its index. Every other own comment is still skipped. `isWriter` is not called for it.\n\n`packages/nax/src/bot/finding-rulings.ts`, the private `recordThread`.\nTarget: when the candidate's reply is an own chain ruling comment, no echo is posted for it (the comment is the record); the thread is still resolved when it is not already.\n\nA comment counts as a chain ruling only when all three hold: it is an own comment (`ownComments`), its marker key starts with `cr-`, and `parseChainRuling` reads its body.\n\nEach AC builds the thread with a first comment by the bot carrying the finding marker key `f-1`. \"An own chain ruling\" is a comment by the bot wrapped with `withNaxBotMarker(renderChainRuling(ruling), chainRulingKey(\"f-1\"))`. Use existing finding-rulings.test.ts and rulings.test.ts for recorder and reader assertions. Authorization failures must continue to deny only that reply.\n\n**Scope** — In: latestFindingRuling and recordThread changes, existing recorder and settlement-reader behavior. Out: creating/posting routing rulings (US-006), replay/parent/confirmation routing (US-007), chain grammar changes (US-002), rewriting settlement logic in each reader.\n\n**Interface** — `latestFindingRuling(input, thread): Promise<FindingRulingCandidate | null>` keeps its existing arguments and result shape; `recordFindingRulings`, `readSettledKeys` and `readConfirmedKeys` keep their interfaces.",
+      "acceptanceCriteria": [
+        "[unit] latestFindingRuling on a thread whose last comment is an own chain ruling with outcome waived returns a candidate whose keyword.disposition is waived.",
+        "[unit] For that thread, the candidate's keyword.reason is the ruling text.",
+        "[unit] For that thread, the candidate's index is that comment's index.",
+        "[unit] latestFindingRuling does not call isWriter for an own chain ruling comment.",
+        "[unit] latestFindingRuling on a thread with an own waived chain ruling followed by a writer's reply confirm returns the candidate for the writer's reply, with disposition confirmed.",
+        "[unit] latestFindingRuling on a thread with a writer's reply confirm followed by an own waived chain ruling returns the candidate for the chain ruling, with disposition waived.",
+        "[unit] latestFindingRuling on a thread whose only reply is an own chain ruling with outcome held returns null.",
+        "[unit] latestFindingRuling on a thread whose only reply is an own chain ruling with outcome fix returns null.",
+        "[unit] latestFindingRuling on a thread with an own waived chain ruling followed by a reply confirm from an author for whom isWriter resolves false returns the candidate for the chain ruling.",
+        "[unit] latestFindingRuling on a thread whose only reply is an own comment with the body \"Advisor ruling — waived: reason\" and the marker key fix-f-1 returns null.",
+        "[unit] latestFindingRuling on a thread whose only reply is a comment by another author with the body of a rendered waived chain ruling returns null.",
+        "[unit] recordFindingRulings on an unresolved finding thread whose ruling is an own waived chain ruling returns that thread in settled.",
+        "[unit] For that unresolved thread, recordFindingRulings calls resolveThread once.",
+        "[unit] For that unresolved thread, recordFindingRulings does not call replyToThread.",
+        "[unit] recordFindingRulings on an already resolved finding thread whose ruling is an own waived chain ruling returns that thread in settled.",
+        "[unit] For that already resolved thread, recordFindingRulings calls neither replyToThread nor resolveThread.",
+        "[integration] readSettledKeys given a thread opened by the bot for finding key f-1 whose last comment is an own waived chain ruling returns a set that has f-1.",
+        "[integration] readSettledKeys given the same thread with a writer's later reply confirm returns a set without f-1.",
+        "[integration] readConfirmedKeys given the same thread with a writer's later reply confirm returns a set that has f-1.",
+        "[unit] latestFindingRuling returns a later authorized writer's waive: or override: reply rather than an older own waived chain ruling."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "settlement",
+        "security"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Changes a shared writer-authorized settlement decision and trusted-own-comment exception; authorization requires strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/finding-rulings.ts",
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/test/unit/bot/finding-rulings.test.ts",
+        "packages/nax/test/unit/bot/rulings.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "95c29be0501bf7c13748525ff0e47d5b04a2adeb",
+      "outOfScope": [
+        "US-003 only: writer authorization of the advisor's comment. An own comment is trusted because the bot wrote it; `ownComments` already matches the authenticated login and a valid marker.",
+        "US-003 only: a chain ruling on a pull-request-level comment rather than a review thread. Chain rulings are posted only on finding threads."
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Select eligible pull requests and blocking chain findings",
+      "description": "**Goal** — Add routing context and ordered chain-finding selection without yet calling the advisor.\n\n**Motivation** — Parts 1 and 2 of #2987 (#2992, #3008) gave the reviewer and the fixer the facts about a fix-induced chain: each finding's lineage, its origin, and a notice in the fix summary once a blocking finding reaches the notice generation.\n\n**Approach** — `chainRoutingContext` decides whether the routing applies to this pull request at all, and `selectChainFindings` picks the chain findings out of `env.review.agreed` (US-004).\n\n**When the routing does not apply.** `chainRoutingContext(env)` returns `null`, and `withChainRulings` then returns the `env` object it was given without reading any ruling and without creating an advisor, when any of these holds: `resolveAdvisorConfig(env.config).enabled` is false; `resolveAdvisorConfig(env.config).callers.botFixChain` is false; `ledgerFeature(env)` is undefined (the pull request does not change exactly one feature's `prd.json`); or `featureIntentPaths(env.checkout)` yields no `specPath`. `withChainRulings` also returns `env` itself when `selectChainFindings(env)` is empty. A ready-only pass never reaches `withChainRulings`: `fixCheckout` skips it there, as it skips `withCarriedFixFindings`.\n\nComposition test 1: Not a finding, or `isBlockingFinding(item, blocking)` is false, or `item.lineage` is absent, or `item.lineage.generation` is below the configured notice generation: not a chain finding. The item stays unchanged. (US-004)\n\n**The finding's own thread** is the thread in `env.threads` whose first comment is by `env.user.login` and carries the marker key equal to the item's key. This is the rule `resolveOwnFindings` uses.\n\n`packages/nax/src/bot/ledger-carry.ts`, the private `ledgerFeature(env: BotFixEnv): string | undefined`.\nTarget: exported, unchanged otherwise, so the routing and the ledger carry name the same feature.\n\nUse `reviewBlockingTriggers(env)` and `configuredChainNoticeGeneration(config)` rather than introducing a generation config or duplicating the blocking rule. The pattern is `withCarriedFixFindings`: injectable deps, returns a new env, never mutates. The public _chainAdviseDeps includes the eventual dependencies for US-006/007, but this story implements selection/context only. Every AC builds its environment with makeBotFixEnv. A routed env enables advisor.enabled and advisor.callers.botFixChain and changes exactly one feature's prd.json and spec.md under the features directory. A chain finding is an agreed important finding with normal trigger and lineage generation 2.\n\n**Scope** — In: chain-advise.ts selection/context types and deps, export of ledgerFeature, selection tests. Out: question construction (US-005), withChainRulings and BotFixEnv.chainRulings (US-006), confirmed/replay/cost reads (US-007), fixCheckout ready-only wiring (US-008). A pull request that does not change exactly one feature's `prd.json` together with that feature's `spec.md`: its chain findings go to the fixer as they do today. The advisor's call context needs a feature and a spec path. Non-blocking chain findings (a `fix-gap`, a minor, a trigger outside the blocking set): they are follow-ups today and stay so. Thread and comment items in `review.agreed`: only findings are routed. A new config key for the generation threshold: the routing reuses `bot.chainNoticeGeneration`.\n\n**Interface**\n```ts\nexport const _chainAdviseDeps = { createAdvisor, buildChainQuestion, readConfirmedKeys, replyToThread, resolveThread, getLogger };\n\nexport interface ChainFinding {\n  readonly item: Extract<AgreedItem, { kind: \"finding\" }>;\n  /** The finding's own thread, when the bot posted one. */\n  readonly thread?: PrThread;\n}\n\nexport interface ChainRoutingContext {\n  readonly feature: string;\n  readonly specPath: string;\n}\n\nexport function chainRoutingContext(env: BotFixEnv): ChainRoutingContext | null;\nexport function selectChainFindings(env: BotFixEnv): readonly ChainFinding[];\n```\nThe _chainAdviseDeps declaration above is its final shape across the stories. In US-004, export the dependency object with the already-existing dependencies only; do not import a nonexistent chain-question.ts. US-005 adds the real buildChainQuestion import/property when it creates that module, before US-006 consumes it. In chain-question.ts, import ChainFinding from chain-advise.ts with import type to avoid a runtime cycle. Do not author US-005's question builder in this story, introduce a placeholder implementation, or change the binding dependencies.",
+      "acceptanceCriteria": [
+        "[unit] chainRoutingContext on a routed env returns an object whose feature is the changed feature's directory name.",
+        "[unit] chainRoutingContext on a routed env returns a specPath equal to the specPath featureIntentPaths(env.checkout) returns.",
+        "[unit] chainRoutingContext returns null when advisor.callers.botFixChain is false.",
+        "[unit] chainRoutingContext returns null when advisor.enabled is false and advisor.callers.botFixChain is true.",
+        "[unit] chainRoutingContext returns null for an env whose config has no advisor block.",
+        "[unit] chainRoutingContext returns null when changedFiles names no prd.json.",
+        "[unit] chainRoutingContext returns null when changedFiles names the prd.json of two features.",
+        "[unit] chainRoutingContext returns null when changedFiles names one feature's prd.json and no spec.md.",
+        "[unit] ledgerFeature, imported from bot/ledger-carry, returns the changed feature's directory name for a routed env.",
+        "[unit] selectChainFindings returns a chain finding when bot.chainNoticeGeneration is 2.",
+        "[unit] selectChainFindings does not return an agreed finding with lineage.generation 1 when bot.chainNoticeGeneration is 2.",
+        "[unit] selectChainFindings returns an agreed finding with lineage.generation 3 when bot.chainNoticeGeneration is 3.",
+        "[unit] selectChainFindings does not return an agreed finding with lineage.generation 2 when bot.chainNoticeGeneration is 3.",
+        "[unit] selectChainFindings does not return a generation-2 finding whose severity is minor.",
+        "[unit] selectChainFindings does not return a generation-2 finding whose origin is fix-gap.",
+        "[unit] selectChainFindings does not return a generation-2 finding whose trigger is outside the review's blocking trigger set.",
+        "[unit] selectChainFindings does not return a finding with no lineage.",
+        "[unit] selectChainFindings does not return an agreed item of kind thread or of kind comment.",
+        "[unit] selectChainFindings returns its findings in review.agreed order.",
+        "[unit] For a chain finding with key f-1, when env.threads has a thread whose first comment is by env.user.login with marker key f-1, the returned ChainFinding.thread is that thread.",
+        "[unit] For a chain finding with key f-1, when the only thread with marker key f-1 on its first comment is authored by another login, the returned ChainFinding.thread is undefined."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "routing"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Composes existing feature-path, blocking and ownership helpers into deterministic additive selection without changing their authorization rules.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-carried.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/ledger-carry.ts",
+        "packages/nax/src/bot/intent.ts",
+        "packages/nax/test/helpers/bot-fix.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/chain-advise.ts",
+        "packages/nax/test/unit/bot/chain-advise.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e66e3048a99747a344a831b2d4a5444abb53fd6a"
+    },
+    {
+      "id": "US-005",
+      "title": "Build one chain question with finding, ledger and git evidence",
+      "description": "**Goal** — Build the complete advisor draft for one chain finding using existing lineage and checkout inputs.\n\n**Motivation** — Every step of that human ruling used inputs the bot already has at fix time: the finding, its lineage, the push ledger, and the checkout.\n\n**Approach** — **The question** (`buildChainQuestion`):\n\n- `kind: \"bot-fix-chain\"`, `feature`: the given feature, `options: buildMenu({ kind: \"bot-fix-chain\" })`, `findingSeverity`: the finding's severity, `anchorFile`: the finding's file when it has one, `rulingTitle`: the first line of the finding's issue, `dedupeKey`: the chain ruling key.\n- `summary`: exactly `Finding <key> (<severity>) sits at generation <n> on lines nax bot fix <first seven characters of the push sha> added.`\n- `evidence`, in this order:\n  1. `source: \"finding\"`: the issue, `file:line`, severity, trigger and trigger evidence, origin and origin evidence, and the reviewer's suggestion.\n  2. `source: \"review-round\"`: one entry for the lineage push, listing each parent key with the issue the ledger recorded for it (`parentIssue` over `ownLedgerEntries(env.own)`), or the key alone when the ledger no longer holds it.\n  3. `source: \"diff\"`, `ref: <file>`: the standard output of `git diff <env.checkout.mergeBase>..HEAD -- <file>` run in `env.checkout.worktree`, when the finding has a file.\n  4. `source: \"diff\"`, `ref: <pushSha>`: the standard output of `git show <pushSha> -- <file>`, when the finding has a file.\n- A diff text longer than `CHAIN_DIFF_CHARS` is cut to its first `CHAIN_DIFF_CHARS` characters and followed by a newline and the line `(diff cut at 12000 characters)`.\n- A git command that exits non-zero, times out or rejects leaves its evidence entry out; the draft is still returned.\n\n**Files.** The question builder lives in its own file, `chain-question.ts`, so that `chain-advise.ts` stays well under the 600-line source limit.\n\nA ledger entry is read only when its `sha` is 40 lowercase hex characters (`FULL_SHA` in `push-ledger.ts`). Every AC uses a routed env and a chain finding as defined in US-004, with key `f-1`, severity `important`, file `src/a.ts`, line 12, a suggestion, and lineage `{ generation: 2, pushSha: \"abcdef1000000000000000000000000000000000\", parents: [\"f-p1\", \"f-p2\"] }`. env.own holds an own push ledger entry for that full sha, with f-p1's issue `first parent issue` and no f-p2. Stub _chainQuestionDeps.runGit in every test.\n\n**Scope** — In: chain-question.ts, question metadata/evidence, diff caps and independent git failure fallback, chain-question.test.ts. Out: deciding an outcome, creating an advisor or posting (US-006), replay (US-007), changing the menu (US-001). Supplying the PRD text to the advisor when the feature directory is absent from the main checkout: the advisor prompt carries `{}` there.\n\n**Interface**\n```ts\nexport const _chainQuestionDeps = { runGit: botGit };\nexport const CHAIN_DIFF_CHARS = 12_000;\nexport function buildChainQuestion(env: BotFixEnv, finding: ChainFinding, feature: string): Promise<QuestionDraft>;\n```\nWire the actual builder into _chainAdviseDeps once this module exists; US-006 consumes the exact draft it returns.",
+      "acceptanceCriteria": [
+        "[unit] buildChainQuestion(env, finding, \"my-feature\") returns a draft matching { kind: \"bot-fix-chain\", feature: \"my-feature\", dedupeKey: chainRulingKey(\"f-1\"), findingSeverity: \"important\", anchorFile: \"src/a.ts\" }.",
+        "[unit] The draft's options deep-equal buildMenu({ kind: \"bot-fix-chain\" }).",
+        "[unit] The draft's rulingTitle is the first line of the finding's issue.",
+        "[unit] The draft's summary is \"Finding f-1 (important) sits at generation 2 on lines nax bot fix abcdef1 added.\".",
+        "[unit] The draft's first evidence entry has source finding.",
+        "[unit] That finding evidence text includes the finding's issue.",
+        "[unit] That finding evidence text includes src/a.ts:12.",
+        "[unit] That finding evidence text includes the finding's suggestion.",
+        "[unit] The draft's second evidence entry has source review-round.",
+        "[unit] That review-round evidence text includes first parent issue.",
+        "[unit] That review-round evidence text includes f-p2.",
+        "[unit] _chainQuestionDeps.runGit is called with the argument list [\"diff\", \"<mergeBase>..HEAD\", \"--\", \"src/a.ts\"] (with the env's merge base) and the cwd env.checkout.worktree.",
+        "[unit] _chainQuestionDeps.runGit is called with the argument list [\"show\", \"abcdef1000000000000000000000000000000000\", \"--\", \"src/a.ts\"] and the cwd env.checkout.worktree.",
+        "[unit] The draft's diff evidence entry with ref src/a.ts has a text equal to the standard output of the stubbed git diff.",
+        "[unit] The draft's diff evidence entry with ref equal to the push sha has a text equal to the standard output of the stubbed git show.",
+        "[unit] With the stubbed git diff returning 20,000 characters, that entry's text is the first 12,000 of them followed by a newline and (diff cut at 12000 characters).",
+        "[unit] With the stubbed git diff returning exactly 12,000 characters, that entry's text is those characters with nothing appended.",
+        "[unit] With runGit resolving a non-zero exit code for both commands, the draft's evidence sources are exactly finding then review-round.",
+        "[unit] With runGit rejecting for git diff and resolving output for git show, the ref values of the draft's diff entries are exactly the push sha.",
+        "[unit] For a chain finding with no file, runGit is not called.",
+        "[unit] CHAIN_DIFF_CHARS is 12000.",
+        "[unit] When a git evidence command reports timedOut, buildChainQuestion returns the draft without that command's evidence entry."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "evidence",
+        "git"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Bounded draft composition and two injected read-only git commands with independent failure handling; reuses ledger and hardened git helpers.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/chain-advise.ts",
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/src/advisor/types.ts",
+        "packages/nax/src/bot/push-record.ts",
+        "packages/nax/src/bot/push-ledger.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/chain-question.ts",
+        "packages/nax/test/unit/bot/chain-question.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e0c8b2d80ab5966abc32fc153abe9bfb4b6041c5"
+    },
+    {
+      "id": "US-006",
+      "title": "Ask the advisor and durably apply each chain outcome",
+      "description": "**Goal** — Transform a routed fix environment by asking once per own-thread chain finding and committing outcomes through thread replies.\n\n**Motivation** — A prompt-only rule cannot close this gap.\n\n**Approach** — `withChainRulings` asks the advisor one question per chain finding, maps each decision to an outcome (`fix`, `waived`, `held` or `unruled`), posts the outcome on the finding's thread, and returns the environment the fix graph runs on (US-006).\n\n**The returned environment.** Waived and held items are removed from `review.agreed`. A `fix` item and an `unruled` item stay, unchanged and in place. `env.chainRulings` lists one `ChainRuling` per finding that has a `fix` or `held` outcome in this run, and per finding the advisor waived in this run, in `review.agreed` order. That includes an outcome replayed from an existing comment (composition test 4) and a hold made without asking (tests 4 and 5). An `unruled` finding has no entry, and neither has a finding removed because its thread already carries a `waived` chain ruling. `AgreedItem` is not changed: the instruction travels in `chainRulings`, and `chainInstructions(env)` gives the fix step a map from finding key to instruction. Replay and no-second-call behavior are US-007; chainInstructions and fix consumers are US-008.\n\n**The advisor call** (`withChainRulings`): one advisor is created per call, with `callCtx: env.ctx.callCtx`, `repoRoot: env.repoRoot`, `outputDir` and `runId` from `env.ctx.callCtx.runtime`, `feature` and `specPath` from `chainRoutingContext`, `workdir: env.checkout.worktree`. Each finding is asked with `advise(draft, { findingSeverity: item.severity })`, inside `env.ctx.sessionScope` when it is present.\n\nThe advisor prompt carries the feature's PRD text as read from the main checkout; for a feature that exists only on the pull request's branch that text is `{}`. The question's own evidence is what the ruling rests on.\n\n**The advisor session is base-pinned like the fix session.** When `env.ctx.sessionScope` is present, each `advise` call runs inside it, so the advisor session does not load agent configuration files from the pull request's head. `branch-fix.ts` applies the same scope to the fix session.\n\n**Decision to outcome.**\n| Decision | Outcome | `text` | `proposed` |\n|---|---|---|---|\n| `null` | `unruled` | | |\n| action `fix`, `needsHumanConfirm` false | `fix` | `action.instruction` | |\n| action `waive`, `needsHumanConfirm` false | `waived` | `action.reason` | |\n| action `hold` | `held` | `action.reason` | |\n| action `fix`, `needsHumanConfirm` true | `held` | `decision.rationale` | `{ outcome: \"fix\", text: action.instruction }` |\n| action `waive`, `needsHumanConfirm` true | `held` | `decision.rationale` | `{ outcome: \"waived\", text: action.reason }` |\n| any other action type | `unruled` | | |\n\n**Posting.** For `fix`, `waived` and `held` the routing replies on the finding's own thread with `withNaxBotMarker(renderChainRuling(ruling), chainRulingKey(item.key))`, then resolves the thread for `waived`. The `ChainRuling` recorded in `env.chainRulings` carries the text as posted, that is, the text `parseChainRuling` would read back.\n\n**Outcome `unruled` is today's behaviour.** The item stays in `review.agreed` unchanged, no `ChainRuling` is recorded for it, and no comment is kept as its ruling. It is the result when the item has no own thread, when the cost limit is reached, when the advisor returns no decision or `advise` rejects, and when posting the ruling comment fails, whatever the outcome would have been. The cost limit test is delivered in US-007.\n\nComposition tests delivered here: 3. The item has no own thread: outcome `unruled`. The advisor is not asked. 7. Otherwise the advisor is asked. Tests 2, 4, 5 and 6 are US-007's code: US-006 delivers tests 3 and 7 and asks the advisor about every chain finding that has an own thread. Gate using chainRoutingContext and selectChainFindings first; disabled/inapplicable/empty selection returns the same env with no ruling read or advisor creation.\n\nFailure handling: decision null leaves work unchanged and logs a warning with key/fallbackReason; rejected advise leaves that item unruled but continues to later items; unsupported action is unruled. Failed reply is unruled regardless of proposed outcome, with no record or resolution. Failed resolution after a posted waive leaves the ruling standing and logs a warning. Warnings carry item keys; their text is not pinned. No input environment mutation.\n\n**Scope** — In: withChainRulings, optional BotFixEnv.chainRulings, decision mapping, session scope, posting and failure fallback; use chain-advise-outcomes.test.ts. Out: confirmed-key reading, replay, parent holds and cost tests (US-007), prompt/summary/run wiring (US-008), readiness (US-009). Batching several chain findings into one advisor call (`adviseBatch`): one question per finding. A dedicated model key for this caller: the advisor's own `advisor.model` and `advisor.fallbackModels` apply. Choosing a model different from the reviewer's and fixer's is the operator's config, not enforced. Changing what `needsHumanConfirm` means, when the advisor service sets it, or the severity set `forcedConfirm` reads. Any change to `BOT_FIX_GRAPH`: no node, exit, transition or `BotFixState` field is added. Any change to `packages/nax/src/bot/post.ts` or to the `AgreedItem` type: the instruction travels in `BotFixEnv.chainRulings`.\n\n**Interface**\n```ts\nexport const _chainAdviseDeps = { createAdvisor, buildChainQuestion, readConfirmedKeys, replyToThread, resolveThread, getLogger };\nexport function withChainRulings(env: BotFixEnv): Promise<BotFixEnv>;\n// BotFixEnv gains:\nreadonly chainRulings?: readonly ChainRuling[];\n```\nThe existing service interface remains `createAdvisor(actx: AdvisorCallContext): Advisor`, `Advisor.advise(question: QuestionDraft, opts?: { findingSeverity?: string }): Promise<AdviceResult>`. The service checks neither enabled nor caller flags; the routing owns these gates. The draft severity alone does not feed forcedConfirm, so always supply opts.findingSeverity too. Unit setup: routed makeBotFixEnv with own-thread f-1, suggestion and important severity; stub createAdvisor, buildChainQuestion, replyToThread, resolveThread, and readConfirmedKeys (empty set, not asserted here). Default advise result is fix/restore the guard/no confirmation; cost stays below its limit.",
+      "acceptanceCriteria": [
+        "[unit] With advisor.callers.botFixChain false, withChainRulings resolves to the same env object it was given.",
+        "[unit] With no chain finding in review.agreed, withChainRulings resolves to the same env object it was given.",
+        "[unit] withChainRulings calls createAdvisor with an object matching { callCtx: env.ctx.callCtx, repoRoot: env.repoRoot, workdir: env.checkout.worktree, outputDir: env.ctx.callCtx.runtime.outputDir, runId: env.ctx.callCtx.runtime.runId, feature, specPath } where feature and specPath are the values chainRoutingContext(env) returns.",
+        "[unit] advise is called with the draft the stubbed buildChainQuestion resolves and { findingSeverity: \"important\" }.",
+        "[unit] With env.ctx.sessionScope set to a wrapper that records whether it is running, advise is called while the wrapper is running.",
+        "[unit] When advise resolves a decision with action fix, instruction \"restore the guard\" and needsHumanConfirm false, the returned env's review.agreed deep-equals the input's.",
+        "[unit] For that fix decision, the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }].",
+        "[unit] For that fix decision, replyToThread is called with the finding's own thread and the body withNaxBotMarker(renderChainRuling({ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }), chainRulingKey(\"f-1\")).",
+        "[unit] For that fix decision, resolveThread is not called.",
+        "[unit] When advise resolves a decision with action waive, reason \"base behaviour\" and needsHumanConfirm false, the returned env's review.agreed has no item with key f-1.",
+        "[unit] For that waive decision, parseChainRuling of the posted body deep-equals { outcome: \"waived\", text: \"base behaviour\" }.",
+        "[unit] For that waive decision, resolveThread is called with the finding's own thread.",
+        "[unit] When advise resolves a decision with action hold and reason \"needs a product call\", parseChainRuling of the posted body deep-equals { outcome: \"held\", text: \"needs a product call\" }.",
+        "[unit] For that hold decision, the returned env's review.agreed has no item with key f-1.",
+        "[unit] When advise resolves a decision with action waive, reason \"r\", rationale \"not sure\" and needsHumanConfirm true, parseChainRuling of the posted body deep-equals { outcome: \"held\", text: \"not sure\", proposed: { outcome: \"waived\", text: \"r\" } }.",
+        "[unit] When advise resolves a decision with action fix, instruction \"i\", rationale \"not sure\" and needsHumanConfirm true, parseChainRuling of the posted body deep-equals { outcome: \"held\", text: \"not sure\", proposed: { outcome: \"fix\", text: \"i\" } }.",
+        "[unit] When advise resolves { decision: null, fallbackReason: \"no-output\" }, the returned env's review.agreed deep-equals the input's.",
+        "[unit] For that null decision, replyToThread is not called.",
+        "[unit] When advise resolves a decision with action defer, replyToThread is not called.",
+        "[unit] With two chain findings f-1 and f-2, when advise rejects for f-1 and resolves a waive decision for f-2, withChainRulings resolves an env whose agreed finding keys are exactly f-1.",
+        "[unit] When replyToThread rejects for a waive decision, the returned env's review.agreed deep-equals the input's.",
+        "[unit] When resolveThread rejects for a waive decision, withChainRulings resolves an env whose chainRulings deep-equals [{ key: \"f-1\", outcome: \"waived\", text: \"base behaviour\" }].",
+        "[unit] For a chain finding with no own thread, advise is not called.",
+        "[unit] When posting a ruling fails, withChainRulings does not resolve that thread."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "routing",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates advisor decisions, durable forge writes, immutable transforms and base-pinned sessions; session trust boundaries require strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/chain-advise.ts",
+        "packages/nax/src/bot/chain-question.ts",
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/src/advisor/service.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/chain-advise-outcomes.test.ts"
+      ],
+      "suggestedCriteria": [
+        "[unit] When a fix instruction contains backticks and a URL, the returned ChainRuling.text equals the text parsed from the posted comment, not the raw advisor instruction.",
+        "[unit] When a held ruling is posted successfully, resolveThread is not called.",
+        "[unit] When withChainRulings removes a waived item, the input env.review.agreed remains unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "81f0ad5be6e215c26cca951cc5995081919972fa",
+      "outOfScope": [
+        "US-006 only: composition tests 2, 4, 5 and 6 and the `readConfirmedKeys` read are US-007's code; here `readConfirmedKeys` is stubbed and not asserted on, and `env.cost` is never at its limit.",
+        "US-006 only: the forced-confirm rule for a `critical` waive is the advisor service's; it is exercised through the real service in US-008's integration ACs, not here."
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Replay rulings, honor writers and hold repeated ruled chains",
+      "description": "**Goal** — Enforce the ordered composition that prevents a second advisor ruling while respecting writer confirmation and the run budget.\n\n**Motivation** — Rounds 1 and 4 raised the same finding.\n\n**Approach** — **Composition.** For each agreed item, in `review.agreed` order, these tests apply in this order. The first that matches decides, and later tests are not evaluated for that item:\n\n1. Not a finding, or `isBlockingFinding(item, blocking)` is false, or `item.lineage` is absent, or `item.lineage.generation` is below the configured notice generation: not a chain finding. The item stays unchanged. (US-004)\n2. The item's key is in the confirmed keys (`readConfirmedKeys`): a writer has ruled that the work stands. The item stays unchanged and the advisor is not asked. (US-007)\n3. The item has no own thread: outcome `unruled`. The advisor is not asked. (US-006)\n4. The item's own thread already carries a chain ruling comment (US-007). The newest one decides, and the advisor is not asked:\n   - outcome `held`: the item is removed, the hold is recorded in `chainRulings` with the comment's text, and nothing is posted;\n   - outcome `waived`: the item is removed and nothing is posted;\n   - outcome `fix`, and no own comment with marker key `fix-<item key>` comes after it on the thread: the item stays, with the recorded text as its instruction, and nothing is posted;\n   - outcome `fix`, and an own `fix-<item key>` comment comes after it: outcome `held` with the text `raised again after an advisor-ruled fix`, posted as a new chain ruling comment.\n5. One of `item.lineage.parents` has a chain ruling: an own comment anywhere on the pull request whose marker key is `chainRulingKey(parent)`, or a ruling this same call already made for that parent key. Outcome `held` with the text `a second finding on this chain`; the advisor is not asked. (US-007)\n6. `env.cost.spentUsd() >= env.cost.limitUsd`: outcome `unruled` for this item and for every later item that reaches this test. (US-007)\n7. Otherwise the advisor is asked. (US-006)\n\nTest 2 precedes test 4 so that a writer's `confirm` on a held thread releases the item. Test 4 precedes test 5 so that a finding ruled once is not re-held by its own ancestry. Tests 2, 4, 5 and 6 are US-007's code: US-006 delivers tests 3 and 7 and asks the advisor about every chain finding that has an own thread.\n\nA comment counts as a chain ruling only when all three hold: it is an own comment (`ownComments`), its marker key starts with `cr-`, and `parseChainRuling` reads its body.\n\n**The returned environment.** Waived and held items are removed from `review.agreed`. A `fix` item and an `unruled` item stay, unchanged and in place. `env.chainRulings` lists one `ChainRuling` per finding that has a `fix` or `held` outcome in this run, and per finding the advisor waived in this run, in `review.agreed` order. That includes an outcome replayed from an existing comment (composition test 4) and a hold made without asking (tests 4 and 5). An `unruled` finding has no entry, and neither has a finding removed because its thread already carries a `waived` chain ruling.\n\nFailure handling: `readConfirmedKeys` rejects — `withChainRulings` rejects with the same error; no item is sent to a fixer on a ruling that could not be read (same rule as `withCarriedFixFindings`). A comment with a `cr-` marker key does not parse — it is not a chain ruling: composition tests 4 and 5 do not match on it. The cost-limit path retains items unchanged and creates no ruling. New automatic holds use the same durable posting and failed-post fallback delivered by US-006.\n\nUse makeBotFixEnv and the US-006 outcome fixtures; spentUsd is initially 0 and limitUsd 5. Existing chain rulings are own wrapped comments. Read confirmed keys once with SettlementReadInput formed like fix-carried.ts, including threads/login, top-level own comments, ref/deps/cwd. Read replay/ancestry only from own PR comments, never from the advisor ledger. Two siblings on the same push are each asked unless they actually name each other as a parent. Put these tests in chain-advise-ruled.test.ts to avoid exceeding the test-file limit.\n\n**Scope** — In: composition tests 2, 4, 5, 6, one confirmed-key read, replay, repeated-fix and parent holds, sticky cost limit. Out: settlement parser changes (US-003), decision mapping/post fallback (US-006), fix instruction consumers (US-008), readiness candidate union (US-009). Reading the advisor's decision ledger to find earlier chain rulings: a chain ruling is read only from the pull request's own comments. A second advisor ruling on a ruled chain: a later finding whose lineage parent has a chain ruling is held for a human. Two sibling findings raised in one review round on the same push: each is asked separately, since neither is the other's lineage parent. Detecting that two findings in different rounds are the same finding by their wording: the routing uses the finding key and lineage only.\n\n**Interface**\n```ts\nexport function withChainRulings(env: BotFixEnv): Promise<BotFixEnv>;\n// Existing reader consumed through _chainAdviseDeps:\nreadConfirmedKeys(input: SettlementReadInput): Promise<ReadonlySet<string>>;\n```",
+      "acceptanceCriteria": [
+        "[unit] withChainRulings calls readConfirmedKeys once, with an input matching { threads: env.threads, login: env.user.login }.",
+        "[unit] When readConfirmedKeys rejects, withChainRulings rejects with the same error.",
+        "[unit] Regression guard (already green after US-006): with no chain finding in review.agreed, readConfirmedKeys is not called.",
+        "[unit] When readConfirmedKeys returns a set with f-1, the returned env's review.agreed deep-equals the input's.",
+        "[unit] When readConfirmedKeys returns a set with f-1, advise is not called.",
+        "[unit] With an existing chain ruling of outcome fix and text \"restore the guard\", the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }].",
+        "[unit] With that existing fix ruling, advise is not called.",
+        "[unit] With that existing fix ruling, replyToThread is not called.",
+        "[unit] With an existing chain ruling of outcome held and text \"needs a product call\", the returned env's review.agreed has no item with key f-1.",
+        "[unit] With that existing held ruling, the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"held\", text: \"needs a product call\" }].",
+        "[unit] With that existing held ruling, advise is not called.",
+        "[unit] With an existing chain ruling of outcome waived, the returned env's review.agreed has no item with key f-1.",
+        "[unit] With an existing chain ruling of outcome held and readConfirmedKeys returning a set with f-1, the returned env's review.agreed deep-equals the input's.",
+        "[unit] With two existing chain rulings on the own thread, held then fix with text \"restore the guard\", the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }].",
+        "[unit] With an existing fix chain ruling followed on the thread by an own comment with marker key fix-f-1, parseChainRuling of the posted body deep-equals { outcome: \"held\", text: \"raised again after an advisor-ruled fix\" }.",
+        "[unit] In that case the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"held\", text: \"raised again after an advisor-ruled fix\" }].",
+        "[unit] With an own comment with marker key fix-f-1 followed on the thread by an existing fix chain ruling with text \"restore the guard\", the returned env's chainRulings deep-equals [{ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }].",
+        "[unit] For a chain finding with no existing chain ruling whose lineage.parents is [\"f-p1\"], when another thread of the pull request has an own chain ruling comment with marker key chainRulingKey(\"f-p1\"), parseChainRuling of the posted body deep-equals { outcome: \"held\", text: \"a second finding on this chain\" }.",
+        "[unit] In that case advise is not called.",
+        "[unit] With two chain findings f-1 and f-2 where f-2's lineage.parents is [\"f-1\"], and advise resolving a waive decision, advise is called once.",
+        "[unit] Regression guard (already green after US-006): an own comment on another thread with marker key chainRulingKey(\"f-p1\") and the body \"not a ruling\" does not hold a finding whose lineage.parents is [\"f-p1\"]; advise is called.",
+        "[unit] Regression guard (already green after US-006): an own comment on the finding's own thread with marker key chainRulingKey(\"f-1\") and the body \"not a ruling\" is not an existing chain ruling; advise is called.",
+        "[unit] With env.cost.spentUsd() returning 5 and two chain findings, advise is not called.",
+        "[unit] With env.cost.spentUsd() returning 0 before the first call and 5 before the second, and two chain findings, advise is called once."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "routing",
+        "settlement",
+        "security"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Ordered replay/ancestry and budget decisions interact with writer-authorized confirmations and durable comments; access-control precedence requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/chain-advise.ts",
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/src/bot/fix-carried.ts",
+        "packages/nax/test/unit/bot/chain-advise-outcomes.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/chain-advise-ruled.test.ts"
+      ],
+      "suggestedCriteria": [
+        "[unit] Replaying an existing waived chain ruling adds no ChainRuling entry for that item.",
+        "[unit] Replaying an existing held chain ruling posts no reply.",
+        "[unit] A parsed parent ruling authored by another login does not prevent an otherwise eligible child finding from reaching advise.",
+        "[unit] When two sibling chain findings share a push but neither names the other as a parent, advise is called twice.",
+        "[unit] When posting a new repeated-fix hold fails, the finding stays in review.agreed with no new ChainRuling."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f13f4455fb8f87e67dcdc587946a318853b4a196"
+    },
+    {
+      "id": "US-008",
+      "title": "Wire chain routing into bot fix, instructions and summary",
+      "description": "**Goal** — Run chain routing before every non-ready-only fix graph and carry its instructions and counts into the existing fixer and summary.\n\n**Motivation** — Nothing under `src/bot` reads the fixer reply's `concerns` or status, so a fixer told to leave an item alone has no way to say so that the bot acts on.\n\n**Approach** — `packages/nax/src/bot/fix-run.ts`, the private `fixCheckout`.\nBaseline: `const fixEnv = input.readyOnly ? env : await withCarriedFixFindings(env);`\nTarget: `const fixEnv = input.readyOnly ? env : await deps.withChainRulings(await withCarriedFixFindings(env));` with `withChainRulings` added to `_botFixDeps`. The file is at 545 of 600 lines; the wiring adds no other logic to it.\n\nThe fix graph (`BOT_FIX_GRAPH`) does not change. No node, exit or state field is added.\n\nA chain ruling is durable because it is a comment on the pull request, read back through the existing own-comment reader (US-002). The advisor service also appends its decision to the feature's decision ledger as it does for every caller; this feature does not read that ledger. Because the ledger in the main checkout grows, the existing `ledgerStep` carries it into the PR checkout and pushes it, exactly as it does for any other advisor decision made since the last carry.\n\n`packages/nax/src/bot/fix-facts.ts`, `findingFactLines`.\nBaseline: `findingFactLines(item, entries, blocking): readonly string[]`.\nTarget: `findingFactLines(item, entries, blocking, advisorInstruction?: string): readonly string[]`. When `advisorInstruction` is given for a finding, the returned lines end with `Advisor ruling: <advisorInstruction>`, after the trigger, lineage and not-blocking lines. The file's header comment, which says no line tells the fixer what to do, is updated to name this line as the one exception; the doc comment above `factsSection` in `bot-pr-fix-builder.ts` likewise. No prompt text changes.\n\n`packages/nax/src/bot/fix-input.ts`, `toFixFindings`.\nBaseline: `toFixFindings(items): WorkflowFinding[]`.\nTarget: `toFixFindings(items, advised?: ReadonlyMap<string, string>): WorkflowFinding[]`. An item whose key is in `advised` yields a `WorkflowFinding` with no `suggestion`.\n\n`packages/nax/src/bot/fix-steps.ts`, `fixStep` and the private `fixPromptFacts`.\nTarget: both read `chainInstructions(env)`. `fixStep` passes it to `toFixFindings`; `fixPromptFacts` passes each item's instruction to `findingFactLines`.\n\n`packages/nax/src/bot/fix-summary-body.ts`, the private `summaryDetails(env, state): string[]`.\nTarget: when `env.chainRulings` is non-empty, the returned details include the count line below. It goes through `fitDetails` with the other detail lines, so it cannot push the comment past the forge limit.\n\n**The fix summary.** When `env.chainRulings` is non-empty, the summary details include one line:\n\n```\nAdvisor ruled on 3 findings that sit on earlier nax bot fixes: 1 to fix, 1 waived, 1 held for a human.\n```\n\nCounts of zero are left out (`2 findings ...: 2 held for a human.`), and one finding reads `1 finding that sits on earlier nax bot fixes`.\n\n**Sanitised text is not code-exact.** `safeText` turns backticks into apostrophes, escapes angle brackets, and breaks `@name`, `#<digit>` and `://` with a zero-width space. The instruction the fixer reads is the posted, sanitised one, so an instruction that quotes code reaches the fixer altered in those characters. The advisor's instruction names what to change in words; the fixer reads the code itself.\n\nUse existing chain-rulings.test.ts, fix-facts.test.ts, fix-input.test.ts, fix-summary.test.ts for units and test/integration/bot/fix-session.test.ts for runBotFix ACs. Add test/integration/bot/chain-advise-service.test.ts with temporary repoRoot/outputDir and stubbed _advisorServiceDeps.captureWorktreePatch, readPrdText and callOp; call the real createAdvisor to prove the critical waive becomes held while an important waive is applied. The service's forced-confirm rule reads opts.findingSeverity only: keep passing it from the real routing, and do not change the rule or its severity set. At the injected callOp boundary return the validated AdviseOpOutput shape { ok: true, reply: <AdvisorReply> }, not a bare AdvisorReply. The operation validates the reply before the service consumes it. Use the runtime/callCtx configuration that corresponds to env.config, since configOf reads callCtx.config before runtime.configLoader. The runBotFix rejection scenario exercises fail-closed preparation before executeFix; it must not start a fix session.\n\n**Scope** — In: chainInstructions, optional consumer parameters, pre-graph wiring and rejection-before-session behavior, count detail, unit and orchestration/service integration, and the two fact-section documentation comments. Out: outcome/replay implementation (US-006/007), held-readiness union (US-009). Any change to `BOT_FIX_GRAPH`: no node, exit, transition or `BotFixState` field is added. Any change to `packages/nax/src/bot/post.ts` or to the `AgreedItem` type: the instruction travels in `BotFixEnv.chainRulings`. Any change to the text of the bot review or bot fix prompts: the instruction reaches the fixer through the existing per-finding fact lines, and the review prompt's settled-rulings section keeps its wording for an advisor waive. The sentence the fix summary prints for a `nothing` outcome: it is unchanged when the advisor removed every item; the count line says what the advisor did. Holding a confident, reversible waive of an `important` finding for a human: only the advisor service's existing forced-confirm rule decides, and it holds a waive of a `critical` finding.\n\n**Interface**\n```ts\n/** Finding key to instruction, for the `fix` entries of `env.chainRulings`; empty when there are none. */\nexport function chainInstructions(env: { readonly chainRulings?: readonly ChainRuling[] }): ReadonlyMap<string, string>;\n```\n`findingFactLines(item, entries, blocking, advisorInstruction?: string): readonly string[]`; `toFixFindings(items, advised?: ReadonlyMap<string, string>): WorkflowFinding[]`. Keep the exact optional signatures and the withCarriedFixFindings-before-withChainRulings connection above.",
+      "acceptanceCriteria": [
+        "[unit] chainInstructions({ chainRulings: [{ key: \"f-1\", outcome: \"fix\", text: \"a\" }, { key: \"f-2\", outcome: \"held\", text: \"b\" }] }) returns a map for which Array.from(map.entries()) deep-equals [[\"f-1\", \"a\"]].",
+        "[unit] chainInstructions({}) returns an empty map.",
+        "[unit] findingFactLines(item, entries, blocking, \"restore the guard\") for a finding returns lines whose last is \"Advisor ruling: restore the guard\".",
+        "[unit] findingFactLines(item, entries, blocking) for a finding returns no line starting with \"Advisor ruling:\".",
+        "[unit] findingFactLines given an instruction for an agreed item of kind thread returns an empty list.",
+        "[unit] toFixFindings(items, new Map([[\"f-1\", \"restore the guard\"]])) returns, for the finding with key f-1 that has a suggestion, a finding with no suggestion field.",
+        "[unit] toFixFindings(items, new Map([[\"f-1\", \"x\"]])) returns the suggestion unchanged for a finding with key f-2.",
+        "[unit] toFixFindings(items) returns the suggestion unchanged for every finding that has one.",
+        "[unit] summaryBody for an env whose chainRulings has one fix, one waived and one held entry includes the line \"Advisor ruled on 3 findings that sit on earlier nax bot fixes: 1 to fix, 1 waived, 1 held for a human.\".",
+        "[unit] summaryBody for an env whose chainRulings has one held entry includes the line \"Advisor ruled on 1 finding that sits on earlier nax bot fixes: 1 held for a human.\".",
+        "[unit] summaryBody for an env whose chainRulings has two fix entries includes the line \"Advisor ruled on 2 findings that sit on earlier nax bot fixes: 2 to fix.\".",
+        "[unit] summaryBody for an env with no chainRulings includes no line starting with \"Advisor ruled on\".",
+        "[unit] summaryBody for an env whose chainRulings is an empty list includes no line starting with \"Advisor ruled on\".",
+        "[integration] runBotFix with _botFixDeps.withChainRulings stubbed to return the env with chainRulings [{ key: <item key>, outcome: \"fix\", text: \"restore the guard\" }]: the prompt passed to the stubbed fix session includes \"Advisor ruling: restore the guard\".",
+        "[integration] In that run, the findings passed to the stubbed fix session hold that item with no suggestion.",
+        "[integration] runBotFix with _botFixDeps.withChainRulings stubbed to return the env with its only agreed item removed does not start the fix session.",
+        "[integration] runBotFix with readyOnly: true does not call _botFixDeps.withChainRulings.",
+        "[integration] When _botFixDeps.withChainRulings rejects because confirmed rulings could not be read, runBotFix does not start the fix session.",
+        "[integration] runBotFix calls _botFixDeps.withChainRulings once, with an env whose review.agreed includes the items withCarriedFixFindings merged.",
+        "[integration] runBotFix on a routed pull request with one chain finding, with the real withChainRulings and _chainAdviseDeps.createAdvisor stubbed to return an advisor whose advise resolves a fix decision with instruction \"restore the guard\": the prompt passed to the stubbed fix session includes \"Advisor ruling: restore the guard\".",
+        "[integration] In that run, the forge receives one thread reply whose body parseChainRuling reads as outcome fix.",
+        "[integration] In test/integration/bot/chain-advise-service.test.ts, with env.repoRoot and the runtime's outputDir set to temporary directories and _advisorServiceDeps.captureWorktreePatch and _advisorServiceDeps.readPrdText (both in src/advisor/service-helpers.ts) stubbed: withChainRulings on a routed env with one chain finding of severity critical, with the real createAdvisor and _advisorServiceDeps.callOp stubbed to return a valid reply that picks the waive option with confidence: \"high\", reversible: true and needsHumanConfirm: false: parseChainRuling of the posted body returns outcome held with proposed.outcome waived.",
+        "[integration] The same call, with the same temporary directories and stubs, for a chain finding of severity important posts a body that parses as outcome waived."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "integration",
+        "prompts",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Connects routing across orchestration, fix session input and summaries, and proves the real service's severity/session safety boundary with strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/fix-facts.ts",
+        "packages/nax/src/bot/fix-input.ts",
+        "packages/nax/src/bot/fix-summary-body.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/bot/chain-advise-service.test.ts"
+      ],
+      "suggestedCriteria": [
+        "[unit] summaryBody remains within MAX_FORGE_COMMENT_CHARS when chain-ruling counts compete for room with other details and the push ledger.",
+        "[unit] When chainRulings is present and every agreed item was removed, summaryBody preserves the existing nothing-outcome sentence and includes the advisor count detail when it fits."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "24f3c08b742268a259fd9de840e4ea7e66560b61",
+      "outOfScope": [
+        "US-008 only: an end-to-end run with a real advisor model session. The advisor's model call is stubbed at `_advisorServiceDeps.callOp` or at `createAdvisor`."
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Keep advisor-held findings in the live readiness hold",
+      "description": "**Goal** — Preserve same-run readiness blocking for held chain findings removed from review.agreed.\n\n**Motivation** — What is missing is a decision point between the review and the fixer.\n\n**Approach** — **A held finding stays open until a writer rules.** The thread is not resolved. Readiness reads its open blocking keys from `review.agreed`, which no longer holds the item, so `openFindingHold` in `fix-report.ts` also takes the keys of `env.chainRulings` entries with outcome `held` (US-009). They go through the same `openKeys` reconciliation as every other key, so a writer's `waive:` on the thread lifts the hold. A ready-only pass does not run the routing and reads the unfiltered artifact, where the held finding is still an open blocking finding. A writer's `confirm` on the thread makes the next `nax bot fix` hand the item to the fixer without asking the advisor; a writer's `waive:` settles it through the existing path.\n\n`packages/nax/src/bot/fix-report.ts`, the private `openFindingHold(env)`.\nBaseline: the candidate keys are `blockingKeys(readinessReview(env), blocking)` plus the carried keys.\nTarget: the candidate keys also include the key of every `env.chainRulings` entry with outcome `held` that is not already among them. All candidates still pass through `openKeys`.\n\nFailure handling: A held finding is absent from `review.agreed` when readiness is decided — Its key is still a candidate open key, from `env.chainRulings`.\n\nEach AC calls readyStep with makeBotFixEnv for a draft PR whose CI is green, with _fixReportDeps stubbed so that no key is settled or confirmed unless the AC says otherwise. Extend existing test/unit/bot/fix-report.test.ts readyStep assertions. Keep existing blocking trigger selection, codeReview/readinessReview preference, carried-key handling, live PR reads and fail-closed reconciliation; held keys join the same deduplicated candidate set, not a new readiness mechanism.\n\n**Scope** — In: held-chain candidate keys in openFindingHold, readyStep behavioral tests, and preservation of the existing no-chainRulings open-finding hold. Out: replay and writer-confirm routing (US-007), filtering and outcome posting (US-006), runBotFix/ready-only wiring (US-008). Surfacing a held finding as a workflow open item: it stays a blocking finding thread. Any change to `BOT_FIX_GRAPH`: no node, exit, transition or `BotFixState` field is added.\n\n**Interface** — `openFindingHold(env)` remains private and retains its existing return type; `readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>>` retains its signature. Read `readonly chainRulings?: readonly ChainRuling[]` from BotFixEnv and select only entries whose outcome is `held`.",
+      "acceptanceCriteria": [
+        "[unit] With review.agreed empty and chainRulings [{ key: \"f-1\", outcome: \"held\", text: \"needs a product call\" }], readyStep returns a patch with no markedReady: true.",
+        "[unit] In that case the patch's readyHeld includes f-1.",
+        "[unit] With review.agreed empty and chainRulings [{ key: \"f-1\", outcome: \"fix\", text: \"restore the guard\" }], the patch's readyHeld does not include f-1.",
+        "[unit] With review.agreed empty and chainRulings [{ key: \"f-1\", outcome: \"waived\", text: \"base behaviour\" }], the patch's readyHeld does not include f-1.",
+        "[unit] With review.agreed holding a blocking finding f-1 and chainRulings holding a held entry for f-1, the patch's readyHeld names f-1 once.",
+        "[unit] With review.agreed empty, a held entry for f-1 in chainRulings, and the settled keys read from the pull request including f-1, the patch's readyHeld does not include f-1.",
+        "[unit] With chainRulings absent and review.agreed containing an unresolved blocking finding f-1, readyStep still returns a patch whose readyHeld includes f-1, preserving the existing open-finding hold."
+      ],
+      "tags": [
+        "bot",
+        "advisor",
+        "readiness"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small additive candidate-key union using the existing live settlement reconciliation; no new permission or session decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/chain-rulings.ts",
+        "packages/nax/test/unit/bot/fix-report.test.ts",
+        "packages/nax/test/helpers/bot-fix.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bbe4a1c4b6da757bbd30f58d5759c9a0d9e20d79",
+      "outOfScope": [
+        "US-009 only: a ready-only pass. It does not run the routing, has no `chainRulings`, and reads the unfiltered review artifact, where a held finding is still an open blocking finding."
+      ]
+    }
+  ],
+  "analysis": "This is an additive enhancement to @nathapp/nax, not a greenfield implementation. It closes #2987 lever C by routing blocking fix-induced chain findings through the existing advisor before the existing bot fix graph. All nine stories are package-scoped to packages/nax; no nax-ai, nax-agent or nax-agent-acp API or release change is needed. Navigation used direct reads and text search because codebase-memory MCP tools are unavailable in this session. All citations below are repository-root relative.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:12 links the conventions and dependency-injection standards, :106 links the workflow/advisor subsystems, and :145 records the hard 600-line source and 800-line test limits. Use Bun APIs, strict TypeScript, leaf imports to avoid orchestration cycles, injectable exported _deps for external work, immutable environment transforms, and bun:test fixtures with restored dependency stubs. The new question module prevents chain-advise.ts from growing past the source limit; the three chain-advise test files separate selection, outcomes, and replay/composition. Tests are part of every implementation story, not separate deliverables.\n\nUS-001 impact: packages/nax/src/config/schemas-advisor.ts:9 defines AdvisorConfigObjectSchema; nested callers use prefault({}) at :14 so field defaults apply, and ADVISOR_DEFAULTS and resolveAdvisorConfig at :27-32 are the effective config SSOT. Add botFixChain false there and to packages/nax/src/config/runtime-types-advisor.ts:8 AdvisorCallersConfig, plus the FIELD_DESCRIPTIONS table exported at packages/nax/src/cli/config-descriptions.ts:8. packages/nax/src/advisor/types.ts:2 defines AdviceQuestionKind and :146 defines MenuFacts; AdviceAction already contains fix, waive and hold, so no new action is needed. packages/nax/src/advisor/menus.ts:63 assigns option ids/labels through withIds, :188 dispatches buildMenu, and :270 implements forcedConfirm. Reuse the existing fix instruction and waive reason validation. Existing tests are packages/nax/test/unit/advisor/menus.test.ts and packages/nax/test/unit/config/advisor-config.test.ts:11,32; the latter has exact defaults assertions that must gain the fifth caller. Search additional hand-built AdvisorCallersConfig literals when the required type member is added, preserving defaults rather than enabling anything.\n\nUS-002/003 persistence and trust: packages/nax/src/bot/render.ts:13 provides safeText, which neutralises/redacts text and caps the final escaped result; use it rather than reimplementing escaping. packages/nax/src/forge/marker-grammar.ts:25 accepts cr- keys already; :34 parses the last valid marker and explicitly does not establish ownership by itself. Chain rulings require ownComments ownership, a cr- marker, and a parsed body. The new leaf chain-rulings.ts must not import BotFixEnv at runtime: chainInstructions accepts a structural environment. Render single-line sanitised text, persist as a thread reply, and parse that posted representation for both current-run instructions and replays. This intentionally changes code punctuation in instructions; instructions name changes in words and are not code-exact patches. packages/nax/src/bot/finding-rulings.ts:71 scans replies newest-first, currently skipping own comments; add only the own parsed waived chain-ruling case and do not ask isWriter for it. recordThread at :116 must avoid echoing a comment that is itself the durable ruling while still resolving an unresolved thread. Writer authorization and newer-writer precedence remain intact. packages/nax/src/bot/rulings.ts:432-445 centralises finding-thread reads through latestFindingRuling; readSettledKeys at :458 and readConfirmedKeys at :475 inherit the change without a second settlement rule. This affects recordFindingRulings, readiness and review settlement, not merely the routing. Existing coverage is packages/nax/test/unit/bot/finding-rulings.test.ts:59 and packages/nax/test/unit/bot/rulings.test.ts; reader integration assertions belong in the latter per the spec.\n\nUS-004 gating and selection: packages/nax/src/bot/fix-carried.ts:25 is the immutable preprocessing pattern, returning the original env for an empty transform and propagating unreadable ruling errors. packages/nax/src/bot/ledger-carry.ts:32 ledgerFeature identifies exactly one changed feature PRD and validates through the canonical feature-path boundary; export it unchanged so advisor routing and ledger carrying agree. packages/nax/src/bot/intent.ts:6 featureIntentPaths uses changed files and same-feature matching to supply absolute PR-checkout document paths. Gate through resolveAdvisorConfig before reading rulings or creating the advisor; an absent advisor block is disabled. Reuse packages/nax/src/workflow/blocking-findings/index.ts:71 isBlockingFinding, which rejects minor, fix-gap and non-blocking triggers, and :131 configuredChainNoticeGeneration, whose default is 2; use reviewBlockingTriggers(env), not a new hardcoded severity/trigger policy. Only findings with lineage at/above the threshold are candidates, preserving agreed order. Find their own thread by its first comment's authenticated login and exact finding marker, as packages/nax/src/bot/fix-report.ts:112 does. packages/nax/test/helpers/bot-fix.ts:6 supplies makeBotFixEnv, and :63 supplies the draft fixture for readiness.\n\nUS-005 evidence: packages/nax/src/bot/push-record.ts:41 ownLedgerEntries unions the summary ledger and append-only push records under the existing retention policy. packages/nax/src/bot/push-ledger.ts:66,103 requires a full lowercase 40-hex sha when decoding an entry; use an actual full sha in fixtures or parent issues silently disappear. parentIssue at :179 looks up the issue for that push and key, not a same-key issue from another push. Build the draft in a new chain-question.ts, with finding, review-round, merge-base diff and push diff evidence in that order. packages/nax/src/bot/git.ts:59 botGit accepts argv, cwd and optional timeout and uses the hardened git wrapper; inject it, do not use a shell. Exclude evidence for nonzero exit, timedOut, or rejection independently; do not discard the question. Cap each successful diff independently at 12,000 characters and append the specified cut line only when longer. Do not add model keys or supply PRD text from a new source.\n\nUS-006 advisor integration: packages/nax/src/advisor/service.ts:37 defines Advisor.advise, :276 createAdvisor forwards opts.findingSeverity, and :62 prepare reads the main-checkout PRD and trusted decision history. The service does not gate enabled/caller flags; this feature must. packages/nax/src/advisor/service-helpers.ts:21 AdvisorCallContext distinguishes main repoRoot (ledger location) from PR workdir; :35 defines QuestionDraft; :37 exposes _advisorServiceDeps and :42 returns '{}' for missing main-checkout PRD. decisionDraftFor at :67 calls forcedConfirm with the severity argument, not merely the draft field. Therefore pass both draft.findingSeverity and advise(draft, { findingSeverity: item.severity }); otherwise a critical waive can incorrectly be applied. packages/nax/src/advisor/menus.ts:266-274 holds low confidence, irreversible replies and critical waives but not confident reversible important waives. Reuse the service and its model ladder/ledger; never read its decision ledger for routing replay. Use runtime outputDir/runId via env.ctx.callCtx.runtime, not nonexistent ctx members. packages/nax/src/workflow/branch-fix.ts:160 applies sessionScope around the fix session; apply the same base pin around each advise call to avoid loading PR-head agent configuration. Readiness, instruction and severity boundaries warrant strict isolated TDD.\n\nOutcome semantics are fail-open only where explicitly specified: no own thread, no decision, rejected advise, unsupported action, reached cost limit, or failed posting leaves the finding unchanged with no ChainRuling. Log warnings with the finding key for advisor/post failures; null decisions include fallbackReason. A successful post is the durability commit point. Resolve only waived threads; resolution failure cannot undo a posted waiver. For fix and held, never resolve the thread in routing. Remove waived/held items only in a new review/environment; retain fix/unruled item identities and ordering. env.chainRulings carries current and replayed fix/held outcomes plus new waives, but not unruled findings or replayed waives. No AgreedItem or BotFixState modification.\n\nUS-007 composition risks: process candidates sequentially in agreed order, with confirm before own-thread replay, replay before parent detection, and parent detection before cost/advise. Read confirmed keys once using the SettlementReadInput pattern at packages/nax/src/bot/fix-carried.ts:28-36, and propagate its error unchanged rather than sending possibly settled work to a fixer. An existing ruling is the newest parsed own cr- comment on the own thread; invalid bodies do not count. A later fix-<finding key> own reply makes a replayed fix a new durable human hold. Check parents across all own PR comments, including threads, and successful rulings already produced in this call. Siblings sharing a push are not each other's parent. Once the cost threshold is observed, no later finding reaching that test may call the advisor, even if a test stub later reports a smaller total. Never bypass earlier replay/parent/confirm rules just because the budget is exhausted.\n\nUS-008 wiring and consumers: packages/nax/src/bot/fix-run.ts:422 fixCheckout builds a base-configured env, adds basePinScope at :484, and currently calls withCarriedFixFindings at :496 before executeFix. Add only the injected withChainRulings call at that seam after carry, skip both for ready-only, and leave BOT_FIX_GRAPH unchanged. The file is 545 lines, so no routing logic belongs there. packages/nax/src/bot/fix-steps.ts:110 defines BotFixEnv; :168 fixStep uses toFixFindings at :176 and :221 fixPromptFacts calls findingFactLines at :242. Both should consume chainInstructions(env). packages/nax/src/bot/fix-input.ts:175 maps agreed items into WorkflowFinding and currently copies suggestions; suppress the property entirely only for advised keys. packages/nax/src/bot/fix-facts.ts:70 currently takes three arguments and emits trigger, lineage and non-blocking facts; append Advisor ruling as the last fact for findings only. Update its header and packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:82's doc comment to identify the one instructional fact exception without changing prompt wording. packages/nax/src/bot/fix-summary-body.ts:85 summaryDetails feeds fitDetails at :125, so place counts there to retain the forge comment cap. Existing units are fix-facts.test.ts, fix-input.test.ts, fix-summary.test.ts; orchestration/session coverage is packages/nax/test/integration/bot/fix-session.test.ts:24,112. Add real-advisor-service integration coverage in a new chain-advise-service.test.ts, with temp main root/output directories and stubbed captureWorktreePatch/readPrdText/callOp; verify critical vs important forced-confirm rather than faking that rule in the bot.\n\nUS-009 readiness: packages/nax/src/bot/fix-report.ts:341 readinessReview may use codeReview, :367 openKeys re-reads the live PR and reconciles settled/withdrawn/confirmed keys, :391 openFindingHold currently unions blocking and carried keys, and :434 readyStep consults it before readying. Add unique held-chain keys to that same candidate set and keep all keys on the same openKeys reconciliation path. A held item removed from agreed must still hold in the current run, and a later writer waive must lift it. Do not put held findings into workflow open items or alter ready-only routing; its unfiltered artifact still contains the blocker. Extend existing packages/nax/test/unit/bot/fix-report.test.ts:125 readiness tests.\n\nCompatibility/migration: no persisted artifact schema migration, graph state migration, package version bump or automatic enablement is required. The optional chainRulings field and optional function parameters preserve existing callers. The new caller defaults false globally and on partial configurations, making disabled/inapplicable and empty-candidate preprocessing an identity operation with no new reads. PR comments are the durable replay source, while the advisor's existing ledgerStep at packages/nax/src/bot/ledger-carry.ts:105 carries newly appended main-checkout decisions to the PR exactly as before, including ledger-only pushes. Preserve the existing nothing-outcome summary sentence even if every finding was removed. Biggest regression risks are trusting a non-own/invalid marker, overriding a newer authorized writer, losing holds when filtering agreed, replacing suggestions for unrelated findings, consuming head-controlled agent configuration, omitting the advise severity option, counting replayed waives as new rulings, and exceeding source/test/comment size limits. The binding dependency graph is US-001 and US-002 first, then US-003/004, US-005, US-006, US-007, and US-008/009 at their specified dependencies; each delivers code plus scoped tests. No changes to post.ts, AgreedItem, graph nodes/exits/transitions, reviewer/fixer prompt text, forcedConfirm or service internals are authorized by this feature.\n\nRefine audit: individually checked all 164 explicit spec acceptance criteria (11/20/16/21/21/23/24/22/6 across US-001..009); every assertion and regression qualifier remains on its original story. US-003's compound criteria are split without losing their components. US-008's map criterion explicitly asserts Array.from(map.entries()) equals the one-entry nested array, not a flat array. All 14 failure-table rows are represented. Each story has negative-path criteria; US-008 now explicitly proves that a failed routing preparation never starts the fix session, and US-009 explicitly preserves the pre-existing hold when chainRulings is absent. The extra no-confirmed-read assertion belongs to US-007, not US-006, whose local exclusion forbids asserting that read. All 24 feature-level exclusions and all seven story-local exclusion bullets remain verbatim in their respective arrays, with nearby boundaries echoed in scopes. Binding ids, workdirs and dependencies remain unchanged.\n\nAdditional codebase-fit findings: the binding US-004 dependency list intentionally precedes chain-question.ts, so stage _chainAdviseDeps: US-004 exports already-existing dependencies, US-005 adds the actual buildChainQuestion import/property, and US-006 consumes the final object. Never introduce a missing import or fake builder in US-004, and import ChainFinding into chain-question.ts as a type to avoid a runtime cycle. packages/nax/src/operations/advise.ts:28 defines AdviseOpOutput as { ok: true; reply: AdvisorReply } or a typed failure; real-service tests stub callOp with that output rather than a bare reply. packages/nax/src/advisor/service-helpers.ts:59 prioritizes callCtx.config over the runtime loader, so fixtures must keep that config aligned with env.config. packages/nax/src/bot/fix-run.ts:223-239 triage already combines own thread and PR-level comments into env.own, providing the correct full-PR ancestry source without another forge read. US-001 contextFiles now prioritizes the spec-recommended existing menu test at packages/nax/test/unit/advisor/menus.test.ts:16; config-descriptions.ts remains an explicitly in-scope modification despite the five-context-file cap. Routing stays at the lightest existing-helper complexity, with strict isolation retained only where writer authorization or session trust is involved. No runtime execution/JSON parser tool is available in this session; this audit used source reads and exact JSON-preserving edits, not an executed test or parse claim.",
+  "outOfScope": [
+    "A pull request that does not change exactly one feature's `prd.json` together with that feature's `spec.md`: its chain findings go to the fixer as they do today. The advisor's call context needs a feature and a spec path.",
+    "Calling the advisor from `nax bot review`: the routing runs only in `nax bot fix`, before the fix session.",
+    "Batching several chain findings into one advisor call (`adviseBatch`): one question per finding.",
+    "Any change to `BOT_FIX_GRAPH`: no node, exit, transition or `BotFixState` field is added.",
+    "Any change to `packages/nax/src/bot/post.ts` or to the `AgreedItem` type: the instruction travels in `BotFixEnv.chainRulings`.",
+    "Any change to the text of the bot review or bot fix prompts: the instruction reaches the fixer through the existing per-finding fact lines, and the review prompt's settled-rulings section keeps its wording for an advisor waive.",
+    "The warnings the routing logs (no decision, a rejected `advise`, a failed post, a failed resolve): they are written with the item key but no acceptance criterion pins their text.",
+    "The order of `chainRulings` when several findings are ruled in one run beyond what the listed criteria assert.",
+    "Reading the advisor's decision ledger to find earlier chain rulings: a chain ruling is read only from the pull request's own comments.",
+    "A second advisor ruling on a ruled chain: a later finding whose lineage parent has a chain ruling is held for a human.",
+    "Two sibling findings raised in one review round on the same push: each is asked separately, since neither is the other's lineage parent.",
+    "Detecting that two findings in different rounds are the same finding by their wording: the routing uses the finding key and lineage only.",
+    "A new config key for the generation threshold: the routing reuses `bot.chainNoticeGeneration`.",
+    "A dedicated model key for this caller: the advisor's own `advisor.model` and `advisor.fallbackModels` apply. Choosing a model different from the reviewer's and fixer's is the operator's config, not enforced.",
+    "Holding a confident, reversible waive of an `important` finding for a human: only the advisor service's existing forced-confirm rule decides, and it holds a waive of a `critical` finding.",
+    "Changing what `needsHumanConfirm` means, when the advisor service sets it, or the severity set `forcedConfirm` reads.",
+    "Non-blocking chain findings (a `fix-gap`, a minor, a trigger outside the blocking set): they are follow-ups today and stay so.",
+    "Thread and comment items in `review.agreed`: only findings are routed.",
+    "Surfacing a held finding as a workflow open item: it stays a blocking finding thread.",
+    "The sentence the fix summary prints for a `nothing` outcome: it is unchanged when the advisor removed every item; the count line says what the advisor did.",
+    "Supplying the PRD text to the advisor when the feature directory is absent from the main checkout: the advisor prompt carries `{}` there.",
+    "Turning the caller on by default: `advisor.callers.botFixChain` defaults to `false`.",
+    "Documentation outside the config description table: the bot guide is updated by hand after the feature lands.",
+    "US-006 only: composition tests 2, 4, 5 and 6 (a writer's `confirm`, an existing chain ruling on the thread, a ruled lineage parent, the cost limit) and the `readConfirmedKeys` read are US-007's code. US-006 asks the advisor about every chain finding that has an own thread."
+  ],
+  "routingProfile": "native-claude-opus"
+}

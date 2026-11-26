@@ -38,7 +38,8 @@ import {
   type CallerRulingsReport,
   planCallerRulings,
 } from "./caller-rulings";
-import { isConfirmingRuling, latestFindingRuling } from "./finding-rulings";
+import { parseChainRuling } from "./chain-rulings";
+import { isConfirmingRuling, latestFindingRuling, newestOwnChainIndex } from "./finding-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -418,6 +419,8 @@ async function settledFindingKeys(
 ): Promise<string[]> {
   const settled: string[] = [];
   for (const { key, thread, ruling } of await ownFindingThreads(threads, login, canRule)) {
+    // A hold posted after the newest ruling (or after a fix resolved the thread) keeps the finding open.
+    if (newestOwnChainIndex(login, thread, "held") > (ruling?.index ?? -1)) continue;
     if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
   }
   return settled;
@@ -477,4 +480,30 @@ export async function readConfirmedKeys(input: SettlementReadInput): Promise<Rea
   return new Set(
     found.filter(({ ruling }) => ruling !== null && isConfirmingRuling(ruling.keyword)).map(({ key }) => key),
   );
+}
+
+/**
+ * Finding keys an authorized writer explicitly settled (waive, override, fixed) after the bot's newest
+ * chain ruling on the thread. A bare thread resolution, or the advisor's own ruling, never counts. The
+ * advisor's own ruling is told apart by its chain-ruling body, not by author: a writer sharing the bot's
+ * forge login still counts.
+ */
+export async function readWriterSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  return (await readFindingDispositions(input)).writerSettled;
+}
+
+/** Confirmed and writer-settled keys from ONE scan and one permission cache. */
+export async function readFindingDispositions(
+  input: SettlementReadInput,
+): Promise<{ confirmed: ReadonlySet<string>; writerSettled: ReadonlySet<string> }> {
+  const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
+  const confirmed = new Set<string>();
+  const writerSettled = new Set<string>();
+  for (const { key, thread, ruling } of found) {
+    if (ruling === null) continue;
+    if (isConfirmingRuling(ruling.keyword)) confirmed.add(key);
+    else if (parseChainRuling(ruling.reply.body) === null && ruling.index > newestOwnChainIndex(input.login, thread))
+      writerSettled.add(key);
+  }
+  return { confirmed, writerSettled };
 }

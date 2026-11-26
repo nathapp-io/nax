@@ -482,3 +482,23 @@ describe("outsideDeclaredGrowth", () => {
     expect(growth).toBeUndefined();
   });
 });
+
+describe("findingFactLines advisor ruling", () => {
+  const withLineage = finding({
+    trigger: "adversarial",
+    lineage: { generation: 2, parents: ["f-a"], pushSha: PUSH_SHA },
+  });
+  test("AC-3 ends with the advisor ruling line", () => {
+    const lines = findingFactLines(withLineage, ledger, DEFAULT_BLOCKING_TRIGGERS, "restore the guard");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.at(-1)).toBe("Advisor ruling: restore the guard");
+  });
+  test("AC-4 states no ruling line without an instruction", () => {
+    const lines = findingFactLines(withLineage, ledger, DEFAULT_BLOCKING_TRIGGERS);
+    expect(lines.some((line) => line.startsWith("Advisor ruling:"))).toBe(false);
+  });
+  test("AC-5 a thread item stays empty even with an instruction", () => {
+    const thread: AgreedItem = { kind: "thread", key: "t-1", issue: "x", reason: "y", threadId: "T", replyTo: "C" };
+    expect(findingFactLines(thread, ledger, DEFAULT_BLOCKING_TRIGGERS, "restore the guard")).toEqual([]);
+  });
+});

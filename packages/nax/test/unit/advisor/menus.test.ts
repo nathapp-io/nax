@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AdvisorReply, ConfigChangeCandidate, MenuFacts } from "@/advisor";
 import { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "@/advisor";
+import { validateAdvisorReply } from "@/operations";
 
 const types = (facts: MenuFacts) => buildMenu(facts).map((o) => o.type);
 
@@ -235,5 +236,41 @@ describe("fix-and-update acceptance option", () => {
       type: "fix",
       instruction: "i",
     });
+  });
+});
+
+describe("buildMenu bot-fix-chain", () => {
+  const menu = () => buildMenu({ kind: "bot-fix-chain" });
+  const base = { rationale: "r", confidence: "high", reversible: true, needsHumanConfirm: false };
+
+  test("offers fix, waive, hold in order", () => {
+    expect(menu().map((o) => o.type)).toEqual(["fix", "waive", "hold"]);
+  });
+
+  test("ids are distinct and non-empty", () => {
+    const ids = menu().map((o) => o.id);
+    expect(ids.every((id) => id !== "")).toBe(true);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  test("every option has a non-empty label and no fixed field", () => {
+    for (const o of menu()) {
+      expect(o.label.length).toBeGreaterThan(0);
+      expect("fixed" in o).toBe(false);
+    }
+  });
+
+  test("a fix reply without instruction is rejected naming instruction", () => {
+    const fix = menu()[0];
+    const r = validateAdvisorReply({ ...base, optionId: fix?.id }, menu());
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("instruction");
+  });
+
+  test("a waive reply with a reason is accepted and keeps the reason", () => {
+    const waive = menu()[1];
+    const r = validateAdvisorReply({ ...base, optionId: waive?.id, reason: "out of scope" }, menu());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.reply.reason).toBe("out of scope");
   });
 });

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { relative } from "node:path";
+import { makeBotFixEnv } from "@test/helpers";
 import { type BotFixState, renderFixSummary } from "@/bot";
 import { BOT_FIX_GRAPH } from "@/bot/fix-run";
 import { fitDetails } from "@/bot/fix-summary";
+import { summaryBody } from "@/bot/fix-summary-body";
 import { parseNaxBotMarker } from "@/forge";
 import { validateStepGraph } from "@/step-graph";
 import { safeCode } from "@/workflow/pr-body-safe";
@@ -309,5 +311,32 @@ describe("fitDetails", () => {
     expect(fitDetails(["abc"], 0)).toEqual([]);
     expect(fitDetails(["abc"], -40)).toEqual([]);
     expect(fitDetails([], 100)).toEqual([]);
+  });
+});
+
+describe("summaryBody advisor count line", () => {
+  const rulings = (...outcomes: ("fix" | "waived" | "held")[]) =>
+    outcomes.map((outcome, i) => ({ key: `f-${i}`, outcome, text: "t" }));
+  const body = (chainRulings?: ReturnType<typeof rulings>): string =>
+    summaryBody(
+      { ...makeBotFixEnv(), ...(chainRulings === undefined ? {} : { chainRulings }) },
+      { ...state, outcome: "nothing" },
+      { records: [] },
+    );
+  test.each([
+    [
+      ["fix", "waived", "held"],
+      "Advisor ruled on 3 findings that sit on earlier nax bot fixes: 1 to fix, 1 waived, 1 held for a human.",
+    ],
+    [["held"], "Advisor ruled on 1 finding that sits on earlier nax bot fixes: 1 held for a human."],
+    [["fix", "fix"], "Advisor ruled on 2 findings that sit on earlier nax bot fixes: 2 to fix."],
+  ] as const)("AC-9/10/11 %j", (outcomes, line) => {
+    expect(body(rulings(...outcomes)).split("\n")).toContain(line);
+  });
+  test("AC-12 no rulings, no line", () => {
+    expect(body()).not.toContain("Advisor ruled on");
+  });
+  test("AC-13 an empty list, no line", () => {
+    expect(body([])).not.toContain("Advisor ruled on");
   });
 });

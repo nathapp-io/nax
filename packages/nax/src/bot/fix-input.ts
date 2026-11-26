@@ -172,7 +172,8 @@ function samePr(recorded: PrRef | undefined, wanted: PrRef): boolean {
   );
 }
 
-export function toFixFindings(items: readonly AgreedItem[]): WorkflowFinding[] {
+/** An item the advisor gave an instruction loses its reviewer suggestion: the instruction replaces it. */
+export function toFixFindings(items: readonly AgreedItem[], advised?: ReadonlyMap<string, string>): WorkflowFinding[] {
   return items.map((item) => ({
     id: item.key,
     kind: "quality",
@@ -180,7 +181,9 @@ export function toFixFindings(items: readonly AgreedItem[]): WorkflowFinding[] {
     issue: item.kind === "finding" ? item.issue : buildUntrustedRequestIssue(item.issue, item.reason),
     ...("file" in item && item.file !== undefined ? { file: item.file } : {}),
     ...("line" in item && item.line !== undefined ? { line: item.line } : {}),
-    ...("suggestion" in item && item.suggestion !== undefined ? { suggestion: item.suggestion } : {}),
+    ...("suggestion" in item && item.suggestion !== undefined && !advised?.has(item.key)
+      ? { suggestion: item.suggestion }
+      : {}),
   }));
 }
 

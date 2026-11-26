@@ -10,17 +10,24 @@ import { ledgerCommitMessage, readHead } from "../workflow/git";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { botGit } from "./git";
 
+export async function readLedgerText(path: string): Promise<string | null> {
+  try {
+    return await Bun.file(path).text();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export function isLedgerAppend(before: string | null, after: string | null): after is string {
+  const prefix = before ?? "";
+  return after !== null && after.length > prefix.length && after.startsWith(prefix);
+}
+
 export const _ledgerCarryDeps = {
   runGit: botGit,
   readHead,
-  readText: async (path: string): Promise<string | null> => {
-    try {
-      return await Bun.file(path).text();
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }
-  },
+  readText: readLedgerText,
   writeText: async (path: string, text: string): Promise<void> => {
     await Bun.write(path, text);
   },
@@ -30,7 +37,7 @@ export const _ledgerCarryDeps = {
   getLogger,
 };
 
-function ledgerFeature(env: BotFixEnv): string | undefined {
+export function ledgerFeature(env: BotFixEnv): string | undefined {
   const candidates = env.checkout.changedFiles.filter((path) => {
     const parts = path.slice(PROJECT_FEATURES_DIR.length + 1).split("/");
     return path.startsWith(`${PROJECT_FEATURES_DIR}/`) && parts.length === 2 && parts[1] === "prd.json";
@@ -87,8 +94,7 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
     _ledgerCarryDeps.readText(path),
   ]);
   if (main === null || main === previous) return false;
-  const prefix = previous ?? "";
-  if (main.length <= prefix.length || !main.startsWith(prefix)) {
+  if (!isLedgerAppend(previous, main)) {
     warn(env, "Main checkout ledger does not extend the PR's; not carried");
     return false;
   }
@@ -105,9 +111,34 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
   }
 }
 
+/** The in-place ledger is authoritative. Never undo an append if Git cannot persist it. */
+export async function commitInPlaceAppend(
+  env: BotFixEnv,
+  appended: NonNullable<BotFixEnv["advisorLedger"]>,
+): Promise<boolean> {
+  const cwd = env.checkout.worktree;
+  const path = ledgerPath(cwd, appended.feature);
+  const rel = relative(cwd, path);
+  try {
+    if ((await _ledgerCarryDeps.readText(path)) !== appended.after) return false;
+    await git(["add", "-f", "--", rel], cwd);
+    await git(["commit", "--no-verify", "-m", ledgerCommitMessage(appended.feature), "--", rel], cwd);
+    return true;
+  } catch (error) {
+    // A concurrent commit (or one reported as failed) may already contain the decision.
+    const committed = await _ledgerCarryDeps.runGit(["show", `HEAD:${rel}`], cwd).catch(() => null);
+    if (committed?.exitCode === 0 && committed.stdout === appended.after) return true;
+    warn(env, "Advisor ledger append pending persistence", error);
+    return false;
+  }
+}
+
 export async function ledgerStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const patch: { ledgerCarried?: true } = {};
-  if (!env.checkout.inPlace) {
+  if (env.checkout.inPlace) {
+    // In-place advice was persisted before setup; never stage setup or fixer changes here.
+    if (env.advisorLedger) patch.ledgerCarried = true;
+  } else {
     try {
       const feature = ledgerFeature(env);
       if (feature && (await carry(env, feature))) patch.ledgerCarried = true;

@@ -11,7 +11,9 @@ import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
+import { withChainRulings } from "./chain-advise";
 import { initBotInteractionChain } from "./chat-asks";
+import { checkLocalCommits } from "./checkout-in-place";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
 import { withCarriedFixFindings } from "./fix-carried";
@@ -29,7 +31,7 @@ import {
 } from "./fix-steps";
 import { botGit } from "./git";
 import { runBotInstall, withRanSteps } from "./install";
-import { ledgerStep } from "./ledger-carry";
+import { commitInPlaceAppend, ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
 import { checkBotModelOverride } from "./models";
 import { repairStep } from "./repair-step";
@@ -66,6 +68,7 @@ export const _botFixDeps = {
     await Bun.write(to, Bun.file(from));
   },
   loadLatestReview,
+  withChainRulings,
   savedFix: { read: readSavedFix, save: saveFix, clear: clearSavedFix },
   resolveBotChecks,
   checkPushAccess,
@@ -300,9 +303,10 @@ function setupFailedState(setupFailed: string, setupHint?: string): BotFixState 
 }
 
 /** The `--in-place` checkout must be as clean after the install as before it. */
-async function inPlaceDirty(worktree: string): Promise<boolean> {
+async function inPlaceDirty(env: BotFixEnv): Promise<boolean> {
+  const { worktree } = env.checkout;
   const status = await _botFixDeps.runGit(["status", "--porcelain", "--untracked-files=all"], worktree);
-  return status.exitCode !== 0 || status.stdout.trim() !== "";
+  return status.exitCode !== 0 || status.stdout !== "";
 }
 
 /**
@@ -314,7 +318,7 @@ async function afterInstall(env: BotFixEnv, checks: BotChecks): Promise<FixSetup
     await runFixBuild({ ...env, checks });
     return { checks };
   }
-  if (!(await inPlaceDirty(env.checkout.worktree))) return { checks };
+  if (!(await inPlaceDirty(env))) return { checks };
   // No hint: the install did not fail, the tree it left is what failed.
   return { failed: setupFailedState("in-place checkout not clean after setup"), checks: env.checks };
 }
@@ -365,10 +369,25 @@ async function initialFixState(
 }
 
 async function executeFix(
-  env: BotFixEnv,
+  prepared: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
   input: BotFixInput,
 ): Promise<BotFixResult> {
+  let env = prepared;
+  if (prepared.checkout.inPlace && prepared.advisorLedger) {
+    if (!(await commitInPlaceAppend(prepared, prepared.advisorLedger))) {
+      return {
+        outcome: "refused",
+        reason: "Advisor ledger persistence pending; inspect and commit the ledger before retrying.",
+      };
+    }
+    // Only ledger-only local commits may advance the baseline for the fixer's protected-path check.
+    const startHead = await checkLocalCommits(
+      prepared.checkout.worktree,
+      prepared.checkout.startHead ?? prepared.info.headSha,
+    );
+    env = { ...prepared, checkout: { ...prepared.checkout, startHead } };
+  }
   const { state: initial, checks } = await initialFixState(env, runtime.outputDir, input);
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
@@ -493,7 +512,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      const fixEnv = input.readyOnly ? env : await withCarriedFixFindings(env);
+      const fixEnv = input.readyOnly ? env : await deps.withChainRulings(await withCarriedFixFindings(env));
       const result = await executeFix(fixEnv, runtime, input);
       if (!checkout.inPlace && !input.readyOnly && result.outcome !== "refused")
         await persistSavedFix({ env: fixEnv, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });

@@ -63,7 +63,7 @@ function isFeatureLedger(repoRoot: string, path: string): boolean {
   }
 }
 
-async function checkLocalCommits(repoRoot: string, headSha: string): Promise<string> {
+export async function checkLocalCommits(repoRoot: string, headSha: string): Promise<string> {
   const startHead = (await git(["rev-parse", "HEAD"], repoRoot)).trim();
   const argv = ["merge-base", "--is-ancestor", headSha, "HEAD"];
   const ancestor = await runGit(argv, repoRoot);

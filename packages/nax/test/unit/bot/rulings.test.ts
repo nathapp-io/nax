@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
+import { chainRulingKey, renderChainRuling } from "@/bot/chain-rulings";
 import {
   _rulingsDeps,
   type RecordRulingsInput,
   readConfirmedKeys,
   readSettledKeys,
+  readWriterSettledKeys,
   recordPrRulings,
 } from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
@@ -455,11 +457,44 @@ describe("readConfirmedKeys", () => {
     expect(await readConfirmedKeys(input([later]))).toEqual(new Set());
   });
 
+  test("B2: an unmarked waiver from the bot's own login still settles the finding", async () => {
+    const t = withReply(false);
+    const login = t.comments[0]?.author ?? "";
+    const waiver: PrThread = { ...t, comments: [...t.comments, comment("9", "waive: by design", login)] };
+    expect((await readWriterSettledKeys(input([waiver]))).has(findingKey)).toBe(true);
+  });
+
   test("a thread someone else opened confirms nothing", async () => {
     const other: PrThread = {
       ...withReply(false),
       comments: [comment("5", withNaxBotMarker("x", findingKey), "alice"), comment("6", "confirm", "alice")],
     };
     expect(await readConfirmedKeys(input([other]))).toEqual(new Set());
+  });
+});
+
+describe("advisor chain rulings through the settlement readers", () => {
+  const fk = "f-1";
+  const chain = () =>
+    comment(
+      "cr",
+      withNaxBotMarker(renderChainRuling({ key: fk, outcome: "waived", text: "base" }), chainRulingKey(fk)),
+    );
+  const th = (...more: PrComment[]): PrThread => ({
+    id: "t",
+    replyTo: "1",
+    resolved: false,
+    outdated: false,
+    comments: [comment("1", withNaxBotMarker("issue", fk)), chain(), ...more],
+  });
+
+  test("AC-17 readSettledKeys has the key for an own waived chain ruling", async () => {
+    expect((await readSettledKeys(input([th()]))).has(fk)).toBe(true);
+  });
+  test("AC-18 a later writer confirm unsettles it", async () => {
+    expect((await readSettledKeys(input([th(comment("w", "confirm", "alice"))]))).has(fk)).toBe(false);
+  });
+  test("AC-19 a later writer confirm confirms it", async () => {
+    expect((await readConfirmedKeys(input([th(comment("w", "confirm", "alice"))]))).has(fk)).toBe(true);
   });
 });

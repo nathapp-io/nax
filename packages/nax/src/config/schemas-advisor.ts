@@ -17,6 +17,7 @@ export const AdvisorConfigObjectSchema = z.object({
       fixCycleGiveUp: z.boolean().default(false),
       uncategorisedFailure: z.boolean().default(false),
       finishApproval: z.boolean().default(false),
+      botFixChain: z.boolean().default(false),
     })
     .prefault({}),
   maxRulingsPerStory: z.number().int().min(0).default(2),

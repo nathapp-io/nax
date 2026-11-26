@@ -10,6 +10,7 @@ export interface AdvisorCallersConfig {
   fixCycleGiveUp: boolean;
   uncategorisedFailure: boolean;
   finishApproval: boolean;
+  botFixChain: boolean;
 }
 
 /** `advisor` block. Root-only (pinned in `root-only-keys.ts`). Every caller is off by default. */

@@ -82,6 +82,7 @@ function outsideGrowthLine(growth: readonly { readonly path: string; readonly ad
 /**
  * The facts section, or nothing at all when there is no fact to state. A fact never carries an
  * instruction: the caller's items say what to do, and what is known about them says only what is known.
+ * The one exception is a finding's `Advisor ruling:` line, which carries the advisor's instruction.
  * Per-finding facts come first, then each earlier push's items (#2998), then the growth line.
  */
 function factsSection(input: BotPrFixPromptInput): string {

@@ -12,6 +12,7 @@ import {
   type BlockingFindingThreadsInput,
   readBlockingFindingThreads,
 } from "@/bot/blocking-threads";
+import { renderChainRuling } from "@/bot/chain-rulings";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 import { DEFAULT_BLOCKING_TRIGGERS, type FindingTrigger } from "@/workflow/blocking-findings";
@@ -151,6 +152,25 @@ describe("readBlockingFindingThreads", () => {
       expect(items.map((item) => item.id)).toEqual([...expected]);
     },
   );
+
+  test("B1: a hold after the fix reply keeps a resolved thread open; a later writer waiver settles it", async () => {
+    Object.assign(_blockingThreadsDeps, { readSettledKeys: original.readSettledKeys });
+    const thread = findingThread({ resolved: true });
+    const chain = (id: string, text: string, marker: string) => comment(id, withNaxBotMarker(text, marker));
+    const base = [
+      ...thread.comments,
+      chain("2", renderChainRuling({ key: KEY, outcome: "fix", text: "do it" }), `cr-${KEY}`),
+      chain("3", "fixed", `fix-${KEY}`),
+      chain("4", renderChainRuling({ key: KEY, outcome: "held", text: "raised again" }), `cr-${KEY}`),
+    ];
+    const deps = { run: async () => permission("write"), readText: async () => null };
+    const held = await readBlockingFindingThreads(input({ threads: [{ ...thread, comments: base }], deps }));
+    expect(held.map((item) => item.id)).toEqual([KEY]);
+    const waived = await readBlockingFindingThreads(
+      input({ threads: [{ ...thread, comments: [...base, comment("5", "waive: fine", "alice")] }], deps }),
+    );
+    expect(waived).toEqual([]);
+  });
 
   test("AC-3 leaves out a finding thread whose key readiness reports as settled", async () => {
     settled.mockImplementation(async () => new Set([KEY]));

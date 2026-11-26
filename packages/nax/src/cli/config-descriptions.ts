@@ -128,6 +128,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Max continue turns after an interrupted implementer turn (default 1); 0 turns the continue off and nax falls back to auto-committing the dirty tree",
   "workflow.interruptRetry.budgetMultiplier":
     "Budget of each continue turn as a fraction of the limit that was hit, greater than 0 and at most 1 (default 0.5)",
+  "advisor.callers.botFixChain":
+    "Consult the advisor on each blocking chain finding before nax bot fix runs the fixer: fix, waive or hold (default false)",
   "advisor.fallbackModels":
     "Models tried in order after advisor.model fails (quota, error, timeout, unparseable); default is none",
 
