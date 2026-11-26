@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T06:35:24.912Z",
+  "updatedAt": "2026-11-26T06:54:14.236Z",
   "userStories": [
     {
       "id": "US-001",
@@ -561,14 +561,17 @@
         "US-002",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One provider module composes the established ToolProvider, search and exposure interfaces; its security-state transitions still require strict security TDD."
+        "reasoning": "One provider module composes the established ToolProvider, search and exposure interfaces; its security-state transitions still require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/provider-types.ts",
@@ -592,7 +595,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "28130016af1f813ae8e74447dfb07c98ab99642e"
     },
     {
       "id": "US-010",
