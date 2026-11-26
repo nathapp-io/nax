@@ -1,0 +1,32 @@
+{
+  "kind": "captured",
+  "source": "preflight",
+  "capturedAt": "2026-11-26T04:22:09.477Z",
+  "baseRef": "5dc6f85bb7f86dbea2ecce57517a7dbd729bbce4",
+  "packageDirs": [
+    "packages/nax",
+    "packages/nax-agent"
+  ],
+  "entries": [
+    {
+      "file": "test/unit/cli/memory-admin-reset.test.ts",
+      "testName": "nax memory reset — the mirror it rebuilds > undo can restore a retired note after resetting the rebuildable cache",
+      "packageDir": "packages/nax"
+    },
+    {
+      "file": "test/unit/cli/migrate-cli.test.ts",
+      "testName": "nax migrate — no mode > US-002 AC5: exits 1 when neither --reclaim nor --merge is passed",
+      "packageDir": "packages/nax"
+    },
+    {
+      "file": "test/unit/cli/migrate-cli.test.ts",
+      "testName": "nax migrate — no mode > US-002 AC6: the refusal names both flags on stderr",
+      "packageDir": "packages/nax"
+    },
+    {
+      "file": "unknown",
+      "testName": "writes under a literal /tmp path",
+      "packageDir": "packages/nax-agent"
+    }
+  ]
+}
