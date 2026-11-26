@@ -4,6 +4,7 @@ import { resolveAdvisorConfig } from "@/config";
 import { type PrThread, parseNaxBotMarker, replyToThread, resolveThread } from "@/forge";
 import { getLogger } from "@/logger";
 import { configuredChainNoticeGeneration, isBlockingFinding } from "../workflow/blocking-findings";
+import { buildChainQuestion } from "./chain-question";
 import type { BotFixEnv } from "./fix-steps";
 import { featureIntentPaths } from "./intent";
 import { ledgerFeature } from "./ledger-carry";
@@ -12,7 +13,14 @@ import { reviewBlockingTriggers } from "./review-blocking";
 import { readConfirmedKeys } from "./rulings";
 
 /** Final shape grows with US-005..US-007; only the dependencies that exist today are listed. */
-export const _chainAdviseDeps = { createAdvisor, readConfirmedKeys, replyToThread, resolveThread, getLogger };
+export const _chainAdviseDeps = {
+  createAdvisor,
+  buildChainQuestion,
+  readConfirmedKeys,
+  replyToThread,
+  resolveThread,
+  getLogger,
+};
 
 export interface ChainFinding {
   readonly item: Extract<AgreedItem, { kind: "finding" }>;
