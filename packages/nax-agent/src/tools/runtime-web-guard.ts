@@ -23,9 +23,9 @@
  * not silently let an exposed session push, so a throw becomes an ask whose reason
  * names the failure.
  *
- * Both asymmetries only ever apply to a call the policy ALLOWED: the policy's ask and
- * deny branches return before this runs, because a call that must ask or must not run
- * has nothing left to decide here.
+ * Policy denials remain final. US-018 also assesses policy/command-safety asks so
+ * their single approval carries the stronger exposure reason and cannot be
+ * auto-approved by a full-mode host.
  */
 
 import { errorMessage } from "#src/infra/errors";
@@ -125,5 +125,29 @@ export async function resolveWebExposureDenial(p: {
     root: p.root,
     logCall: p.logCall,
     runTool: p.runTool,
+  });
+}
+
+/** Policy/command-safety asks remain ONE ask, with the stronger web reason when exposed. */
+export function resolveWebAwareAskOutcome(
+  p: Parameters<typeof resolveAskOutcome>[0] & {
+    readonly port: WebExposurePort | undefined;
+    readonly sandboxed: boolean;
+  },
+): Promise<CodingToolOutcome> {
+  const decision =
+    p.port === undefined
+      ? undefined
+      : assessOrFailClosed({
+          port: p.port,
+          identity: p.identity,
+          input: p.input,
+          root: p.root,
+          resolvedPaths: p.verdict.resolvedPaths ?? [],
+          sandboxed: p.sandboxed,
+        });
+  return resolveAskOutcome({
+    ...p,
+    verdict: decision === undefined ? p.verdict : { ...p.verdict, rule: WEB_EXPOSURE_RULE, reason: decision.reason },
   });
 }

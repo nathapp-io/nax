@@ -44,6 +44,8 @@ export interface ApprovalRequest {
    * `approval_requested` event by `askPerson`; absent on every ordinary ask.
    */
   readonly unsandboxed?: true;
+  /** Must be answered by the person, even when the host normally auto-approves. */
+  readonly webExposure?: true;
   /** Extra abort source, combined with the turn signal (for example a tool-level abort). */
   readonly signal?: AbortSignal;
 }

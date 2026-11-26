@@ -16,7 +16,7 @@ export {
   type WebExposureGuard,
   type WebGuardDecision,
 } from "./guard.ts";
-export { createWebToolProvider, type WebToolProviderOptions } from "./provider.ts";
+export { _webProviderDeps, createWebToolProvider, type WebToolProviderOptions } from "./provider.ts";
 export { createSearchBackend, type SearchBackend, WEB_SEARCH_KEY_ENV } from "./search-backend.ts";
 export {
   WEB_SEEN_URL_CAP,

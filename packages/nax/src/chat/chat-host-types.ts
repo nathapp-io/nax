@@ -14,6 +14,7 @@ import type {
   CommandRunResult,
   CompactResult,
   ImageAttachment,
+  NativeBackendOptions,
   SandboxState,
   SessionEvent,
   SessionMeta,
@@ -35,6 +36,7 @@ import type { RecentModelStore } from "./recent-models";
 import type { ChatResources } from "./resources";
 
 export interface ChatHostState {
+  readonly webGuard?: NonNullable<NativeBackendOptions["hostPorts"]>["webExposure"];
   readonly sessionId: string;
   readonly mode: ChatMode;
   readonly model: string;

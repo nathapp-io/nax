@@ -106,7 +106,7 @@ describe("a native session's web-exposure port", () => {
     const events = reader(session.send("push it"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
 
-    expect(request).toMatchObject({ callId: "b1", tool: "Bash", reason: REASON });
+    expect(request).toMatchObject({ callId: "b1", tool: "Bash", reason: REASON, webExposure: true });
     expect(calls).toHaveLength(1);
 
     expect(session.answer(request?.requestId ?? "", { decision: "deny" })).toBe("accepted");

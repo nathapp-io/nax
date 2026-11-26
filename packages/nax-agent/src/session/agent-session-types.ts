@@ -166,6 +166,8 @@ export type SessionEventBody =
       readonly expiresAt: string;
       /** US-004: the call wants to run outside the OS sandbox. Absent on every ordinary ask. */
       readonly unsandboxed?: true;
+      /** Must be answered by the person, even when the host normally auto-approves. */
+      readonly webExposure?: true;
       /** `false`: decided already (by the profile); informational. Absent: a person's answer is awaited. */
       readonly answerable?: false;
     }

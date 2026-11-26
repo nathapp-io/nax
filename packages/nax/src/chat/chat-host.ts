@@ -36,7 +36,7 @@ import { createHostQueue, type HostQueue } from "./host-queue";
 import { createHostRecents, type HostRecents } from "./host-recents";
 import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
 import { chatToolProviders } from "./host-tool-providers";
-import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
+import { chatHostState, closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
   type ChatHistory,
@@ -257,20 +257,10 @@ class NativeChatHost implements ChatHost {
   }
 
   current(): ChatHostState {
-    // Ink stays mounted during teardown and an in-flight turn may still refresh.
-    // Keep the last handle readable; only operations require an open host.
+    // Teardown keeps the last handle readable for the mounted screen.
     const handle = this.handle;
     if (!handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
-    const { session, meta } = handle;
-    const contextWindow = this.contextWindows.get(meta.model);
-    return {
-      sessionId: meta.sessionId,
-      mode: meta.mode === "full" ? "full" : "guarded",
-      model: meta.model,
-      meta,
-      ...(session.backend.sandbox === undefined ? {} : { sandbox: session.backend.sandbox }),
-      ...(contextWindow === undefined ? {} : { contextWindow }),
-    };
+    return chatHostState(handle, this.contextWindows.get(handle.meta.model));
   }
 
   agents(): readonly ChatAgentRow[] {
@@ -316,6 +306,7 @@ class NativeChatHost implements ChatHost {
       cwd: this.deps.cwd,
       repoRoot: this.repoRoot,
       config: this.deps.config,
+      metadataQueue: this.accounting,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
       ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
@@ -479,9 +470,7 @@ class NativeChatHost implements ChatHost {
       // uncancelled.
       const handle = this.requireHandle();
       this.hygiene.markSent(handle.meta.sessionId);
-      // Only the turn's metadata write is queued (`queue`), never the turn: the write is the
-      // other read-modify-write of the same `costUsd`, and a compaction that settled a
-      // moment ago must not be overwritten by this turn's base.
+      // Queue only metadata, never the synchronous turn claim.
       const meta = await runChatTurn({
         handle,
         storage: this.deps.storage,
@@ -502,7 +491,13 @@ class NativeChatHost implements ChatHost {
       else if (this.handle?.meta.sessionId === meta.sessionId) {
         this.handle = {
           ...this.handle,
-          meta: { ...this.handle.meta, costUsd: meta.costUsd, title: meta.title, updatedAt: meta.updatedAt },
+          meta: {
+            ...this.handle.meta,
+            costUsd: meta.costUsd,
+            title: meta.title,
+            updatedAt: meta.updatedAt,
+            web: meta.web,
+          },
         };
       }
     } finally {

@@ -910,6 +910,7 @@ _terminalPromptDeps
 _transcriptArchiveDeps
 _transcriptImagesDeps
 _transcriptLifecycleDeps
+_webProviderDeps
 abortableSleep
 acquireMirrorDirLock
 adaptProviderTool

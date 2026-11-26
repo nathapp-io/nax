@@ -34,7 +34,6 @@ import {
   auditLevel,
   contextPorts,
   openCallShadowTap,
-  resolveAskOutcome,
   resolveAskVerdict,
   resolveDenialOutcome,
   resolveGuardDenial,
@@ -42,7 +41,7 @@ import {
   resolveUnsandboxedCall,
   toolOutcome,
 } from "./runtime-calltool.ts";
-import { resolveWebExposureDenial } from "./runtime-web-guard.ts";
+import { resolveWebAwareAskOutcome, resolveWebExposureDenial } from "./runtime-web-guard.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
 import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit.ts";
@@ -503,12 +502,12 @@ export function createCodingToolRuntime(opts: {
         }
       }
 
-      // US-005/US-006: the ONE ask route. A verdict the policy raised as an
-      // ask goes there as it always did; an ALLOWED escape request is
-      // converted into one unless the mode already let it run (`raw`).
+      // One ask route, including the exposure guard when policy already asks.
       const askVerdict = resolveAskVerdict({ identity: policyIdentity, verdict, unsandboxed });
       if (askVerdict !== undefined) {
-        return resolveAskOutcome({
+        return resolveWebAwareAskOutcome({
+          port: opts.webExposure,
+          sandboxed: opts.sandboxed === true,
           identity: policyIdentity,
           tool,
           input,
@@ -558,7 +557,9 @@ export function createCodingToolRuntime(opts: {
         resolvedPaths: verdict.resolvedPaths,
       });
       if (guardDenial !== undefined) {
-        return resolveAskOutcome({
+        return resolveWebAwareAskOutcome({
+          port: opts.webExposure,
+          sandboxed: opts.sandboxed === true,
           identity: policyIdentity,
           tool,
           input,
@@ -574,9 +575,7 @@ export function createCodingToolRuntime(opts: {
         });
       }
 
-      // US-012: a call the session's web-exposure guard flags goes through the SAME
-      // ask channel, one step later. `??` keeps the branch out of this function: the
-      // tool runs only when the guard raised no ask, and the guard fails closed.
+      // Exposure uses the same ask channel and fails closed.
       return (
         (await resolveWebExposureDenial({
           port: opts.webExposure,

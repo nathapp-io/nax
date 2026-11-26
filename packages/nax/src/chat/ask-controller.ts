@@ -245,8 +245,8 @@ class AskController implements ChatAskController {
         return;
       }
       const key = approvalMemoryKey(event);
-      const remembered = !event.unsandboxed && key !== undefined && this.memory.has(key);
-      if (this.mode === "full" || (remembered && approvalMemoryApplies(event, "allow"))) {
+      const remembered = !event.webExposure && !event.unsandboxed && key !== undefined && this.memory.has(key);
+      if (!event.webExposure && (this.mode === "full" || (remembered && approvalMemoryApplies(event, "allow")))) {
         this.options.answer(event.requestId, { decision: "allow" });
         return;
       }
@@ -264,6 +264,7 @@ class AskController implements ChatAskController {
     return (
       !event.requestId.startsWith("host-") &&
       !event.unsandboxed &&
+      !event.webExposure &&
       event.tool !== "Delete" &&
       approvalMemoryKey(event) !== undefined
     );

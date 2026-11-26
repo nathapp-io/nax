@@ -272,7 +272,7 @@ describe("callTool — what the port is shown", () => {
   });
 });
 
-describe("callTool — the guard runs only for an ALLOWED call", () => {
+describe("callTool — exposure augments allows and asks, never policy denials", () => {
   test("AC-13: a call the policy denies never reaches assess", async () => {
     const { port, calls } = flaggingPort();
     const { runtime, asked } = bashRuntime({ port, denyRules: [{ tool: BASH_TOOL_NAME, patterns: ["git push *"] }] });
@@ -288,22 +288,22 @@ describe("callTool — the guard runs only for an ALLOWED call", () => {
     expect(asked.requests).toHaveLength(1);
   });
 
-  test("AC-14: a call the policy routes to an ask asks exactly once and never reaches assess", async () => {
+  test("US-018: a policy ask keeps one ask with the stronger exposure reason", async () => {
     const { port, calls } = flaggingPort();
     const askRuleRuntime = bashRuntime({ port, askRules: [{ tool: BASH_TOOL_NAME, patterns: ["echo hi"] }] });
 
     const askedCall = await askRuleRuntime.runtime.callTool(BASH_TOOL_NAME, { command: "echo hi" });
 
-    // The control: the port is live in this file, so the run below proves the
-    // empty assessment list above came from the ask verdict and not a dead port.
+    // Both a policy ask and an allowed call consult the guard, without asking twice.
     const control = bashRuntime({ port });
     const flagged = await control.runtime.callTool(BASH_TOOL_NAME, { command: "echo bye" });
 
     expect(askedCall.kind).toBe("denied");
     expect(askRuleRuntime.asked.requests).toHaveLength(1);
-    expect(askRuleRuntime.asked.requests[0]?.reason).not.toBe(REASON);
+    expect(askRuleRuntime.asked.requests[0]?.reason).toBe(REASON);
+    expect(askRuleRuntime.asked.requests[0]?.rule).toBe("web-exposure");
     expect(flagged.kind).toBe("denied");
-    expect(calls.map((call) => call.input)).toEqual([{ command: "echo bye" }]);
+    expect(calls.map((call) => call.input)).toEqual([{ command: "echo hi" }, { command: "echo bye" }]);
   });
 
   test("AC-15: a throwing assess fails closed with the failure as the reason", async () => {

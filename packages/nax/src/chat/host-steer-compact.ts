@@ -21,6 +21,7 @@ import { NaxError } from "@/errors";
 import type { ChatLedger, ChatUsageEvent } from "./chat-ledger";
 import type { HostQueue } from "./host-queue";
 import type { ChatSessionHandle } from "./open-chat-session";
+import { sessionWebSnapshot } from "./session-web";
 
 export interface HostSteerInput {
   /** The session the host has open right now, or `undefined` when it has none. */
@@ -126,7 +127,11 @@ async function recordSpend(options: {
   const ledger = input.ledger();
   ledger?.record(compactUsageEvent(result, sessionId, input.now().toISOString()), requestedAt, model);
   const stored = (await input.storage.readMeta(sessionId)) ?? handle.meta;
-  const meta: SessionMeta = { ...stored, costUsd: (stored.costUsd ?? 0) + result.costUsd };
+  const meta: SessionMeta = {
+    ...stored,
+    web: sessionWebSnapshot(handle.web, stored.web),
+    costUsd: (stored.costUsd ?? 0) + result.costUsd,
+  };
   await input.storage.writeMeta(meta);
   input.adopt(meta);
   await ledger?.drain();
@@ -154,7 +159,7 @@ export function createHostCompacting(input: HostCompactInput): HostCompacting {
       // The facade's claim is released when the summarizer settles, so the accounting runs
       // queued: a second compaction — or a turn's own write — must not read the metadata
       // this one is about to replace.
-      await input.queue.run(() => recordSpend({ input, handle, result, requestedAt }));
+      await (handle.metadataQueue ?? input.queue).run(() => recordSpend({ input, handle, result, requestedAt }));
       return result;
     },
   };
