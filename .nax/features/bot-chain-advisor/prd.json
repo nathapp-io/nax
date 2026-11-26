@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T07:04:39.767Z",
+  "updatedAt": "2026-11-26T07:08:49.485Z",
   "userStories": [
     {
       "id": "US-001",
@@ -577,14 +577,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small additive candidate-key union using the existing live settlement reconciliation; no new permission or session decisions."
+        "reasoning": "Small additive candidate-key union using the existing live settlement reconciliation; no new permission or session decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-report.ts",
@@ -598,6 +601,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "bbe4a1c4b6da757bbd30f58d5759c9a0d9e20d79",
       "outOfScope": [
         "US-009 only: a ready-only pass. It does not run the routing, has no `chainRulings`, and reads the unfiltered review artifact, where a held finding is still an open blocking finding."
       ]
