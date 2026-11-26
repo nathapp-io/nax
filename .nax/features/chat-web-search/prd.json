@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T08:30:49.223Z",
+  "updatedAt": "2026-11-26T08:44:15.181Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1088,14 +1088,17 @@
         "US-013",
         "US-016"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One factory module composes the upstream provider, guard and settings and parses standard git remote forms; credentials and restored security state still require strict security TDD."
+        "reasoning": "One factory module composes the upstream provider, guard and settings and parses standard git remote forms; credentials and restored security state still require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/web/settings.ts",
@@ -1117,7 +1120,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0b9004f714aa0a4376e5d3df1a2feb013a2b97d8"
     },
     {
       "id": "US-018",
