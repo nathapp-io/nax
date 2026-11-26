@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { join } from "node:path";
+import { chmod } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime, withTempDir } from "@test/helpers";
 import { ledgerPath } from "@/advisor";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
+import type { BotFixEnv } from "@/bot/fix-steps";
 import { botGit } from "@/bot/git";
+import { _ledgerCarryDeps } from "@/bot/ledger-carry";
 import { PROJECT_FEATURES_DIR } from "@/config";
+import { NaxError } from "@/errors";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 
 const original = { ..._botFixDeps };
@@ -19,6 +23,89 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 describe("runBotFix ledger carry seam", () => {
+  test.each(["mode", "index", "install-failure", "cost-stop", "already-committed", "add", "commit"])(
+    "in-place decision persistence: %s",
+    async (scenario) => {
+      await withTempDir(async (repo) => {
+        const path = ledgerPath(repo, "f");
+        const rel = relative(repo, path);
+        const before = "old\n";
+        const after = "old\nnew\n";
+        await Bun.write(path, before);
+        await git(repo, ["init", "-b", "fix"]);
+        await git(repo, ["config", "user.email", "test@example.com"]);
+        await git(repo, ["config", "user.name", "Test"]);
+        await git(repo, ["config", "core.filemode", "true"]);
+        await git(repo, ["add", "-f", rel]);
+        await git(repo, ["commit", "-m", "feature"]);
+        const headSha = await git(repo, ["rev-parse", "HEAD"]);
+        const base = makeBotFixEnv();
+        const env = {
+          ...base,
+          repoRoot: repo,
+          info: { ...base.info, headSha },
+          checkout: { ...base.checkout, worktree: repo, inPlace: true, startHead: headSha },
+        };
+        const runtime = makeTestRuntime({ config: env.config });
+        const setup = mock(async () => {
+          if (scenario === "mode") await chmod(path, 0o755);
+          if (scenario === "index") {
+            await Bun.write(path, "setup\n");
+            await git(repo, ["add", rel]);
+            await Bun.write(path, after);
+          }
+          if (scenario === "install-failure")
+            throw new NaxError("install failed", "PRE_RUN_FAILED", { stage: "install" });
+        });
+        try {
+          const persistenceFailure = scenario === "add" || scenario === "commit";
+          if (persistenceFailure)
+            spyOn(_ledgerCarryDeps, "runGit").mockImplementation(async (args, cwd) =>
+              args[0] === scenario ? { exitCode: 1, stdout: "", stderr: "failed" } : botGit(args, cwd),
+            );
+          Object.assign(_botFixDeps, {
+            ...makeBotFixDeps(env, runtime),
+            prepareInPlaceCheckout: async () => env.checkout,
+            withChainRulings: async (input: BotFixEnv) => {
+              await Bun.write(path, after);
+              if (scenario === "already-committed") {
+                await git(repo, ["commit", "-am", "decision already saved"]);
+              }
+              return {
+                ...input,
+                advisorLedger: { feature: "f", before, after },
+                cost: { limitUsd: 1, spentUsd: () => 1 },
+              };
+            },
+            runPreRunSteps: setup,
+            reportStep: async () => ({ patch: {}, exit: "done" }),
+          });
+          const result = await runBotFix({ dir: repo, pr: 42, profiles: [], interactive: false, inPlace: true });
+          expect(await Bun.file(path).text()).toBe(after);
+          if (persistenceFailure) {
+            expect(result).toMatchObject({ outcome: "refused", reason: expect.stringContaining("pending") });
+            expect(setup).not.toHaveBeenCalled();
+            return;
+          }
+          expect(setup).toHaveBeenCalledTimes(1);
+          expect(await git(repo, ["show", `HEAD:${rel}`])).toBe(after.trim());
+          expect(await git(repo, ["rev-list", "--count", `${headSha}..HEAD`])).toBe("1");
+          if (scenario === "mode" || scenario === "index") {
+            expect(result).toMatchObject({
+              outcome: "setup-failed",
+              setupFailed: "in-place checkout not clean after setup",
+            });
+          } else {
+            expect(result.outcome).toBe(scenario === "install-failure" ? "setup-failed" : "cost-limit");
+            expect(await git(repo, ["status", "--porcelain"])).toBe("");
+          }
+        } finally {
+          await runtime.close();
+        }
+      });
+    },
+  );
+
   test("AC-18 real worktree pushes main's ledger without moving main or starting re-review", async () => {
     await withTempDir(async (root) => {
       const repo = join(root, "main");

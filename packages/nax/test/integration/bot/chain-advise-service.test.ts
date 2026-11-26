@@ -7,7 +7,7 @@ import {
   makeTempDir,
   makeTestRuntime,
 } from "@test/helpers";
-import { _advisorServiceDeps, buildMenu } from "@/advisor";
+import { _advisorServiceDeps, buildMenu, ledgerPath } from "@/advisor";
 import type { AgreedItem, BotFixEnv } from "@/bot";
 import { _chainAdviseDeps, withChainRulings } from "@/bot/chain-advise";
 import { parseChainRuling } from "@/bot/chain-rulings";
@@ -94,6 +94,28 @@ function stub(posted: string[]): void {
 }
 
 describe("withChainRulings with the real advisor service", () => {
+  test.each(["", "different history\n"])("rejects a divergent ledger snapshot (%j)", async (replacement) => {
+    stub([]);
+    const env = routedEnv("important");
+    const path = ledgerPath(env.repoRoot, "alpha");
+    await Bun.write(path, "prior decision\n");
+    _chainAdviseDeps.resolveThread = async () => {
+      await Bun.write(path, replacement);
+    };
+    await expect(withChainRulings(env)).rejects.toThrow(/ledger/i);
+    expect(await Bun.file(path).text()).toBe(replacement);
+  });
+
+  test("an unreadable snapshot is not an absent ledger", async () => {
+    const posted: string[] = [];
+    stub(posted);
+    const env = routedEnv("important");
+    // A non-directory path component produces ENOTDIR even with elevated permissions.
+    await Bun.write(`${env.repoRoot}/.nax`, "not a directory");
+    await expect(withChainRulings(env)).rejects.toThrow();
+    expect(posted).toEqual([]);
+  });
+
   test("AC-22 a critical waive is held with the waive proposed", async () => {
     const posted: string[] = [];
     stub(posted);

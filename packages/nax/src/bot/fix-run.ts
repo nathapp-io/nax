@@ -1,7 +1,6 @@
 /** Repo-scoped trusted, exact-head fix orchestration with optional saved-commit reuse. */
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { ledgerPath } from "@/advisor";
 import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
@@ -14,6 +13,7 @@ import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
 import { withChainRulings } from "./chain-advise";
 import { initBotInteractionChain } from "./chat-asks";
+import { checkLocalCommits } from "./checkout-in-place";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
 import { withCarriedFixFindings } from "./fix-carried";
@@ -31,7 +31,7 @@ import {
 } from "./fix-steps";
 import { botGit } from "./git";
 import { runBotInstall, withRanSteps } from "./install";
-import { ledgerStep } from "./ledger-carry";
+import { commitInPlaceAppend, ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
 import { checkBotModelOverride } from "./models";
 import { repairStep } from "./repair-step";
@@ -306,19 +306,7 @@ function setupFailedState(setupFailed: string, setupHint?: string): BotFixState 
 async function inPlaceDirty(env: BotFixEnv): Promise<boolean> {
   const { worktree } = env.checkout;
   const status = await _botFixDeps.runGit(["status", "--porcelain", "--untracked-files=all"], worktree);
-  if (status.exitCode !== 0) return true;
-  // Only the advisor's recorded ledger append is exempt: the ledger must still hold exactly that text.
-  const appended = env.advisorLedger;
-  const ledger = appended === undefined ? undefined : relative(worktree, ledgerPath(env.repoRoot, appended.feature));
-  const exempt =
-    appended !== undefined &&
-    (await Bun.file(ledgerPath(env.repoRoot, appended.feature))
-      .text()
-      .catch(() => null)) === appended.after;
-  return status.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .some((line) => line !== "" && !(exempt && line.slice(2).trim() === ledger));
+  return status.exitCode !== 0 || status.stdout !== "";
 }
 
 /**
@@ -381,10 +369,25 @@ async function initialFixState(
 }
 
 async function executeFix(
-  env: BotFixEnv,
+  prepared: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
   input: BotFixInput,
 ): Promise<BotFixResult> {
+  let env = prepared;
+  if (prepared.checkout.inPlace && prepared.advisorLedger) {
+    if (!(await commitInPlaceAppend(prepared, prepared.advisorLedger))) {
+      return {
+        outcome: "refused",
+        reason: "Advisor ledger persistence pending; inspect and commit the ledger before retrying.",
+      };
+    }
+    // Only ledger-only local commits may advance the baseline for the fixer's protected-path check.
+    const startHead = await checkLocalCommits(
+      prepared.checkout.worktree,
+      prepared.checkout.startHead ?? prepared.info.headSha,
+    );
+    env = { ...prepared, checkout: { ...prepared.checkout, startHead } };
+  }
   const { state: initial, checks } = await initialFixState(env, runtime.outputDir, input);
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(

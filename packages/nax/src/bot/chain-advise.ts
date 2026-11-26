@@ -2,6 +2,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type AdviceResult, type Advisor, createAdvisor, ledgerPath } from "@/advisor";
 import { resolveAdvisorConfig } from "@/config";
+import { NaxError } from "@/errors";
 import {
   type OwnComment,
   ownComments,
@@ -18,7 +19,7 @@ import { buildChainQuestion } from "./chain-question";
 import { type ChainRuling, chainRulingKey, parseChainRuling, renderChainRuling } from "./chain-rulings";
 import type { BotFixEnv } from "./fix-steps";
 import { featureIntentPaths } from "./intent";
-import { ledgerFeature } from "./ledger-carry";
+import { isLedgerAppend, ledgerFeature, readLedgerText } from "./ledger-carry";
 import type { AgreedItem } from "./post";
 import { reviewBlockingTriggers } from "./review-blocking";
 import { readFindingDispositions } from "./rulings";
@@ -238,14 +239,6 @@ interface AskContext {
   readonly state: RoutingState;
 }
 
-async function readLedgerText(repoRoot: string, feature: string): Promise<string | null> {
-  try {
-    return await Bun.file(ledgerPath(repoRoot, feature)).text();
-  } catch {
-    return null;
-  }
-}
-
 /** Asks the advisor once per own-thread chain finding and applies each outcome; returns the env the fix runs on. */
 export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
   const routing = chainRoutingContext(env);
@@ -278,7 +271,8 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
     costReached: false,
   };
   const ctx = { env, advisor, feature: routing.feature, state };
-  const ledgerBefore = await readLedgerText(env.repoRoot, routing.feature);
+  const path = ledgerPath(env.repoRoot, routing.feature);
+  const ledgerBefore = await readLedgerText(path);
   for (const entry of found) {
     if (writerSettled.has(entry.item.key)) {
       // An authorized writer disposition outranks the advisor's earlier ruling: drop it without replay.
@@ -288,12 +282,17 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
     if (confirmed.has(entry.item.key) || entry.thread === undefined) continue;
     await ruleOne(ctx, { ...entry, thread: entry.thread });
   }
-  const ledgerAfter = await readLedgerText(env.repoRoot, routing.feature);
-  const advisorLedger =
-    ledgerAfter !== null && ledgerAfter !== ledgerBefore
-      ? { feature: routing.feature, before: ledgerBefore, after: ledgerAfter }
-      : undefined;
-  const withLedger = advisorLedger === undefined ? env : { ...env, advisorLedger };
+  const ledgerAfter = await readLedgerText(path);
+  let withLedger = env;
+  if (ledgerBefore !== ledgerAfter) {
+    if (!isLedgerAppend(ledgerBefore, ledgerAfter)) {
+      throw new NaxError("[bot-fix] Advisor ledger changed without an append", "BOT_LEDGER_DIVERGED", {
+        stage: "bot-fix",
+        path,
+      });
+    }
+    withLedger = { ...env, advisorLedger: { feature: routing.feature, before: ledgerBefore, after: ledgerAfter } };
+  }
   if (state.rulings.size === 0 && state.dropped.size === 0) return withLedger;
   const ordered = env.review.agreed.flatMap((item) => state.rulings.get(item.key) ?? []);
   return {
