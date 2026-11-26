@@ -55,6 +55,7 @@ function operandIn(pinnedPath: string, path: string): string {
 export function pinnedOperation<T>(path: string, op: string, args: unknown[] = []): Promise<T> | null {
   const directory = activeDirectory.getStore();
   if (!directory) return null;
+  if (op === "entries" && path === directory.path) return directory.request<T>(op, []);
   if (op === "rename") {
     return directory.request<T>(op, [operandIn(directory.path, path), operandIn(directory.path, String(args[0]))]);
   }

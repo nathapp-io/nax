@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { _compactionArchiveDeps } from "#src/memory/compaction-archive";
+import { undoMemoryCompaction } from "#src/memory/compaction-undo";
 import type { MemoryStore } from "#src/memory/store";
 import {
   assertNaxError,
@@ -47,6 +48,38 @@ function expectFailed(error: Error, cause: unknown) {
 }
 
 describe("applyMemoryCompaction rollback", () => {
+  test("refuses an occupied archive id without modifying it", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await h.apply();
+      const before = await compactionManifest(h);
+      await expect(
+        h.apply({ plan: { retire: [{ slug: "unrelated", reason: "expired" }], merge: [] } }),
+      ).rejects.toThrow();
+      expect(await compactionManifest(h)).toEqual(before);
+    });
+  });
+
+  test("refuses an unreadable merge target", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const path = join(h.store.paths.notesDir, "merged.md");
+      await writeFile(path, "unparseable");
+      await expect(h.apply()).rejects.toThrow();
+      expect(await readFile(path, "utf8")).toBe("unparseable");
+    });
+  });
+
+  test("refuses a source edited during confirmation", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      for (const n of h.originals) if (n.slug === "retired") await h.store.writeNote({ ...n, body: "new content" });
+      const request = { ...h.input, expectedCandidates: h.originals };
+      await expect(h.apply(request)).rejects.toThrow();
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
   test("AC-1: archive write failure becomes MEMORY_COMPACT_FAILED", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
@@ -218,6 +251,9 @@ describe("applyMemoryCompaction rollback", () => {
       const { error } = await failSecond(h, { ...h.store, writeNote });
       expectFailed(error, enqueueError);
       assertNaxError(error, "rollback failure");
+      await undoMemoryCompaction({ ...h.input, id: COMPACTION_ID });
+      expect((await h.store.listNotes("project")).map((n) => n.body)).toEqual(h.originals.map((n) => n.body));
+      expect((await h.outbox.list()).map((e) => e.kind)).toEqual(["save", "save", "save", "forget"]);
       expect(error.context?.rollback).toBe("incomplete");
     });
   });

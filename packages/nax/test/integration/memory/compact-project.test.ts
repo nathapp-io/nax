@@ -68,6 +68,30 @@ describe("compactProjectMemory dispatch", () => {
     expect(h.calls.dispatch[0]?.input).toMatchObject({ fillPercent: 50, targetPercent: 65 });
   });
 
+  test("keeps the committed result when the post-apply render fails", async () => {
+    const h = makeCompactProjectHarness();
+    const host = {
+      ...h.host,
+      renderIndex: async () => {
+        if (h.calls.apply.length) throw new Error("index unavailable");
+        return h.host.renderIndex();
+      },
+    };
+    expect(await compactProjectMemory({ ...h.input, host })).toMatchObject({
+      kind: "applied",
+      result: COMPACT_RESULT,
+      fillAfter: null,
+    });
+  });
+
+  test("retiring a shadow reveals the repository copy in the visible count", async () => {
+    const h = makeCompactProjectHarness({ dryRun: true });
+    const host = { ...h.host, repositorySlugs: async () => new Set(["alpha"]) };
+    expect(await compactProjectMemory({ ...h.input, host })).toMatchObject({
+      preview: { notesBefore: 3, notesAfter: 2 },
+    });
+  });
+
   // AC-19
   test("answers applied with the result and the fill the index shows after the apply", async () => {
     const h = makeCompactProjectHarness({ indexAfterApply: COMPACT_INDEX_AFTER });
@@ -82,6 +106,8 @@ describe("compactProjectMemory dispatch", () => {
     });
     // One render before the apply, one after: the second is where fillAfter comes from.
     expect(h.calls.renders).toBe(2);
-    expect(h.calls.apply).toEqual([{ plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 }]);
+    expect(h.calls.apply).toEqual([
+      { expectedCandidates: COMPACT_CANDIDATES, plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 },
+    ]);
   });
 });

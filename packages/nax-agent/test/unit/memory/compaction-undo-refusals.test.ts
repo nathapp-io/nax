@@ -16,7 +16,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryNote, MemoryOutboxEntry, NaxError } from "@nathapp/nax-agent";
 import {
@@ -219,6 +219,35 @@ async function withSyncInFlight<T>(h: Harness, work: () => Promise<T>): Promise<
   }
 }
 
+test("acknowledging identical content under a server id and timestamp allows undo", async () => {
+  await withTempDir(async (dir) => {
+    const h = await makeCompactionHarness(dir);
+    await h.apply();
+    await h.store.writeNote({ ...(await requiredNote(h, MERGED_SLUG)), id: "server-id", updatedAt: LATER_STAMP });
+    expect((await undo(h)).removed).toEqual([MERGED_SLUG]);
+  });
+});
+
+test("an incomplete archive is never restored, even with force", async () => {
+  await withTempDir(async (dir) => {
+    const h = await makeCompactionHarness(dir);
+    await h.apply();
+    await rm(join(h.store.paths.archiveDir, COMPACTION_ID, "notes", "source-a.md"));
+    const before = await diskState(h);
+    await expect(undo(h, { force: true })).rejects.toThrow();
+    expect(await diskState(h)).toEqual(before);
+  });
+});
+
+test("a torn earlier log record cannot hide a successful compaction", async () => {
+  await withTempDir(async (dir) => {
+    const h = await makeCompactionHarness(dir);
+    await writeFile(h.store.paths.compactionsLog, '{"unfinished":');
+    await h.apply();
+    expect((await undo(h)).id).toBe(COMPACTION_ID);
+  });
+});
+
 describe("undoMemoryCompaction: force", () => {
   test("AC-5: with force it undoes a compaction whose merged note changed", async () => {
     await withTempDir(async (dir) => {
@@ -248,7 +277,7 @@ describe("undoMemoryCompaction: a note changed since the compaction", () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
       await h.apply();
-      expect((await compactionManifest(h)).created).toEqual([{ slug: MERGED_SLUG, updatedAt: COMPACTION_STAMP }]);
+      expect((await compactionManifest(h)).created).toMatchObject([{ slug: MERGED_SLUG, updatedAt: COMPACTION_STAMP }]);
       await changeMergedNote(h);
 
       const refusal = await refusalOf(undo(h));
@@ -377,27 +406,18 @@ describe("undoMemoryCompaction: a note the check cannot read", () => {
         updatedAt: LATER_STAMP,
       });
       const path = join(h.store.paths.notesDir, "retired.md");
-      await chmod(path, 0o000);
-
-      // The premise the failing check rests on: the listing skips the note, and asking for the
-      // slug directly is the only answer that refuses. (A process that can read the file anyway —
-      // root ignores the mode — cannot pose this case, and the assertions below would say so.)
-      expect((await h.store.listNotes("project")).map((note) => note.slug)).not.toContain("retired");
-      const direct = await h.store.readNote("project", "retired").then(
-        () => null,
-        (error: unknown) => error,
-      );
-      expect(direct).toBeInstanceOf(Error);
       const before = await diskState(h);
-
-      const refused = await refusalOf(undo(h));
-
-      // The read error itself is the refusal: not `MEMORY_COMPACT_CHANGED`, which `force`
-      // overrides — `force` over a note nobody could read is exactly the overwrite this is about.
-      expect(refused.code).toBe("EACCES");
+      const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+      const store: Harness["store"] = {
+        ...h.store,
+        readNote: async (scope, slug) => {
+          if (slug === "retired") throw denied;
+          return h.store.readNote(scope, slug);
+        },
+      };
+      await expect(undo(h, { store })).rejects.toBe(denied);
       // Nothing was restored, removed, queued or marked: the undo stopped where the read failed.
       expect(await diskState(h)).toEqual(before);
-      await chmod(path, 0o600);
       expect(await readFile(path, "utf8")).toContain("written after the compaction");
     });
   });

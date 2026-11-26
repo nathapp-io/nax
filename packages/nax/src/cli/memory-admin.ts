@@ -382,7 +382,12 @@ async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<vo
  */
 async function clearProjectMirror(projectDir: string): Promise<void> {
   for (const entry of await _memoryAdminDeps.listDir(projectDir)) {
-    if (entry === KODA_APPROVALS_FILE) continue;
+    if (
+      [KODA_APPROVALS_FILE, "archive", "compactions.jsonl", "origin.json", "compaction.lock", "sync.lock"].includes(
+        entry,
+      )
+    )
+      continue;
     await _memoryAdminDeps.removePath(join(projectDir, entry));
   }
 }

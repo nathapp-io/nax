@@ -411,7 +411,7 @@ describe("applyMemoryCompaction: the manifest and the log", () => {
       const first = await requiredNote(h.store, MERGED_SLUG);
       const second = await requiredNote(h.store, SECOND_MERGED_SLUG);
       const manifest = await readManifest(h.store, FIXED_ID);
-      expect(manifest.created).toEqual([
+      expect(manifest.created).toMatchObject([
         { slug: MERGED_SLUG, updatedAt: first.updatedAt },
         { slug: SECOND_MERGED_SLUG, updatedAt: second.updatedAt },
       ]);

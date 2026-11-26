@@ -182,7 +182,9 @@ describe("compactProjectMemory", () => {
       result: COMPACT_RESULT,
       fillAfter: 0.5,
     });
-    expect(h.calls.apply).toEqual([{ plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 }]);
+    expect(h.calls.apply).toEqual([
+      { expectedCandidates: COMPACT_CANDIDATES, plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 },
+    ]);
   });
 
   // AC-17
@@ -195,7 +197,9 @@ describe("compactProjectMemory", () => {
 
     await compactProjectMemory(h.input);
 
-    expect(h.calls.apply).toEqual([{ plan: COMPACT_PLAN, model: "native/openai/gpt-5", fillBefore: 0.5 }]);
+    expect(h.calls.apply).toEqual([
+      { expectedCandidates: COMPACT_CANDIDATES, plan: COMPACT_PLAN, model: "native/openai/gpt-5", fillBefore: 0.5 },
+    ]);
   });
 
   // AC-18
@@ -206,7 +210,9 @@ describe("compactProjectMemory", () => {
 
     await compactProjectMemory(h.input);
 
-    expect(h.calls.apply).toEqual([{ plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 }]);
+    expect(h.calls.apply).toEqual([
+      { expectedCandidates: COMPACT_CANDIDATES, plan: COMPACT_PLAN, model: "balanced", fillBefore: 0.5 },
+    ]);
   });
 
   // The default seam: the runtime comes from the config this call was handed, not from the disk.

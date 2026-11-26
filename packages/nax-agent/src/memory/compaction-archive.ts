@@ -23,7 +23,7 @@
  * file outlives the run that wrote it and is read by a later process (`nax memory undo`), so
  * it changes only when the on-disk format does.
  */
-import type { Dirent } from "node:fs";
+import { createHash } from "node:crypto";
 import { appendFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -32,15 +32,27 @@ import { errorMessage } from "#src/infra/errors";
 import { writeFileAtomic } from "#src/internal/atomic-write";
 import { realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
+import { archiveDirectoryIdentities, archiveText, inArchive, invalidArchive, pinned } from "./compaction-directory.ts";
 import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
 import { type MirrorLockInput, withMirrorLocks } from "./mirror-lock.ts";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
-import { NOTES_DIR } from "./store-paths.ts";
+
 import { MEMORY_SLUG_RE, type MemoryNote } from "./types.ts";
 
 /** Filesystem seams for log recovery and archive pruning. */
-export const _compactionArchiveDeps = { appendFile, readFile, rm };
+interface ArchiveEntry {
+  name: string;
+  file: boolean;
+  directory: boolean;
+}
+export const _compactionArchiveDeps = {
+  appendFile,
+  readFile,
+  rm: async (path: string, options: { recursive?: boolean; force: true }) =>
+    options.recursive ? pinned<void>(path, "removeTree") : rm(path, options),
+  entries: (dir: string) => pinned<ArchiveEntry[]>(dir, "entries"),
+};
 
 /** The file each archive directory keeps its manifest in. */
 export const MANIFEST_FILE = "manifest.json";
@@ -57,8 +69,15 @@ export interface MemoryCompactionManifestMerge {
   readonly into: string;
 }
 
-/** One note a compaction wrote, with the `updatedAt` it was written with. */
+/** Provider acknowledgement may replace the id and timestamp but not the saved content. */
+export function contentIdentity(note: MemoryNote): string {
+  return createHash("sha256")
+    .update(serializeMemoryNote({ ...note, id: "", updatedAt: "" }))
+    .digest("hex");
+}
+
 export interface MemoryCompactionManifestNote {
+  readonly contentHash?: string;
   readonly slug: string;
   readonly updatedAt: string;
 }
@@ -112,7 +131,9 @@ const ManifestSchema = z.object({
   model: z.string().min(1),
   retired: z.array(z.string().min(1)),
   merged: z.array(z.object({ from: z.array(z.string().min(1)).min(1), into: z.string().min(1) })),
-  created: z.array(z.object({ slug: z.string().min(1), updatedAt: z.string().min(1) })).optional(),
+  created: z
+    .array(z.object({ slug: z.string().min(1), updatedAt: z.string().min(1), contentHash: z.string().optional() }))
+    .optional(),
   notesBefore: z.number().int().nonnegative(),
   notesAfter: z.number().int().nonnegative().optional(),
   fillBefore: z.number(),
@@ -160,11 +181,12 @@ export async function writeCompactionArchive(input: {
   readonly id: string;
   readonly notes: readonly MemoryNote[];
 }): Promise<void> {
-  const notesDir = join(compactionArchiveDir(input.store, input.id), NOTES_DIR);
-  await _memoryStoreDeps.mkdir(notesDir, { recursive: true });
-  for (const note of input.notes) {
-    await writeFileAtomic(join(notesDir, `${note.slug}.md`), serializeMemoryNote(note));
-  }
+  await inArchive({ ...input, create: true, exclusive: true, notes: true }, async (notesDir) => {
+    for (const note of input.notes) {
+      if (!MEMORY_SLUG_RE.test(note.slug)) throw invalidArchive(input.id);
+      await writeFileAtomic(join(notesDir, `${note.slug}.md`), serializeMemoryNote(note));
+    }
+  });
 }
 
 /** A path that is not there: an archive with no notes, rather than a failure to report. */
@@ -174,8 +196,8 @@ function isMissing(error: unknown): boolean {
 }
 
 /** The slug one archived file holds, or `null` when it is not a regular file named after a note. */
-function archivedSlugIn(entry: Dirent): string | null {
-  if (!entry.isFile()) return null;
+function archivedSlugIn(entry: ArchiveEntry): string | null {
+  if (!entry.file) return null;
   const suffix = ".md";
   if (!entry.name.endsWith(suffix)) return null;
   const slug = entry.name.slice(0, -suffix.length);
@@ -193,24 +215,34 @@ function archivedSlugIn(entry: Dirent): string | null {
 export async function readCompactionArchiveNotes(input: {
   readonly store: MemoryStore;
   readonly id: string;
+  readonly expected: ReadonlySet<string>;
 }): Promise<readonly MemoryNote[]> {
-  const notesDir = join(compactionArchiveDir(input.store, input.id), NOTES_DIR);
-  let entries: Dirent[];
-  try {
-    entries = await _memoryStoreDeps.readdir(notesDir, { withFileTypes: true });
-  } catch (error) {
-    if (isMissing(error)) return [];
-    throw error;
-  }
-  const slugs = entries
-    .map((entry) => archivedSlugIn(entry))
-    .filter((slug): slug is string => slug !== null)
-    .sort(byCodePoint);
-  const notes: MemoryNote[] = [];
-  for (const slug of slugs) {
-    notes.push(parseMemoryNote(await _compactionArchiveDeps.readFile(join(notesDir, `${slug}.md`), "utf8")));
-  }
-  return notes;
+  return inArchive({ ...input, notes: true }, async (notesDir) => {
+    const entries = await _compactionArchiveDeps.entries(notesDir);
+    const slugs = entries
+      .map((entry) => archivedSlugIn(entry))
+      .filter((slug): slug is string => slug !== null)
+      .sort(byCodePoint);
+    if (
+      entries.length !== slugs.length ||
+      slugs.length !== input.expected.size ||
+      slugs.some((s) => !input.expected.has(s))
+    )
+      throw invalidArchive(input.id);
+    const notes: MemoryNote[] = [];
+    for (const slug of slugs) {
+      const note = parseMemoryNote(await archiveText(join(notesDir, `${slug}.md`)));
+      if (
+        note.slug !== slug ||
+        note.scope !== "project" ||
+        note.status !== "active" ||
+        (note.type !== "project" && note.type !== "reference")
+      )
+        throw invalidArchive(input.id);
+      notes.push(note);
+    }
+    return notes;
+  });
 }
 
 /** Publish one compaction's manifest, replacing whatever the previous step wrote there. */
@@ -218,10 +250,11 @@ export async function writeCompactionManifest(input: {
   readonly store: MemoryStore;
   readonly manifest: MemoryCompactionManifest;
 }): Promise<void> {
-  await _memoryStoreDeps.mkdir(compactionArchiveDir(input.store, input.manifest.id), { recursive: true });
-  await writeFileAtomic(
-    compactionManifestPath(input.store, input.manifest.id),
-    `${JSON.stringify(input.manifest, null, 2)}\n`,
+  await inArchive({ store: input.store, id: input.manifest.id, create: true }, () =>
+    writeFileAtomic(
+      compactionManifestPath(input.store, input.manifest.id),
+      `${JSON.stringify(input.manifest, null, 2)}\n`,
+    ),
   );
 }
 
@@ -239,7 +272,7 @@ export async function readCompactionManifest(input: {
 }): Promise<MemoryCompactionManifest | null> {
   let text: string;
   try {
-    text = await _compactionArchiveDeps.readFile(compactionManifestPath(input.store, input.id), "utf8");
+    text = await inArchive(input, (dir) => archiveText(join(dir, MANIFEST_FILE)));
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;
@@ -274,9 +307,16 @@ function parseLogLine(line: string): MemoryCompactionLogLine | null {
 export async function appendCompactionLog(input: {
   readonly store: MemoryStore;
   readonly line: MemoryCompactionLogLine;
+  readonly before?: Uint8Array | null;
 }): Promise<void> {
   await _memoryStoreDeps.mkdir(input.store.paths.projectDir, { recursive: true });
-  await _compactionArchiveDeps.appendFile(input.store.paths.compactionsLog, `${JSON.stringify(input.line)}\n`, "utf8");
+  const before = input.before === undefined ? await readCompactionLog(input.store) : input.before;
+  const separator = before?.length && before.at(-1) !== 10 ? "\n" : "";
+  await _compactionArchiveDeps.appendFile(
+    input.store.paths.compactionsLog,
+    `${separator}${JSON.stringify(input.line)}\n`,
+    "utf8",
+  );
 }
 
 /** Snapshot only immediately before append, under the writer lock. */
@@ -352,7 +392,8 @@ export async function markCompactionLogUndone(input: {
 async function isAppliedArchive(store: MemoryStore, id: string): Promise<boolean> {
   try {
     // A shape this module would not act on is an archive whose state cannot be established.
-    return (await readCompactionManifest({ store, id }))?.status === "applied";
+    const manifest = await readCompactionManifest({ store, id });
+    return manifest?.id === id && manifest.status === "applied";
   } catch {
     // Retain archives whose state cannot be established, including a concurrent disappearance.
     return false;
@@ -377,7 +418,9 @@ function warnRetention(logger: AgentLogger, path: string, error: unknown): void 
  */
 export function withCompactionRetentionLock<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
   const dir = realOrRaw(input.store.paths.projectDir);
-  return withMirrorLocks(input, [{ dir, path: join(dir, "compaction.lock") }], work);
+  return withMirrorLocks(input, [{ dir, path: join(dir, "compaction.lock") }], () =>
+    archiveDirectoryIdentities.run(new Map(), work),
+  );
 }
 
 /**
@@ -393,27 +436,29 @@ export async function pruneCompactionArchives(input: {
 }): Promise<void> {
   const { store, logger } = input;
   try {
-    const applied: string[] = [];
-    const entries = await _memoryStoreDeps.readdir(store.paths.archiveDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (
-        entry.isDirectory() &&
-        MEMORY_COMPACTION_ID_RE.test(entry.name) &&
-        (await isAppliedArchive(store, entry.name))
-      ) {
-        if (entry.name !== input.id) applied.push(entry.name);
+    await inArchive({ store }, async (root) => {
+      const applied: string[] = [];
+      const entries = await _compactionArchiveDeps.entries(root);
+      for (const entry of entries) {
+        if (
+          entry.directory &&
+          MEMORY_COMPACTION_ID_RE.test(entry.name) &&
+          (await isAppliedArchive(store, entry.name))
+        ) {
+          if (entry.name !== input.id) applied.push(entry.name);
+        }
       }
-    }
-    applied.sort((left, right) => byCodePoint(right, left));
-    const otherSlots = Math.max(0, Math.floor(input.keepArchives) - 1);
-    for (const id of applied.slice(otherSlots)) {
-      const path = compactionArchiveDir(store, id);
-      try {
-        await _compactionArchiveDeps.rm(path, { recursive: true, force: true });
-      } catch (error) {
-        warnRetention(logger, path, error);
+      applied.sort((left, right) => byCodePoint(right, left));
+      const otherSlots = Math.max(0, Math.floor(input.keepArchives) - 1);
+      for (const id of applied.slice(otherSlots)) {
+        const path = compactionArchiveDir(store, id);
+        try {
+          await _compactionArchiveDeps.rm(path, { recursive: true, force: true });
+        } catch (error) {
+          warnRetention(logger, path, error);
+        }
       }
-    }
+    });
   } catch (error) {
     warnRetention(logger, store.paths.archiveDir, error);
   }

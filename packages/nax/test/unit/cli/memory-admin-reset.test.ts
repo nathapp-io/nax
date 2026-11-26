@@ -17,8 +17,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { MemorySyncResult } from "@nathapp/nax-agent";
-import { assertDefined, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
+import { createMemoryOutbox, createMemoryStore, type MemorySyncResult } from "@nathapp/nax-agent";
+import { applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
+import { assertDefined, compactNote, makeLogger, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _memoryAdminDeps,
@@ -100,6 +101,8 @@ interface ResetFixture {
 function mirrorEntries(): Map<string, string> {
   const files = new Map<string, string>();
   files.set(APPROVALS_PATH, APPROVALS_BYTES);
+  files.set(join(PROJECT_DIR, "archive", "id", "manifest.json"), "recovery");
+  files.set(join(PROJECT_DIR, "compactions.jsonl"), "history");
   files.set(NOTE_PATH, "the body of staging-db\n");
   files.set(OUTBOX_PATH, "");
   files.set(CURSOR_PATH, '{"lastPullAt":null}\n');
@@ -285,13 +288,41 @@ describe("nax memory reset — what it refuses", () => {
 // ─── the mirror it rebuilds ─────────────────────────────────────────────────
 
 describe("nax memory reset — the mirror it rebuilds", () => {
-  test("AC-4: every entry of the project mirror is removed except the approvals", async () => {
+  test("AC-4: reset clears the cache but retains approvals and undo history", async () => {
     const h = makeResetHarness();
 
     expect(await runReset(h)).toBe(0);
     expect(h.removed).toEqual([join(PROJECT_DIR, "notes"), OUTBOX_PATH, CURSOR_PATH]);
     expect(h.removed.every((path) => path.startsWith(`${PROJECT_DIR}/`))).toBe(true);
-    expect(namesUnder(h.files, PROJECT_DIR)).toEqual(["koda-approvals.json"]);
+    expect(namesUnder(h.files, PROJECT_DIR)).toEqual(["koda-approvals.json", "archive", "compactions.jsonl"]);
+  });
+
+  test("undo can restore a retired note after resetting the rebuildable cache", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "project"), userDir: join(root, "user") };
+      const logger = makeLogger();
+      const store = createMemoryStore({ ...dirs, logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir });
+      const original = compactNote("retired");
+      await store.writeNote(original);
+      const result = await applyMemoryCompaction({
+        store,
+        outbox,
+        logger,
+        provider: "koda",
+        model: "balanced",
+        keepArchives: 1,
+        fillBefore: 0.8,
+        plan: { merge: [], retire: [{ slug: original.slug, reason: "obsolete" }] },
+      });
+      for (const entry of await outbox.list()) await outbox.remove(entry.clientId);
+      expect(await runReset(makeResetHarness({ fs: realAdminDeps, dirs }))).toBe(0);
+      expect(await undoMemoryCompaction({ store, outbox, logger })).toMatchObject({
+        id: result.id,
+        restored: [original.slug],
+      });
+      expect(await store.readNote("project", original.slug)).toMatchObject({ body: original.body });
+    });
   });
 
   test("AC-5: the approvals file keeps its exact bytes", async () => {

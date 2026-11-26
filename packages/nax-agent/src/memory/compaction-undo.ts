@@ -43,6 +43,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { NaxError } from "#src/infra/nax-error";
 import {
+  contentIdentity,
   type MemoryCompactionLogLine,
   type MemoryCompactionManifest,
   type MemoryCompactionManifestStatus,
@@ -278,7 +279,11 @@ async function changedSlugs(
   const changed: string[] = [];
   for (const written of created) {
     const note = held.get(written.slug) ?? null;
-    if (note !== null && note.updatedAt !== written.updatedAt) changed.push(written.slug);
+    if (
+      note !== null &&
+      (written.contentHash ? contentIdentity(note) !== written.contentHash : note.updatedAt !== written.updatedAt)
+    )
+      changed.push(written.slug);
   }
   for (const original of originals) {
     if (createdSlugs.has(original.slug)) continue;
@@ -420,7 +425,11 @@ async function removeMergedNotes(
  * mirror that is already final.
  */
 async function undoLocked(input: MemoryUndoInput, target: UndoTarget): Promise<MemoryUndoResult> {
-  const originals = await readCompactionArchiveNotes({ store: input.store, id: target.id });
+  const originals = await readCompactionArchiveNotes({
+    store: input.store,
+    id: target.id,
+    expected: new Set([...target.manifest.retired, ...target.manifest.merged.flatMap((m) => m.from)]),
+  });
   if (checksForChanges(input, target)) await refuseIfChanged(input, target, originals);
   const restored: string[] = [];
   for (const original of originals) {

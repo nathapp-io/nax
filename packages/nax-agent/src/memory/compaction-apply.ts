@@ -24,10 +24,13 @@
  * `rolled_back` manifest. Successful applies prune old applied archives outside the lock.
  */
 import { randomBytes, randomUUID } from "node:crypto";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { NaxError } from "#src/infra/nax-error";
 import {
   appendCompactionLog,
+  contentIdentity,
   type MemoryCompactionLogLine,
   type MemoryCompactionManifest,
   type MemoryCompactionManifestMerge,
@@ -47,6 +50,7 @@ import {
   type MemoryCompactionResult,
 } from "./compaction-types.ts";
 import { clockOf, mirrorBusy, mirrorSyncInFlight, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
+import { serializeMemoryNote } from "./note.ts";
 import { refreshIndex } from "./operations-support.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryStore } from "./store.ts";
@@ -68,6 +72,7 @@ export interface MemoryCompactionApplyInput {
   readonly outbox: MemoryOutbox;
   readonly logger: AgentLogger;
   readonly plan: MemoryCompactionPlan;
+  readonly expectedCandidates?: readonly MemoryNote[];
   /** Slugs a merge target may not take beyond the mirror's own (the nax host passes repository note slugs). */
   readonly reservedSlugs?: ReadonlySet<string>;
   readonly keepArchives: number;
@@ -119,7 +124,39 @@ async function validatedMirror(input: MemoryCompactionApplyInput): Promise<Mirro
     existingSlugsOf(projectNotes, input.reservedSlugs ?? new Set<string>()),
   );
   if (!check.ok) throw planInvalid(check.reasons);
+  const mirror = new Map(candidates.map((n) => [n.slug, n]));
+  const expected = input.expectedCandidates && new Map(input.expectedCandidates.map((n) => [n.slug, n]));
+  for (const slug of archivedSlugs(input.plan)) {
+    const physical = await input.store.readNote("project", slug);
+    const candidate = mirror.get(slug);
+    const original = expected ? expected.get(slug) : candidate;
+    if (
+      !physical ||
+      physical.slug !== slug ||
+      physical.scope !== "project" ||
+      !candidate ||
+      !original ||
+      serializeMemoryNote(physical) !== serializeMemoryNote(candidate) ||
+      serializeMemoryNote(physical) !== serializeMemoryNote(original)
+    )
+      throw planInvalid([`source ${slug} changed since planning`]);
+  }
+  for (const merge of input.plan.merge) {
+    if (!merge.from.includes(merge.into.slug) && (await targetExists(input.store, merge.into.slug)))
+      throw planInvalid([`merge target ${merge.into.slug} is occupied`]);
+  }
   return { candidates, projectNotes };
+}
+
+/** A vacant key has no directory entry, not merely no decodable note. */
+async function targetExists(store: MemoryStore, slug: string): Promise<boolean> {
+  try {
+    await lstat(join(store.paths.notesDir, `${slug}.md`));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 /** The locked half of an apply: revalidate, archive, stage, and record what it did. */
@@ -163,13 +200,21 @@ interface MirrorView {
 async function archiveBefore(input: MemoryCompactionApplyInput, view: MirrorView): Promise<Applying> {
   const createdAt = clockOf(input)();
   const touched = archivedSlugs(input.plan);
-  const applying: Applying = {
+  let applying: Applying = {
     id: input.newId?.() ?? mintCompactionId(createdAt),
     createdAt: createdAt.toISOString(),
     notesBefore: view.projectNotes.length,
     originals: view.candidates.filter((note) => touched.has(note.slug)),
   };
-  await writeCompactionArchive({ store: input.store, id: applying.id, notes: applying.originals });
+  for (;;) {
+    try {
+      await writeCompactionArchive({ store: input.store, id: applying.id, notes: applying.originals });
+      break;
+    } catch (error) {
+      if (input.newId || !(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      applying = { ...applying, id: mintCompactionId(createdAt) };
+    }
+  }
   await writeCompactionManifest({ store: input.store, manifest: applyingManifest(input, applying) });
   return applying;
 }
@@ -230,7 +275,11 @@ async function stageAndRecord(input: StagingInput, applying: Applying): Promise<
     manifest: appliedManifest(input, applying, { created, notesAfter }),
   });
   input.staging.logBefore = await readCompactionLog(input.store);
-  await appendCompactionLog({ store: input.store, line: logLineOf(input, applying, notesAfter) });
+  await appendCompactionLog({
+    store: input.store,
+    before: input.staging.logBefore,
+    line: logLineOf(input, applying, notesAfter),
+  });
   return resultOf(input.plan, applying, notesAfter);
 }
 
@@ -307,7 +356,7 @@ async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Pr
     writeMode: "direct",
     note,
   });
-  return { slug: note.slug, updatedAt: note.updatedAt };
+  return { slug: note.slug, updatedAt: note.updatedAt, contentHash: contentIdentity(note) };
 }
 
 /**

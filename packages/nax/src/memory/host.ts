@@ -589,6 +589,7 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     approve: writes.approve,
     requeue: writes.requeue,
     discard: writes.discard,
+    repositorySlugs: compaction.repositorySlugs,
     compactionCandidates: compaction.compactionCandidates,
     applyCompaction: compaction.applyCompaction,
     undoCompaction: compaction.undoCompaction,

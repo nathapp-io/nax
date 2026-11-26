@@ -75,7 +75,7 @@ export type MemoryCompactOutcome =
       readonly kind: "applied";
       readonly preview: MemoryCompactPreview;
       readonly result: MemoryCompactionResult;
-      readonly fillAfter: number;
+      readonly fillAfter: number | null;
     }
   | { readonly kind: "declined"; readonly preview: MemoryCompactPreview }
   | { readonly kind: "dry-run"; readonly preview: MemoryCompactPreview }
@@ -142,9 +142,13 @@ function modelString(model: ConfiguredModel): string {
  * source list and then the merge once is right. Excluding that target because the
  * slug already exists would drop the note that replaced it.
  */
-function notesAfterOf(plan: MemoryCompactionPlan, notesBefore: number): number {
+function notesAfterOf(plan: MemoryCompactionPlan, notesBefore: number, repository: ReadonlySet<string>): number {
+  const unshadowed = [
+    ...plan.retire.map((r) => r.slug),
+    ...plan.merge.flatMap((m) => m.from.filter((s) => s !== m.into.slug)),
+  ].filter((s) => repository.has(s)).length;
   const mergedAway = plan.merge.reduce((total, merge) => total + merge.from.length, 0);
-  return notesBefore - plan.retire.length - mergedAway + plan.merge.length;
+  return notesBefore + unshadowed - plan.retire.length - mergedAway + plan.merge.length;
 }
 
 /** The index as a whole percent, which is the unit the prompt is written in. */
@@ -254,16 +258,22 @@ export async function compactProjectMemory(input: CompactProjectMemoryInput): Pr
     plan: planned.plan,
     fillBefore: reads.fillBefore,
     notesBefore: reads.projectNotes.length,
-    notesAfter: notesAfterOf(planned.plan, reads.projectNotes.length),
+    notesAfter: notesAfterOf(planned.plan, reads.projectNotes.length, (await host.repositorySlugs?.()) ?? new Set()),
   };
   if (input.dryRun) return { kind: "dry-run", preview };
   if (!(await input.confirm(preview))) return { kind: "declined", preview };
 
   const result = await host.applyCompaction({
     plan: planned.plan,
+    expectedCandidates: reads.candidates,
     model: modelString(memory.compact.model),
     fillBefore: reads.fillBefore,
   });
-  const fillAfter = memoryIndexFill(await host.renderIndex(), memory.indexBytes);
+  let fillAfter: number | null = null;
+  try {
+    fillAfter = memoryIndexFill(await host.renderIndex(), memory.indexBytes);
+  } catch {
+    // The apply has committed; an unavailable measurement cannot invalidate the undo id.
+  }
   return { kind: "applied", preview, result, fillAfter };
 }

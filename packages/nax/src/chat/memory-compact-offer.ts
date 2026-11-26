@@ -100,7 +100,7 @@ function percent(fill: number): number {
 /** The one line an applied compaction reports: what it changed, the fill it left, the undo. */
 function appliedSummary(outcome: Extract<MemoryCompactOutcome, { kind: "applied" }>): string {
   const mergedNotes = outcome.result.merged.reduce((total, merge) => total + merge.from.length, 0);
-  const counts = `(${percent(outcome.preview.fillBefore)}% -> ${percent(outcome.fillAfter)}%)`;
+  const counts = `(${percent(outcome.preview.fillBefore)}% -> ${outcome.fillAfter === null ? "unavailable" : `${percent(outcome.fillAfter)}%`})`;
   return (
     `Compacted memory: retired ${outcome.result.retired.length}, ` +
     `merged ${mergedNotes} into ${outcome.result.merged.length} ${counts}. ` +

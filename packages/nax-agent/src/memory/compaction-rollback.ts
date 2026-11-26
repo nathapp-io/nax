@@ -57,10 +57,13 @@ export async function rollbackCompaction(input: {
   for (const clientId of input.staging.enqueuedIds) await attempt(() => input.outbox.remove(clientId));
   const logBefore = input.staging.logBefore;
   if (logBefore !== undefined) await attempt(() => restoreCompactionLog(input.store, logBefore));
-  await attempt(() =>
-    writeCompactionManifest({ store: input.store, manifest: { ...input.manifest, status: "rolled_back" } }),
-  );
   await attempt(() => refreshIndex(input));
+  await attempt(() =>
+    writeCompactionManifest({
+      store: input.store,
+      manifest: { ...input.manifest, status: failures.length === 0 ? "rolled_back" : "applying" },
+    }),
+  );
   if (failures.length === 0) return true;
   try {
     input.logger.error("memory", "memory compaction rollback incomplete", {

@@ -45,6 +45,7 @@ const UNSUPPORTED_MESSAGE = 'memory compaction is not available with memory.writ
 
 /** One compaction to apply on this host: the plan a person confirmed, the model, and the fill before it. */
 export interface MemoryApplyCompactionInput {
+  readonly expectedCandidates?: readonly MemoryNote[];
   readonly plan: MemoryCompactionPlan;
   readonly model: string;
   readonly fillBefore: number;
@@ -59,6 +60,7 @@ export interface MemoryUndoCompactionInput {
 /** The compaction surface a host exposes. */
 export interface HostCompaction {
   /** The notes a plan may act on, in slug order. */
+  repositorySlugs(): Promise<ReadonlySet<string>>;
   compactionCandidates(): Promise<readonly MemoryNote[]>;
   applyCompaction(input: MemoryApplyCompactionInput): Promise<MemoryCompactionResult>;
   undoCompaction(input: MemoryUndoCompactionInput): Promise<MemoryUndoResult>;
@@ -119,6 +121,7 @@ async function apply(input: HostCompactionInput, request: MemoryApplyCompactionI
     outbox: input.outbox,
     logger: input.logger,
     plan: request.plan,
+    expectedCandidates: request.expectedCandidates,
     reservedSlugs: await reservedSlugs(input),
     keepArchives: input.config.compact.keepArchives,
     provider: input.providerId,
@@ -156,6 +159,7 @@ async function undo(input: HostCompactionInput, request: MemoryUndoCompactionInp
  */
 export function createHostCompaction(input: HostCompactionInput): HostCompaction {
   return {
+    repositorySlugs: () => reservedSlugs(input),
     compactionCandidates: () => memoryCompactionCandidates({ store: input.store, outbox: input.outbox }),
     applyCompaction: (request) => apply(input, request),
     undoCompaction: (request) => undo(input, request),

@@ -136,12 +136,12 @@ function appliedLines(
   threshold: number,
 ): readonly string[] {
   const mergedNotes = outcome.result.merged.reduce((total, merge) => total + merge.from.length, 0);
-  const counts = `(${percent(outcome.preview.fillBefore)}% -> ${percent(outcome.fillAfter)}%)`;
+  const counts = `(${percent(outcome.preview.fillBefore)}% -> ${outcome.fillAfter === null ? "unavailable" : `${percent(outcome.fillAfter)}%`})`;
   const line =
     `Compacted memory: retired ${outcome.result.retired.length}, ` +
     `merged ${mergedNotes} into ${outcome.result.merged.length} ${counts}. ` +
     `Undo: nax memory undo ${outcome.result.id}`;
-  return outcome.fillAfter >= threshold ? [line, stillAtLine(outcome.fillAfter)] : [line];
+  return outcome.fillAfter !== null && outcome.fillAfter >= threshold ? [line, stillAtLine(outcome.fillAfter)] : [line];
 }
 
 /** What one invocation is: its flags, its seam, and the two facts its lines are written from. */

@@ -24,6 +24,7 @@ import {
   type MemorySyncResult,
   syncMemory,
 } from "@nathapp/nax-agent";
+import { applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { createKodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
@@ -166,6 +167,45 @@ describe("syncMemory over the koda provider", () => {
   afterEach(() => {
     _kodaClientDeps.fetch = originalFetch;
     cleanupTempDir(dir);
+  });
+
+  test("an acknowledged merge can be undone after pulling its server timestamp", async () => {
+    let saved: unknown[] = [];
+    const serverTime = "2026-12-01T10:00:00.000Z";
+    stubFetch((call) => {
+      if (call.init.method === "POST") {
+        saved = [
+          { ...JSON.parse(String(call.init.body)), id: "server-merge", updatedAt: serverTime, status: "active" },
+        ];
+        return jsonAnswer({ ret: 0, data: { id: "server-merge" } }, 201);
+      }
+      if (call.url.includes("/memory/export"))
+        return jsonAnswer({ ret: 0, data: { items: saved, nextCursor: null, hasMore: false } });
+      if (call.url.includes("/memory?")) return jsonAnswer({ ret: 0, data: { records: [], hasNext: false } });
+      if (call.url.endsWith("/write-mode")) return jsonAnswer({ ret: 0, data: { mode: "direct" } });
+      return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
+    });
+    await koda.store.writeNote(noteFor(FIRST_SLUG));
+    await koda.store.writeNote(noteFor(SECOND_SLUG));
+    await applyMemoryCompaction({
+      ...koda,
+      provider: "koda",
+      model: "balanced",
+      fillBefore: 0.9,
+      keepArchives: 2,
+      plan: {
+        retire: [],
+        merge: [
+          {
+            from: [FIRST_SLUG, SECOND_SLUG],
+            into: { slug: "merged", description: "combined", body: "merged body", type: "project" },
+          },
+        ],
+      },
+    });
+    expect(await koda.sync()).toMatchObject({ outcome: "synced" });
+    expect(await koda.store.readNote("project", "merged")).toMatchObject({ updatedAt: serverTime });
+    expect((await undoMemoryCompaction(koda)).removed).toEqual(["merged"]);
   });
 
   test.each([400, 403, 409, 413, 422])(

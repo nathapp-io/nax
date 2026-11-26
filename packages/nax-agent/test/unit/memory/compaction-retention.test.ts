@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createMemoryStore } from "@nathapp/nax-agent";
 import {
@@ -55,6 +55,16 @@ async function earlier(h: Harness) {
 }
 
 describe("applyMemoryCompaction archive retention and ordering", () => {
+  test("a linked archive root is not a writable archive", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const other = join(dir, "other");
+      await mkdir(other);
+      await symlink(other, h.store.paths.archiveDir);
+      await expect(h.apply()).rejects.toThrow();
+      expect(await readdir(other)).toEqual([]);
+    });
+  });
   test("AC-13: keepArchives 2 retains exactly the two newest applied archives", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
@@ -82,7 +92,7 @@ describe("applyMemoryCompaction archive retention and ordering", () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
       await earlier(h);
-      await seed(h, "zz-not-a-compaction");
+      await mkdir(join(h.store.paths.archiveDir, "zz-not-a-compaction"));
       await h.apply();
       expect(await names(h)).toEqual([EARLIER[2], COMPACTION_ID, "zz-not-a-compaction"]);
     });
@@ -160,12 +170,12 @@ describe("applyMemoryCompaction archive retention and ordering", () => {
       const pruning = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       let scans = 0;
-      _memoryStoreDeps.readdir = async (path, options) => {
+      _compactionArchiveDeps.entries = async (path) => {
         if (path === h.store.paths.archiveDir && ++scans === 1) {
           pruning.resolve();
           await release.promise;
         }
-        return storeDeps.readdir(path, options);
+        return archive.entries(path);
       };
       const first = h.apply({
         keepArchives: 1,
