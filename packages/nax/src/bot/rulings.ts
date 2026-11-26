@@ -38,7 +38,7 @@ import {
   type CallerRulingsReport,
   planCallerRulings,
 } from "./caller-rulings";
-import { isConfirmingRuling, latestFindingRuling } from "./finding-rulings";
+import { isConfirmingRuling, latestFindingRuling, newestOwnChainIndex } from "./finding-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -418,6 +418,8 @@ async function settledFindingKeys(
 ): Promise<string[]> {
   const settled: string[] = [];
   for (const { key, thread, ruling } of await ownFindingThreads(threads, login, canRule)) {
+    // A hold posted after the newest ruling (or after a fix resolved the thread) keeps the finding open.
+    if (newestOwnChainIndex(login, thread, "held") > (ruling?.index ?? -1)) continue;
     if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
   }
   return settled;
@@ -476,5 +478,24 @@ export async function readConfirmedKeys(input: SettlementReadInput): Promise<Rea
   const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
   return new Set(
     found.filter(({ ruling }) => ruling !== null && isConfirmingRuling(ruling.keyword)).map(({ key }) => key),
+  );
+}
+
+/**
+ * Finding keys an authorized writer explicitly settled (waive, override, fixed) after the bot's newest
+ * chain ruling on the thread. A bare thread resolution, or the advisor's own ruling, never counts.
+ */
+export async function readWriterSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
+  return new Set(
+    found
+      .filter(
+        ({ ruling, thread }) =>
+          ruling !== null &&
+          ruling.reply.author !== input.login &&
+          !isConfirmingRuling(ruling.keyword) &&
+          ruling.index > newestOwnChainIndex(input.login, thread),
+      )
+      .map(({ key }) => key),
   );
 }

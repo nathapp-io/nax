@@ -66,6 +66,18 @@ export function isConfirmingRuling(ruling: Pick<RulingKeyword, "disposition">): 
 
 const CHAIN_RULING_KEY_PREFIX = "cr-";
 
+/** Index of the newest own chain ruling comment of the given outcome on the thread; -1 when none. */
+export function newestOwnChainIndex(login: string, thread: PrThread, outcome?: "held"): number {
+  let newest = -1;
+  for (const own of ownComments(thread.comments, login)) {
+    if (!own.key.startsWith(CHAIN_RULING_KEY_PREFIX)) continue;
+    const parsed = parseChainRuling(own.comment.body);
+    if (parsed === null || (outcome !== undefined && parsed.outcome !== outcome)) continue;
+    newest = Math.max(newest, thread.comments.indexOf(own.comment));
+  }
+  return newest;
+}
+
 /** The advisor's waived ruling when `comment` is an own chain ruling comment that waives; otherwise null. */
 function ownChainWaiver(login: string, thread: PrThread, comment: PrComment): RulingKeyword | null {
   const own = ownComments(thread.comments, login).find((o) => o.comment === comment);

@@ -22,10 +22,18 @@ export const SavedFixSchema = z.object({
   headSha: shaSchema,
   agreedKeys: z.array(z.string()),
   findingProvenance: z.array(z.object({ key: z.string().min(1), raisedBy: z.string().min(1) })).optional(),
+  chainInstructions: z.array(z.object({ key: z.string(), text: z.string() })).optional(),
   outcome: z.enum(SAVABLE_OUTCOMES),
   savedAt: z.string().datetime(),
 });
 export type SavedFix = z.infer<typeof SavedFixSchema>;
+/** The advisor fix instructions a run carries, sorted: part of the saved fix's identity. */
+function chainInstructions(env: BotFixEnv): { key: string; text: string }[] {
+  return (env.chainRulings ?? [])
+    .filter((ruling) => ruling.outcome === "fix")
+    .map(({ key, text }) => ({ key, text }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
 export interface SavedFixLocation {
   readonly repoRoot: string;
   readonly outputDir: string;
@@ -137,6 +145,10 @@ export async function reuseSavedFix(input: {
     }
     const keys = env.review.agreed.map((item) => item.key).sort();
     if (JSON.stringify([...entry.agreedKeys].sort()) !== JSON.stringify(keys)) return initial;
+    if (JSON.stringify(entry.chainInstructions ?? []) !== JSON.stringify(chainInstructions(env))) {
+      await savedFix.clear(location);
+      return initial;
+    }
     const result = await _savedFixDeps.runGit(["checkout", "--detach", entry.sha], env.checkout.worktree);
     if (result.exitCode !== 0) {
       logFailure("checkout", env.ref.number, result.stderr || `git exited ${result.exitCode}`);
@@ -193,6 +205,7 @@ export async function persistSavedFix(input: {
         headSha: env.info.headSha,
         agreedKeys: env.review.agreed.map((item) => item.key).sort(),
         findingProvenance: findingProvenance(env, state),
+        chainInstructions: chainInstructions(env),
         outcome: outcome.data,
         savedAt: new Date().toISOString(),
       },

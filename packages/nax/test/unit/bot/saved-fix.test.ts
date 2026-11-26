@@ -206,3 +206,23 @@ describe("reuseSavedFix push-worthiness (US-007)", () => {
     });
   });
 });
+
+describe("reuseSavedFix chain instructions (B3)", () => {
+  const blocking = [{ kind: "finding", key: "a", severity: "important", issue: "Leak", trigger: "normal" }] as const;
+  const gitOk = async (argv: string[]) => ({ exitCode: 0, stdout: argv[0] === "rev-parse" ? sha : "", stderr: "" });
+  test.each([
+    {
+      name: "a new advisor instruction",
+      saved: undefined,
+      current: [{ key: "a", outcome: "fix" as const, text: "do x" }],
+    },
+    { name: "a removed instruction", saved: [{ key: "a", text: "do x" }], current: [] },
+  ])("does not reuse a saved commit when $name", async ({ saved, current }) => {
+    const env = { ...makeBotFixEnv([...blocking]), chainRulings: current };
+    const read = mock(async () => ({ ...entry, headSha: env.info.headSha, chainInstructions: saved }));
+    const clear = mock(async () => {});
+    _savedFixDeps.runGit = gitOk;
+    expect(await reuseSavedFix({ env, outputDir: "/output", savedFix: { read, clear } })).toEqual(fresh);
+    expect(clear).toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,7 @@
 /** Repo-scoped trusted, exact-head fix orchestration with optional saved-commit reuse. */
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { ledgerPath } from "@/advisor";
 import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
@@ -11,7 +12,7 @@ import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 // Import lifecycle/workflow leaves, never their orchestration barrels.
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
-import { withChainRulings } from "./chain-advise";
+import { chainRoutingContext, withChainRulings } from "./chain-advise";
 import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
@@ -302,9 +303,17 @@ function setupFailedState(setupFailed: string, setupHint?: string): BotFixState 
 }
 
 /** The `--in-place` checkout must be as clean after the install as before it. */
-async function inPlaceDirty(worktree: string): Promise<boolean> {
+async function inPlaceDirty(env: BotFixEnv): Promise<boolean> {
+  const { worktree } = env.checkout;
   const status = await _botFixDeps.runGit(["status", "--porcelain", "--untracked-files=all"], worktree);
-  return status.exitCode !== 0 || status.stdout.trim() !== "";
+  if (status.exitCode !== 0) return true;
+  // The advisor's own ledger append is bot-generated and already accounted for; nothing else is exempt.
+  const feature = chainRoutingContext(env)?.feature;
+  const ledger = feature === undefined ? undefined : relative(worktree, ledgerPath(env.repoRoot, feature));
+  return status.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .some((line) => line !== "" && line.slice(2).trim() !== ledger);
 }
 
 /**
@@ -316,7 +325,7 @@ async function afterInstall(env: BotFixEnv, checks: BotChecks): Promise<FixSetup
     await runFixBuild({ ...env, checks });
     return { checks };
   }
-  if (!(await inPlaceDirty(env.checkout.worktree))) return { checks };
+  if (!(await inPlaceDirty(env))) return { checks };
   // No hint: the install did not fail, the tree it left is what failed.
   return { failed: setupFailedState("in-place checkout not clean after setup"), checks: env.checks };
 }
