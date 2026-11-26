@@ -30,7 +30,7 @@ export const _ledgerCarryDeps = {
   getLogger,
 };
 
-function ledgerFeature(env: BotFixEnv): string | undefined {
+export function ledgerFeature(env: BotFixEnv): string | undefined {
   const candidates = env.checkout.changedFiles.filter((path) => {
     const parts = path.slice(PROJECT_FEATURES_DIR.length + 1).split("/");
     return path.startsWith(`${PROJECT_FEATURES_DIR}/`) && parts.length === 2 && parts[1] === "prd.json";
