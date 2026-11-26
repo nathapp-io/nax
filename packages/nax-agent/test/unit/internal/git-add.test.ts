@@ -105,6 +105,9 @@ describe("gitlinkSafeAdd argv", () => {
       setAgentLogger(log);
       // An absent ledger directory: these cases are about the mandatory names.
       _placeholderDeps.ledgerDir = () => join(cwd, "no-ledgers");
+      // US-004: the mandatory names are a Linux source, so pin the platform that
+      // creates the placeholder rather than inheriting the host's.
+      _placeholderDeps.platform = () => "linux";
     });
     afterEach(() => {
       setAgentLogger(realLogger);

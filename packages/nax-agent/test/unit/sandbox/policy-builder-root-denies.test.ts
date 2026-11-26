@@ -10,9 +10,10 @@ import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
 import { realOrRaw } from "#src/internal/realpath";
 import { SRT_MANDATORY_DENY_DIRS, SRT_MANDATORY_DENY_FILES } from "#src/sandbox/defaults";
 import { buildSandboxPolicy, type SandboxPolicyInput } from "#src/sandbox/index";
+import { _placeholderDeps } from "#src/sandbox/placeholder-deps";
 import { candidatePaths } from "#src/sandbox/placeholder-paths";
 import { stagingPlaceholderPaths } from "#src/sandbox/staging-placeholders";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
 import { naxOwnedPathsPolicy } from "#test/helpers/nax-owned-paths";
 
 const NAMES = [...SRT_MANDATORY_DENY_FILES, ...SRT_MANDATORY_DENY_DIRS];
@@ -106,10 +107,15 @@ describe("placeholder candidates when the process cwd is not the session root (#
 });
 
 describe("staging guard when the process cwd is not the session root (#3038)", () => {
+  withDepsRestore(_placeholderDeps);
+
   test("a placeholder at the root is excluded from the root's own staging pass", () => {
     const placeholder = join(root, ".bashrc");
     writeFileSync(placeholder, "");
     chmodSync(placeholder, 0o444);
+    // US-004: the mandatory names are a Linux source, so pin the platform that
+    // creates the placeholder rather than inheriting the host's.
+    _placeholderDeps.platform = () => "linux";
     const previous = process.cwd();
     process.chdir(elsewhere);
     try {

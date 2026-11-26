@@ -260,10 +260,22 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
   let loaded: SrtModuleSlice | undefined;
   const startedPoll = createStartedPoll();
   const rootExcludes = createRootExcludes();
+  /**
+   * US-004: the wraps this backend has recorded candidates for and whose
+   * `commandFinished` has not arrived yet. While it is above zero another wrapped
+   * command may still be starting a placeholder, so the pending entries are kept;
+   * at zero nothing will ever identify them and they are abandoned.
+   */
+  let wrapsInFlight = 0;
   let runtimeConfig = {
     network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
     filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
   } as SrtRuntimeConfig;
+
+  /** One wrap stopped being in flight; never below zero, whatever srt's own count does. */
+  function wrapFinished(): void {
+    wrapsInFlight = Math.max(0, wrapsInFlight - 1);
+  }
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -299,16 +311,25 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       await rootExcludes.ensure(req.root);
       // Linux: the ledger records what this wrap may create before it creates it.
       recordPlaceholderCandidates(req.policy);
-      // A wrap that throws undoes srt's own count, so it needs no cleanup call.
-      const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
-        req.command,
-        req.shell,
-        customConfig(req.policy, req.root),
-        undefined,
-        req.cwd,
-        { commandId: req.commandId },
-      );
-      return argv;
+      wrapsInFlight += 1;
+      // A wrap that throws undoes srt's own count, so it needs no cleanup call —
+      // and no `commandFinished` follows it either, so the in-flight count it just
+      // took is given back here (US-004). Otherwise one failed wrap would keep
+      // every later wrap's pending entries alive forever.
+      try {
+        const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
+          req.command,
+          req.shell,
+          customConfig(req.policy, req.root),
+          undefined,
+          req.cwd,
+          { commandId: req.commandId },
+        );
+        return argv;
+      } catch (error) {
+        wrapFinished();
+        throw error;
+      }
     },
     commandStarted(commandId?: string) {
       startedPoll.start(commandId);
@@ -328,17 +349,26 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       // US-003: the ledger must hold the placeholder's identity BEFORE that
       // deletion happens (`observe`), so a placeholder srt removes is still known
       // by inode; `prune` afterwards is what then drops the entries srt removed.
+      //
+      // US-004: the prune abandons the still-pending entries once this was the
+      // last wrap in flight — nothing is left to identify them, and a user file
+      // created later at one of those paths would be adopted by the next observe.
       startedPoll.finish(commandId);
       const ledger = linuxLedger();
       ledger?.observe();
       loaded?.SandboxManager.cleanupAfterCommand();
-      ledger?.prune();
+      wrapFinished();
+      if (wrapsInFlight === 0) ledger?.prune({ abandonPending: true });
+      else ledger?.prune();
     },
     async reset() {
       if (loaded !== undefined) await loaded.SandboxManager.reset();
       // US-003: srt has dropped its placeholders by now, so the entries whose
-      // inode is gone are exactly the ones this prune drops.
-      linuxLedger()?.prune();
+      // inode is gone are exactly the ones this prune drops. US-004: nothing is in
+      // flight after a reset, so the pending entries go too — a wrap that never
+      // finishes leaves its candidates here and nowhere else.
+      wrapsInFlight = 0;
+      linuxLedger()?.prune({ abandonPending: true });
       rootExcludes.forget();
       initialized = undefined;
       loaded = undefined;

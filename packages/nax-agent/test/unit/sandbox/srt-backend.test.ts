@@ -336,12 +336,17 @@ describe("srt backend placeholder ledger (Linux)", () => {
     await backend.wrap(ledgerRequest("a"));
     backend.commandFinished();
     await backend.wrap(ledgerRequest("b"));
+
+    // While this wrap is in flight the absent names are recorded as pending...
+    expect(ledgerPaths()).toContain(join(cwd, ".zprofile"));
+    // ...and the user's own existing file never is.
+    expect(ledgerPaths()).not.toContain(join(cwd, ".bashrc"));
+
     backend.commandFinished();
 
-    // The ledger was written for these two wraps: the absent names are recorded...
-    expect(ledgerPaths()).toContain(join(cwd, ".zprofile"));
-    // ...and the user's own existing file never is, and is still theirs.
-    expect(ledgerPaths()).not.toContain(join(cwd, ".bashrc"));
+    // US-004: the last commandFinished abandons what no wrap is left to identify,
+    // and the user's file is still theirs.
+    expect(ledgerPaths()).not.toContain(join(cwd, ".zprofile"));
     expect(readFileSync(join(cwd, ".bashrc"), "utf8")).toBe("# the user's own\n");
   });
 
