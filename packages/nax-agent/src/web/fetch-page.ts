@@ -15,6 +15,18 @@
  * URL's own userinfo is dropped, since Node would otherwise turn it into an `authorization`
  * header. It also does not honour a proxy configured in the environment: it connects directly.
  *
+ * One budget covers the whole fetch. The deadline is armed before the first socket exists and
+ * it covers the redirect chain and the body together, because a page a model asked for is worth
+ * one timeout rather than one per hop. The clock is released the moment the page is in hand, and
+ * a cancelled fetch destroys the request it was waiting on and the response it was reading
+ * instead of leaving either open.
+ *
+ * The body is capped on the bytes that arrived, before anything is decoded, and the media type
+ * decides what those bytes become: HTML and XHTML are converted by `htmlToText`, the plain text
+ * types and JSON are decoded as UTF-8 and passed through as written, and anything else is
+ * reported as unread. Only UTF-8 is supported -- a body declaring another charset is decoded as
+ * UTF-8 anyway.
+ *
  * The response handle and the request handle below are this module's own narrow types rather
  * than `node:http`'s `ClientRequest`/`IncomingMessage`. They name the handful of members a page
  * fetch touches, which is what lets a test answer a request without a socket, and what keeps
@@ -26,13 +38,7 @@ import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/index";
-import {
-  ADDRESS_BLOCKED,
-  blockedAddressError,
-  createCheckedLookup,
-  isAllowedOrigin,
-  isBlockedAddress,
-} from "./address.ts";
+import { blockedAddressError, createCheckedLookup, isAllowedOrigin, isBlockedAddress } from "./address.ts";
 import { normalizeWebUrl } from "./content.ts";
 import { htmlToText } from "./html-text.ts";
 
@@ -50,6 +56,9 @@ const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]
 
 /** The media types this subsystem converts to text. */
 const HTML_TYPES: ReadonlySet<string> = new Set(["text/html", "application/xhtml+xml"]);
+
+/** The media types whose body is decoded as UTF-8 and passed through as written. */
+const PASS_THROUGH_TYPES: ReadonlySet<string> = new Set(["text/plain", "text/markdown", "application/json"]);
 
 /** The media type reported for a response that named none. */
 const UNKNOWN_MEDIA_TYPE = "unknown";
@@ -74,9 +83,9 @@ export interface WebPage {
 
 /** What one page fetch may do: its bounds, its exemptions and its cancellation. */
 export interface WebFetchOptions {
-  /** The most body bytes a page may contribute; the cap lands with the fetch's byte limit. */
+  /** The most body bytes a page may contribute; a longer body is cut here and reports it. */
   readonly maxBytes: number;
-  /** The overall budget for the whole fetch, redirects included. */
+  /** The overall budget for the whole fetch, redirects and body included. */
   readonly timeoutMs: number;
   /** Origins whose addresses are not checked: the operator's own choices of destination. */
   readonly allowOrigins: readonly string[];
@@ -95,11 +104,16 @@ export interface WebResponseHandle {
   body(): AsyncIterable<Uint8Array>;
   /** Drain a body nothing will read, so the connection is not left half-open. */
   resume(): void;
+  /** Terminate the stream: the body is over, whether or not all of it arrives. */
+  destroy(): void;
 }
 
 /** What a page fetch needs from the request it opened. */
 export interface WebRequestHandle {
   on(event: "error", listener: (error: Error) => void): void;
+  off(event: "error", listener: (error: Error) => void): void;
+  /** Give up on the request, and with it the socket behind it. */
+  destroy(): void;
   end(): void;
 }
 
@@ -118,26 +132,41 @@ export type WebRequestFn = (
 ) => WebRequestHandle;
 
 /**
- * Test seam: the two request functions, and nothing else. The default opens a real socket
- * through `node:https`/`node:http`; a test answers with a response it built, so no page fetch
- * in a test reaches the network.
+ * Test seam: the two request functions and the timer pair, and nothing else. The request
+ * defaults open a real socket through `node:https`/`node:http`; a test answers with a response
+ * it built, so no page fetch in a test reaches the network. The timers are injectable so the
+ * overall deadline can be driven from a virtual clock rather than waited out.
  */
-export const _webFetchDeps: { request: WebRequestFn; httpRequest: WebRequestFn } = {
+export const _webFetchDeps: {
+  request: WebRequestFn;
+  httpRequest: WebRequestFn;
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+} = {
   request: (url, options, onResponse) => httpsRequest(url, options, (response) => onResponse(responseHandle(response))),
   httpRequest: (url, options, onResponse) =>
     httpRequest(url, options, (response) => onResponse(responseHandle(response))),
+  // The timer handle is opaque here, exactly as it is in the other `_deps` timer pairs: one
+  // budget for the whole fetch has to be cleareable mid-flight, which is what rules out a sleep.
+  setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
+  clearTimeout: ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)) as (
+    handle: unknown,
+  ) => void,
 };
 
 /**
- * Fetch one page: a single GET, the redirects it may follow, and the page it ends at.
- *
- * `maxBytes` and `timeoutMs` bound a fetch whose body cap, timeout and connection wrapping
- * land with the follow-up story; this one reads the body whole and reports `truncated: false`.
+ * Fetch one page: a single GET under one deadline, the redirects it may follow, and the page it
+ * ends at with a body read no further than `opts.maxBytes`.
  */
 export async function fetchWebPage(url: string, opts: WebFetchOptions): Promise<WebPage> {
   const start = startUrl(url);
-  const { response, url: landed } = await followRedirects(start, opts);
-  return readPage(response, landed);
+  const deadline = startDeadline({ url: start.href, timeoutMs: opts.timeoutMs, signal: opts.signal });
+  try {
+    const { response, url: landed } = await followRedirects(start, opts, deadline);
+    return await readPage(response, landed, opts, deadline);
+  } finally {
+    deadline.release();
+  }
 }
 
 /** The URL a fetch starts at, or a failed fetch when the text names no http(s) destination. */
@@ -145,6 +174,85 @@ function startUrl(raw: string): URL {
   const url = withoutCredentials(normalizeWebUrl(raw));
   if (url === null) throw failedFetch("not an http(s) URL", { url: raw });
   return url;
+}
+
+/**
+ * One overall budget for a fetch: its own deadline, and its caller's cancellation. The failure
+ * to report is recorded before the signal aborts, so a reader that wakes up to an aborted signal
+ * already has the reason in hand.
+ */
+interface Deadline {
+  /** Aborted when the budget runs out or the caller cancels. */
+  readonly signal: AbortSignal;
+  /** The failure an interrupted fetch reports. */
+  failure(): NaxError;
+  /** Stop the clock and let go of the caller's listener. */
+  release(): void;
+}
+
+/**
+ * Start the fetch's one budget. A single timer covers the redirect chain and the body together;
+ * it is armed here, before the first socket, and released in `fetchWebPage`'s `finally` whether
+ * the fetch resolved, was refused or ran out. The caller's own signal is connected to the same
+ * controller, so a cancel during a hop, a body read or a redirect all stop the fetch the same
+ * way, and the listener it needed is detached on release.
+ */
+function startDeadline(p: {
+  readonly url: string;
+  readonly timeoutMs: number;
+  readonly signal?: AbortSignal;
+}): Deadline {
+  const controller = new AbortController();
+  const caller = p.signal;
+  let failure: NaxError | undefined;
+  const stop = (interruption: NaxError): void => {
+    if (failure !== undefined) return;
+    failure = interruption;
+    controller.abort(interruption);
+  };
+  const timer = _webFetchDeps.setTimeout(() => stop(deadlineFailure(p.url, p.timeoutMs)), p.timeoutMs);
+  const onCallerAbort = (): void => stop(cancelledFailure(p.url, caller?.reason));
+  if (caller?.aborted === true) onCallerAbort();
+  else caller?.addEventListener("abort", onCallerAbort);
+  return {
+    signal: controller.signal,
+    // Only an aborted signal reaches this, and every abort sets a failure first; the fallback
+    // exists so the accessor is total rather than to describe a state this module can enter.
+    failure: () => failure ?? cancelledFailure(p.url, undefined),
+    release: () => {
+      _webFetchDeps.clearTimeout(timer);
+      caller?.removeEventListener("abort", onCallerAbort);
+    },
+  };
+}
+
+/**
+ * Await `work` unless the fetch is cancelled first. A stalled response raises nothing the read
+ * loop could notice -- no chunk, no error, no close -- so the deadline is the only way out of
+ * one, and `onCancel` is what lets the stream go.
+ */
+async function untilCancelled<T>(work: Promise<T>, deadline: Deadline, onCancel: () => void): Promise<T> {
+  const { signal } = deadline;
+  // Whichever side loses the race may still settle later, and nothing is left to receive a
+  // rejection from it: this attaches the handler now so it cannot surface as an unhandled one.
+  void work.catch(() => {});
+  if (signal.aborted) {
+    onCancel();
+    throw deadline.failure();
+  }
+  let listener = (): void => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    listener = () => {
+      onCancel();
+      reject(deadline.failure());
+    };
+    signal.addEventListener("abort", listener, { once: true });
+  });
+  try {
+    return await Promise.race([work, cancelled]);
+  } finally {
+    signal.removeEventListener("abort", listener);
+  }
 }
 
 /**
@@ -172,12 +280,12 @@ interface Hop {
  * against the hop before it, reduced to this subsystem's one URL spelling, and checked again --
  * a chain cannot lead a fetch somewhere the first URL was not allowed to go.
  */
-async function followRedirects(start: URL, opts: WebFetchOptions): Promise<Hop> {
+async function followRedirects(start: URL, opts: WebFetchOptions, deadline: Deadline): Promise<Hop> {
   let url = start;
   // One iteration per request: the first, then one per redirect it may follow.
   for (let followed = 0; followed <= MAX_REDIRECTS; followed++) {
     assertAddressAllowed(url, opts.allowOrigins);
-    const response = await sendGet(url, opts);
+    const response = await sendGet(url, opts, deadline);
     const location = redirectLocation(response);
     if (location === null) return { response, url };
     // The redirect's own body is not read; drain it so the connection is not left hanging.
@@ -236,11 +344,43 @@ function resolvedAgainst(raw: string, base: URL): string | null {
   }
 }
 
-/** Open one GET and hand back its response, reporting a request failure as a failed fetch. */
-function sendGet(url: URL, opts: WebFetchOptions): Promise<WebResponseHandle> {
+/**
+ * Open one GET and hand back its response, reporting a request failure as a failed fetch.
+ *
+ * The request is also where a cancelled fetch is stopped: a server that never answers raises no
+ * error of its own, so the deadline listener destroys the request and rejects. Whatever ends the
+ * request -- a response, an error, a cancel -- detaches the other two listeners, so a settled
+ * hop leaves nothing registered behind it.
+ */
+function sendGet(url: URL, opts: WebFetchOptions, deadline: Deadline): Promise<WebResponseHandle> {
+  if (deadline.signal.aborted) return Promise.reject(deadline.failure());
   return new Promise<WebResponseHandle>((resolve, reject) => {
-    const request = requestFn(url)(url, requestOptions(url, opts), resolve);
-    request.on("error", (error) => reject(connectionFailure(error, url)));
+    let request: WebRequestHandle | undefined;
+    const detach = (): void => {
+      // A stub -- the seam exists so one can answer without a socket -- may hand back its
+      // response before this function's own return value exists, and there is then nothing to
+      // detach from: no listener had been registered on a request yet.
+      request?.off("error", onError);
+      deadline.signal.removeEventListener("abort", onCancel);
+    };
+    const onError = (error: Error): void => {
+      detach();
+      reject(connectionFailure(error, url));
+    };
+    const onCancel = (): void => {
+      detach();
+      request?.destroy();
+      reject(deadline.failure());
+    };
+    request = requestFn(url)(url, requestOptions(url, opts), (response) => {
+      detach();
+      resolve(response);
+    });
+    request.on("error", onError);
+    deadline.signal.addEventListener("abort", onCancel, { once: true });
+    // A stub -- or a caller's listener -- can abort between the check above and the listener
+    // just added, and that abort is never replayed: check once more now that it is registered.
+    if (deadline.signal.aborted) onCancel();
     request.end();
   });
 }
@@ -263,24 +403,41 @@ function requestOptions(url: URL, opts: WebFetchOptions): WebRequestOptions {
 }
 
 /**
- * A request-level failure as the fetch reports it. A destination the checked lookup refused
- * keeps the refusal it was given, so the caller still sees `WEB_ADDRESS_BLOCKED` and the host
- * that resolved to a private address, rather than a generic connection failure; anything else
- * is a failed fetch naming its cause.
+ * A transport failure as the fetch reports it. An error that is already a `NaxError` keeps its
+ * identity: a destination the checked lookup refused stays `WEB_ADDRESS_BLOCKED` with the host
+ * that resolved to a private address, and a deadline that has already passed stays the failure
+ * it was recorded as. Anything else -- a socket error, a stream lost mid-read -- becomes a
+ * failed fetch naming its cause.
  */
-function connectionFailure(error: Error, url: URL): NaxError {
-  if (error instanceof NaxError && error.code === ADDRESS_BLOCKED) return error;
+function connectionFailure(error: unknown, url: URL): NaxError {
+  if (error instanceof NaxError) return error;
   return failedFetch(errorMessage(error), { url: url.href, cause: error });
 }
 
+/** The failure a fetch reports when its overall budget runs out. */
+function deadlineFailure(url: string, timeoutMs: number): NaxError {
+  return failedFetch(`timed out after ${timeoutMs} ms`, { url, timeoutMs });
+}
+
+/** The failure a fetch reports when its caller cancels it. */
+function cancelledFailure(url: string, reason: unknown): NaxError {
+  return failedFetch("the fetch was aborted", { url, cause: reason });
+}
+
 /**
- * The response as a page. Its media type decides whether the body is text nax can read: an
- * HTML page is converted, and anything else is reported as unread rather than passed through.
+ * The response as a page. Its media type decides what the body becomes: HTML and XHTML are
+ * converted, the plain text types and JSON are decoded and passed through as written, and
+ * anything else is reported as unread rather than passed through.
  */
-async function readPage(response: WebResponseHandle, url: URL): Promise<WebPage> {
+async function readPage(
+  response: WebResponseHandle,
+  url: URL,
+  opts: WebFetchOptions,
+  deadline: Deadline,
+): Promise<WebPage> {
   const status = response.statusCode ?? 0;
   const contentType = mediaType(headerValue(response.headers, "content-type"));
-  if (!HTML_TYPES.has(contentType)) {
+  if (!HTML_TYPES.has(contentType) && !PASS_THROUGH_TYPES.has(contentType)) {
     // Nothing of this body is wanted, so the connection is drained rather than read.
     response.resume();
     return {
@@ -293,15 +450,69 @@ async function readPage(response: WebResponseHandle, url: URL): Promise<WebPage>
       unsupported: true,
     };
   }
-  const { title, text, links } = htmlToText(await readBody(response), url.href);
-  const page = { url: url.href, status, contentType, text, links, truncated: false, unsupported: false };
+  const body = await readBody(response, url, opts, deadline);
+  if (PASS_THROUGH_TYPES.has(contentType)) {
+    return {
+      url: url.href,
+      status,
+      contentType,
+      text: body.text,
+      links: [],
+      truncated: body.truncated,
+      unsupported: false,
+    };
+  }
+  const { title, text, links } = htmlToText(body.text, url.href);
+  const page = { url: url.href, status, contentType, text, links, truncated: body.truncated, unsupported: false };
   return title === undefined ? page : { ...page, title };
 }
 
-/** The response body as text, decoded as UTF-8. */
-async function readBody(response: WebResponseHandle): Promise<string> {
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of response.body()) chunks.push(chunk);
+/** A body read to its cap: the text it decodes to, and whether there was more of it. */
+interface BodyText {
+  readonly text: string;
+  readonly truncated: boolean;
+}
+
+/**
+ * The response body as UTF-8 text, read no further than `opts.maxBytes`.
+ *
+ * The cap applies to the bytes as they arrived, before anything is decoded, so a body of 2-byte
+ * characters is cut at half as many characters as a body of ASCII. Once the cap is reached the
+ * rest of the body is never read and the stream is destroyed rather than left draining; a cut
+ * that lands inside a character decodes that character as U+FFFD, which is the only loss a
+ * byte-capped read can report.
+ */
+async function readBody(
+  response: WebResponseHandle,
+  url: URL,
+  opts: WebFetchOptions,
+  deadline: Deadline,
+): Promise<BodyText> {
+  const body = response.body()[Symbol.asyncIterator]();
+  const kept: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const next = await untilCancelled(body.next(), deadline, () => response.destroy());
+      if (next.done === true) return { text: decodeBody(kept), truncated: false };
+      const chunk = next.value;
+      const room = opts.maxBytes - size;
+      if (chunk.byteLength <= room) {
+        kept.push(chunk);
+        size += chunk.byteLength;
+        continue;
+      }
+      kept.push(chunk.subarray(0, Math.max(room, 0)));
+      response.destroy();
+      return { text: decodeBody(kept), truncated: true };
+    }
+  } catch (error) {
+    throw connectionFailure(error, url);
+  }
+}
+
+/** The bytes kept, decoded as UTF-8: the one decoding this subsystem supports. */
+function decodeBody(chunks: readonly Uint8Array[]): string {
   return Buffer.concat(chunks).toString("utf8");
 }
 
@@ -326,6 +537,7 @@ function responseHandle(response: IncomingMessage): WebResponseHandle {
     headers: response.headers,
     body: () => response,
     resume: () => response.resume(),
+    destroy: () => response.destroy(),
   };
 }
 

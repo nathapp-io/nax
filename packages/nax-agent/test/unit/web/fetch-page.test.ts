@@ -52,7 +52,7 @@ const UNSCRIPTED: Answer = { kind: "page" };
 
 /** A request handle that answers whatever the stub says and does nothing else. */
 function settledHandle(): WebRequestHandle {
-  return { on: () => {}, end: () => {} };
+  return { on: () => {}, off: () => {}, destroy: () => {}, end: () => {} };
 }
 
 /** A request handle that reports a connection failure instead of a response. */
@@ -61,6 +61,8 @@ function failedHandle(error: Error): WebRequestHandle {
     on: (_event, listener) => {
       queueMicrotask(() => listener(error));
     },
+    off: () => {},
+    destroy: () => {},
     end: () => {},
   };
 }
@@ -76,6 +78,7 @@ function fakeResponse(p: {
     statusCode: p.status,
     headers: p.headers ?? {},
     resume: () => {},
+    destroy: () => {},
     body: async function* () {
       yield body;
     },
