@@ -13,6 +13,7 @@ export interface PinnedWorkerFs {
     flags: number,
     mode: number,
   ): Promise<{
+    readFile(options: { encoding: "base64" }): Promise<string>;
     readFile(options: { encoding: "utf8" }): Promise<string>;
     writeFile(content: Uint8Array): Promise<void>;
     stat(): Promise<{ readonly dev: number; readonly ino: number }>;
@@ -102,6 +103,9 @@ export async function pinnedDirectoryWorker(
           value = next;
           break;
         }
+        case "readBytes":
+          value = await fileAt(args[0]).readFile({ encoding: "base64" });
+          break;
         case "read":
           value = await fileAt(args[0]).readFile({ encoding: "utf8" });
           break;

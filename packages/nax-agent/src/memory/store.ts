@@ -26,13 +26,12 @@
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { writeFileAtomic } from "#src/internal/atomic-write";
-import { openPinnedRead, pinnedOperation, resolvePinned, withPinnedDirectory } from "#src/internal/pinned-directory";
+import { openPinnedRead, pinnedOperation, resolvePinned } from "#src/internal/pinned-directory";
 import { isInside, realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
@@ -44,6 +43,7 @@ import {
   parsePendingForgetLine,
   parseSyncStateText,
 } from "./records.ts";
+import { _memoryStoreDeps, type Identity, type OpenedFile } from "./store-io.ts";
 import { dirOrNull, type MemoryStorePaths, memoryStorePaths } from "./store-paths.ts";
 import {
   MEMORY_SLUG_RE,
@@ -59,54 +59,7 @@ const NOTE_SUFFIX = ".md";
 /** Reads refuse final-component links; the verified parent pin protects their ancestors. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
-interface Identity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
-/** One open file: read through its descriptor, never through its path. */
-interface OpenedFile {
-  readText(): Promise<string>;
-  close(): Promise<void>;
-}
-
-/** Open one file for reading without following a link at it. */
-type OpenFile = (path: string, flags: number) => Promise<OpenedFile>;
-type StatPath = (path: string) => Promise<Identity>;
-type MakeDir = (path: string, options: { recursive: true }) => Promise<string | undefined>;
-/** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
-type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
-type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
-
-function identityOf(info: { dev: number; ino: number }): Identity {
-  return { dev: info.dev, ino: info.ino };
-}
-
-/** I/O seam: reads run under the pinned parent; deletes use the active one; `pin` takes it. */
-export const _memoryStoreDeps: {
-  open: OpenFile;
-  stat: StatPath;
-  mkdir: MakeDir;
-  readdir: ReadDirEntries;
-  rm: RemoveFile;
-  pin: typeof withPinnedDirectory;
-} = {
-  open: async (path, flags) => {
-    const pinned = await openPinnedRead(path, flags);
-    if (pinned !== null) return pinned;
-    const handle = await open(path, flags);
-    return {
-      stat: async () => identityOf(await handle.stat()),
-      readText: () => handle.readFile({ encoding: "utf8" }),
-      close: () => handle.close(),
-    };
-  },
-  stat: async (path) => identityOf(await stat(path)),
-  mkdir: (path, options) => mkdir(path, options),
-  readdir: (path, options) => readdir(path, options),
-  rm: (path, options) => pinnedOperation<void>(path, "rm") ?? rm(path, options),
-  pin: withPinnedDirectory,
-};
+export { _memoryStoreDeps } from "./store-io.ts";
 
 /** The mirror's disk layout lives in `store-paths.ts`; re-exported so the package entry is unchanged. */
 export type { MemoryStorePaths } from "./store-paths.ts";
@@ -123,6 +76,7 @@ export interface MemorySyncState {
 export interface MemoryStore {
   readonly paths: MemoryStorePaths;
   readNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null>;
+  readNotes(scope: MemoryScope, slugs: readonly string[]): Promise<ReadonlyMap<string, MemoryNote>>;
   writeNote(note: MemoryNote): Promise<void>;
   deleteNote(scope: MemoryScope, slug: string): Promise<void>;
   listNotes(scope: MemoryScope): Promise<MemoryNote[]>;
@@ -368,10 +322,6 @@ export function createMemoryStore(input: {
       }
     });
   }
-  /** One note's text, in a pinned session of its own. */
-  function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
-    return inPinnedDirectory(handle, () => readEntryText(handle, entryPathIn(handle, slug)));
-  }
   /** The confined handle for a file, or `null` when it vanished; a link at it is refused. */
   async function openConfined(
     scope: MemoryScope,
@@ -389,11 +339,22 @@ export function createMemoryStore(input: {
   }
 
   async function readNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null> {
-    validSlug(slug);
+    return (await readNotes(scope, [slug])).get(slug) ?? null;
+  }
+
+  /** Keyed by filename, not frontmatter. Unlike a listing, malformed entries fail the read. */
+  async function readNotes(scope: MemoryScope, slugs: readonly string[]): Promise<ReadonlyMap<string, MemoryNote>> {
+    for (const slug of slugs) validSlug(slug);
+    const found = new Map<string, MemoryNote>();
     const handle = await openNotesDir(scope);
-    if (handle === null) return null;
-    const text = await readNoteText(handle, slug);
-    return text === null ? null : parseMemoryNote(text);
+    if (!handle || !slugs.length) return found;
+    return inPinnedDirectory(handle, async () => {
+      for (const slug of slugs) {
+        const text = await readEntryText(handle, entryPathIn(handle, slug));
+        if (text !== null) found.set(slug, parseMemoryNote(text));
+      }
+      return found;
+    });
   }
 
   async function writeNote(note: MemoryNote): Promise<void> {
@@ -583,6 +544,7 @@ export function createMemoryStore(input: {
     paths,
     ...(readHeldForgetKeys === undefined ? {} : { readHeldForgetKeys }),
     readNote,
+    readNotes,
     writeNote,
     deleteNote,
     listNotes,

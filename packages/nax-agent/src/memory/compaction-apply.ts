@@ -24,7 +24,6 @@
  * `rolled_back` manifest. Successful applies prune old applied archives outside the lock.
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { NaxError } from "#src/infra/nax-error";
@@ -50,10 +49,10 @@ import {
   type MemoryCompactionResult,
 } from "./compaction-types.ts";
 import { clockOf, mirrorBusy, mirrorSyncInFlight, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
-import { serializeMemoryNote } from "./note.ts";
+import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
 import { refreshIndex } from "./operations-support.ts";
 import type { MemoryOutbox } from "./outbox.ts";
-import type { MemoryStore } from "./store.ts";
+import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import type { MemoryNote, MemoryTimers } from "./types.ts";
 
 const ERROR_STAGE = "memory";
@@ -126,8 +125,10 @@ async function validatedMirror(input: MemoryCompactionApplyInput): Promise<Mirro
   if (!check.ok) throw planInvalid(check.reasons);
   const mirror = new Map(candidates.map((n) => [n.slug, n]));
   const expected = input.expectedCandidates && new Map(input.expectedCandidates.map((n) => [n.slug, n]));
-  for (const slug of archivedSlugs(input.plan)) {
-    const physical = await input.store.readNote("project", slug);
+  const sources = [...archivedSlugs(input.plan)];
+  const entries = await input.store.readNotes("project", sources);
+  for (const slug of sources) {
+    const physical = entries.get(slug);
     const candidate = mirror.get(slug);
     const original = expected ? expected.get(slug) : candidate;
     if (
@@ -151,7 +152,7 @@ async function validatedMirror(input: MemoryCompactionApplyInput): Promise<Mirro
 /** A vacant key has no directory entry, not merely no decodable note. */
 async function targetExists(store: MemoryStore, slug: string): Promise<boolean> {
   try {
-    await lstat(join(store.paths.notesDir, `${slug}.md`));
+    await _memoryStoreDeps.lstat(join(store.paths.notesDir, `${slug}.md`));
     return true;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
@@ -356,7 +357,11 @@ async function stageMerge(input: StagingInput, merge: MemoryCompactionMerge): Pr
     writeMode: "direct",
     note,
   });
-  return { slug: note.slug, updatedAt: note.updatedAt, contentHash: contentIdentity(note) };
+  return {
+    slug: note.slug,
+    updatedAt: note.updatedAt,
+    contentHash: contentIdentity(parseMemoryNote(serializeMemoryNote(note))),
+  };
 }
 
 /**

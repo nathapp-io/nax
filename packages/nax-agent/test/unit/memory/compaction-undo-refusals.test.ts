@@ -184,20 +184,14 @@ function manifestPath(h: Harness): string {
 /**
  * Replace the archive module's reader with one that records the paths it is asked for, and
  * answer the reads with the module's own reader.
- *
- * `Object.assign` is what keeps this honest about the seam: the dep is Node's overloaded
- * `readFile`, and the archive only ever calls it as `readFile(path, "utf8")`, so a wrapper of
- * that one shape is the whole recording — there is no cast hiding a different contract.
  */
 function recordArchiveReads(): string[] {
   const reads: string[] = [];
   const realRead = _compactionArchiveDeps.readFile;
-  Object.assign(_compactionArchiveDeps, {
-    readFile: async (path: string) => {
-      reads.push(path);
-      return await realRead(path, "utf8");
-    },
-  });
+  _compactionArchiveDeps.readFile = async (path) => {
+    reads.push(path);
+    return realRead(path);
+  };
   return reads;
 }
 

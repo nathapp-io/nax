@@ -2,12 +2,11 @@
  * it can become the cwd of a worker. Neither a link nor a swap during open can redirect I/O. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { constants } from "node:fs";
-import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "#src/infra/nax-error";
-import { openPinnedRead, pinnedOperation, withPinnedDirectory } from "#src/internal/pinned-directory";
+import { openPinnedRead, pinnedOperation } from "#src/internal/pinned-directory";
 import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
-import type { MemoryStore } from "./store.ts";
+import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { ARCHIVE_DIR, NOTES_DIR } from "./store-paths.ts";
 
 export function invalidArchive(id: string): NaxError {
@@ -38,15 +37,14 @@ export async function inArchive<T>(
   action: (dir: string) => Promise<T>,
 ): Promise<T> {
   if (input.id !== undefined && !MEMORY_COMPACTION_ID_RE.test(input.id)) throw invalidArchive(input.id);
-  const root = input.store.paths.projectDir;
-  if (input.create) await mkdir(root, { recursive: true });
   const parts = [ARCHIVE_DIR, ...(input.id === undefined ? [] : [input.id]), ...(input.notes ? [NOTES_DIR] : [])];
+  return inProjectDirectory(input.store, input.create === true, async (root, identity) => visit(root, identity, 0));
   async function visit(path: string, identity: Identity, depth: number): Promise<T> {
     const known = archiveDirectoryIdentities.getStore();
     const original = known?.get(path);
     if (original && (original.ino !== identity.ino || original.dev !== identity.dev)) throw invalidArchive(path);
     known?.set(path, identity);
-    return withPinnedDirectory({ path, identity, changed: () => invalidArchive(path) }, async () => {
+    return _memoryStoreDeps.pin({ path, identity, changed: () => invalidArchive(path) }, async () => {
       const part = parts[depth];
       if (part === undefined) return action(path);
       const child = join(path, part);
@@ -64,5 +62,23 @@ export async function inArchive<T>(
       return visit(child, await pinned<Identity>(child, "stat"), depth + 1);
     });
   }
-  return visit(root, await lstat(root), 0);
+}
+
+/** Start at the project inode itself; refusing a linked root prevents redirecting a worker. */
+async function inProjectDirectory<T>(
+  store: MemoryStore,
+  create: boolean,
+  action: (dir: string, id: Identity) => Promise<T>,
+): Promise<T> {
+  const root = store.paths.projectDir;
+  if (create) await _memoryStoreDeps.mkdir(root, { recursive: true });
+  return action(root, await _memoryStoreDeps.lstat(root));
+}
+
+export function inLogDirectory<T>(store: MemoryStore, create: boolean, action: () => Promise<T>): Promise<T> {
+  return inProjectDirectory(store, create, (path, identity) => {
+    const known = archiveDirectoryIdentities.getStore()?.get(path);
+    if (known && (known.ino !== identity.ino || known.dev !== identity.dev)) throw invalidArchive(path);
+    return _memoryStoreDeps.pin({ path, identity, changed: () => invalidArchive(path) }, action);
+  });
 }

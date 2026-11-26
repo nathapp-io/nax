@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { _compactionArchiveDeps } from "#src/memory/compaction-archive";
 import { undoMemoryCompaction } from "#src/memory/compaction-undo";
-import type { MemoryStore } from "#src/memory/store";
+import { _memoryStoreDeps, type MemoryStore } from "#src/memory/store";
 import {
   assertNaxError,
   COMPACTION_ID,
@@ -48,6 +48,66 @@ function expectFailed(error: Error, cause: unknown) {
 }
 
 describe("applyMemoryCompaction rollback", () => {
+  test("rejects an invalid supplied id before changing archive, mirror or queue", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      await expect(h.apply({ newId: () => "invalid-id" })).rejects.toThrow();
+      expect(existsSync(h.store.paths.archiveDir)).toBe(false);
+      expect(await h.store.listNotes("project")).toEqual(h.originals);
+      expect(await h.outbox.list()).toEqual([]);
+      expect(existsSync(h.store.paths.compactionsLog)).toBe(false);
+    });
+  });
+
+  test("does not follow a linked compaction log", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const external = join(dir, "outside.jsonl");
+      await writeFile(external, "original");
+      await symlink(external, h.store.paths.compactionsLog);
+      await expect(h.apply()).rejects.toThrow();
+      expect(await readFile(external, "utf8")).toBe("original");
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("rejects an unstatable target before archiving", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const original = _memoryStoreDeps.lstat;
+      try {
+        _memoryStoreDeps.lstat = async () => {
+          throw Object.assign(new Error("target unavailable"), { code: "EACCES" });
+        };
+        await expect(h.apply()).rejects.toThrow("target unavailable");
+        expect(existsSync(h.store.paths.archiveDir)).toBe(false);
+      } finally {
+        _memoryStoreDeps.lstat = original;
+      }
+    });
+  });
+
+  test("undo accepts a CRLF merge without force", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const merge = h.input.plan.merge.map((m) => ({ ...m, into: { ...m.into, body: "one\r\ntwo" } }));
+      await h.apply({ plan: { ...h.input.plan, merge } });
+      expect((await undoMemoryCompaction(h)).removed).toEqual(["merged"]);
+    });
+  });
+
+  test("undo tolerates a retained archive publication stage", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      _atomicWriteDeps.discard = async (path) => {
+        if (path.startsWith(h.store.paths.archiveDir) && path.includes(".md.")) throw new Error("stage cleanup failed");
+        return atomic.discard(path);
+      };
+      await h.apply();
+      expect((await undoMemoryCompaction(h)).removed).toEqual(["merged"]);
+    });
+  });
+
   test("refuses an occupied archive id without modifying it", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
@@ -169,9 +229,8 @@ describe("applyMemoryCompaction rollback", () => {
         const earlier = '{"id":"earlier","undone":false}\n';
         await writeFile(h.store.paths.compactionsLog, earlier);
         const cause = new Error("append failed after bytes landed");
-        _compactionArchiveDeps.appendFile = async (path, data) => {
-          const text = String(data);
-          await archive.appendFile(path, mode === "partial" ? text.slice(0, 40) : text, "utf8");
+        _compactionArchiveDeps.publishLog = async (path, data) => {
+          await archive.publishLog(path, mode === "partial" ? data.slice(0, 40) : data);
           throw cause;
         };
         const error = await compactionFailure(h.apply());
@@ -187,8 +246,8 @@ describe("applyMemoryCompaction rollback", () => {
       const h = await makeCompactionHarness(dir);
       const earlier = Buffer.from([0xff, 0x0a]);
       await writeFile(h.store.paths.compactionsLog, earlier);
-      _compactionArchiveDeps.appendFile = async (path, data) => {
-        await archive.appendFile(path, data);
+      _compactionArchiveDeps.publishLog = async (path, data) => {
+        await archive.publishLog(path, data);
         throw new Error("append failed after publication");
       };
       await compactionFailure(h.apply());
@@ -199,7 +258,7 @@ describe("applyMemoryCompaction rollback", () => {
   test("AC-9: rollback refreshes MEMORY.md with archived notes again", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);
-      _compactionArchiveDeps.appendFile = async () => {
+      _compactionArchiveDeps.publishLog = async () => {
         throw new Error("log unavailable");
       };
       await compactionFailure(h.apply());
@@ -289,7 +348,7 @@ describe("applyMemoryCompaction rollback", () => {
           };
         }
         if (boundary === "log append")
-          _compactionArchiveDeps.appendFile = async () => {
+          _compactionArchiveDeps.publishLog = async () => {
             throw cause;
           };
         expectFailed(await compactionFailure(h.apply({ store })), cause);
@@ -307,7 +366,7 @@ describe("applyMemoryCompaction rollback", () => {
       const h = await makeCompactionHarness(dir);
       const into = { slug: "source-a", type: "project", description: "Combined", body: "Combined" } as const;
       const cause = new Error("log failed");
-      _compactionArchiveDeps.appendFile = async () => {
+      _compactionArchiveDeps.publishLog = async () => {
         throw cause;
       };
       expectFailed(

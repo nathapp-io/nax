@@ -24,19 +24,27 @@
  * it changes only when the on-disk format does.
  */
 import { createHash } from "node:crypto";
-import { appendFile, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { openPinnedRead } from "#src/internal/pinned-directory";
 import { realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
-import { archiveDirectoryIdentities, archiveText, inArchive, invalidArchive, pinned } from "./compaction-directory.ts";
+import {
+  archiveDirectoryIdentities,
+  archiveText,
+  inArchive,
+  inLogDirectory,
+  invalidArchive,
+  pinned,
+} from "./compaction-directory.ts";
 import { MEMORY_COMPACTION_ID_RE } from "./compaction-types.ts";
 import { type MirrorLockInput, withMirrorLocks } from "./mirror-lock.ts";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
-import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
+import type { MemoryStore } from "./store.ts";
 
 import { MEMORY_SLUG_RE, type MemoryNote } from "./types.ts";
 
@@ -47,10 +55,18 @@ interface ArchiveEntry {
   directory: boolean;
 }
 export const _compactionArchiveDeps = {
-  appendFile,
-  readFile,
+  publishLog: writeFileAtomic,
+  readFile: async (path: string) => {
+    const file = await openPinnedRead(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    if (!file) throw invalidArchive(path);
+    try {
+      return await file.readBytes();
+    } finally {
+      await file.close();
+    }
+  },
   rm: async (path: string, options: { recursive?: boolean; force: true }) =>
-    options.recursive ? pinned<void>(path, "removeTree") : rm(path, options),
+    options.recursive ? pinned<void>(path, "removeTree") : pinned<void>(path, "rm"),
   entries: (dir: string) => pinned<ArchiveEntry[]>(dir, "entries"),
 };
 
@@ -218,7 +234,11 @@ export async function readCompactionArchiveNotes(input: {
   readonly expected: ReadonlySet<string>;
 }): Promise<readonly MemoryNote[]> {
   return inArchive({ ...input, notes: true }, async (notesDir) => {
-    const entries = await _compactionArchiveDeps.entries(notesDir);
+    const entries = (await _compactionArchiveDeps.entries(notesDir)).filter((entry) => {
+      if (!entry.directory) return true;
+      const stage = /^(.+)\.md\.[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\.tmp$/.exec(entry.name);
+      return !stage?.[1] || !input.expected.has(stage[1]);
+    });
     const slugs = entries
       .map((entry) => archivedSlugIn(entry))
       .filter((slug): slug is string => slug !== null)
@@ -309,20 +329,18 @@ export async function appendCompactionLog(input: {
   readonly line: MemoryCompactionLogLine;
   readonly before?: Uint8Array | null;
 }): Promise<void> {
-  await _memoryStoreDeps.mkdir(input.store.paths.projectDir, { recursive: true });
   const before = input.before === undefined ? await readCompactionLog(input.store) : input.before;
   const separator = before?.length && before.at(-1) !== 10 ? "\n" : "";
-  await _compactionArchiveDeps.appendFile(
-    input.store.paths.compactionsLog,
-    `${separator}${JSON.stringify(input.line)}\n`,
-    "utf8",
+  const next = Buffer.concat([before ?? new Uint8Array(), Buffer.from(`${separator}${JSON.stringify(input.line)}\n`)]);
+  await inLogDirectory(input.store, true, () =>
+    _compactionArchiveDeps.publishLog(input.store.paths.compactionsLog, next),
   );
 }
 
 /** Snapshot only immediately before append, under the writer lock. */
 export async function readCompactionLog(store: MemoryStore): Promise<Uint8Array | null> {
   try {
-    return await _compactionArchiveDeps.readFile(store.paths.compactionsLog);
+    return await inLogDirectory(store, false, () => _compactionArchiveDeps.readFile(store.paths.compactionsLog));
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return null;
     throw error;
@@ -331,8 +349,11 @@ export async function readCompactionLog(store: MemoryStore): Promise<Uint8Array 
 
 /** Restore earlier lines byte-for-byte, removing a newly created log when there was none. */
 export async function restoreCompactionLog(store: MemoryStore, before: Uint8Array | null): Promise<void> {
-  if (before === null) await _compactionArchiveDeps.rm(store.paths.compactionsLog, { force: true });
-  else await writeFileAtomic(store.paths.compactionsLog, before);
+  await inLogDirectory(store, false, () =>
+    before === null
+      ? _compactionArchiveDeps.rm(store.paths.compactionsLog, { force: true })
+      : writeFileAtomic(store.paths.compactionsLog, before),
+  );
 }
 
 /** The log as lines, or none when the mirror has never compacted. */
@@ -384,7 +405,7 @@ export async function markCompactionLogUndone(input: {
     return JSON.stringify({ ...parsed, undone: true });
   });
   if (!marked) return false;
-  await writeFileAtomic(input.store.paths.compactionsLog, next.join("\n"));
+  await inLogDirectory(input.store, false, () => writeFileAtomic(input.store.paths.compactionsLog, next.join("\n")));
   return true;
 }
 
