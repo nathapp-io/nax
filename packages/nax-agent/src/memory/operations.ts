@@ -21,6 +21,13 @@
  * the bookkeeping failure. See `refusal.ts` for what a refusal does to the queue and
  * the mirror, and why each step stands on its own.
  *
+ * A caller may also cap the save: `indexOverflows(note)` is the host's own projection of the
+ * index it publishes, and a `true` answer refuses a *new* slug with `MEMORY_FULL` before
+ * anything is staged — an entry the index never lists is a note the next session cannot read,
+ * so storing it would be the silent loss the guard exists to prevent. It is asked only when the
+ * mirror holds no note under the write's key, because an overwrite replaces an entry the
+ * projection already lists; the fenced save is not asked at all, since it stages nothing.
+ *
  * The note is minted with its own UUID — which is also the request's client id, so the save
  * and the write that delivers it are named by one id — starts `active` under `direct` and
  * `pending` under `proposal`, and is stamped with the caller's clock. The provider is probed
@@ -63,12 +70,14 @@
  */
 import { randomUUID } from "node:crypto";
 import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
+import { NaxError } from "#src/infra/nax-error";
 import { settleRecordedForget } from "./forget-revision.ts";
 import {
   clockOf,
   type MirrorLockInput,
   mirrorSyncInFlight,
   orderedByMirrorLocks,
+  withFencedQueue,
   withMirrorLock,
 } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
@@ -100,6 +109,9 @@ const STATUS_BY_MODE = {
   direct: "active",
   proposal: "pending",
 } as const satisfies Record<MemorySaveInput["writeMode"], MemoryNoteStatus>;
+
+/** The stage every refusal from this module carries. */
+const ERROR_STAGE = "memory";
 
 /**
  * The operations' input and result shapes live in `operations-support.ts`, with the refusals and
@@ -154,6 +166,34 @@ function stagedNote(input: MemorySaveInput): MemoryNote {
 /** The request one staged note is pushed as: the note's own id keys the write. */
 function saveRequest(note: MemoryNote, writeMode: MemorySaveInput["writeMode"]): MemoryWriteRequest {
   return { kind: "save", clientId: note.id, scope: note.scope, slug: note.slug, writeMode, note };
+}
+
+/** The refusal a note the host's index could not list is turned away with. */
+function indexFull(note: MemoryNote): NaxError {
+  return new NaxError("memory index is full: a new note would drop entries from the index", "MEMORY_FULL", {
+    stage: ERROR_STAGE,
+    scope: note.scope,
+    slug: note.slug,
+  });
+}
+
+/**
+ * Refuse a new slug the host's index projection could not list, before anything is staged.
+ *
+ * The question is the host's, because the index is rendered from more than this mirror — both
+ * scopes, the decisions, the repository notes — so no rule here could answer it. It is asked only
+ * for a slug the mirror does not hold: an overwrite replaces an entry the projection already
+ * lists, so the rendered index is no longer than it was, and a note that keeps its slug never
+ * makes another entry fall off the end.
+ *
+ * It runs under the mirror's lock and ahead of the mirror write, so a refusal leaves no note, no
+ * queue entry, no push and no index: the save never happened, and the caller is the one that can
+ * tell the user what to do about a full index. A projection that throws is not softened either —
+ * a wrong answer is not a licence to write, and it reaches the caller with nothing staged.
+ */
+async function refuseOverflowing(input: MemorySaveInput, note: MemoryNote, previous: MemoryNote | null): Promise<void> {
+  if (previous !== null || input.indexOverflows === undefined) return;
+  if (await input.indexOverflows(note)) throw indexFull(note);
 }
 
 /**
@@ -222,17 +262,19 @@ async function queueFenced(
  * Stage the note in the mirror and declare the write on the queue, while holding the lock.
  *
  * The note under the key is read first, because a permanent refusal has to be able to put it
- * back. A key the outbox already holds a queued write for is not taken any further: this
- * write joins the queue behind the one already waiting, and the order the agent wrote them
- * in survives. Otherwise the note is staged and its request goes on the queue *before* the
- * provider is asked. The lock covers both declaration and delivery, so a contending
- * save cannot take an earlier sequence even if this holder is paused before enqueueing.
- * A delivery that succeeds takes the entry back off again.
+ * back — and because that read is also what says whether this is a new slug, the one case the
+ * host's index guard (`refuseOverflowing`) is asked about. A key the outbox already holds a
+ * queued write for is not taken any further: this write joins the queue behind the one already
+ * waiting, and the order the agent wrote them in survives. Otherwise the note is staged and its
+ * request goes on the queue *before* the provider is asked. The lock covers both declaration and
+ * delivery, so a contending save cannot take an earlier sequence even if this holder is paused
+ * before enqueueing. A delivery that succeeds takes the entry back off again.
  */
 async function deliverLocked(input: MemorySaveInput): Promise<MemorySaveResult> {
   const note = stagedNote(input);
   const request = saveRequest(note, input.writeMode);
   const previous = await input.store.readNote(input.write.scope, input.write.slug);
+  await refuseOverflowing(input, note, previous);
   await input.store.writeNote(note);
   if ((await input.outbox.heldKeys()).has(memoryNoteKey(note.scope, note.slug))) {
     return await queueUnderLock(input, note, request);
@@ -306,7 +348,7 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
  * when the holder is paused before enqueueing.
  */
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
-  if (mirrorSyncInFlight(input.store)) return await queueWithoutMirror(input);
+  if (mirrorSyncInFlight(input.store)) return await withFencedQueue(input, () => queueWithoutMirror(input));
   return await withMirrorLock(input, () => deliverLocked(input));
 }
 

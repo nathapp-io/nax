@@ -65,6 +65,12 @@ const DEFAULT_SCOPE: MemoryScope = "project";
 const SCOPE_VALUES: readonly MemoryScope[] = ["project", "user"];
 /** The fields `save` cannot be called without; its schema requires the same four. */
 const SAVE_REQUIRED_FIELDS = ["slug", "type", "description", "body"] as const;
+/**
+ * What a full index leaves the model: the two next steps it has. The user compacts the
+ * mirror, or the model overwrites a note the index already lists — a save of a new slug is
+ * what was refused, so the hint names the one write that is still allowed.
+ */
+const FULL_HINT = "; run nax memory compact, or overwrite an existing note";
 
 /** A tool's input after its shape checks, or the refusal that stopped it. */
 type Checked<T> = { readonly ok: true; readonly input: T } | { readonly ok: false; readonly result: ToolResult };
@@ -225,14 +231,18 @@ async function runForget(host: MemoryHost, input: Record<string, unknown>): Prom
  * A note the repository owns is reported with the host's own message, which names the
  * file to edit; a write the store refused is reported as the refusal it is, with the
  * validator's reason; a note that is not there is the same `no note` line `get` answers
- * with. Anything else — a full disk, a lock that would not wait — is named by the tool
- * that failed, so a session knows which call not to repeat.
+ * with. A full index is the one refusal with a next step the model cannot take itself, so
+ * it carries the two it has: the user compacts, or the model overwrites a note. Anything
+ * else — a full disk, a lock that would not wait — is named by the tool that failed, so a
+ * session knows which call not to repeat.
  */
 function failure(tool: string, input: Record<string, unknown>, error: unknown): ToolResult {
   const code = error instanceof NaxError ? error.code : undefined;
   if (code === "MEMORY_NOTE_READ_ONLY") return { isError: true, content: `[memory] ${errorMessage(error)}` };
   if (code === "MEMORY_WRITE_REFUSED")
     return { isError: true, content: `[memory] save refused: ${errorMessage(error)}` };
+  if (code === "MEMORY_FULL")
+    return { isError: true, content: `[memory] save refused: ${errorMessage(error)}${FULL_HINT}` };
   const scope = scopeOf(input);
   const slug = slugOf(input);
   if (code === "MEMORY_NOTE_NOT_FOUND" && scope.ok && slug.ok) return noNote(scope.input, slug.input);

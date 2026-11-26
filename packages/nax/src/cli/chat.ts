@@ -16,11 +16,13 @@ import {
   createChatHost,
   createChatMcp,
   createChatStorage,
+  createMemoryCompactOffer,
   createRecentModelStore,
   createWorkflowProvider,
   idleCompactAfterMs,
   MEMLOG_DIR,
   MEMLOG_ENV,
+  type MemoryCompactOffer,
   parseMemlogInterval,
   recentModelsPath,
   resolveChatSessionsDir,
@@ -77,6 +79,7 @@ export const _chatCommandDeps = {
   createChatHost,
   createRecentModelStore,
   createMemoryHost,
+  createMemoryCompactOffer,
   startChatMemorySampler,
   renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
@@ -238,14 +241,20 @@ async function chatMemory(
  * provider and before the MCP ones, so a subagent (which takes these providers)
  * is handed the memory tools too.
  *
- * @param logger - The chat's own logger; the memory host and its repo reads log through it
+ * @param input.logger - The chat's own logger; the memory host and its repo reads log through it
+ * @param input.offer - The session's compaction offer: the host it observes is the one both
+ *   memory surfaces hold, so a save through the tool and a save through the host reach it alike
  */
 async function chatResources(
-  repoRoot: string,
-  config: NaxConfig,
+  input: {
+    readonly repoRoot: string;
+    readonly config: NaxConfig;
+    readonly logger: MemoryLogger;
+    readonly offer: MemoryCompactOffer;
+  },
   deps: ChatCommandDeps,
-  logger: MemoryLogger,
 ): Promise<ChatResources> {
+  const { repoRoot, config, logger } = input;
   let registry: PluginRegistry;
   try {
     registry = await deps.loadPlugins(
@@ -267,6 +276,10 @@ async function chatResources(
       naxPluginPackages: await naxPluginPackages(registry.getResourceDirs()),
     });
     const memory = await chatMemory({ repoRoot, config, logger }, deps);
+    // The offer's observer, not the bare host: both memory surfaces share it, so a
+    // save through the tool and a save through the host reach the same offer. Nothing
+    // to observe when memory is off, so the offer is told nothing.
+    const observed = memory === undefined ? undefined : input.offer.observe(memory);
     const outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir);
     const mcp = await deps.createChatMcp({ config, catalog, repoRoot, env: deps.env });
     return {
@@ -280,7 +293,7 @@ async function chatResources(
           // then renders the default instructions.
           workflow: config.chat?.workflow,
         }),
-        ...(memory === undefined ? [] : [createMemoryToolProvider(memory)]),
+        ...(observed === undefined ? [] : [createMemoryToolProvider(observed)]),
         ...mcp.providers,
       ],
       // Plugin handlers first, then the agent hooks: `ChatHost` appends rule
@@ -291,7 +304,7 @@ async function chatResources(
         ...(await deps.loadAgentHookHandlers({ surface: "chat", repoRoot })),
       ],
       naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
-      ...(memory === undefined ? {} : { memory }),
+      ...(observed === undefined ? {} : { memory: observed }),
       mcp: mcp.state,
       teardown: async () => {
         try {
@@ -356,7 +369,10 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   });
   // Built before the resources: the memory host and its repo reads log through it.
   const logger = chatLogger(deps);
-  const resources = await chatResources(repoRoot, config, deps, logger);
+  // One offer for the session, made before the resources it observes: `chatResources`
+  // hands it the host it builds, and the check below asks through the host's asks.
+  const offer = deps.createMemoryCompactOffer({ config, repoRoot, logger });
+  const resources = await chatResources({ repoRoot, config, logger, offer }, deps);
   const storage = deps.createChatStorage({ pid: process.pid, now: () => new Date(), logger });
   const chain = await interactionChain(config, deps);
   const naxEntry = deps.naxEntry();
@@ -393,6 +409,8 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     }
     throw error;
   }
+  // After the host exists and before the session starts: the cards go through its asks.
+  offer.attach(host.asks);
   try {
     await startHost(host, options, config);
   } catch (error) {
@@ -403,6 +421,9 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     }
     throw error;
   }
+  // Deliberately not awaited: the shell starts while the card is open, and `check`
+  // answers its own failures, so a slow or refused compaction cannot hold the screen.
+  void offer.check();
   acp.warm(cwd);
   const sampler =
     memlogSeconds === undefined

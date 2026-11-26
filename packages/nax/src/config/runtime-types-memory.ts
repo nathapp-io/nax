@@ -7,6 +7,17 @@
  * every reader resolves it through `memoryConfigOf` (`./schemas-memory`), which
  * falls back to the schema default.
  */
+import type { ConfiguredModel } from "./schema-types";
+
+/** `memory.compact` — when a compaction is offered, which model plans it, and how many archives survive. */
+export interface MemoryCompactConfig {
+  /** Fill at or above which the index counts as nearly full, 0 < threshold <= 1. */
+  threshold: number;
+  /** The model a compaction plan is requested from: a tier name or a `{ agent, model }` pin. */
+  model: ConfiguredModel;
+  /** How many compaction archives the newest-first prune keeps (1-50). */
+  keepArchives: number;
+}
 
 /** `memory.mcp` — the MCP server that holds the memories, and the names of its tools and arguments. */
 export interface MemoryMcpConfig {
@@ -60,4 +71,6 @@ export interface MemoryConfig {
    * the brief, no run-stage tools. Chat is unaffected.
    */
   inRun: boolean;
+  /** Compaction settings: the fill that counts as nearly full, the planning model, and the archive depth. */
+  compact: MemoryCompactConfig;
 }

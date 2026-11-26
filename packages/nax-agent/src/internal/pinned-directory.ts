@@ -55,6 +55,7 @@ function operandIn(pinnedPath: string, path: string): string {
 export function pinnedOperation<T>(path: string, op: string, args: unknown[] = []): Promise<T> | null {
   const directory = activeDirectory.getStore();
   if (!directory) return null;
+  if (op === "entries" && path === directory.path) return directory.request<T>(op, []);
   if (op === "rename") {
     return directory.request<T>(op, [operandIn(directory.path, path), operandIn(directory.path, String(args[0]))]);
   }
@@ -161,6 +162,7 @@ export async function openPinnedStage(
 
 /** One entry of the pinned directory, open for reading; `null` outside a pinned session. */
 export interface PinnedRead {
+  readBytes(): Promise<Uint8Array>;
   readText(): Promise<string>;
   close(): Promise<void>;
 }
@@ -178,6 +180,7 @@ export async function openPinnedRead(path: string, flags: number): Promise<Pinne
   if (!directory) return null;
   const descriptor = await pinnedOperation<number>(path, "open", [flags, 0o666]);
   return {
+    readBytes: async () => Buffer.from(await directory.request<string>("readBytes", [descriptor]), "base64"),
     readText: () => directory.request<string>("read", [descriptor]),
     close: () => directory.request("close", [descriptor]),
   };

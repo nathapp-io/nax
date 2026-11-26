@@ -5,6 +5,7 @@
  * operation (the real module still satisfies it structurally, so the caller passes it as is).
  */
 export interface PinnedWorkerFs {
+  readdir(path: string, options: { withFileTypes: true }): Promise<import("node:fs").Dirent[]>;
   stat(path: string): Promise<{ readonly dev: number; readonly ino: number }>;
   lstat(path: string): Promise<{ readonly dev: number; readonly ino: number }>;
   open(
@@ -12,6 +13,7 @@ export interface PinnedWorkerFs {
     flags: number,
     mode: number,
   ): Promise<{
+    readFile(options: { encoding: "base64" }): Promise<string>;
     readFile(options: { encoding: "utf8" }): Promise<string>;
     writeFile(content: Uint8Array): Promise<void>;
     stat(): Promise<{ readonly dev: number; readonly ino: number }>;
@@ -20,7 +22,7 @@ export interface PinnedWorkerFs {
   realpath(path: string): Promise<string>;
   mkdir(path: string, options: { readonly mode: number }): Promise<string | undefined>;
   rename(from: string, to: string): Promise<void>;
-  rm(path: string, options: { readonly force: true }): Promise<void>;
+  rm(path: string, options: { readonly force: true; recursive?: boolean }): Promise<void>;
   unlink(path: string): Promise<void>;
   rmdir(path: string): Promise<void>;
 }
@@ -82,6 +84,16 @@ export async function pinnedDirectoryWorker(
       const { op, args } = JSON.parse(line) as { op: string; args: [string, string, number] };
       let value: unknown;
       switch (op) {
+        case "entries":
+          value = (await fs.readdir(".", { withFileTypes: true })).map((e) => ({
+            name: e.name,
+            file: e.isFile(),
+            directory: e.isDirectory(),
+          }));
+          break;
+        case "removeTree":
+          await fs.rm(args[0], { recursive: true, force: true });
+          break;
         case "directory":
           value = identity(await fs.stat("."));
           break;
@@ -91,6 +103,9 @@ export async function pinnedDirectoryWorker(
           value = next;
           break;
         }
+        case "readBytes":
+          value = await fileAt(args[0]).readFile({ encoding: "base64" });
+          break;
         case "read":
           value = await fileAt(args[0]).readFile({ encoding: "utf8" });
           break;

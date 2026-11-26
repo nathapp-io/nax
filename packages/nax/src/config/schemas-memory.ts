@@ -23,7 +23,7 @@ import { z } from "zod";
 import type { NaxConfig } from "./runtime-types";
 import type { MemoryConfig } from "./runtime-types-memory";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
-import { isRemotePlainHttp } from "./schemas-model";
+import { ConfiguredModelSchema, isRemotePlainHttp } from "./schemas-model";
 
 /** Floor for the injected index's byte cap — small enough that omission is observable. */
 export const MEMORY_INDEX_BYTES_MIN = 512;
@@ -117,6 +117,27 @@ export const MemoryKodaConfigSchema = z
   })
   .strict();
 
+/**
+ * `memory.compact` — when a compaction is offered, which model plans it, and how
+ * many archives survive the prune.
+ *
+ * `.strict()` with `.prefault({})`: the block is absent from a config that never
+ * sets it, and every key defaults, so an unconfigured repo still compacts. A
+ * `.default({})` would return the literal without parsing it (Zod 4), so the
+ * inner defaults would never apply.
+ *
+ * `threshold` is exclusive of 0 and inclusive of 1: 0 would make every index
+ * "nearly full" and 1 would make the fill test unreachable.
+ */
+export const MemoryCompactConfigSchema = z
+  .object({
+    threshold: z.number().gt(0).lte(1).default(0.8),
+    model: ConfiguredModelSchema.default("balanced"),
+    keepArchives: z.number().int().min(1).max(50).default(5),
+  })
+  .strict()
+  .prefault({});
+
 export const MemoryConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -132,6 +153,7 @@ export const MemoryConfigSchema = z
       .default(MEMORY_INDEX_BYTES_DEFAULT),
     askOnSave: z.boolean().default(true),
     inRun: z.boolean().default(true),
+    compact: MemoryCompactConfigSchema,
   })
   .strict();
 

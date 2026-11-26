@@ -4,7 +4,7 @@
  * Covers US-002 AC-1..AC-12: the per-project mirror segment + hash suffix, the
  * shared user directory, collision resistance across same-named repositories,
  * symlink equality, the basename fallback and the `MEMORY_REPO_ROOT_UNRESOLVED`
- * refusal.
+ * refusal. US-020 AC-5 adds the projects directory every mirror sits in.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -12,8 +12,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, symlinkSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _memoryPathsDeps, memoryDirs, memoryProjectSegment } from "@/memory";
+import { assertNaxError, cleanupTempDir, makeTempDir, withEnvVars } from "@test/helpers";
+import { _memoryPathsDeps, memoryDirs, memoryProjectSegment, memoryProjectsDir } from "@/memory";
 
 /** First 8 lowercase hex characters of the SHA-256 of a canonical repo root. */
 function hash8(canonicalRoot: string): string {
@@ -146,5 +146,18 @@ describe("memoryDirs", () => {
     assertNaxError(caught, "memoryDirs rejection");
     expect(caught.context?.stage).toBe("memory");
     expect(caught.context?.repoRoot).toBe(repoRoot);
+  });
+});
+
+describe("memoryProjectsDir", () => {
+  test("AC-5 returns <globalConfigDir()>/memory/projects", async () => {
+    const globalDir = makeTempDir("nax-memory-projects-");
+    try {
+      const dir = await withEnvVars({ NAX_GLOBAL_CONFIG_DIR: globalDir }, () => memoryProjectsDir());
+
+      expect(dir).toBe(join(globalDir, "memory", "projects"));
+    } finally {
+      cleanupTempDir(globalDir);
+    }
   });
 });

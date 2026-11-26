@@ -94,7 +94,7 @@ export function makeFakeRunMemory(opts: FakeRunMemoryOptions = {}): FakeRunMemor
         reads += 1;
         return await opts.index?.();
       },
-      summary: () => ({ saved: 0, pending: 0 }),
+      summary: () => ({ saved: 0, pending: 0, refusedFull: 0 }),
       close: async () => {
         closes += 1;
         await opts.closing?.();

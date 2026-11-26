@@ -56,6 +56,13 @@ export const workflowConfigSelector = pickSelector(
 );
 export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");
 
+// The compaction op declares the whole `memory` block rather than a hand-picked subset:
+// `memory.compact` holds the model default and the threshold the prompt is told to reach, and
+// carrying the block is what lets a per-package `memory` override reach the op through
+// `callOp`'s slice. The candidates, the mirror and the fill are computed by the caller and
+// passed in as input — nothing here reads them.
+export const memoryCompactConfigSelector = pickSelector("memory-compact", "memory");
+
 // Config-slice types — co-located with each selector so consumers import the
 // type instead of re-deriving `ReturnType<typeof xSelector.select>` in every
 // operation file. The `Pick` aliases below name the same section lists their
@@ -67,6 +74,8 @@ export type AgentManagerConfig = ReturnType<typeof agentManagerConfigSelector.se
 export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;
 export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
 export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;
+/** `memory/compact-project.ts` — the compaction op's slice; the op itself only needs `memory`. */
+export type MemoryCompactOpConfig = ReturnType<typeof memoryCompactConfigSelector.select>;
 
 /** `review/*` — review, model resolution, gates and test commands. */
 export type ReviewConfig = Pick<NaxConfig, "review" | "models" | "execution" | "project" | "quality" | "agent">;

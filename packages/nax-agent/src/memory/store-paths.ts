@@ -3,9 +3,14 @@
  *
  * This is a leaf on purpose. `store.ts` is the only module that acts on these paths, but
  * it is also the module that has to stay inside the source size limit — the layout, the
- * five file names only it uses and the "no user directory" normalisation are a coherent
- * unit that can be read and tested without a store, so they live here and `store.ts`
- * re-exports the type.
+ * file names it uses and the "no user directory" normalisation are a coherent unit that can
+ * be read and tested without a store, so they live here and `store.ts` re-exports the type.
+ *
+ * The compaction archive is spelled here for the same reason, though the store never reads
+ * it: an archive sits beside `notes/` in the project mirror (`archive/<id>/notes/<slug>.md`
+ * and `archive/<id>/manifest.json`), and the log of applied compactions beside it
+ * (`compactions.jsonl`). The store's listings only ever look at `notes/`, so a compaction
+ * cannot archive its way into the index.
  *
  * `dirOrNull` is the one rule a caller's input needs: `undefined`, `null` and `""` all mean
  * "this store has no user directory", so every consumer of `MemoryStorePaths.userDir` sees
@@ -23,10 +28,16 @@ export const DECISIONS_FILE = "decisions.jsonl";
 export const SYNC_STATE_FILE = "sync.json";
 /** The forgets a proposal queued and has not yet delivered. */
 export const PENDING_FORGETS_FILE = "pending-forgets.jsonl";
+/** The directory a compaction's pre-change notes and manifest sit in, beside `notes/`. */
+export const ARCHIVE_DIR = "archive";
+/** The mirror's compaction log: one JSON object per applied compaction. */
+export const COMPACTIONS_LOG_FILE = "compactions.jsonl";
 
 /** The files this store owns, spelled out once so every caller agrees on them. */
 export interface MemoryStorePaths {
   readonly projectDir: string;
+  /** Optional writable directory outside the mirror for generation locks. */
+  readonly coordinationDir?: string;
   readonly userDir: string | null;
   readonly index: string;
   readonly notesDir: string;
@@ -37,6 +48,10 @@ export interface MemoryStorePaths {
   readonly outboxDir: string;
   readonly userIndex: string | null;
   readonly userNotesDir: string | null;
+  /** The compaction archives of this mirror, one `<id>/` directory each. */
+  readonly archiveDir: string;
+  /** One line per compaction this mirror applied. */
+  readonly compactionsLog: string;
 }
 
 /** `undefined`, `null` and `""` all mean "this store has no user directory". */
@@ -58,5 +73,7 @@ export function memoryStorePaths(projectDir: string, userDir: string | null): Me
     outboxDir: join(projectDir, "outbox"),
     userIndex: userDir === null ? null : join(userDir, INDEX_FILE),
     userNotesDir: userDir === null ? null : join(userDir, NOTES_DIR),
+    archiveDir: join(projectDir, ARCHIVE_DIR),
+    compactionsLog: join(projectDir, COMPACTIONS_LOG_FILE),
   };
 }

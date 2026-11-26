@@ -97,6 +97,11 @@ export const ALLOWED_BARE_SITES: readonly AllowedBareSite[] = [
   { file: "src/cli/setup.ts", fn: "buildCallContext", reason: "setupGenerateOp (read-only default tools)" },
   { file: "src/cli/advisor-replay.ts", fn: "buildCallContext", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/cli/plan-decompose.ts", fn: "planDecomposeCommand", reason: "decomposeOp (complete-kind)" },
+  {
+    file: "src/memory/compact-project.ts",
+    fn: "buildCallContext",
+    reason: "memoryCompactOp (complete-kind, no tools)",
+  },
 ];
 
 // ─── Source scan ─────────────────────────────────────────────────────────────

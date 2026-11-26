@@ -1,3 +1,16 @@
+export { applyMemoryCompaction, type MemoryCompactionApplyInput } from "./compaction-apply.ts";
+export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "./compaction-plan.ts";
+export {
+  MEMORY_COMPACTION_ID_RE,
+  MEMORY_COMPACTION_SOURCE,
+  type MemoryCompactionMerge,
+  type MemoryCompactionPlan,
+  type MemoryCompactionPlanCheck,
+  type MemoryCompactionResult,
+  type MemoryCompactionRetire,
+  type MemoryUndoResult,
+} from "./compaction-types.ts";
+export { type MemoryUndoInput, undoMemoryCompaction } from "./compaction-undo.ts";
 export {
   type RefreshMemoryIndexOptions,
   type RenderedMemoryIndex,

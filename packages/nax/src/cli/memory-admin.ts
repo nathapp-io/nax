@@ -90,6 +90,7 @@ import {
 } from "./memory-admin-relink";
 import {
   _memoryCliDeps,
+  cliMemoryLogger,
   type MemoryCliDeps,
   type MemoryCliOptions,
   memoryContext,
@@ -365,8 +366,12 @@ function assertKodaMirror(providerId: string): void {
 /** Refuse a reset whose mirror still holds writes the provider has not delivered. */
 async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<void> {
   const undelivered = await undeliveredWrites(host);
-  if (undelivered.total === 0) return;
-  throw resetRefusal(`${undelivered.advice} before reset`, { undelivered: undelivered.total });
+  if (undelivered.total !== 0)
+    throw resetRefusal(`${undelivered.advice} before reset`, { undelivered: undelivered.total });
+  // Status counts only decoded entries. Under the queue lock, a physical entry it
+  // could not account for is still the only copy of a possibly undelivered write.
+  if ((await _memoryAdminDeps.listDir(join(host.dirs.projectDir, "outbox"))).length > 0)
+    throw resetRefusal("inspect the unreadable or unrecognized outbox entries before reset");
 }
 
 /**
@@ -382,7 +387,14 @@ async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<vo
  */
 async function clearProjectMirror(projectDir: string): Promise<void> {
   for (const entry of await _memoryAdminDeps.listDir(projectDir)) {
-    if (entry === KODA_APPROVALS_FILE) continue;
+    if (
+      entry.startsWith("sync.lock.") ||
+      entry.startsWith("compaction.lock.") ||
+      [KODA_APPROVALS_FILE, "archive", "compactions.jsonl", "origin.json", "compaction.lock", "sync.lock"].includes(
+        entry,
+      )
+    )
+      continue;
     await _memoryAdminDeps.removePath(join(projectDir, entry));
   }
 }
@@ -400,8 +412,14 @@ async function runReset(opts: MemoryCliOptions, deps: MemoryCliDeps): Promise<nu
   return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
     if (host === null) throw memoryDisabledError();
     assertKodaMirror(host.providerId);
-    await assertNothingUndeliveredBeforeReset(host);
-    await clearProjectMirror(host.dirs.projectDir);
+    const release = await _memoryAdminDeps.lockMirror(host.dirs.projectDir, cliMemoryLogger(deps));
+    if (!release) throw resetRefusal("another writer holds the mirror; retry reset after it finishes");
+    try {
+      await assertNothingUndeliveredBeforeReset(host);
+      await clearProjectMirror(host.dirs.projectDir);
+    } finally {
+      await release();
+    }
     const result = await host.sync();
     deps.log(opts.json === true ? JSON.stringify(result) : formatMemorySyncResult(result));
     return result.outcome === "synced" ? 0 : 1;

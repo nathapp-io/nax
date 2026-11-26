@@ -25,7 +25,7 @@
  * so the recovery there is the pull's — `delivery.ts` rewinds the scope's cursor instead.
  */
 import { randomUUID } from "node:crypto";
-import { mirrorSyncInFlight, orderedByMirrorLocks, withMirrorLock } from "./mirror-lock.ts";
+import { mirrorSyncInFlight, orderedByMirrorLocks, withFencedQueue, withMirrorLock } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
 import {
   type MemoryForgetInput,
@@ -91,7 +91,7 @@ async function restoreOrRewind(input: MemoryForgetInput, previous: MemoryNote): 
  */
 async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   const request = forgetRequest(input);
-  if (mirrorSyncInFlight(input.store)) return await queueFencedForget(input, request);
+  if (mirrorSyncInFlight(input.store)) return await withFencedQueue(input, () => queueFencedForget(input, request));
   return await withMirrorLock(input, () => forgetLocked(input, request));
 }
 

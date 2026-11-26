@@ -77,6 +77,28 @@ function projectHash8(canonicalRoot: string): string {
 }
 
 /**
+ * `<globalConfigDir()>/memory` — the parent of both mirrors.
+ *
+ * The memory root is machine-local state under the global directory, so it is resolved
+ * through `globalConfigDir()` rather than spelled from `homedir()`.
+ */
+function memoryRootDir(): string {
+  return join(globalConfigDir(), MEMORY_DIR_NAME);
+}
+
+/**
+ * Every per-project mirror, one directory each: `<globalConfigDir()>/memory/projects`.
+ *
+ * This is the directory `nax memory mirrors` inventories and prunes, so it is named here
+ * rather than re-derived by each caller. A mirror's own name is a segment plus the hash of
+ * its canonical repository root (`memoryDirs`), which is why the listing cannot be read off
+ * the directory names alone.
+ */
+export function memoryProjectsDir(): string {
+  return join(memoryRootDir(), MEMORY_PROJECTS_DIR_NAME);
+}
+
+/**
  * Resolve `repoRoot` to its canonical path, or refuse.
  *
  * `realpath` is what makes the mirror identity stable across symlinked
@@ -112,13 +134,13 @@ export async function memoryDirs(input: {
   readonly repoRoot: string;
 }): Promise<MemoryDirs> {
   const canonicalRoot = await canonicalRepoRoot(input.repoRoot);
-  const root = join(globalConfigDir(), MEMORY_DIR_NAME);
+  const root = memoryRootDir();
   const projectKey = getProjectKey({ name: input.config.name ?? "" }, canonicalRoot);
   const segment = memoryProjectSegment(projectKey);
 
   return {
     root,
-    projectDir: join(root, MEMORY_PROJECTS_DIR_NAME, `${segment}-${projectHash8(canonicalRoot)}`),
+    projectDir: join(memoryProjectsDir(), `${segment}-${projectHash8(canonicalRoot)}`),
     userDir: join(root, MEMORY_USER_DIR_NAME),
   };
 }

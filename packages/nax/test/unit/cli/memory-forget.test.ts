@@ -368,6 +368,9 @@ describe("registerMemoryCommand — the retirement subcommands", () => {
       "reset",
       "requeue",
       "discard",
+      "compact",
+      "undo",
+      "mirrors",
     ]);
     expect(names).toContain("save");
     expect(names).toContain("forget");

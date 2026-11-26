@@ -13,6 +13,39 @@ const ETX = "\u0003";
 const EOT = "\u0004";
 /** Exit status for a SIGINT-initiated cancellation. */
 const SIGINT_EXIT_CODE = 130;
+/** The one key that answers yes when a bare Enter means no. */
+const YES_KEY = "y";
+/** A question that already spells its own default, whichever way round it reads. */
+const STATED_DEFAULT_RE = /\[[yYnN]\/[yYnN]\]\s*$/;
+
+/**
+ * Where the prompt's own text goes.
+ *
+ * `stdout` is the terminal's answer for every command that owns stdout. `stderr` is what a
+ * command whose stdout is a machine-readable document needs — `nax memory compact --json` — so
+ * the question and the caller's document never share a stream.
+ */
+export type ConfirmChannel = "stdout" | "stderr";
+
+/** The answer a bare Enter stands for: the two shapes a nax prompt offers. */
+export type ConfirmDefault = "yes" | "no";
+
+/**
+ * What a prompt is asked with: where its text goes, and what Enter means.
+ *
+ * `defaultAnswer` exists because the two defaults are not interchangeable. `"yes"` is the
+ * proceed-or-not question a run asks a person who is already running it; `"no"` is the shape every
+ * destructive question needs — `nax memory compact`, `nax memory mirrors --prune` — where the
+ * question advertises `[y/N]` and a stray Enter must not authorize the change. Rendering `[Y/n]`
+ * over a `[y/N]` question, as the one-answer prompt did, both contradicted the caller's text and
+ * answered "yes" to every key that was not an `n`.
+ */
+export interface ConfirmOptions {
+  /** Where the question and its closing newline go; `stdout` unless the caller says otherwise. */
+  readonly channel?: ConfirmChannel;
+  /** What a bare Enter, and any key that is not an explicit answer, resolves to. */
+  readonly defaultAnswer?: ConfirmDefault;
+}
 
 /** The slice of `process.stdin` this prompt drives. Injected so tests can stand one up. */
 export interface ConfirmStdin {
@@ -36,17 +69,47 @@ export interface ConfirmStdin {
 export const _confirmDeps: {
   stdin: ConfirmStdin;
   write: (text: string) => boolean;
+  /** The same writer for a prompt that may not touch stdout — see {@link ConfirmChannel}. */
+  writeErr: (text: string) => boolean;
   exit: (code: number) => void;
 } = {
   stdin: process.stdin as unknown as ConfirmStdin,
   write: (text: string) => process.stdout.write(text),
+  writeErr: (text: string) => process.stderr.write(text),
   exit: (code: number) => process.exit(code),
 };
 
 /**
+ * The one suffix a prompt renders after its question.
+ *
+ * A caller that has already spelled its default — `Apply? [y/N]` — keeps its own words; adding a
+ * second bracket beside it is a prompt that appears to offer two answers, which is exactly how the
+ * default-yes suffix turned two `[y/N]` questions into `[y/N] [Y/n]` ones.
+ */
+function suffixFor(question: string, answersYes: boolean): string {
+  if (STATED_DEFAULT_RE.test(question)) return " ";
+  return answersYes ? " [Y/n] " : " [y/N] ";
+}
+
+/**
+ * Whether one keystroke means yes, given what a bare Enter means.
+ *
+ * Raw-mode `data` events can deliver more than one byte per chunk (a paste, an escape sequence, or
+ * `"n" + Enter` coalesced into `"n\r"`), so only the first byte is read — BUG-7 was this check
+ * operating on the whole chunk. Under the yes default any key that is not an explicit `n` proceeds;
+ * under the no default only an explicit `y` does, and Enter, a stray key or a space is a no.
+ */
+function readsAsYes(char: string, answersYes: boolean): boolean {
+  const key = char[0]?.toLowerCase();
+  return answersYes ? key !== "n" : key === YES_KEY;
+}
+
+/**
  * Prompt for a yes/no confirmation on a single keypress.
  *
- * Non-TTY (tests, pipes, CI) resolves `true` without touching the terminal.
+ * Non-TTY (tests, pipes, CI) resolves the question's own default without touching the terminal:
+ * `true` under `defaultAnswer: "yes"` (the shape every pre-existing caller has), `false` under
+ * `"no"`, which is the only defensible answer to a destructive question nobody was asked.
  *
  * Terminal state is restored exactly once, on every exit path — keypress,
  * stream end, or stream error. The previous version registered only a `data`
@@ -60,19 +123,28 @@ export const _confirmDeps: {
  *     ordinary data; a keystroke that universally means "cancel" was
  *     confirming the action instead.
  *
- * @param question - Confirmation question to display
- * @returns true for Y/Enter/other keys, false for N, Ctrl+D, or a closed stream
+ * @param options - Where the prompt's text goes and what a bare Enter means — see
+ *   {@link ConfirmOptions}
+ * @returns true for an affirmative key, false for a no, Ctrl+D, a closed stream, or — under
+ *   `defaultAnswer: "no"` — anything that is not an explicit yes
  */
-export async function promptForConfirmation(question: string): Promise<boolean> {
+export async function promptForConfirmation(question: string, options: ConfirmOptions = {}): Promise<boolean> {
+  const { channel, defaultAnswer } = options;
+  const answersYes = (defaultAnswer ?? "yes") === "yes";
   const { stdin } = _confirmDeps;
+  // Bound once, so a caller that restores the deps mid-prompt cannot split one prompt across
+  // two streams.
+  const write = channel === "stderr" ? _confirmDeps.writeErr : _confirmDeps.write;
 
-  // In non-TTY mode (tests, pipes), default to true
+  // In non-TTY mode (tests, pipes) the answer is the question's own default, without touching the
+  // terminal: a proceed-or-not prompt proceeds, and a destructive one — the only caller that passes
+  // `defaultAnswer: "no"` — refuses rather than taking an unattended yes nobody gave.
   if (!stdin.isTTY) {
-    return true;
+    return answersYes;
   }
 
   return new Promise<boolean>((resolve) => {
-    _confirmDeps.write(chalk.bold(`${question} [Y/n] `));
+    write(chalk.bold(`${question}${suffixFor(question, answersYes)}`));
 
     stdin.setRawMode(true);
     stdin.resume();
@@ -88,7 +160,7 @@ export async function promptForConfirmation(question: string): Promise<boolean> 
       stdin.removeListener("data", onData);
       stdin.removeListener("end", onClosed);
       stdin.removeListener("error", onClosed);
-      _confirmDeps.write("\n");
+      write("\n");
       resolve(answer);
     };
 
@@ -102,17 +174,7 @@ export async function promptForConfirmation(question: string): Promise<boolean> 
         finish(false);
         return;
       }
-      // BUG-7 fix: raw-mode `data` events can deliver more than one byte
-      // per chunk (paste, escape sequences, or `"n" + Enter` coalesced into
-      // `"n\r"`). The previous `char.toLowerCase() !== "n"` operated on
-      // the entire chunk — `"n\r".toLowerCase()` is `"n\r"`, which is not
-      // equal to `"n"`, so the prompt confirmed instead of cancelling.
-      // Inspecting the first byte (`char[0]`) makes the no-explicit-no path
-      // work for coalesced input while keeping the documented
-      // "any other input confirms" default for genuine non-`n` keystrokes
-      // (see docs/20260816-review-since-0.80.0-canary.3.md, BUG-7).
-      // Default to yes for Y, Enter, or any other input.
-      finish(char[0]?.toLowerCase() !== "n");
+      finish(readsAsYes(char, answersYes));
     };
 
     // A stream that ends or errors before a keypress must not hang the CLI.

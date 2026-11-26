@@ -61,6 +61,25 @@ export {
   observedOnly,
   requireGuard,
 } from "./command-safety";
+export {
+  COMPACT_CANDIDATES,
+  COMPACT_CONFIG,
+  COMPACT_FACTS,
+  COMPACT_INDEX,
+  COMPACT_INDEX_AFTER,
+  COMPACT_PENDING_NOTE,
+  COMPACT_PLAN,
+  COMPACT_PREVIEW,
+  COMPACT_REPO_ROOT,
+  COMPACT_RESULT,
+  COMPACT_REUSE_PLAN,
+  type CompactApplyInput,
+  type CompactProjectCalls,
+  type CompactProjectHarness,
+  type CompactProjectOptions,
+  compactNote,
+  makeCompactProjectHarness,
+} from "./compact-project";
 export { opSelector } from "./config-selector";
 export {
   _confinedDeps,
@@ -74,6 +93,7 @@ export {
   SANDBOXED_ENV,
   USAGE_EXIT,
 } from "./confined";
+export { answeringStdin } from "./confirm-stdin";
 export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";
@@ -183,6 +203,16 @@ export {
   writtenConfig,
   writtenConfigText,
 } from "./memory-admin-link";
+export {
+  emptyMirror,
+  type MirrorsFixture,
+  type MirrorsHarness,
+  makeMirrorsHarness,
+  PROBE_MIRROR,
+  PROJECTS_DIR,
+  probe,
+  runMirrors,
+} from "./memory-mirrors";
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { mockFetch } from "./mock-fetch";

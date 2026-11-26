@@ -48,9 +48,33 @@ export * from "#src/internal/shell-quote";
 export * from "#src/internal/sort";
 export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
+export { applyMemoryCompaction, type MemoryCompactionApplyInput } from "#src/memory/compaction-apply";
+export { _compactionArchiveDeps } from "#src/memory/compaction-archive";
+export { memoryCompactionCandidates, validateMemoryCompactionPlan } from "#src/memory/compaction-plan";
+export {
+  MEMORY_COMPACTION_ID_RE,
+  MEMORY_COMPACTION_SOURCE,
+  type MemoryCompactionMerge,
+  type MemoryCompactionPlan,
+  type MemoryCompactionPlanCheck,
+  type MemoryCompactionResult,
+  type MemoryCompactionRetire,
+  type MemoryUndoResult,
+} from "#src/memory/compaction-types";
+export { type MemoryUndoInput, undoMemoryCompaction } from "#src/memory/compaction-undo";
+export {
+  acquireMirrorDirLock,
+  type MirrorDirLockInput,
+  type MirrorLockSeam,
+  mirrorCoordinationDir,
+  type ReleaseLock,
+  storeLockTargets,
+} from "#src/memory/mirror-lock";
 export { parseMemoryNoteRecord } from "#src/memory/note";
 export { _memoryStoreDeps } from "#src/memory/store";
 export { rewindPullCursor } from "#src/memory/sync-drain";
+// The in-process flight registry: a test sets a sync in flight to exercise the MEMORY_BUSY refusals.
+export { claimSync, releaseSync } from "#src/memory/sync-flight";
 export * from "#src/native/adapter-deps";
 export * from "#src/native/auth";
 export * from "#src/native/client";

@@ -36,13 +36,26 @@ import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryScope } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { z } from "zod";
 import { NaxError } from "@/errors";
 import type { MemoryDirs } from "./paths";
 
 /** The id-map file name inside a scope's mirror directory. */
-const MCP_ID_MAP_FILE = "mcp-ids.json";
+export const MCP_ID_MAP_FILE = "mcp-ids.json";
 /** The only file version this module reads or writes. */
 const MCP_ID_MAP_VERSION = 1;
+
+/** Destructive inventory must recognize the empty format, not use the forgiving provider reader. */
+const EmptyMcpIdMap = z.strictObject({
+  version: z.literal(MCP_ID_MAP_VERSION),
+  server: z.string().trim().min(1),
+  notes: z.strictObject({}),
+  hidden: z.tuple([]).optional(),
+});
+
+export function isEmptyMcpIdMap(value: unknown): boolean {
+  return EmptyMcpIdMap.safeParse(value).success;
+}
 
 /** The per-scope record of remote ids, keyed by note slug. */
 export interface McpIdMap {

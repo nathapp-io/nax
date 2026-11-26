@@ -5,6 +5,15 @@
  * `@/memory` and never from `@/memory/<internal>` (`check:alias-internals`).
  */
 
+export type { MemoryCompactFacts } from "./compact-facts";
+export { _compactFactsDeps, readMemoryCompactFacts } from "./compact-facts";
+export type {
+  CompactProjectMemoryInput,
+  MemoryCompactOutcome,
+  MemoryCompactPreview,
+} from "./compact-project";
+export { _compactProjectDeps, compactProjectMemory } from "./compact-project";
+export { memoryIndexFill, memoryNearlyFull } from "./fill";
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
 export type { CreateMemoryHostInput, MemoryHost, MemoryRejectedEntry, MemorySearchInput, MemoryStatus } from "./host";
@@ -27,8 +36,12 @@ export {
 } from "./koda-refusals";
 export type { CreateMcpMemoryProviderInput } from "./mcp-provider";
 export { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
+export { _mirrorLockDeps, lockMemoryMirror, type MirrorLockInput } from "./mirror-lock";
+export { _mirrorOriginDeps, ensureMirrorOrigin, ORIGIN_FILE } from "./mirror-origin";
+export type { MemoryMirrorInfo, MemoryMirrorRead } from "./mirrors";
+export { isPrunableMirror, listMemoryMirrors, readMemoryMirror } from "./mirrors";
 export type { MemoryDirs, MemoryLogger } from "./paths";
-export { _memoryPathsDeps, memoryDirs, memoryProjectSegment } from "./paths";
+export { _memoryPathsDeps, memoryDirs, memoryProjectSegment, memoryProjectsDir } from "./paths";
 export type { RepoNotes } from "./repo-notes";
 export { _repoNotesDeps, REPO_NOTE_MAX_FILE_BYTES, REPO_NOTES_MAX, readRepoNotes } from "./repo-notes";
 export type { CreateRunMemoryInput, RunMemory, RunMemorySummary } from "./run-memory";

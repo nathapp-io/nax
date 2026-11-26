@@ -20,6 +20,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
+import type { MemoryConfig } from "@/config";
 import {
   KODA_PROJECT_SLUG_RE,
   MemoryConfigSchema,
@@ -28,7 +29,8 @@ import {
   NaxConfigSchema,
 } from "@/config";
 
-const DEFAULT_MEMORY = {
+/** The resolved memory defaults this story did not add, kept as one closed literal. */
+const MEMORY_DEFAULTS_WITHOUT_COMPACT = {
   enabled: true,
   provider: "local",
   writeMode: "direct",
@@ -36,6 +38,26 @@ const DEFAULT_MEMORY = {
   askOnSave: true,
   inRun: true,
 } as const;
+
+/** `memory.compact` defaults (memory-compaction US-009). */
+const DEFAULT_COMPACT = { threshold: 0.8, model: "balanced", keepArchives: 5 } as const;
+
+const DEFAULT_MEMORY = { ...MEMORY_DEFAULTS_WITHOUT_COMPACT, compact: DEFAULT_COMPACT } as const;
+
+/**
+ * A resolved memory block as `nax memory link` and a user config produce one —
+ * written against the hand-written `MemoryConfig` interface, so a member added to
+ * the interface without a default here is a typecheck error.
+ */
+const CONFIGURED_MEMORY: MemoryConfig = {
+  enabled: false,
+  provider: "local",
+  writeMode: "direct",
+  indexBytes: 4096,
+  askOnSave: false,
+  inRun: false,
+  compact: { threshold: 0.5, model: "balanced", keepArchives: 3 },
+};
 
 /**
  * Parses `{ memory: input }` against the root schema and returns the issue
@@ -102,15 +124,7 @@ describe("memoryConfigOf (AC-8, AC-9)", () => {
   });
 
   test("AC-9: a configured memory block is returned as given", () => {
-    const configured = {
-      enabled: false,
-      provider: "local",
-      writeMode: "direct",
-      indexBytes: 4096,
-      askOnSave: false,
-      inRun: false,
-    } as const;
-    expect(memoryConfigOf({ memory: configured })).toEqual(configured);
+    expect(memoryConfigOf({ memory: CONFIGURED_MEMORY })).toEqual(CONFIGURED_MEMORY);
   });
 
   test("memoryConfigOf({}) matches MemoryConfigSchema.parse({}) — one source of truth", () => {
@@ -475,5 +489,110 @@ describe("memory.koda exports from @/config (memory-koda-provider US-001 AC-12..
 
   test("koda AC-14: MemoryKodaConfigSchema parses { project } to { project, headers: {} }", () => {
     expect(MemoryKodaConfigSchema.parse({ project: "rs-stock" })).toEqual({ project: "rs-stock", headers: {} });
+  });
+});
+
+/** `{ memory: { compact: block } }` — the compaction block under test, with the block as given. */
+function compactInput(block: Record<string, unknown>) {
+  return { memory: { compact: block } };
+}
+
+/**
+ * `memory.compact` (memory-compaction US-009): the thresholds, model and archive
+ * depth the compaction commands read. The block is strict and every key has a
+ * default, so an unconfigured repo still gets a usable compaction.
+ */
+describe("memory.compact defaults (US-009 AC-1, AC-20)", () => {
+  test("AC-1: NaxConfigSchema.parse({}).memory.compact equals the documented defaults", () => {
+    expect(NaxConfigSchema.parse({}).memory.compact).toEqual(DEFAULT_COMPACT);
+  });
+
+  test("AC-20: the existing memory defaults are unchanged beside compact", () => {
+    // Copied and stripped rather than destructured, so the unused key needs no binding.
+    const memory: Record<string, unknown> = { ...NaxConfigSchema.parse({}).memory };
+    // compact is the only key this story added: without it the block is the pre-US-009 default.
+    expect(memory).toHaveProperty("compact");
+    delete memory.compact;
+    expect(memory).toEqual(MEMORY_DEFAULTS_WITHOUT_COMPACT);
+  });
+
+  test("AC-1: an empty compact block parses to the defaults", () => {
+    expect(NaxConfigSchema.parse(compactInput({})).memory.compact).toEqual(DEFAULT_COMPACT);
+  });
+});
+
+describe("memory.compact validation (US-009 AC-2..AC-6)", () => {
+  test.each([
+    ["AC-2", { threshold: 0 }, ["memory", "compact", "threshold"]],
+    ["AC-3", { threshold: 1.5 }, ["memory", "compact", "threshold"]],
+    ["AC-4", { keepArchives: 0 }, ["memory", "compact", "keepArchives"]],
+    ["AC-5", { keepArchives: 51 }, ["memory", "compact", "keepArchives"]],
+  ])("%s: %o fails at the rejected key", (_ac, block, path) => {
+    expect(NaxConfigSchema.safeParse(compactInput(block)).success).toBe(false);
+    expect(issuesOf(compactInput(block)).map((issue) => issue.path)).toContainEqual(path);
+  });
+
+  test("AC-6: an unknown key in memory.compact fails — the block is strict", () => {
+    // The empty block is accepted, so the rejection below is the extra key and not a missing block.
+    expect(NaxConfigSchema.safeParse(compactInput({})).success).toBe(true);
+    expect(NaxConfigSchema.safeParse(compactInput({ extra: 1 })).success).toBe(false);
+    expect(issuesOf(compactInput({ extra: 1 })).map((issue) => issue.path)).toContainEqual(["memory", "compact"]);
+  });
+
+  test.each([
+    ["threshold 1", { threshold: 1 }],
+    ["keepArchives 1", { keepArchives: 1 }],
+    ["keepArchives 50", { keepArchives: 50 }],
+  ])("the bounds are inclusive: %s is accepted", (_label, block) => {
+    expect(NaxConfigSchema.safeParse(compactInput(block)).success).toBe(true);
+  });
+});
+
+describe("memory.compact model pin (US-009 AC-7)", () => {
+  test("AC-7: an object model pin survives the parse unchanged", () => {
+    const model = { agent: "native", model: "openai/gpt-5" };
+    expect(NaxConfigSchema.parse(compactInput({ model })).memory.compact.model).toEqual(model);
+  });
+
+  test("a tier name is a valid model pin", () => {
+    expect(NaxConfigSchema.parse(compactInput({ model: "powerful" })).memory.compact.model).toBe("powerful");
+  });
+});
+
+describe("memoryConfigOf reads memory.compact (US-009 AC-8, AC-21)", () => {
+  test("AC-8: keepArchives is 5 through the MemoryConfig interface", () => {
+    const memory: MemoryConfig = memoryConfigOf(NaxConfigSchema.parse({}));
+    expect(memory.compact.keepArchives).toBe(5);
+  });
+
+  test("AC-21: a supplied resolved memory block is returned by identity", () => {
+    const resolved = memoryConfigOf({ memory: CONFIGURED_MEMORY });
+    expect(resolved).toBe(CONFIGURED_MEMORY);
+    expect(resolved.compact).toEqual({ threshold: 0.5, model: "balanced", keepArchives: 3 });
+  });
+});
+
+describe("FIELD_DESCRIPTIONS memory.compact entries (US-009 AC-9, AC-10)", () => {
+  test.each([
+    ["memory.compact"],
+    ["memory.compact.threshold"],
+    ["memory.compact.model"],
+    ["memory.compact.keepArchives"],
+  ])("%s is a non-empty string", (key) => {
+    expect(FIELD_DESCRIPTIONS[key]).toBeString();
+    expect(FIELD_DESCRIPTIONS[key]?.trim().length).toBeGreaterThan(0);
+  });
+
+  test("AC-9: memory.compact names the three keys it holds", () => {
+    const description = FIELD_DESCRIPTIONS["memory.compact"] ?? "";
+    for (const key of ["threshold", "model", "keepArchives"]) expect(description).toContain(key);
+  });
+
+  test("AC-10: memory.compact.threshold names its documented default", () => {
+    expect(FIELD_DESCRIPTIONS["memory.compact.threshold"]).toContain("(default: 0.8)");
+  });
+
+  test("AC-10: memory.compact.keepArchives names its documented default", () => {
+    expect(FIELD_DESCRIPTIONS["memory.compact.keepArchives"]).toContain("(default: 5)");
   });
 });

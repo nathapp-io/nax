@@ -61,6 +61,10 @@ export {
   memoryReferenceSectionOf,
   memorySectionOf,
 } from "./builders/memory-builder";
+// US-010 (memory-compaction) — the one-shot compaction prompt: the candidate notes as a
+// fenced data block, the repository facts that date them, and the retire/merge reply contract.
+export type { MemoryCompactInput } from "./builders/memory-compact-builder";
+export { buildMemoryCompactPrompt } from "./builders/memory-compact-builder";
 // One-line transcript summaries of the background notices the builders above write.
 export { summarizeBackgroundNotice } from "./builders/notice-summary";
 export type { OneShotRole } from "./builders/one-shot-builder";

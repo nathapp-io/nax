@@ -41,6 +41,8 @@ export type { CheckInterruption } from "./gate-interruption";
 export { earlyStopEvidence } from "./gate-interruption";
 export type { LintCheckDeps, LintCheckInput, LintCheckOutput } from "./lint-check";
 export { _lintCheckDeps, lintCheckOp } from "./lint-check";
+export type { MemoryCompactInput } from "./memory-compact";
+export { memoryCompactOp, parseMemoryCompactionPlan } from "./memory-compact";
 export type { OpModelPreview } from "./op-model-preview";
 export { previewOpModel } from "./op-model-preview";
 export type { PlanInteractiveInput } from "./plan";

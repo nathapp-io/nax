@@ -17,8 +17,15 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { MemorySyncResult } from "@nathapp/nax-agent";
-import { assertDefined, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
+import {
+  createLocalMemoryProvider,
+  createMemoryOutbox,
+  createMemoryStore,
+  type MemorySyncResult,
+  saveMemoryNote,
+} from "@nathapp/nax-agent";
+import { _memoryStoreDeps, applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
+import { assertDefined, compactNote, makeLogger, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _memoryAdminDeps,
@@ -100,6 +107,8 @@ interface ResetFixture {
 function mirrorEntries(): Map<string, string> {
   const files = new Map<string, string>();
   files.set(APPROVALS_PATH, APPROVALS_BYTES);
+  files.set(join(PROJECT_DIR, "archive", "id", "manifest.json"), "recovery");
+  files.set(join(PROJECT_DIR, "compactions.jsonl"), "history");
   files.set(NOTE_PATH, "the body of staging-db\n");
   files.set(OUTBOX_PATH, "");
   files.set(CURSOR_PATH, '{"lastPullAt":null}\n');
@@ -192,6 +201,7 @@ function makeResetHarness(fix: ResetFixture = {}): ResetHarness {
   const listed: string[] = [];
   const events: string[] = [];
   const hostCalls: CreateMemoryHostInput[] = [];
+  _memoryAdminDeps.lockMirror = async () => async () => {};
   _memoryAdminDeps.listDir = async (path) => {
     listed.push(path);
     events.push(`list ${path}`);
@@ -285,13 +295,127 @@ describe("nax memory reset — what it refuses", () => {
 // ─── the mirror it rebuilds ─────────────────────────────────────────────────
 
 describe("nax memory reset — the mirror it rebuilds", () => {
-  test("AC-4: every entry of the project mirror is removed except the approvals", async () => {
+  test("reset retains an unreadable queue entry even when the status counts are zero", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      const dir = join(dirs.projectDir, "outbox");
+      const outbox = createMemoryOutbox({ dir });
+      await outbox.enqueue({
+        kind: "forget",
+        slug: "stale",
+        scope: "project",
+        clientId: "pending",
+        reason: "old",
+        writeMode: "direct",
+      });
+      const path = join(dir, "00000001-pending.json");
+      const before = await Bun.file(path).bytes();
+      const open = _memoryStoreDeps.open;
+      try {
+        _memoryStoreDeps.open = async (file, flags) => {
+          if (file === path) throw new Error("queue read failed");
+          return open(file, flags);
+        };
+        const entries = await outbox.list();
+        expect(entries).toHaveLength(0);
+        const h = makeResetHarness({ fs: realAdminDeps, dirs, counts: { queued: entries.length, rejected: 0 } });
+        expect(await runReset(h)).toBe(1);
+        expect(await Bun.file(path).bytes()).toEqual(before);
+        expect(h.events).not.toContain("sync");
+      } finally {
+        _memoryStoreDeps.open = open;
+      }
+    });
+  });
+
+  test("a lock release failure reaches stderr without changing a successful reset", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      await realAdminDeps.writeText(join(dirs.projectDir, "sync.json"), "{}");
+      const fs = {
+        ...realAdminDeps,
+        removePath: async (path: string) => {
+          await realAdminDeps.removePath(path);
+          // Losing the directory makes the release guard itself unavailable.
+          await realAdminDeps.removePath(dirs.projectDir);
+        },
+      };
+      const h = makeResetHarness({ dirs, fs });
+      expect(await runReset(h)).toBe(0);
+      expect(h.err.join("\n")).toContain("memory mirror lock could not be released");
+    });
+  });
+
+  test("refuses a reset racing a save still declaring its queue entry", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      const logger = makeLogger();
+      const store = createMemoryStore({ ...dirs, logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir });
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const save = saveMemoryNote({
+        store,
+        logger,
+        outbox: {
+          ...outbox,
+          enqueue: async (request) => {
+            started.resolve();
+            await resume.promise;
+            return outbox.enqueue(request);
+          },
+        },
+        provider: { ...createLocalMemoryProvider(store), reachable: async () => false },
+        write: compactNote("racing"),
+        source: "test",
+        writeMode: "direct",
+      });
+      await started.promise;
+      try {
+        expect(await runReset(makeResetHarness({ fs: realAdminDeps, dirs }))).toBe(1);
+      } finally {
+        resume.resolve();
+        await save;
+      }
+      expect(await outbox.list()).toHaveLength(1);
+    });
+  });
+
+  test("AC-4: reset clears the cache but retains approvals and undo history", async () => {
     const h = makeResetHarness();
 
     expect(await runReset(h)).toBe(0);
     expect(h.removed).toEqual([join(PROJECT_DIR, "notes"), OUTBOX_PATH, CURSOR_PATH]);
     expect(h.removed.every((path) => path.startsWith(`${PROJECT_DIR}/`))).toBe(true);
-    expect(namesUnder(h.files, PROJECT_DIR)).toEqual(["koda-approvals.json"]);
+    expect(namesUnder(h.files, PROJECT_DIR)).toEqual(["koda-approvals.json", "archive", "compactions.jsonl"]);
+  });
+
+  test("undo can restore a retired note after resetting the rebuildable cache", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "project"), userDir: join(root, "user") };
+      const logger = makeLogger();
+      const store = createMemoryStore({ ...dirs, logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir });
+      const original = compactNote("retired");
+      await store.writeNote(original);
+      const result = await applyMemoryCompaction({
+        store,
+        outbox,
+        logger,
+        provider: "koda",
+        model: "balanced",
+        keepArchives: 1,
+        fillBefore: 0.8,
+        plan: { merge: [], retire: [{ slug: original.slug, reason: "obsolete" }] },
+      });
+      for (const entry of await outbox.list()) await outbox.remove(entry.clientId);
+      expect(await runReset(makeResetHarness({ fs: realAdminDeps, dirs }))).toBe(0);
+      expect(await undoMemoryCompaction({ store, outbox, logger })).toMatchObject({
+        id: result.id,
+        restored: [original.slug],
+      });
+      expect(await store.readNote("project", original.slug)).toMatchObject({ body: original.body });
+    });
   });
 
   test("AC-5: the approvals file keeps its exact bytes", async () => {
@@ -326,7 +450,7 @@ describe("nax memory reset — the mirror it rebuilds", () => {
 
     expect(await runReset(h)).toBe(0);
     expect(h.files.get(USER_NOTE_PATH)).toBe(USER_NOTE_BODY);
-    expect(h.listed).toEqual([PROJECT_DIR]);
+    expect(h.listed).toEqual([join(PROJECT_DIR, "outbox"), PROJECT_DIR]);
     expect(h.removed.some((path) => path === USER_DIR || path.startsWith(`${USER_DIR}/`))).toBe(false);
   });
 
@@ -335,6 +459,7 @@ describe("nax memory reset — the mirror it rebuilds", () => {
 
     expect(await runReset(h)).toBe(0);
     expect(h.events).toEqual([
+      `list ${join(PROJECT_DIR, "outbox")}`,
       `list ${PROJECT_DIR}`,
       `remove ${join(PROJECT_DIR, "notes")}`,
       `remove ${OUTBOX_PATH}`,
@@ -426,6 +551,9 @@ describe("registerMemoryCommand — reset", () => {
       "reset",
       "requeue",
       "discard",
+      "compact",
+      "undo",
+      "mirrors",
     ]);
   });
 });

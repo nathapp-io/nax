@@ -70,7 +70,14 @@ export {
 } from "./config";
 export { FIELD_DESCRIPTIONS } from "./config-descriptions";
 export { type ConfigDisplayActionOptions, configDisplayAction } from "./config-display-action";
-export { _confirmDeps, type ConfirmStdin, promptForConfirmation } from "./confirm";
+export {
+  _confirmDeps,
+  type ConfirmChannel,
+  type ConfirmDefault,
+  type ConfirmOptions,
+  type ConfirmStdin,
+  promptForConfirmation,
+} from "./confirm";
 export {
   _effectivenessEvalDeps,
   type ContextInspectOptions,
@@ -165,6 +172,22 @@ export {
   withMemoryErrors,
   withMemoryHost,
 } from "./memory-cli-deps";
+export {
+  _memoryCompactCliDeps,
+  type MemoryCompactCliDeps,
+  type MemoryCompactOptions,
+  type MemoryUndoOptions,
+  memoryCompactCommand,
+  memoryUndoCommand,
+  registerMemoryCompactCommands,
+} from "./memory-compact";
+export {
+  _memoryMirrorsCliDeps,
+  type MemoryMirrorsCliDeps,
+  type MemoryMirrorsOptions,
+  memoryMirrorsCommand,
+  registerMemoryMirrorsCommand,
+} from "./memory-mirrors";
 export {
   type MemoryShowOptions,
   memoryShowCommand,

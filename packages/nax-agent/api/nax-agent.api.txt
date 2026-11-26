@@ -706,12 +706,24 @@ MAX_UNDELIVERED_CONTROL_EVENTS
 MCP_INSTRUCTIONS_MAX_CHARS_PER_SERVER
 MCP_INSTRUCTIONS_MAX_CHARS_TOTAL
 MCP_RULE_TOOL
+MEMORY_COMPACTION_ID_RE
+MEMORY_COMPACTION_SOURCE
 MIN_COMPACT_AT_TOKENS
 MODEL_MAX_BYTES
 MODEL_MAX_LINES
 MODEL_MAX_LINE_CHARS
 type MaskResult
+type MemoryCompactionApplyInput
+type MemoryCompactionMerge
+type MemoryCompactionPlan
+type MemoryCompactionPlanCheck
+type MemoryCompactionResult
+type MemoryCompactionRetire
 type MemoryTranscriptStore
+type MemoryUndoInput
+type MemoryUndoResult
+type MirrorDirLockInput
+type MirrorLockSeam
 type ModelTruncationOptions
 NATIVE_AGENT
 NATIVE_AGENT_NAME
@@ -754,6 +766,7 @@ RESERVED_TOOL_NAMES
 type ReadFileSliceOptions
 type ReadFileSliceResult
 type RegisteredSink
+type ReleaseLock
 type RemovalDecision
 type RemovalResult
 type ResolveResult
@@ -851,6 +864,7 @@ _boundedIoDeps
 _clientDeps
 _codingToolDeps
 _commandShadowDeps
+_compactionArchiveDeps
 _editDeps
 _externalHandlerDeps
 _fileLockDeps
@@ -886,6 +900,7 @@ _transcriptArchiveDeps
 _transcriptImagesDeps
 _transcriptLifecycleDeps
 abortableSleep
+acquireMirrorDirLock
 adaptProviderTool
 advertisedSchemaBytes
 agentOutputOverlay
@@ -894,6 +909,7 @@ anyAmbientCredential
 appendApproval
 appendApprovalAudit
 applyCompaction
+applyMemoryCompaction
 applyModelTruncationPolicy
 approvalId
 approvalMemoryApplies
@@ -918,6 +934,7 @@ cacheUsageFields
 canAttemptTurnRetry
 capStrings
 chainAskLinks
+claimSync
 classifyExec
 clearApprovalsTaint
 clearNativeSessionState
@@ -1019,6 +1036,8 @@ loginProviderIds
 markNativeTurnOutcome
 maskForPrompt
 mcpRuleAdmits
+memoryCompactionCandidates
+mirrorCoordinationDir
 namespacedToolName
 narrowGrants
 nativeSessionId
@@ -1075,6 +1094,7 @@ registerBuiltinCodingTools
 registerBuiltinTool
 registerCodingTool
 registerToolAuditSink
+releaseSync
 removeApprovals
 removeStoredProvider
 renderCommandSpec
@@ -1123,6 +1143,7 @@ socketDenialHintLine
 spawnDetached
 spillRelativePath
 spinTerminalNotice
+storeLockTargets
 strayCommonDirTripwire
 stripControlChars
 substituteCommand
@@ -1145,10 +1166,12 @@ truncateModule
 truncationDirectionFor
 turnRetryDelayMs
 turnRetryFitsBudget
+undoMemoryCompaction
 unregisterToolAuditSink
 unsandboxedNextStepLine
 unsandboxedSentence
 usageBeat
+validateMemoryCompactionPlan
 validateProviderId
 validateRewrite
 validateShellRewrite
