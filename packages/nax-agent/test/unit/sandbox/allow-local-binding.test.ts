@@ -126,6 +126,7 @@ describe("US-002 createSrtBackend initialize network", () => {
         initialize: async (config) => {
           initialize.push(config);
         },
+        updateConfig: () => {},
         isSupportedPlatform: () => true,
         wrapWithSandboxArgv: async (...args) => {
           wrap.push(args);

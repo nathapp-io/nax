@@ -112,6 +112,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     bashApproval: profileMode,
     allowUnsandboxed,
     config: posture.sandbox,
+    webExposure: raw.hostPorts?.webExposure,
   });
   const bashApproval = effectiveBashApproval(profileMode, posture.askWhenSandboxDown, sandbox.kind);
   const providerTools =

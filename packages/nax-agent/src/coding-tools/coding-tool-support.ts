@@ -314,6 +314,7 @@ export function buildCodingToolSupport(args: {
         ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
         ...unsandboxedToolOptions(args),
         ...backgroundToolOptions(args),
+        webExposure: args.webExposure,
       }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),

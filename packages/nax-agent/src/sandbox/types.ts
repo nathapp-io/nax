@@ -63,6 +63,8 @@ export interface SandboxWrapRequest {
 export interface SandboxBackend {
   readonly name: SandboxBackendName;
   isSupportedPlatform(): Promise<boolean>;
+  /** Replace the process-wide network allowlist for running and future commands. */
+  updateNetwork?(allowedDomains: readonly string[]): Promise<void>;
   /** Argv ONLY. The backend's env never crosses this boundary (spec F6). */
   wrap(req: SandboxWrapRequest): Promise<readonly string[]>;
   /** Extra violation text for this command, or "" when there is none. */
@@ -136,7 +138,7 @@ export interface LaunchRequest {
   /** The CALLER's own overlay (Exec's Yarn no-scripts env). Never the backend's. */
   readonly env?: Readonly<Record<string, string>>;
   /** Explicitly run this command outside the sandbox without changing launcher state. */
-  readonly unwrapped?: true;
+  readonly unwrapped?: boolean;
   /**
    * The session advertises `unsandboxed` to the model. Selects the next-step
    * sentence on a failed wrapped command; it grants nothing (the runtime's

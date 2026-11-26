@@ -74,6 +74,10 @@ export interface AgentSessionHostPorts {
 export interface WebExposurePort {
   /** The decision this call must ask for, or undefined when it runs as it would have. */
   assess(call: WebCallAssessment): WebGuardDecision | undefined;
+  /** The process-wide network ceiling after exposure, undefined before it. */
+  exposedNetwork?(): readonly string[] | undefined;
+  /** Notify once on exposure, immediately when already exposed. */
+  onExposed?(listener: () => void): () => void;
 }
 
 export interface CreateAgentSessionOptions {

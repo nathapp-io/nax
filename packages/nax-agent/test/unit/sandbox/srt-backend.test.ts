@@ -79,6 +79,7 @@ function installCountingSrt(opts: StubSrtOptions = {}): {
   _srtBackendDeps.load = async () => ({
     SandboxManager: {
       initialize: async () => {},
+      updateConfig: () => {},
       isSupportedPlatform: () => true,
       wrapWithSandboxArgv: async () => {
         if (opts.wrapThrows === true) throw new Error("bwrap profile too long");

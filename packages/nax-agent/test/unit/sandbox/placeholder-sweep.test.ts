@@ -139,6 +139,7 @@ beforeEach(() => {
       initialize: async () => {
         events.push("initialize");
       },
+      updateConfig: () => {},
       isSupportedPlatform: () => true,
       wrapWithSandboxArgv: async () => ({ argv: ["true"], env: {} }),
       annotateStderrWithSandboxFailures: (_id, stderr) => stderr,

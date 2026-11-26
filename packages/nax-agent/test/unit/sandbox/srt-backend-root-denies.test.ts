@@ -14,6 +14,7 @@ beforeEach(() => {
   _srtBackendDeps.load = async () => ({
     SandboxManager: {
       initialize: async () => {},
+      updateConfig: () => {},
       isSupportedPlatform: () => true,
       wrapWithSandboxArgv: async (_command, _shell, customConfig) => {
         seenDenyWrite = customConfig?.filesystem?.denyWrite;

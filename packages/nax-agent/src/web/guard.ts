@@ -61,6 +61,10 @@ export interface WebGuardDecision {
 export interface WebExposureGuard {
   /** The decision this call must ask for, or undefined when the call runs as it would have. */
   assess(call: WebCallAssessment): WebGuardDecision | undefined;
+  /** The process-wide network ceiling after exposure; undefined beforehand. */
+  exposedNetwork(): readonly string[] | undefined;
+  /** Notify once on exposure (immediately if already exposed). */
+  onExposed(listener: () => void): () => void;
 }
 
 /** What the guard is built from. */
@@ -142,6 +146,24 @@ function fetchReason(call: WebCallAssessment, exposure: WebExposure): string | u
  */
 export function createWebExposureGuard(p: WebExposureGuardOptions): WebExposureGuard {
   return {
+    exposedNetwork() {
+      if (!p.exposure.isExposed()) return undefined;
+      const configured = p.configuredAllowedDomains;
+      if (configured === undefined || configured.includes("*")) return p.exposedAllowedDomains;
+      return p.exposedAllowedDomains.filter((domain) => configured.includes(domain));
+    },
+    onExposed(listener) {
+      if (p.exposure.isExposed()) {
+        listener();
+        return () => {};
+      }
+      const unsubscribe = p.exposure.onChange(() => {
+        if (!p.exposure.isExposed()) return;
+        unsubscribe();
+        listener();
+      });
+      return unsubscribe;
+    },
     assess(call: WebCallAssessment): WebGuardDecision | undefined {
       // Nothing asks before the first web result: the guard exists for the posture that follows
       // one, and a session that has read nothing keeps the posture it started with.

@@ -95,6 +95,7 @@ export interface SessionLauncherArgs {
   readonly bashApproval: BashApprovalMode;
   readonly allowUnsandboxed: boolean;
   readonly config?: SandboxConfig;
+  readonly webExposure?: WebExposurePort;
 }
 
 /** What the floor decided: the launcher to run under (if any), and the state to report. */
@@ -120,6 +121,7 @@ export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise
     needsLauncher: true,
     protectedPaths: args.protectedPaths,
     ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+    webExposure: args.webExposure,
   });
   if (launcher.state.kind === "available") return { launcher, sandbox: launcher.state };
   if (args.allowUnsandboxed) return { launcher: undefined, sandbox: launcher.state };

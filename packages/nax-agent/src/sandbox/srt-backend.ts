@@ -35,6 +35,7 @@ type SrtModuleSlice = {
   SandboxManager: Pick<
     SrtModule["SandboxManager"],
     | "initialize"
+    | "updateConfig"
     | "isSupportedPlatform"
     | "wrapWithSandboxArgv"
     | "annotateStderrWithSandboxFailures"
@@ -259,16 +260,17 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
   let loaded: SrtModuleSlice | undefined;
   const startedPoll = createStartedPoll();
   const rootExcludes = createRootExcludes();
+  let runtimeConfig = {
+    network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
+    filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
+  } as SrtRuntimeConfig;
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
       const mod = await _srtBackendDeps.load();
       if (_srtBackendDeps.platform() === "darwin") await _srtBackendDeps.mkdir(SRT_MACOS_TMPDIR, { recursive: true });
       if (_srtBackendDeps.platform() === "linux") await runLinuxStartupSteps();
-      await mod.SandboxManager.initialize({
-        network: srtNetwork(network.allowedDomains, network.allowLocalBinding),
-        filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
-      } as SrtRuntimeConfig);
+      await mod.SandboxManager.initialize(runtimeConfig);
       loaded = mod;
       return mod;
     })();
@@ -277,6 +279,17 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
 
   return {
     name: "srt",
+    async updateNetwork(allowedDomains) {
+      runtimeConfig = {
+        ...runtimeConfig,
+        network: { ...runtimeConfig.network, allowedDomains: [...allowedDomains] },
+      };
+      // Do not load srt just to set a pre-init ceiling. If initialization is in
+      // flight, wait for it before replacing the singleton's live config.
+      if (initialized === undefined) return;
+      const mod = await initialized;
+      mod.SandboxManager.updateConfig(runtimeConfig);
+    },
     async isSupportedPlatform() {
       const mod = await _srtBackendDeps.load();
       return mod.SandboxManager.isSupportedPlatform();
