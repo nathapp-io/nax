@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T06:52:38.931Z",
+  "updatedAt": "2026-11-26T06:57:00.716Z",
   "userStories": [
     {
       "id": "US-001",
@@ -443,14 +443,17 @@
         "US-003",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Ordered replay/ancestry and budget decisions interact with writer-authorized confirmations and durable comments; access-control precedence requires strict isolated TDD."
+        "reasoning": "Ordered replay/ancestry and budget decisions interact with writer-authorized confirmations and durable comments; access-control precedence requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/chain-advise.ts",
@@ -473,7 +476,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f13f4455fb8f87e67dcdc587946a318853b4a196"
     },
     {
       "id": "US-008",
