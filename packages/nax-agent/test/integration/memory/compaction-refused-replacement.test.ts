@@ -186,15 +186,21 @@ describe("applyMemoryCompaction: a merge's source retirements wait on its save",
     });
   });
 
-  test("AC-2: a retire the plan states has no replacement to wait on", async () => {
+  test("AC-2: one apply gives the merge's source forget a dependency and the plan's retire none", async () => {
     await withTempDir(async (dir) => {
       const h = await harness(dir);
 
       await h.apply(mergeAndRetirePlan());
 
+      const save = await entryFor(h.outbox, "save", MERGED_SLUG);
       const retire = await entryFor(h.outbox, "forget", RETIRED_SLUG);
+      const folded = await entryFor(h.outbox, "forget", SOURCE_SLUG);
       expect(retire.reason).toBe(RETIRE_REASON);
+      // A retire the plan stated has no replacement behind it: it is enqueued on its own, and the
+      // merge that shares this apply must not lend it one. Both halves are asserted here because
+      // "no dependency" alone is also true of an apply that gives no forget a dependency at all.
       expect(retire.awaits).toBeUndefined();
+      expect(folded.awaits).toBe(save.clientId);
     });
   });
 });
