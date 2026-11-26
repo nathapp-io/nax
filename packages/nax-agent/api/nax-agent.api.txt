@@ -852,6 +852,10 @@ type TurnRetryDeps
 type TurnTokenTotals
 UNIVERSAL_CODING_TOOLS
 type UnknownPathResult
+WEB_SEEN_URL_CAP
+type WebExposureSnapshot
+type WebSearchBackendId
+type WebSearchResult
 _adapterDeps
 _agentOutputEnvDeps
 _agentSessionDeps
@@ -984,6 +988,7 @@ estimateContextTokens
 estimateTokens
 expandMcpRuleGrants
 expandProviderGrants
+extractWebUrls
 findApproval
 findCutPoint
 findSecretSpans
@@ -1048,6 +1053,7 @@ newSessionKey
 normalizeCommandSpec
 normalizeExec
 normalizeManagerBinary
+normalizeWebUrl
 openNativeSession
 openUrl
 parseGitlinks
