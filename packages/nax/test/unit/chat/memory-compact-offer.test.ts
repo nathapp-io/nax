@@ -317,8 +317,8 @@ describe("createMemoryCompactOffer", () => {
   });
 
   // AC-7
-  test("AC-7 an applied compaction reports one result card carrying the undo line", async () => {
-    const f = fixture();
+  test.each([0.41, null])("an applied compaction with fill %p reports the undo line", async (fillAfter) => {
+    const f = fixture({ outcome: { ...APPLIED, fillAfter } });
 
     const running = f.offer.check();
     const asked = await choiceCard(f.asks);
@@ -326,7 +326,9 @@ describe("createMemoryCompactOffer", () => {
     const results = await choiceCards(f.asks);
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.summary).toBe(APPLIED_SUMMARY);
+    expect(results[0]?.summary).toBe(
+      fillAfter === null ? APPLIED_SUMMARY.replace("41%", "unavailable") : APPLIED_SUMMARY,
+    );
     expect(results[0]?.choices.map((choice) => choice.id)).toEqual(["ok"]);
 
     f.asks.resolveChoice(idOf(results[0]), "ok");

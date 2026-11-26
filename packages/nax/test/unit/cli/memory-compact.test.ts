@@ -98,7 +98,7 @@ const RESULT = {
 };
 
 /** An applied outcome whose fill after the apply is `fillAfter`. */
-function applied(fillAfter: number): MemoryCompactOutcome {
+function applied(fillAfter: number | null): MemoryCompactOutcome {
   return { kind: "applied", preview: PREVIEW, result: RESULT, fillAfter };
 }
 
@@ -302,6 +302,12 @@ describe("nax memory compact — the plan", () => {
 // ─── the applied outcome ─────────────────────────────────────────────────────
 
 describe("nax memory compact — the applied outcome", () => {
+  test("unavailable fill preserves the undo id without a threshold warning", async () => {
+    const h = harness({ outcome: applied(null) });
+    expect(await run(h, { yes: true })).toBe(0);
+    expect(h.out.at(-1)).toContain("90% -> unavailable). Undo: nax memory undo 20261125T101500Z-3fa2c1");
+    expect(h.out.some((line) => line.startsWith("Still at"))).toBe(false);
+  });
   test("AC-8: it reports what the apply did and where the undo lives", async () => {
     const h = harness();
 
