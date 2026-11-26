@@ -1036,6 +1036,7 @@ isKnownManager
 isProcessAlive
 isProtocolStreamError
 isRetryableTransportFault
+isSandboxed
 isTempConfined
 isThenable
 keepBudget

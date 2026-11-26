@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { buildCodingToolSupport } from "#src/coding-tools/coding-tool-support";
+import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
+import type { WebCallAssessment } from "#src/web/guard";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 let root: string;
@@ -158,5 +160,60 @@ describe("buildCodingToolSupport — unsandboxed runtime option (US-005)", () =>
     const outcome = await runtime.callTool("Bash", escapeRequest);
     expect(asked).toEqual([]);
     expect(outcome).toEqual({ kind: "error", content: NOT_ENABLED });
+  });
+});
+
+/**
+ * US-012: the sandbox posture the web-exposure guard reasons about
+ * (`call.sandboxed`) is derived from the launcher exactly as `tempConfined` is —
+ * true when the launcher's state is `available`, false for every other state.
+ * The port is the witness: it records the assessment the runtime hands it, so a
+ * flag that never reached the runtime shows up as a missing assessment.
+ */
+describe("buildCodingToolSupport — sandboxed into the web guard (US-012)", () => {
+  /** A launcher that answers every run instead of performing it. */
+  function stubLauncher(state: SandboxState): CommandLauncher {
+    return {
+      state,
+      run: async (req) => ({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        executed: req.spec.kind === "shell" ? [req.spec.shell, "-c", req.spec.command] : req.spec.argv,
+        sandbox: { backend: "none", wrapped: false },
+      }),
+    };
+  }
+
+  /** A Bash support with the given launcher, and a port recording what it is asked. */
+  function supportWithLauncher(state: SandboxState) {
+    const calls: WebCallAssessment[] = [];
+    const built = buildCodingToolSupport({
+      root,
+      declared: ["Bash"],
+      grants: [{ tool: "Bash", patterns: ["*"] }],
+      launcher: stubLauncher(state),
+      webExposure: {
+        assess(call) {
+          calls.push(call);
+          return undefined;
+        },
+      },
+    });
+    if (built === undefined) throw new Error("expected the support to build");
+    return { runtime: built.runtime, calls };
+  }
+
+  test("AC-11: an available launcher builds its runtime with sandboxed true", async () => {
+    const { runtime, calls } = supportWithLauncher({ kind: "available", backend: "srt", network: "open" });
+    await runtime.callTool("Bash", { command: "echo hi" });
+    expect(calls.map((call) => call.sandboxed)).toEqual([true]);
+  });
+
+  test("AC-12: an unavailable launcher builds its runtime with sandboxed false", async () => {
+    const { runtime, calls } = supportWithLauncher({ kind: "unavailable", backend: "srt", reason: "no bwrap here" });
+    await runtime.callTool("Bash", { command: "echo hi" });
+    expect(calls.map((call) => call.sandboxed)).toEqual([false]);
   });
 });

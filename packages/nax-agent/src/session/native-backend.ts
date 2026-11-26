@@ -152,6 +152,9 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     askOnUnsandboxed: posture.askOnUnsandboxed,
     askDiscoveredTools: posture.askDiscoveredTools,
     commandShadow: raw.hostPorts?.commandShadow,
+    // US-012: the session's own web-exposure guard, so a flagged call reaches
+    // THIS session's ask port rather than a subagent's or nobody's.
+    webExposure: raw.hostPorts?.webExposure,
     ...backgroundToolOptions(raw.hostPorts),
     // US-003: the profile's validated opt-in, so an interactive "full" session
     // can offer Bash's per-call escape without turning the sandbox off.

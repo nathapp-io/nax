@@ -16,6 +16,7 @@ import { getSafeLogger, NaxError } from "#src/infra/index";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import type { AskResolver } from "#src/permissions/index";
 import type { CommandLauncher } from "#src/sandbox/index";
+import type { WebExposurePort } from "#src/session/agent-session-types";
 import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import {
   advertisedSchemaBytes,
@@ -44,7 +45,7 @@ import {
   unsandboxedRuntimeOption,
   unsandboxedToolOptions,
 } from "./coding-tool-extras.ts";
-import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
+import { isSandboxed, isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
 
 export interface CodingToolSupport {
   readonly runtime: CodingToolRuntime;
@@ -189,6 +190,12 @@ export function buildCodingToolSupport(args: {
    * support unchanged.
    */
   providerInstructions?: string;
+  /**
+   * US-012: the session's web-exposure guard, threaded to the runtime as
+   * `commandShadow` is. ABSENT in every session without one (every non-chat
+   * stage), so no existing caller changes behaviour.
+   */
+  webExposure?: WebExposurePort;
 }): CodingToolSupport | undefined {
   if (args.declared.length === 0) return undefined;
   const grants = args.grants ?? [];
@@ -275,6 +282,10 @@ export function buildCodingToolSupport(args: {
     // exemption. `isTempConfined` keeps the state read out of this function,
     // which sits at its complexity baseline.
     tempConfined: isTempConfined(args.launcher),
+    // US-012: the same launcher answers "is this command sandboxed?" for the
+    // web-exposure guard, which asks before anything runs outside the fences.
+    sandboxed: isSandboxed(args.launcher),
+    webExposure: args.webExposure,
     ...(args.pipelineStage !== undefined ? { pipelineStage: args.pipelineStage } : {}),
     ...(args.storyId !== undefined ? { storyId: args.storyId } : {}),
     ...(args.callId !== undefined ? { callId: args.callId } : {}),

@@ -9,6 +9,7 @@ import type { TokenUsage } from "#src/cost/standard-types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
+import type { WebCallAssessment, WebGuardDecision } from "#src/web/guard";
 import type { SendInput } from "./image-input.ts";
 import type { BackendInfo, SessionBackend } from "./session-backend.ts";
 import type { JSONSchema } from "./tool-descriptor.ts";
@@ -54,6 +55,25 @@ export interface AgentSessionHostPorts {
   readonly commandShadow?: CommandShadow;
   /** Opt in to host-owned background Bash commands. */
   readonly backgroundCommands?: BackgroundCommandPort;
+  /**
+   * US-012: the session's web-exposure guard. Once the session has read web
+   * content, every ALLOWED tool call is put to it, and a decision it returns
+   * becomes one ask through the session's approval port.
+   */
+  readonly webExposure?: WebExposurePort;
+}
+
+/**
+ * The web-exposure guard an embedder may hand a session (US-012).
+ *
+ * Declared here, structurally, rather than imported from `#src/web`: the
+ * session contract is what an embedder codes against, and the guard that
+ * `createWebExposureGuard` returns satisfies it without the root entry having
+ * to export a second type for it.
+ */
+export interface WebExposurePort {
+  /** The decision this call must ask for, or undefined when it runs as it would have. */
+  assess(call: WebCallAssessment): WebGuardDecision | undefined;
 }
 
 export interface CreateAgentSessionOptions {

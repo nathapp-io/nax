@@ -228,6 +228,20 @@ export function rawRefusalFor(launcher: CommandLauncher | undefined): string | u
 }
 
 /**
+ * US-012: whether this session's commands run inside the OS sandbox.
+ *
+ * True exactly when the launcher's state is `available` — the same reading
+ * `rawScreenOptionsFor` and `isTempConfined` take, kept here for the same reason:
+ * `buildCodingToolSupport` reads the launcher's state through this module and sits
+ * at its complexity baseline. A disabled launcher, an unavailable one and no
+ * launcher at all all read as NOT sandboxed, which is what the web-exposure guard
+ * asks about: `false` means "outside the filesystem and network fences".
+ */
+export function isSandboxed(launcher: CommandLauncher | undefined): boolean {
+  return launcher?.state.kind === "available";
+}
+
+/**
  * US-004: whether the session's sandbox confines temp writes to this run's own
  * temp root.
  *

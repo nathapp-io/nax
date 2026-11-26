@@ -16,6 +16,7 @@ import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { ImageAttachment } from "#src/cost/standard-types";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
+import type { WebExposurePort } from "#src/session/agent-session-types";
 import type { SandboxRecord, SandboxStatus } from "../sandbox/index.ts";
 import { deleteTool } from "./delete.ts";
 import { editTool } from "./edit.ts";
@@ -27,9 +28,11 @@ import { enforceInstructionAccess } from "./instruction-access.ts";
 import type { OwnedPathsPolicy } from "./owned-paths.ts";
 import type { ProtectedPathsPolicy } from "./protected-paths.ts";
 import { readTool } from "./read.ts";
-import { type CodingTool, getCodingTool, registerBuiltinTool, type ToolRunContext } from "./registry.ts";
+import { type CodingTool, getCodingTool, registerBuiltinTool } from "./registry.ts";
 import { requestCapabilityTool } from "./request-capability.ts";
 import {
+  auditLevel,
+  contextPorts,
   openCallShadowTap,
   resolveAskOutcome,
   resolveAskVerdict,
@@ -39,9 +42,10 @@ import {
   resolveUnsandboxedCall,
   toolOutcome,
 } from "./runtime-calltool.ts";
+import { resolveWebExposureDenial } from "./runtime-web-guard.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
-import { createNoOpToolAuditSink, type ToolAuditSink, type ToolCallRecord } from "./tool-audit.ts";
+import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit.ts";
 import { READ_CEILING } from "./truncate.ts";
 import type { ToolCallContext, ToolPolicy } from "./types.ts";
 import { writeTool } from "./write.ts";
@@ -82,16 +86,6 @@ export type CodingToolOutcome =
 /** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
 export const _codingToolDeps = { getLogger: getSafeLogger };
 
-/** The console level for one call: a breach alone reaches `error`, a routine tool error is `debug`. */
-function auditLevel(
-  outcome: ToolCallRecord["outcome"],
-  breach: boolean | undefined,
-  routineErrors: boolean | undefined,
-): "debug" | "warn" | "error" {
-  if (outcome === "denied" || outcome === "denied:ask") return breach === true ? "error" : "warn";
-  return outcome === "error" && routineErrors !== true ? "warn" : "debug";
-}
-
 export type { ToolCallContext };
 
 export interface CodingToolRuntime {
@@ -127,23 +121,6 @@ export function registerBuiltinCodingTools(): void {
 /** @internal Test-only: pairs with _resetRegistryForTest. */
 export function _resetBuiltinsForTest(): void {
   builtinsRegistered = false;
-}
-
-/**
- * The run-scoped ports every ToolRunContext carries, present-field only.
- * Built once per runtime and kept out of `runTool`, which sits at its
- * complexity baseline.
- */
-function contextPorts(opts: {
-  readonly interceptor?: CommandInterceptor;
-  readonly protectedPaths?: ProtectedPathsPolicy;
-  readonly ownedPaths?: OwnedPathsPolicy;
-}): Pick<ToolRunContext, "interceptor" | "protectedPaths" | "ownedPaths"> {
-  return {
-    ...(opts.interceptor !== undefined ? { interceptor: opts.interceptor } : {}),
-    ...(opts.protectedPaths !== undefined ? { protectedPaths: opts.protectedPaths } : {}),
-    ...(opts.ownedPaths !== undefined ? { ownedPaths: opts.ownedPaths } : {}),
-  };
 }
 
 export function createCodingToolRuntime(opts: {
@@ -224,6 +201,10 @@ export function createCodingToolRuntime(opts: {
    * policy evaluates it.
    */
   unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode; readonly alwaysAsk?: boolean };
+  /** US-012: the session's web-exposure guard; a flagged ALLOWED call becomes one ask. */
+  webExposure?: WebExposurePort;
+  /** US-012: whether the call runs inside the sandbox; absent reads as NOT sandboxed. */
+  sandboxed?: boolean;
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -593,7 +574,27 @@ export function createCodingToolRuntime(opts: {
         });
       }
 
-      return runTool(tool, input, verdict.resolvedPaths);
+      // US-012: a call the session's web-exposure guard flags goes through the SAME
+      // ask channel, one step later. `??` keeps the branch out of this function: the
+      // tool runs only when the guard raised no ask, and the guard fails closed.
+      return (
+        (await resolveWebExposureDenial({
+          port: opts.webExposure,
+          sandboxed: opts.sandboxed === true,
+          identity: policyIdentity,
+          tool,
+          input,
+          context,
+          resolvedPaths: verdict.resolvedPaths,
+          root: opts.policy.root,
+          askResolver,
+          stage: opts.pipelineStage,
+          storyId: opts.storyId,
+          runtimeSignal: signal,
+          logCall,
+          runTool,
+        })) ?? runTool(tool, input, verdict.resolvedPaths)
+      );
     },
   };
 }

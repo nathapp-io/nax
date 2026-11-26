@@ -22,7 +22,7 @@ import type { ResolvedProviderTools } from "#src/tools/provider-advertise";
 import { renderProviderInstructions } from "#src/tools/provider-instructions";
 import type { CodingToolName, ToolGrant } from "#src/tools/types";
 import { AgentSessionError } from "./agent-session-errors.ts";
-import type { AgentSessionProfile } from "./agent-session-types.ts";
+import type { AgentSessionProfile, WebExposurePort } from "./agent-session-types.ts";
 
 /** The pipeline stage the facade's tool calls and asks carry. */
 export const SESSION_STAGE = "session";
@@ -159,6 +159,12 @@ export interface SessionToolSupportArgs {
    * Provider tools are narrowed earlier, by `providerAdmits` at resolution.
    */
   readonly allowedTools?: readonly string[];
+  /**
+   * US-012: the session's web-exposure guard (`nativeBackend`'s
+   * `hostPorts.webExposure`). Forwarded to the runtime through the same posture
+   * point as `commandShadow`; ABSENT in every session without one.
+   */
+  readonly webExposure?: WebExposurePort;
 }
 
 /**
@@ -190,11 +196,13 @@ function postureToolOptions(args: SessionToolSupportArgs): {
   readonly denyRules?: readonly ToolGrant[];
   readonly askOnUnsandboxed?: boolean;
   readonly commandShadow?: CommandShadow;
+  readonly webExposure?: WebExposurePort;
 } {
   return {
     ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
     ...(args.askOnUnsandboxed !== undefined ? { askOnUnsandboxed: args.askOnUnsandboxed } : {}),
     ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
+    ...(args.webExposure !== undefined ? { webExposure: args.webExposure } : {}),
   };
 }
 
