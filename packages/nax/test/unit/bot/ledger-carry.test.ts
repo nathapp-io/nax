@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv, makeLogger } from "@test/helpers";
 import { ledgerPath } from "@/advisor";
 import type { BotFixState } from "@/bot";
-import { _ledgerCarryDeps, ledgerStep } from "@/bot/ledger-carry";
+import { _ledgerCarryDeps, ledgerStep, mergedLedgerText } from "@/bot/ledger-carry";
 import { PROJECT_FEATURES_DIR } from "@/config";
 
 const original = { ..._ledgerCarryDeps };
@@ -63,17 +63,32 @@ describe("ledgerStep", () => {
     expect(result.exit).toBe("push");
   });
 
-  test.each(["equal", "missing", "divergent", "shorter"])("AC-5–8: %s main ledger is not carried", async (kind) => {
+  test.each(["equal", "missing", "shorter"])("AC-5–8: %s main ledger is not carried", async (kind) => {
     head = env.info.headSha;
     const main = ledgerPath(env.repoRoot, "f");
     if (kind === "missing") files.delete(main);
-    else files.set(main, kind === "equal" ? "old\n" : kind === "shorter" ? "ol" : "other\nnew\n");
+    else files.set(main, kind === "equal" ? "old\n" : "ol");
     expect(await ledgerStep(env, state)).toEqual({ patch: {}, exit: "skip" });
     expect(_ledgerCarryDeps.writeText).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
     expect(_ledgerCarryDeps.readHead).toHaveBeenCalledWith(env.checkout.worktree);
-    if (kind === "divergent" || kind === "shorter")
-      warned("Main checkout ledger does not extend the PR's; not carried");
+    if (kind === "shorter") warned("Main checkout ledger does not extend the PR's; not carried");
+  });
+
+  test("#3058: a divergent main ledger carries only its missing lines, without the not-carried warn", async () => {
+    files.set(ledgerPath(env.repoRoot, "f"), "other\nnew\n");
+    expect(await ledgerStep(env, state)).toEqual({ patch: { ledgerCarried: true }, exit: "push" });
+    expect(_ledgerCarryDeps.writeText).toHaveBeenCalledWith(
+      ledgerPath(env.checkout.worktree, "f"),
+      "old\nother\nnew\n",
+    );
+    expect(calls).toEqual([
+      { args: ["add", "-f", "--", rel], cwd: env.checkout.worktree },
+      { args: ["commit", "--no-verify", "-m", "chore(f): advisor decisions", "--", rel], cwd: env.checkout.worktree },
+    ]);
+    expect(logger.calls).not.toContainEqual(
+      expect.objectContaining({ message: "Main checkout ledger does not extend the PR's; not carried" }),
+    );
   });
 
   test.each([
@@ -128,5 +143,41 @@ describe("ledgerStep", () => {
     expect(_ledgerCarryDeps.readText).not.toHaveBeenCalled();
     expect(_ledgerCarryDeps.writeText).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
+  });
+});
+
+describe("mergedLedgerText", () => {
+  test.each([
+    {
+      name: "AC-5: appends main's missing complete line after the PR's lines",
+      previous: "a\nb\n",
+      main: "a\nc\n",
+      want: "a\nb\nc\n",
+    },
+    {
+      name: "AC-6: terminates an unterminated PR ledger before appending",
+      previous: "a\nb",
+      main: "a\nc\n",
+      want: "a\nb\nc\n",
+    },
+    { name: "AC-7: no complete line of main is missing", previous: "a\nb\nc\n", main: "a\nc\n", want: null },
+    { name: "AC-8: a terminated append is carried whole", previous: "a\n", main: "a\nb\n", want: "a\nb\n" },
+    { name: "AC-11: an unterminated main line is never carried", previous: "old\n", main: "ol", want: null },
+    {
+      name: "AC-12: a character-level append onto an unterminated line merges by line",
+      previous: "a\nb",
+      main: "a\nbc\n",
+      want: "a\nb\nbc\n",
+    },
+    {
+      name: "AC-13: only the complete lines of main are carried",
+      previous: "a\n",
+      main: "a\nb\nc",
+      want: "a\nb\n",
+    },
+    { name: "AC-14: a terminated append holds nothing new", previous: "a\nb", main: "a\nb\n", want: null },
+    { name: "AC-17: a line repeated in main is carried once", previous: "z\n", main: "x\nx\n", want: "z\nx\n" },
+  ])("$name", ({ previous, main, want }) => {
+    expect(mergedLedgerText(previous, main)).toBe(want);
   });
 });

@@ -27,6 +27,30 @@ export function isLedgerAppend(before: string | null, after: string | null): aft
   return after !== null && after.length > prefix.length && after.startsWith(prefix);
 }
 
+/** Every line of `text` followed by a newline; an unterminated last line is not a complete line. */
+function completeLines(text: string): string[] {
+  return text.split("\n").slice(0, -1);
+}
+
+/**
+ * #3058: the ledger text `carry` commits. A whole-text append is carried verbatim; anything else —
+ * a divergent PR ledger, or an append that touches an unterminated last line — merges by line, so
+ * the PR keeps its own lines and gains every complete main line it lacks, in main's order.
+ *
+ * `null` when main holds no complete line the PR lacks: there is nothing to carry.
+ */
+export function mergedLedgerText(previous: string | null, main: string): string | null {
+  const prefix = previous ?? "";
+  const terminated = prefix === "" || prefix.endsWith("\n");
+  if (terminated && main.endsWith("\n") && isLedgerAppend(previous, main)) return main;
+  const held = new Set(prefix.split("\n"));
+  const missing = completeLines(main).filter(
+    (line, index, lines) => line !== "" && !held.has(line) && lines.indexOf(line) === index,
+  );
+  if (missing.length === 0) return null;
+  return `${terminated ? prefix : `${prefix}\n`}${missing.map((line) => `${line}\n`).join("")}`;
+}
+
 /** Git against a throwaway index, so the user's index and working file are never read for the commit. */
 function indexGit(args: string[], cwd: string, indexFile: string): ReturnType<typeof gitWithTimeout> {
   // nax-git-env-allow: handed to gitWithTimeout, which hardens it
@@ -111,13 +135,14 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
     _ledgerCarryDeps.readText(path),
   ]);
   if (main === null || main === previous) return false;
-  if (!isLedgerAppend(previous, main)) {
+  const merged = mergedLedgerText(previous, main);
+  if (merged === null) {
     warn(env, "Main checkout ledger does not extend the PR's; not carried");
     return false;
   }
   const rel = relative(env.checkout.worktree, path);
   try {
-    await _ledgerCarryDeps.writeText(path, main);
+    await _ledgerCarryDeps.writeText(path, merged);
     await git(["add", "-f", "--", rel], env.checkout.worktree);
     await git(["commit", "--no-verify", "-m", ledgerCommitMessage(feature), "--", rel], env.checkout.worktree);
     return true;
@@ -163,8 +188,22 @@ async function ledgerMode(cwd: string, rel: string, index: string): Promise<stri
   return mode;
 }
 
+/** #3057: an index entry holding the user's own staged version is theirs, never cleared. */
+const INDEX_LEFT_AS_IS = "Advisor ledger committed; the staged ledger differs and was left as is";
+
+/** The blob the user's real index holds for `rel`; `undefined` when the path has no entry. */
+async function indexEntryBlob(cwd: string, rel: string): Promise<string | undefined> {
+  return (await git(["ls-files", "-s", "--", `:(literal)${rel}`], cwd)).split(" ")[1] || undefined;
+}
+
+/** The parent commit's blob for `rel`; `undefined` when the parent did not hold the file. */
+async function parentLedgerBlob(cwd: string, parent: string, rel: string): Promise<string | undefined> {
+  const result = await _ledgerCarryDeps.runGit(["rev-parse", "--verify", "--quiet", `${parent}:${rel}`], cwd);
+  return result.exitCode === 0 ? result.stdout.trim() || undefined : undefined;
+}
+
 /** The real index entry follows the new HEAD, as `git commit -- <path>` would leave it. */
-async function refreshIndexEntry(env: BotFixEnv, rel: string): Promise<void> {
+async function resetIndexToHead(env: BotFixEnv, rel: string): Promise<void> {
   const args = ["reset", "-q", "HEAD", "--", `:(literal)${rel}`];
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -180,6 +219,33 @@ async function refreshIndexEntry(env: BotFixEnv, rel: string): Promise<void> {
         );
     }
   }
+}
+
+/**
+ * #3057: refresh the real index entry only when it held nothing of the user's — it matched the parent
+ * commit or already the new blob, or neither the parent nor the index had an entry. A different
+ * version was staged by the user during the run; clearing it would discard their work. An unreadable
+ * index skips the refresh too: the append is already committed and must not be undone by it.
+ */
+async function refreshIndexEntry(input: {
+  env: BotFixEnv;
+  rel: string;
+  parentBlob: string | undefined;
+  blob: string;
+}): Promise<void> {
+  const { env, rel, parentBlob, blob } = input;
+  let current: string | undefined;
+  try {
+    current = await indexEntryBlob(env.checkout.worktree, rel);
+  } catch (error) {
+    warn(env, INDEX_LEFT_AS_IS, error);
+    return;
+  }
+  if (current !== parentBlob && current !== blob) {
+    warn(env, INDEX_LEFT_AS_IS);
+    return;
+  }
+  await resetIndexToHead(env, rel);
 }
 
 /**
@@ -205,8 +271,9 @@ async function commitExactText(input: { env: BotFixEnv; rel: string; text: strin
     if (tree === (await git(["rev-parse", `${parent}^{tree}`], cwd))) return;
     const sign = await signFlag(cwd);
     const commit = await git(["commit-tree", ...sign, tree, "-p", parent, "-m", message], cwd);
+    const parentBlob = await parentLedgerBlob(cwd, parent, rel);
     await git(["update-ref", "-m", `commit: ${message}`, "HEAD", commit, parent], cwd);
-    await refreshIndexEntry(env, rel);
+    await refreshIndexEntry({ env, rel, parentBlob, blob });
   } finally {
     await _ledgerCarryDeps.removeDir(dir).catch(() => {});
   }
