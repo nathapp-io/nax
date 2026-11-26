@@ -54,8 +54,12 @@ interface ArchiveEntry {
   file: boolean;
   directory: boolean;
 }
+function writePrivateLog(path: string, bytes: Uint8Array): Promise<void> {
+  return writeFileAtomic(path, bytes, { mode: 0o600 });
+}
+
 export const _compactionArchiveDeps = {
-  publishLog: writeFileAtomic,
+  publishLog: writePrivateLog,
   readFile: async (path: string) => {
     const file = await openPinnedRead(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     if (!file) throw invalidArchive(path);
@@ -352,16 +356,20 @@ export async function restoreCompactionLog(store: MemoryStore, before: Uint8Arra
   await inLogDirectory(store, false, () =>
     before === null
       ? _compactionArchiveDeps.rm(store.paths.compactionsLog, { force: true })
-      : writeFileAtomic(store.paths.compactionsLog, before),
+      : writePrivateLog(store.paths.compactionsLog, before),
   );
 }
 
-/** The log as lines, or none when the mirror has never compacted. */
-async function compactionLogLines(store: MemoryStore): Promise<string[]> {
-  const bytes = await readCompactionLog(store);
-  if (bytes === null) return [];
-  // A log written by an older nax is still a log: the decoder only has to survive its bytes.
-  return new TextDecoder().decode(bytes).split("\n");
+/** Decode records individually and keep their original byte ranges for a surgical rewrite. */
+function* logRecords(bytes: Uint8Array) {
+  const decoder = new TextDecoder();
+  for (let start = 0; start < bytes.length; ) {
+    const newline = bytes.indexOf(10, start);
+    const end = newline < 0 ? bytes.length : newline;
+    const record = parseLogLine(decoder.decode(bytes.subarray(start, end)));
+    if (record) yield { start, end, record };
+    start = end + 1;
+  }
 }
 
 /**
@@ -373,12 +381,8 @@ async function compactionLogLines(store: MemoryStore): Promise<string[]> {
  * can act on, and that is what an undo resolves its default target from.
  */
 export async function readCompactionLogLines(store: MemoryStore): Promise<readonly MemoryCompactionLogLine[]> {
-  const lines: MemoryCompactionLogLine[] = [];
-  for (const line of await compactionLogLines(store)) {
-    const parsed = parseLogLine(line);
-    if (parsed !== null) lines.push(parsed);
-  }
-  return lines;
+  const bytes = await readCompactionLog(store);
+  return bytes ? Array.from(logRecords(bytes), ({ record }) => record) : [];
 }
 
 /**
@@ -395,17 +399,20 @@ export async function markCompactionLogUndone(input: {
   readonly store: MemoryStore;
   readonly id: string;
 }): Promise<boolean> {
-  const lines = await compactionLogLines(input.store);
-  if (lines.length === 0) return false;
-  let marked = false;
-  const next = lines.map((line) => {
-    const parsed = parseLogLine(line);
-    if (parsed === null || parsed.id !== input.id) return line;
-    marked = true;
-    return JSON.stringify({ ...parsed, undone: true });
-  });
-  if (!marked) return false;
-  await inLogDirectory(input.store, false, () => writeFileAtomic(input.store.paths.compactionsLog, next.join("\n")));
+  const bytes = await readCompactionLog(input.store);
+  if (!bytes) return false;
+  const parts: Uint8Array[] = [];
+  let offset = 0;
+  for (const { start, end, record } of logRecords(bytes)) {
+    if (record.id !== input.id) continue;
+    parts.push(bytes.subarray(offset, start), Buffer.from(JSON.stringify({ ...record, undone: true })));
+    offset = end;
+  }
+  if (!parts.length) return false;
+  parts.push(bytes.subarray(offset));
+  await inLogDirectory(input.store, false, () =>
+    writePrivateLog(input.store.paths.compactionsLog, Buffer.concat(parts)),
+  );
   return true;
 }
 

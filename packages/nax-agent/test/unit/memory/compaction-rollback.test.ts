@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MemoryStore } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
@@ -91,6 +91,27 @@ describe("applyMemoryCompaction rollback", () => {
       const consumer: MemoryStore = { ...legacy, readNote };
       await h.apply({ store: consumer });
       for (const slug of ["retired", "source-a", "source-b"]) expect(readNote).toHaveBeenCalledWith("project", slug);
+    });
+  });
+
+  test("appending does not widen a private log", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const path = h.store.paths.compactionsLog;
+      await writeFile(path, "older\n", { mode: 0o600 });
+      await h.apply();
+      expect((await stat(path)).mode & 0o077).toBe(0);
+    });
+  });
+
+  test("undo preserves unrelated non-UTF8 log bytes", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const earlier = Buffer.from([0xff, 0x0a]);
+      await writeFile(h.store.paths.compactionsLog, earlier);
+      await h.apply();
+      await undoMemoryCompaction(h);
+      expect((await readFile(h.store.paths.compactionsLog)).subarray(0, earlier.length)).toEqual(earlier);
     });
   });
 
