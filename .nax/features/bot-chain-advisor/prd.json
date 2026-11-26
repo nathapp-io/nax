@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T06:13:21.668Z",
+  "updatedAt": "2026-11-26T06:29:23.605Z",
   "userStories": [
     {
       "id": "US-001",
@@ -28,14 +28,17 @@
         "bot"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive schema, type and menu changes using established defaults and validation; no new decision or permission policy."
+        "reasoning": "Additive schema, type and menu changes using established defaults and validation; no new decision or permission policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-advisor.ts",
@@ -51,7 +54,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "582a7068ec1141c44c8d76886f66c339b48ffa92"
     },
     {
       "id": "US-002",
@@ -104,11 +111,14 @@
         "packages/nax/src/bot/chain-rulings.ts",
         "packages/nax/test/unit/bot/chain-rulings.test.ts"
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-002 only: redaction, link breaking and mention neutralising themselves are `safeText`'s behaviour and are not re-tested here; the ACs assert that the rendered text is what `safeText` returns."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     },
     {
       "id": "US-003",
@@ -161,12 +171,15 @@
         "packages/nax/test/unit/bot/finding-rulings.test.ts",
         "packages/nax/test/unit/bot/rulings.test.ts"
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-003 only: writer authorization of the advisor's comment. An own comment is trusted because the bot wrote it; `ownComments` already matches the authenticated login and a valid marker.",
         "US-003 only: a chain ruling on a pull-request-level comment rather than a review thread. Chain rulings are posted only on finding threads."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     },
     {
       "id": "US-004",
@@ -224,7 +237,10 @@
         "packages/nax/test/unit/bot/chain-advise.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -286,7 +302,10 @@
         "packages/nax/test/unit/bot/chain-question.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -353,12 +372,15 @@
         "[unit] When a held ruling is posted successfully, resolveThread is not called.",
         "[unit] When withChainRulings removes a waived item, the input env.review.agreed remains unchanged."
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-006 only: composition tests 2, 4, 5 and 6 and the `readConfirmedKeys` read are US-007's code; here `readConfirmedKeys` is stubbed and not asserted on, and `env.cost` is never at its limit.",
         "US-006 only: the forced-confirm rule for a `critical` waive is the advisor service's; it is exercised through the real service in US-008's integration ACs, not here."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     },
     {
       "id": "US-007",
@@ -428,7 +450,10 @@
         "[unit] When posting a new repeated-fix hold fails, the finding stays in review.agreed with no new ChainRuling."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -494,11 +519,14 @@
         "[unit] summaryBody remains within MAX_FORGE_COMMENT_CHARS when chain-ruling counts compete for room with other details and the push ledger.",
         "[unit] When chainRulings is present and every agreed item was removed, summaryBody preserves the existing nothing-outcome sentence and includes the advisor count detail when it fits."
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-008 only: an end-to-end run with a real advisor model session. The advisor's model call is stubbed at `_advisorServiceDeps.callOp` or at `createAdvisor`."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     },
     {
       "id": "US-009",
@@ -537,11 +565,14 @@
         "packages/nax/test/unit/bot/fix-report.test.ts",
         "packages/nax/test/helpers/bot-fix.ts"
       ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
       "outOfScope": [
         "US-009 only: a ready-only pass. It does not run the routing, has no `chainRulings`, and reads the unfiltered review artifact, where a held finding is still an open blocking finding."
-      ],
-      "workdir": "packages/nax",
-      "workdirSource": "stated"
+      ]
     }
   ],
   "analysis": "This is an additive enhancement to @nathapp/nax, not a greenfield implementation. It closes #2987 lever C by routing blocking fix-induced chain findings through the existing advisor before the existing bot fix graph. All nine stories are package-scoped to packages/nax; no nax-ai, nax-agent or nax-agent-acp API or release change is needed. Navigation used direct reads and text search because codebase-memory MCP tools are unavailable in this session. All citations below are repository-root relative.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:12 links the conventions and dependency-injection standards, :106 links the workflow/advisor subsystems, and :145 records the hard 600-line source and 800-line test limits. Use Bun APIs, strict TypeScript, leaf imports to avoid orchestration cycles, injectable exported _deps for external work, immutable environment transforms, and bun:test fixtures with restored dependency stubs. The new question module prevents chain-advise.ts from growing past the source limit; the three chain-advise test files separate selection, outcomes, and replay/composition. Tests are part of every implementation story, not separate deliverables.\n\nUS-001 impact: packages/nax/src/config/schemas-advisor.ts:9 defines AdvisorConfigObjectSchema; nested callers use prefault({}) at :14 so field defaults apply, and ADVISOR_DEFAULTS and resolveAdvisorConfig at :27-32 are the effective config SSOT. Add botFixChain false there and to packages/nax/src/config/runtime-types-advisor.ts:8 AdvisorCallersConfig, plus the FIELD_DESCRIPTIONS table exported at packages/nax/src/cli/config-descriptions.ts:8. packages/nax/src/advisor/types.ts:2 defines AdviceQuestionKind and :146 defines MenuFacts; AdviceAction already contains fix, waive and hold, so no new action is needed. packages/nax/src/advisor/menus.ts:63 assigns option ids/labels through withIds, :188 dispatches buildMenu, and :270 implements forcedConfirm. Reuse the existing fix instruction and waive reason validation. Existing tests are packages/nax/test/unit/advisor/menus.test.ts and packages/nax/test/unit/config/advisor-config.test.ts:11,32; the latter has exact defaults assertions that must gain the fifth caller. Search additional hand-built AdvisorCallersConfig literals when the required type member is added, preserving defaults rather than enabling anything.\n\nUS-002/003 persistence and trust: packages/nax/src/bot/render.ts:13 provides safeText, which neutralises/redacts text and caps the final escaped result; use it rather than reimplementing escaping. packages/nax/src/forge/marker-grammar.ts:25 accepts cr- keys already; :34 parses the last valid marker and explicitly does not establish ownership by itself. Chain rulings require ownComments ownership, a cr- marker, and a parsed body. The new leaf chain-rulings.ts must not import BotFixEnv at runtime: chainInstructions accepts a structural environment. Render single-line sanitised text, persist as a thread reply, and parse that posted representation for both current-run instructions and replays. This intentionally changes code punctuation in instructions; instructions name changes in words and are not code-exact patches. packages/nax/src/bot/finding-rulings.ts:71 scans replies newest-first, currently skipping own comments; add only the own parsed waived chain-ruling case and do not ask isWriter for it. recordThread at :116 must avoid echoing a comment that is itself the durable ruling while still resolving an unresolved thread. Writer authorization and newer-writer precedence remain intact. packages/nax/src/bot/rulings.ts:432-445 centralises finding-thread reads through latestFindingRuling; readSettledKeys at :458 and readConfirmedKeys at :475 inherit the change without a second settlement rule. This affects recordFindingRulings, readiness and review settlement, not merely the routing. Existing coverage is packages/nax/test/unit/bot/finding-rulings.test.ts:59 and packages/nax/test/unit/bot/rulings.test.ts; reader integration assertions belong in the latter per the spec.\n\nUS-004 gating and selection: packages/nax/src/bot/fix-carried.ts:25 is the immutable preprocessing pattern, returning the original env for an empty transform and propagating unreadable ruling errors. packages/nax/src/bot/ledger-carry.ts:32 ledgerFeature identifies exactly one changed feature PRD and validates through the canonical feature-path boundary; export it unchanged so advisor routing and ledger carrying agree. packages/nax/src/bot/intent.ts:6 featureIntentPaths uses changed files and same-feature matching to supply absolute PR-checkout document paths. Gate through resolveAdvisorConfig before reading rulings or creating the advisor; an absent advisor block is disabled. Reuse packages/nax/src/workflow/blocking-findings/index.ts:71 isBlockingFinding, which rejects minor, fix-gap and non-blocking triggers, and :131 configuredChainNoticeGeneration, whose default is 2; use reviewBlockingTriggers(env), not a new hardcoded severity/trigger policy. Only findings with lineage at/above the threshold are candidates, preserving agreed order. Find their own thread by its first comment's authenticated login and exact finding marker, as packages/nax/src/bot/fix-report.ts:112 does. packages/nax/test/helpers/bot-fix.ts:6 supplies makeBotFixEnv, and :63 supplies the draft fixture for readiness.\n\nUS-005 evidence: packages/nax/src/bot/push-record.ts:41 ownLedgerEntries unions the summary ledger and append-only push records under the existing retention policy. packages/nax/src/bot/push-ledger.ts:66,103 requires a full lowercase 40-hex sha when decoding an entry; use an actual full sha in fixtures or parent issues silently disappear. parentIssue at :179 looks up the issue for that push and key, not a same-key issue from another push. Build the draft in a new chain-question.ts, with finding, review-round, merge-base diff and push diff evidence in that order. packages/nax/src/bot/git.ts:59 botGit accepts argv, cwd and optional timeout and uses the hardened git wrapper; inject it, do not use a shell. Exclude evidence for nonzero exit, timedOut, or rejection independently; do not discard the question. Cap each successful diff independently at 12,000 characters and append the specified cut line only when longer. Do not add model keys or supply PRD text from a new source.\n\nUS-006 advisor integration: packages/nax/src/advisor/service.ts:37 defines Advisor.advise, :276 createAdvisor forwards opts.findingSeverity, and :62 prepare reads the main-checkout PRD and trusted decision history. The service does not gate enabled/caller flags; this feature must. packages/nax/src/advisor/service-helpers.ts:21 AdvisorCallContext distinguishes main repoRoot (ledger location) from PR workdir; :35 defines QuestionDraft; :37 exposes _advisorServiceDeps and :42 returns '{}' for missing main-checkout PRD. decisionDraftFor at :67 calls forcedConfirm with the severity argument, not merely the draft field. Therefore pass both draft.findingSeverity and advise(draft, { findingSeverity: item.severity }); otherwise a critical waive can incorrectly be applied. packages/nax/src/advisor/menus.ts:266-274 holds low confidence, irreversible replies and critical waives but not confident reversible important waives. Reuse the service and its model ladder/ledger; never read its decision ledger for routing replay. Use runtime outputDir/runId via env.ctx.callCtx.runtime, not nonexistent ctx members. packages/nax/src/workflow/branch-fix.ts:160 applies sessionScope around the fix session; apply the same base pin around each advise call to avoid loading PR-head agent configuration. Readiness, instruction and severity boundaries warrant strict isolated TDD.\n\nOutcome semantics are fail-open only where explicitly specified: no own thread, no decision, rejected advise, unsupported action, reached cost limit, or failed posting leaves the finding unchanged with no ChainRuling. Log warnings with the finding key for advisor/post failures; null decisions include fallbackReason. A successful post is the durability commit point. Resolve only waived threads; resolution failure cannot undo a posted waiver. For fix and held, never resolve the thread in routing. Remove waived/held items only in a new review/environment; retain fix/unruled item identities and ordering. env.chainRulings carries current and replayed fix/held outcomes plus new waives, but not unruled findings or replayed waives. No AgreedItem or BotFixState modification.\n\nUS-007 composition risks: process candidates sequentially in agreed order, with confirm before own-thread replay, replay before parent detection, and parent detection before cost/advise. Read confirmed keys once using the SettlementReadInput pattern at packages/nax/src/bot/fix-carried.ts:28-36, and propagate its error unchanged rather than sending possibly settled work to a fixer. An existing ruling is the newest parsed own cr- comment on the own thread; invalid bodies do not count. A later fix-<finding key> own reply makes a replayed fix a new durable human hold. Check parents across all own PR comments, including threads, and successful rulings already produced in this call. Siblings sharing a push are not each other's parent. Once the cost threshold is observed, no later finding reaching that test may call the advisor, even if a test stub later reports a smaller total. Never bypass earlier replay/parent/confirm rules just because the budget is exhausted.\n\nUS-008 wiring and consumers: packages/nax/src/bot/fix-run.ts:422 fixCheckout builds a base-configured env, adds basePinScope at :484, and currently calls withCarriedFixFindings at :496 before executeFix. Add only the injected withChainRulings call at that seam after carry, skip both for ready-only, and leave BOT_FIX_GRAPH unchanged. The file is 545 lines, so no routing logic belongs there. packages/nax/src/bot/fix-steps.ts:110 defines BotFixEnv; :168 fixStep uses toFixFindings at :176 and :221 fixPromptFacts calls findingFactLines at :242. Both should consume chainInstructions(env). packages/nax/src/bot/fix-input.ts:175 maps agreed items into WorkflowFinding and currently copies suggestions; suppress the property entirely only for advised keys. packages/nax/src/bot/fix-facts.ts:70 currently takes three arguments and emits trigger, lineage and non-blocking facts; append Advisor ruling as the last fact for findings only. Update its header and packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:82's doc comment to identify the one instructional fact exception without changing prompt wording. packages/nax/src/bot/fix-summary-body.ts:85 summaryDetails feeds fitDetails at :125, so place counts there to retain the forge comment cap. Existing units are fix-facts.test.ts, fix-input.test.ts, fix-summary.test.ts; orchestration/session coverage is packages/nax/test/integration/bot/fix-session.test.ts:24,112. Add real-advisor-service integration coverage in a new chain-advise-service.test.ts, with temp main root/output directories and stubbed captureWorktreePatch/readPrdText/callOp; verify critical vs important forced-confirm rather than faking that rule in the bot.\n\nUS-009 readiness: packages/nax/src/bot/fix-report.ts:341 readinessReview may use codeReview, :367 openKeys re-reads the live PR and reconciles settled/withdrawn/confirmed keys, :391 openFindingHold currently unions blocking and carried keys, and :434 readyStep consults it before readying. Add unique held-chain keys to that same candidate set and keep all keys on the same openKeys reconciliation path. A held item removed from agreed must still hold in the current run, and a later writer waive must lift it. Do not put held findings into workflow open items or alter ready-only routing; its unfiltered artifact still contains the blocker. Extend existing packages/nax/test/unit/bot/fix-report.test.ts:125 readiness tests.\n\nCompatibility/migration: no persisted artifact schema migration, graph state migration, package version bump or automatic enablement is required. The optional chainRulings field and optional function parameters preserve existing callers. The new caller defaults false globally and on partial configurations, making disabled/inapplicable and empty-candidate preprocessing an identity operation with no new reads. PR comments are the durable replay source, while the advisor's existing ledgerStep at packages/nax/src/bot/ledger-carry.ts:105 carries newly appended main-checkout decisions to the PR exactly as before, including ledger-only pushes. Preserve the existing nothing-outcome summary sentence even if every finding was removed. Biggest regression risks are trusting a non-own/invalid marker, overriding a newer authorized writer, losing holds when filtering agreed, replacing suggestions for unrelated findings, consuming head-controlled agent configuration, omitting the advise severity option, counting replayed waives as new rulings, and exceeding source/test/comment size limits. The binding dependency graph is US-001 and US-002 first, then US-003/004, US-005, US-006, US-007, and US-008/009 at their specified dependencies; each delivers code plus scoped tests. No changes to post.ts, AgreedItem, graph nodes/exits/transitions, reviewer/fixer prompt text, forcedConfirm or service internals are authorized by this feature.\n\nRefine audit: individually checked all 164 explicit spec acceptance criteria (11/20/16/21/21/23/24/22/6 across US-001..009); every assertion and regression qualifier remains on its original story. US-003's compound criteria are split without losing their components. US-008's map criterion explicitly asserts Array.from(map.entries()) equals the one-entry nested array, not a flat array. All 14 failure-table rows are represented. Each story has negative-path criteria; US-008 now explicitly proves that a failed routing preparation never starts the fix session, and US-009 explicitly preserves the pre-existing hold when chainRulings is absent. The extra no-confirmed-read assertion belongs to US-007, not US-006, whose local exclusion forbids asserting that read. All 24 feature-level exclusions and all seven story-local exclusion bullets remain verbatim in their respective arrays, with nearby boundaries echoed in scopes. Binding ids, workdirs and dependencies remain unchanged.\n\nAdditional codebase-fit findings: the binding US-004 dependency list intentionally precedes chain-question.ts, so stage _chainAdviseDeps: US-004 exports already-existing dependencies, US-005 adds the actual buildChainQuestion import/property, and US-006 consumes the final object. Never introduce a missing import or fake builder in US-004, and import ChainFinding into chain-question.ts as a type to avoid a runtime cycle. packages/nax/src/operations/advise.ts:28 defines AdviseOpOutput as { ok: true; reply: AdvisorReply } or a typed failure; real-service tests stub callOp with that output rather than a bare reply. packages/nax/src/advisor/service-helpers.ts:59 prioritizes callCtx.config over the runtime loader, so fixtures must keep that config aligned with env.config. packages/nax/src/bot/fix-run.ts:223-239 triage already combines own thread and PR-level comments into env.own, providing the correct full-PR ancestry source without another forge read. US-001 contextFiles now prioritizes the spec-recommended existing menu test at packages/nax/test/unit/advisor/menus.test.ts:16; config-descriptions.ts remains an explicitly in-scope modification despite the five-context-file cap. Routing stays at the lightest existing-helper complexity, with strict isolation retained only where writer authorization or session trust is involved. No runtime execution/JSON parser tool is available in this session; this audit used source reads and exact JSON-preserving edits, not an executed test or parse claim.",
