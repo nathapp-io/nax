@@ -1,13 +1,15 @@
 /**
  * koda-provider-save.test.ts — the koda provider's reachability, its memoised
- * project id and its save delivery.
+ * project id, its save delivery and the write mode it decides per call.
  *
- * Covers US-005 AC-1..AC-22, and US-001 AC-19..AC-20: a `202` whose approval
- * cannot be recorded is a retryable failure, not a permanent refusal. Every case
- * drives the provider over a real `createKodaClient` whose `fetch` seam is
- * stubbed, and the proposal case over a real `createKodaApprovals` in a
- * temporary directory — so what is asserted is the requests koda would receive
- * and the record a `202` leaves on disk, not the provider's own view of either.
+ * Covers US-005 AC-1..AC-22, US-001 AC-19..AC-20 (a `202` whose approval
+ * cannot be recorded is a retryable failure, not a permanent refusal) and
+ * US-006 AC-1..AC-3 (the effective write mode is read fresh on every call and
+ * validated). Every case drives the provider over a real `createKodaClient`
+ * whose `fetch` seam is stubbed, and the proposal case over a real
+ * `createKodaApprovals` in a temporary directory — so what is asserted is the
+ * requests koda would receive and the record a `202` leaves on disk, not the
+ * provider's own view of either.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -30,6 +32,8 @@ import { _kodaClientDeps, createKodaClient, kodaStatusOf } from "@/memory/koda-h
 import {
   type CreateKodaMemoryProviderInput,
   createKodaMemoryProvider,
+  effectiveWriteModeOf,
+  type KodaMemoryProvider,
   MEMORY_KODA_APPROVAL_CHECKS_MAX,
   MEMORY_KODA_PROVIDER_PREFIX,
 } from "@/memory/koda-provider";
@@ -506,5 +510,112 @@ describe("createKodaMemoryProvider — refusals and transient failures", () => {
     } finally {
       _kodaApprovalsDeps.read = realRead;
     }
+  });
+});
+
+describe("createKodaMemoryProvider — effective write mode", () => {
+  let dir: string;
+  let logger: MockLogger;
+  let approvals: KodaApprovals;
+
+  /** The provider under test, over this case's approvals record and the stubbed transport. */
+  function makeProvider(overrides: Partial<CreateKodaMemoryProviderInput> = {}): KodaMemoryProvider {
+    return createKodaMemoryProvider({
+      client: createKodaClient({ url: API, headers: { Authorization: "Bearer k" }, timeoutMs: CLIENT_TIMEOUT_MS }),
+      project: PROJECT,
+      approvals,
+      readNote: async () => null,
+      readDecisions: async () => [],
+      logger,
+      ...overrides,
+    });
+  }
+
+  /** The write-mode route every case here reads, as koda receives it. */
+  const WRITE_MODE_ROUTE = "GET /api/projects/rs-stock/memory/write-mode";
+
+  beforeEach(() => {
+    originalFetch = _kodaClientDeps.fetch;
+    calls = [];
+    dir = makeTempDir("nax-koda-provider-");
+    logger = makeLogger();
+    approvals = createKodaApprovals({ dir: join(dir, "project"), logger });
+  });
+
+  afterEach(() => {
+    _kodaClientDeps.fetch = originalFetch;
+    cleanupTempDir(dir);
+  });
+
+  test("effectiveWriteMode resolves the mode koda answers for this agent (AC-1)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: { mode: "proposal" } }));
+
+    expect(await makeProvider().effectiveWriteMode()).toBe("proposal");
+    expect(routesOf()).toEqual([WRITE_MODE_ROUTE]);
+  });
+
+  test("effectiveWriteMode resolves direct when koda answers direct", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: { mode: "direct" } }));
+
+    expect(await makeProvider().effectiveWriteMode()).toBe("direct");
+  });
+
+  test("two effectiveWriteMode calls ask koda twice, because a policy change must be seen (AC-2)", async () => {
+    const answers = [{ mode: "direct" }, { mode: "proposal" }];
+    stubFetch(() => jsonAnswer({ ret: 0, data: answers.shift() ?? { mode: "proposal" } }));
+    const provider = makeProvider();
+
+    expect(await provider.effectiveWriteMode()).toBe("direct");
+    expect(await provider.effectiveWriteMode()).toBe("proposal");
+    expect(routesOf()).toEqual([WRITE_MODE_ROUTE, WRITE_MODE_ROUTE]);
+  });
+
+  test("effectiveWriteMode rejects MEMORY_KODA_BAD_RESPONSE for a mode koda should not answer (AC-3)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: { mode: "weird" } }));
+
+    const error = await rejection(makeProvider().effectiveWriteMode());
+
+    expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
+    expect(error.message).toContain("rs-stock");
+  });
+
+  test("effectiveWriteMode rejects MEMORY_KODA_BAD_RESPONSE when the answer names no mode at all", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: {} }));
+
+    expect((await rejection(makeProvider().effectiveWriteMode())).code).toBe("MEMORY_KODA_BAD_RESPONSE");
+  });
+
+  test("a client failure reaches the caller unchanged, so it is read as the transient failure it is", async () => {
+    stubFetch(() => jsonAnswer({ ret: -1, message: "unauthorized" }, 401));
+
+    const error = await rejection(makeProvider().effectiveWriteMode());
+
+    expect({ status: kodaStatusOf(error), code: error.code }).toEqual({ status: 401, code: "MEMORY_KODA_HTTP" });
+  });
+});
+
+describe("effectiveWriteModeOf", () => {
+  /** A provider that is not koda's: nothing on it answers a mode of its own. */
+  function plainProvider(): MemoryProvider {
+    return {
+      id: "local",
+      pull: async () => ({ notes: [], done: true }),
+      push: async (request) => ({ id: request.clientId, status: "active" }),
+      reachable: async () => true,
+    };
+  }
+
+  test("answers a lookup that resolves the provider's own effective mode", async () => {
+    const provider: KodaMemoryProvider = {
+      ...plainProvider(),
+      id: "koda:rs-stock",
+      effectiveWriteMode: async () => "proposal",
+    };
+
+    expect(await effectiveWriteModeOf(provider)?.()).toBe("proposal");
+  });
+
+  test("answers undefined for a provider that has no effective mode (the local provider)", () => {
+    expect(effectiveWriteModeOf(plainProvider())).toBeUndefined();
   });
 });

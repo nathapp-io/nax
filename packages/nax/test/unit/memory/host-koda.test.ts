@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createMemoryStore, type MemoryDecision, type MemoryNote, type MemoryProvider } from "@nathapp/nax-agent";
+import { createMemoryStore, type MemoryDecision, type MemoryNote } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { McpServerConfig, NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -18,7 +18,7 @@ import * as memoryBarrel from "@/memory";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost } from "@/memory";
 import { createKodaApprovals, type KodaApproval, type KodaApprovals } from "@/memory/koda-approvals";
 import { createKodaClient, type KodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "@/memory/koda-http";
-import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "@/memory/koda-provider";
+import { createKodaMemoryProvider, type KodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "@/memory/koda-provider";
 
 /** The API root the AC names, koda's global prefix included. */
 const API = "https://k/api";
@@ -87,13 +87,17 @@ function approvalsWith(entries: readonly KodaApproval[]): KodaApprovals {
   return { list: async () => entries, record: async () => {}, drop: async () => {} };
 }
 
-/** A provider that is not the koda one: only the id matters to a composition case. */
-function stubProvider(id: string): MemoryProvider {
+/**
+ * A provider a stubbed koda factory answers with: only the id matters to a composition case,
+ * and the mode is the one a koda project with no approval policy answers.
+ */
+function stubProvider(id: string): KodaMemoryProvider {
   return {
     id,
     pull: async () => ({ notes: [], done: true }),
     push: async (request) => ({ id: request.clientId, status: "active" }),
     reachable: async () => true,
+    effectiveWriteMode: async () => "direct",
   };
 }
 

@@ -569,7 +569,7 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     outbox: parts.outbox,
     logger: input.logger,
     config,
-    providerId: parts.provider.id,
+    provider: parts.provider,
     writeMode: config.writeMode,
     repoNotes: async () => (await reads.repoNotes()).notes,
     sync: () => syncParts(hostInput),

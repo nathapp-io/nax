@@ -24,8 +24,8 @@ export type { KodaApproval, KodaApprovals } from "./koda-approvals";
 export { createKodaApprovals, KODA_APPROVALS_FILE } from "./koda-approvals";
 export type { CreateKodaClientInput, KodaClient, KodaResponse } from "./koda-http";
 export { createKodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
-export type { CreateKodaMemoryProviderInput } from "./koda-provider";
-export { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
+export type { CreateKodaMemoryProviderInput, KodaMemoryProvider } from "./koda-provider";
+export { createKodaMemoryProvider, effectiveWriteModeOf, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
 export type { KodaRefusal, KodaRefusals, MemoryKodaRefusal } from "./koda-refusals";
 export {
   createKodaRefusals,

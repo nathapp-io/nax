@@ -17,7 +17,9 @@
  * decides direct versus proposal from its own approval policy, so a `201` is
  * active and a `202` is pending whatever `memory.writeMode` says locally. A `202`
  * wrote no row; the approval it opened is recorded in `koda-approvals.json` so a
- * later pull can resolve the proposal (US-008).
+ * later pull can resolve the proposal (US-008). Because the mode is the principal's,
+ * `effectiveWriteMode` reads it on every call — no memo — so a host that would act on
+ * it sees a policy changed in koda rather than one cached at construction.
  *
  * Error classification is what the outbox drain reads. `400`, `403`, `409`, `413`
  * and `422` are permanent — koda will never take this write, so the entry is
@@ -96,6 +98,33 @@ const SEARCH_TEXT_MAX_CHARS = 100;
 
 /** The largest page koda's search honours, whatever limit the caller asks for. */
 const SEARCH_SIZE_MAX = 100;
+
+/**
+ * A memory provider that also answers the write mode koda decides for this agent.
+ *
+ * Only koda decides that mode itself — every other provider is governed by the local
+ * `memory.writeMode` — so a caller asks this method when the provider has one and falls
+ * back to the local mode when it does not (`effectiveWriteModeOf`).
+ */
+export type KodaMemoryProvider = MemoryProvider & {
+  effectiveWriteMode(): Promise<"direct" | "proposal">;
+};
+
+/**
+ * The effective-mode lookup of a provider that answers one, or `undefined` when it does not.
+ *
+ * The method is called through the provider rather than detached from it, so a provider
+ * that keeps its answer on `this` keeps working.
+ */
+export function effectiveWriteModeOf(provider: MemoryProvider): (() => Promise<"direct" | "proposal">) | undefined {
+  if (!hasEffectiveWriteMode(provider)) return undefined;
+  return () => provider.effectiveWriteMode();
+}
+
+/** Whether a provider answers its own current write mode, which only the koda provider does. */
+function hasEffectiveWriteMode(provider: MemoryProvider): provider is KodaMemoryProvider {
+  return "effectiveWriteMode" in provider && typeof provider.effectiveWriteMode === "function";
+}
 
 export interface CreateKodaMemoryProviderInput {
   readonly client: KodaClient;
@@ -186,7 +215,7 @@ function saveBody(projectId: string, request: MemoryWriteRequest, note: MemoryNo
  *
  * @param input - The client, the project slug, the proposal record and the reads later stories use
  */
-export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): MemoryProvider {
+export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): KodaMemoryProvider {
   const { client, project, approvals, logger } = input;
 
   /** The project id, learned once: every route takes the slug, but a save body takes the id. */
@@ -221,14 +250,34 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
     try {
       // A 2xx is the client's own precondition for resolving at all; the mode says the
       // agent may write, which is the fact a sync needs.
-      const answer: KodaResponse = await client.get(`projects/${project}/memory/write-mode`);
-      const mode = stringField(answer.data, "mode");
+      const { mode } = await writeModeAnswer();
       return mode !== undefined && KODA_WRITE_MODES.has(mode);
     } catch {
       // A refused key, a lost membership and an unreachable host are one fact here: nothing
       // can be delivered, so the sync records `unreachable` and the session reads the mirror.
       return false;
     }
+  }
+
+  /** koda's write-mode answer for this project: the mode it names, and the status it came with. */
+  async function writeModeAnswer(): Promise<{ readonly mode: string | undefined; readonly status: number }> {
+    const answer: KodaResponse = await client.get(`projects/${project}/memory/write-mode`);
+    return { mode: stringField(answer.data, "mode"), status: answer.status };
+  }
+
+  /**
+   * The write mode koda decides for this agent right now.
+   *
+   * Read on every call and never memoised: the mode belongs to the principal, so an approval
+   * policy changed in koda must be seen by the next compaction rather than after a restart.
+   * Only the two modes a compaction can act on are answers; anything else is a response this
+   * provider cannot use. A request that fails propagates unchanged, so the caller reads a
+   * refused key or an unreachable host as the transient failure it is.
+   */
+  async function effectiveWriteMode(): Promise<"direct" | "proposal"> {
+    const { mode, status } = await writeModeAnswer();
+    if (mode === "direct" || mode === "proposal") return mode;
+    throw badResponse(project, `GET projects/${project}/memory/write-mode answered no usable write mode`, status);
   }
 
   const save = async (request: MemoryWriteRequest): Promise<MemoryPushResult> => {
@@ -409,6 +458,7 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
     },
     search,
     reachable,
+    effectiveWriteMode,
   };
 }
 

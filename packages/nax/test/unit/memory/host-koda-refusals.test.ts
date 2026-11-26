@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { createMemoryStore, type MemoryProvider, type MemoryStore } from "@nathapp/nax-agent";
+import { createMemoryStore, type MemoryStore } from "@nathapp/nax-agent";
 import {
   assertDefined,
   cleanupTempDir,
@@ -29,6 +29,7 @@ import {
   KODA_REFUSALS_FILE,
   type KodaApproval,
   type KodaApprovals,
+  type KodaMemoryProvider,
   type KodaRefusal,
   type KodaRefusals,
   type MemoryDirs,
@@ -67,12 +68,13 @@ function refusalsWith(entries: readonly KodaRefusal[] = []): KodaRefusals {
 }
 
 /** A provider that is not the koda one: only the id matters to a composition case. */
-function stubProvider(id: string): MemoryProvider {
+function stubProvider(id: string): KodaMemoryProvider {
   return {
     id,
     pull: async () => ({ notes: [], done: true }),
     push: async (request) => ({ id: request.clientId, status: "active" }),
     reachable: async () => true,
+    effectiveWriteMode: async () => "direct",
   };
 }
 

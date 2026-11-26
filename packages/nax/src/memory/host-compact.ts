@@ -19,11 +19,14 @@
  *   module's: the apply never talks to a provider. A sync that throws is reported and nothing
  *   else — the compaction is already staged, its result stands, and the next sync delivers it.
  *
- * Both members refuse under `memory.writeMode: "proposal"` before any operation is reached: a
+ * Both members refuse under `memory.writeMode: "proposal"` before any operation is reached, and
+ * they refuse the same way when the provider reports its own effective mode as `proposal`: a
  * proposal-mode compaction (every retire and merge held for approval) is not built, and a
- * silent no-op would leave a person believing the mirror had changed.
+ * silent no-op would leave a person believing the mirror had changed. Koda decides that mode
+ * per principal, so only a provider that answers one (`koda-provider.ts`) is asked, on every
+ * call, and a lookup that fails propagates before anything is staged.
  */
-import type { MemoryNote, MemoryOutbox, MemoryStore, MemorySyncResult } from "@nathapp/nax-agent";
+import type { MemoryNote, MemoryOutbox, MemoryProvider, MemoryStore, MemorySyncResult } from "@nathapp/nax-agent";
 import {
   type applyMemoryCompaction,
   errorMessage,
@@ -35,13 +38,18 @@ import {
 } from "@nathapp/nax-agent/internal";
 import type { MemoryConfig } from "@/config";
 import { NaxError } from "@/errors";
+import { effectiveWriteModeOf } from "./koda-provider";
 import type { MemoryLogger } from "./paths";
 
 /** Stage every refusal and warn this module writes carries. */
 const LOG_STAGE = "memory";
 
-/** The message both refusals carry: what a surface prints after `Error: `. */
+/** The message the local refusal carries: what a surface prints after `Error: `. */
 const UNSUPPORTED_MESSAGE = 'memory compaction is not available with memory.writeMode "proposal"; nothing was changed';
+
+/** The message the provider's own refusal carries: koda decides that mode per principal, not nax. */
+const UNSUPPORTED_PROVIDER_MESSAGE =
+  "memory compaction is not available while the provider reports proposal mode; nothing was changed";
 
 /** One compaction to apply on this host: the plan a person confirmed, the model, and the fill before it. */
 export interface MemoryApplyCompactionInput {
@@ -79,7 +87,11 @@ export interface HostCompactionInput {
   readonly logger: MemoryLogger;
   /** The resolved memory config: `compact.keepArchives` and the write mode both come from it. */
   readonly config: MemoryConfig;
-  readonly providerId: string;
+  /**
+   * The provider behind this host. Its `id` labels the apply's manifest, and a provider that
+   * decides its own write mode is asked for it before either member runs.
+   */
+  readonly provider: MemoryProvider;
   readonly writeMode: "direct" | "proposal";
   /** The repository's committed project notes, re-read for the slugs a merge target may not take. */
   readonly repoNotes: () => Promise<readonly MemoryNote[]>;
@@ -89,8 +101,24 @@ export interface HostCompactionInput {
 }
 
 /** The refusal a proposal-mode host answers both members with, before anything is read or written. */
-function unsupported(): NaxError {
-  return new NaxError(UNSUPPORTED_MESSAGE, "MEMORY_COMPACT_UNSUPPORTED", { stage: LOG_STAGE, writeMode: "proposal" });
+function unsupported(message = UNSUPPORTED_MESSAGE): NaxError {
+  return new NaxError(message, "MEMORY_COMPACT_UNSUPPORTED", { stage: LOG_STAGE, writeMode: "proposal" });
+}
+
+/**
+ * Refuse a compaction neither side would let through: the local mode is proposal, or the
+ * provider's own effective mode is.
+ *
+ * The local mode is nax's, so it is read first and needs no request. The provider's mode is
+ * koda's, decided per principal, so it is asked on every call and never memoised — a policy
+ * changed in koda must be seen by the next attempt rather than after a restart. A lookup that
+ * rejects propagates unchanged, before any operation runs and before anything is staged: the
+ * mode it would have answered is the whole reason to proceed, so guessing either way is wrong.
+ */
+async function refuseUnderProposal(input: HostCompactionInput): Promise<void> {
+  if (input.writeMode === "proposal") throw unsupported();
+  const lookup = effectiveWriteModeOf(input.provider);
+  if (lookup !== undefined && (await lookup()) === "proposal") throw unsupported(UNSUPPORTED_PROVIDER_MESSAGE);
 }
 
 /** The slugs the repository holds: a merge target may not take one the mirror cannot see. */
@@ -113,9 +141,9 @@ async function syncAfter(input: HostCompactionInput, message: string): Promise<v
   }
 }
 
-/** One apply: the operation with the facts only this host knows, then one sync. */
+/** One apply: the refusal, the operation with the facts only this host knows, then one sync. */
 async function apply(input: HostCompactionInput, request: MemoryApplyCompactionInput): Promise<MemoryCompactionResult> {
-  if (input.writeMode === "proposal") throw unsupported();
+  await refuseUnderProposal(input);
   const result = await input.operations.applyMemoryCompaction({
     store: input.store,
     outbox: input.outbox,
@@ -124,7 +152,7 @@ async function apply(input: HostCompactionInput, request: MemoryApplyCompactionI
     expectedCandidates: request.expectedCandidates,
     reservedSlugs: await reservedSlugs(input),
     keepArchives: input.config.compact.keepArchives,
-    provider: input.providerId,
+    provider: input.provider.id,
     model: request.model,
     fillBefore: request.fillBefore,
   });
@@ -132,9 +160,9 @@ async function apply(input: HostCompactionInput, request: MemoryApplyCompactionI
   return result;
 }
 
-/** One undo: the operation, then one sync of the writes it staged back. */
+/** One undo: the refusal, the operation, then one sync of the writes it staged back. */
 async function undo(input: HostCompactionInput, request: MemoryUndoCompactionInput): Promise<MemoryUndoResult> {
-  if (input.writeMode === "proposal") throw unsupported();
+  await refuseUnderProposal(input);
   const result = await input.operations.undoMemoryCompaction({
     store: input.store,
     outbox: input.outbox,
@@ -152,7 +180,8 @@ async function undo(input: HostCompactionInput, request: MemoryUndoCompactionInp
  * @param input.store - The mirror every call reads and writes
  * @param input.outbox - The queue the staged writes land in
  * @param input.config - The resolved memory config (`compact.keepArchives`)
- * @param input.providerId - The provider the apply records in its manifest
+ * @param input.provider - The provider behind this host: it labels the manifest, and it is
+ *   asked for its own effective write mode before either member runs
  * @param input.repoNotes - The repository's project notes, for the slugs a merge may not take
  * @param input.sync - The host's sync, run once after each successful call
  * @param input.operations - Feature 1's apply and undo
