@@ -41,6 +41,54 @@ describe("parseNativeBackendOptions: backgroundCommands", () => {
   });
 });
 
+/**
+ * US-012: the web-exposure port is one of the host ports a caller may hand the
+ * native backend. It is validated like the others -- an object whose `assess`
+ * is a function, refused otherwise with the reason spelled out -- and adding it
+ * must not weaken the strict host-port object it lives in.
+ */
+describe("parseNativeBackendOptions: hostPorts.webExposure", () => {
+  test("AC-1: accepts an object with an assess method, preserving port identity", () => {
+    const webExposure = { assess: () => undefined };
+    const input = { model: "openai/x", hostPorts: { webExposure } };
+    expect(() => parseNativeBackendOptions(input)).not.toThrow();
+    expect(parseNativeBackendOptions(input).raw.hostPorts?.webExposure).toBe<unknown>(webExposure);
+  });
+
+  test("AC-2: rejects {} with 'must implement assess' on backend.hostPorts.webExposure", () => {
+    let caught: unknown;
+    try {
+      parseNativeBackendOptions({ model: "openai/x", hostPorts: { webExposure: {} } });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("must implement assess");
+    expect(caught.context).toMatchObject({ path: "backend.hostPorts.webExposure" });
+  });
+
+  test("AC-19: an unknown host-port key beside a valid webExposure is still rejected", () => {
+    let caught: unknown;
+    try {
+      parseNativeBackendOptions({
+        model: "openai/x",
+        hostPorts: { webExposure: { assess: () => undefined }, unknownPort: {} },
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("backend.hostPorts");
+    // The refusal names ONLY the unknown key: `webExposure` is a known host port
+    // now, so the strict object rejects the stranger beside it rather than
+    // having quietly stopped being strict.
+    expect(caught.message).toContain("unknownPort");
+    expect(caught.message).not.toContain("webExposure");
+  });
+});
+
 describe("parseNativeBackendOptions", () => {
   test("accepts a provider/model and derives the provider", () => {
     expect(parseNativeBackendOptions({ model: "openai/gpt-5.4-mini" }).provider).toBe("openai");

@@ -23,6 +23,7 @@ import {
 import { globalConfigDir, type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
 import { buildChatHandoff, buildChatInstructions, toRulesIndexEntry } from "@/prompts";
 import {
   ACP_FRESH_SESSION_NOTICE,
@@ -39,8 +40,13 @@ import {
 } from "./acp";
 import { chatCompactAtTokens } from "./chat-compaction";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
+import { createHostQueue, type HostQueue } from "./host-queue";
+import { persistSessionWeb, sessionWebProviders } from "./session-web";
+import { type ChatWeb, createChatWeb } from "./web";
 
 export const _openChatSessionDeps = {
+  createChatWeb,
+  getLogger,
   buildCommandShadow,
   createAgentSession,
   resumeAgentSession,
@@ -55,6 +61,8 @@ export const _openChatSessionDeps = {
 };
 
 export interface OpenChatSessionRequest {
+  /** Share immediate exposure writes with the host's turn/compaction accounting queue. */
+  readonly metadataQueue?: HostQueue;
   readonly backgroundCommands?: BackgroundCommandPort;
   readonly toolProviders?: readonly ToolProvider[];
   readonly storage: SessionStorage;
@@ -75,6 +83,9 @@ export interface ChatHistory {
 }
 
 export interface ChatSessionHandle {
+  readonly web?: ChatWeb;
+  /** The serialization point owned by this web-enabled open; absent on legacy/no-web handles. */
+  readonly metadataQueue?: HostQueue;
   readonly history?: ChatHistory;
   readonly session: AgentSession;
   readonly meta: SessionMeta;
@@ -177,10 +188,12 @@ async function sessionOptions(
     meta,
     posture,
     commandShadow,
+    web,
   }: {
     readonly meta: SessionMeta;
     readonly posture: TuiPermissions | undefined;
     readonly commandShadow: CommandShadow | undefined;
+    readonly web?: ChatWeb;
   },
   deps: typeof _openChatSessionDeps,
 ): Promise<Omit<CreateAgentSessionOptions, "transcriptStore">> {
@@ -199,9 +212,11 @@ async function sessionOptions(
   return {
     backend: deps.nativeBackend({
       ...chatBackendPosture(mode, request.config, posture),
-      ...(commandShadow !== undefined || request.backgroundCommands !== undefined
+      ...(web ? { sandbox: web.sandbox } : {}),
+      ...(commandShadow !== undefined || request.backgroundCommands !== undefined || web !== undefined
         ? {
             hostPorts: {
+              ...(web ? { webExposure: web.guard } : {}),
               ...(commandShadow !== undefined ? { commandShadow } : {}),
               ...(request.backgroundCommands !== undefined ? { backgroundCommands: request.backgroundCommands } : {}),
             },
@@ -315,12 +330,15 @@ function withAcpHistory(
 function sessionRelease(
   unlock: () => Promise<void>,
   shadow: () => CommandShadow | undefined,
+  retireWeb: () => Promise<void>,
 ): ChatSessionHandle["release"] {
   let drained: Promise<void> | undefined;
   let unlocked: Promise<void> | undefined;
   return async (options) => {
     try {
-      drained ??= Promise.resolve().then(() => shadow()?.drain());
+      drained ??= Promise.allSettled([retireWeb(), Promise.resolve().then(() => shadow()?.drain())]).then((results) => {
+        for (const result of results) if (result.status === "rejected") throw result.reason;
+      });
       await drained;
     } finally {
       if (!options?.retainLock) {
@@ -342,19 +360,87 @@ async function openNativeBrain(
     readonly meta: SessionMeta;
     readonly posture: TuiPermissions | undefined;
     readonly commandShadow: CommandShadow | undefined;
+    readonly web?: ChatWeb;
   },
   transcripts: TranscriptStore,
   deps: typeof _openChatSessionDeps,
 ): Promise<{ readonly session: AgentSession; readonly history: ChatHistory }> {
   const { meta, posture } = state;
   const options = {
-    ...(await sessionOptions(request, { meta, posture, commandShadow: state.commandShadow }, deps)),
+    ...(await sessionOptions(request, { ...state, meta, posture }, deps)),
     transcriptStore: transcripts,
   };
   const doc = await transcripts.load(meta.sessionId);
   const session =
     doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);
   return { session, history: historyOf(doc) };
+}
+
+interface OpenBrainState {
+  readonly meta: SessionMeta;
+  readonly posture: TuiPermissions | undefined;
+  readonly commandShadow: CommandShadow | undefined;
+  readonly acp: ChatAcpModel | undefined;
+  readonly transcripts: TranscriptStore;
+  readonly release: ChatSessionHandle["release"];
+  readonly retireWeb: (release: () => Promise<void>) => void;
+}
+
+async function openWebNative(
+  input: { readonly request: OpenChatSessionRequest; readonly state: OpenBrainState; readonly web?: ChatWeb },
+  deps: typeof _openChatSessionDeps,
+): Promise<ChatSessionHandle> {
+  const { request, state, web } = input;
+  const { meta, posture, commandShadow, transcripts, release } = state;
+  const metadataQueue = request.metadataQueue ?? createHostQueue();
+  const persistence = web
+    ? persistSessionWeb({
+        web,
+        storage: request.storage,
+        sessionId: meta.sessionId,
+        queue: metadataQueue,
+        logger: deps.getLogger(),
+      })
+    : undefined;
+  if (persistence) state.retireWeb(persistence.release);
+  const opened = await openNativeBrain(request, { meta, posture, commandShadow, web }, transcripts, deps);
+  return {
+    session: persistence?.wrap(opened.session) ?? opened.session,
+    meta,
+    release,
+    history: opened.history,
+    ...(web ? { web, metadataQueue } : {}),
+  };
+}
+
+async function openChatBrain(
+  request: OpenChatSessionRequest,
+  state: OpenBrainState,
+  deps: typeof _openChatSessionDeps,
+): Promise<ChatSessionHandle> {
+  const { meta, acp, transcripts, release } = state;
+  const result = await deps.createChatWeb({
+    config: request.config,
+    repoRoot: request.repoRoot,
+    meta,
+    backend: acp === undefined ? "native" : "acp",
+  });
+  const providers = sessionWebProviders({
+    providers: request.toolProviders,
+    web: result.web,
+    acp: acp !== undefined,
+    logger: deps.getLogger(),
+  });
+  const webRequest = { ...request, ...(providers === undefined ? {} : { toolProviders: providers }) };
+  let handle: ChatSessionHandle;
+  if (acp === undefined) handle = await openWebNative({ request: webRequest, state, web: result.web }, deps);
+  else {
+    const history = historyOf(await transcripts.load(meta.sessionId));
+    const opened = await openAcpBrain(webRequest, { meta, acp }, deps);
+    handle = { ...withAcpHistory(opened, { meta, acp, history, transcripts }), meta, release, history };
+  }
+  const notice = [handle.notice, result.notice].filter((part) => part !== undefined).join("; ");
+  return notice ? { ...handle, notice } : handle;
 }
 
 /** Open the shared chat session while holding its store lock until the host releases it. */
@@ -375,7 +461,12 @@ export async function openChatSession(
   const acp = parseChatAcpModel(meta.model);
   const unlock = await request.storage.acquireLock(meta.sessionId);
   let commandShadow: CommandShadow | undefined;
-  const release = sessionRelease(unlock, () => commandShadow);
+  let retireWeb = async (): Promise<void> => {};
+  const release = sessionRelease(
+    unlock,
+    () => commandShadow,
+    () => retireWeb(),
+  );
   try {
     if (acp === undefined && mode === "guarded")
       commandShadow = deps.buildCommandShadow({
@@ -385,13 +476,21 @@ export async function openChatSession(
         env: deps.env,
       });
     if (request.resumeId === undefined) await request.storage.writeMeta(meta);
-    if (acp === undefined) {
-      const opened = await openNativeBrain(request, { meta, posture, commandShadow }, transcripts, deps);
-      return { session: opened.session, meta, release, history: opened.history };
-    }
-    const history = historyOf(await transcripts.load(meta.sessionId));
-    const opened = await openAcpBrain(request, { meta, acp }, deps);
-    return { ...withAcpHistory(opened, { meta, acp, history, transcripts }), meta, release, history };
+    return await openChatBrain(
+      request,
+      {
+        meta,
+        posture,
+        commandShadow,
+        acp,
+        transcripts,
+        release,
+        retireWeb: (retire) => {
+          retireWeb = retire;
+        },
+      },
+      deps,
+    );
   } catch (error) {
     await release();
     throw error;

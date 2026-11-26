@@ -25,9 +25,11 @@ import {
   isReadOnlyAcpProfile,
   parseChatAcpModel,
 } from "./acp";
+import type { ChatHostState } from "./chat-host-types";
 import { type ChatMode, chatBackendPosture, chatSessionSettings } from "./chat-mode";
 
 export interface RunSubagentInput {
+  readonly webExposure?: ChatHostState["webGuard"];
   readonly agent: AgentResource;
   readonly task: string;
   /** The chat session's mode at call time. */
@@ -91,6 +93,7 @@ async function subagentSessionOptions(
   return {
     backend: deps.nativeBackend({
       ...chatBackendPosture(input.mode, input.config, posture),
+      ...(input.webExposure ? { hostPorts: { webExposure: input.webExposure } } : {}),
       model: input.model,
       bashApproval: settings.bashApproval,
       allowUnsandboxed: true,

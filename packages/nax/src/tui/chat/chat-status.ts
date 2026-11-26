@@ -277,11 +277,21 @@ export function costSpan(state: ChatHostState): Span {
   return { text: `${SEPARATOR}${COST_PREFIX}${cost}`, color: "muted" };
 }
 
+/** The web-exposure marker and successful-search count, once the session has read web content. */
+export function webSpan(state: ChatHostState): Span | undefined {
+  const web = state.meta.web;
+  if (web?.exposedAt === undefined || web.exposedAt === null) return undefined;
+  const searches = web.searches > 0 ? ` ${web.searches} searches` : "";
+  return { text: `${SEPARATOR}web${searches}`, color: "muted" };
+}
+
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
   // The model is the host's text, so it is reduced to the footer's one row before it is measured or drawn.
   const model: Span = { text: shortModel(singleRow(state.model)) };
   const context = contextSpan(state, status);
-  return context === undefined ? [model, costSpan(state)] : [model, context, costSpan(state)];
+  const cost = costSpan(state);
+  const web = webSpan(state);
+  return [...(context === undefined ? [model] : [model, context]), cost, ...(web === undefined ? [] : [web])];
 }
 
 /**

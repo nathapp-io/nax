@@ -140,4 +140,5 @@ export * from "#src/tools/run-command-exec";
 export * from "#src/tools/runtime";
 export * from "#src/tools/tool-audit";
 export * as truncateModule from "#src/tools/truncate";
+export * from "#src/web/index";
 export { _transcriptImagesDeps } from "./native/session/transcript-images.ts";

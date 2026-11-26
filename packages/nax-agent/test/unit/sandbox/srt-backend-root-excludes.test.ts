@@ -56,6 +56,7 @@ beforeEach(() => {
   _srtBackendDeps.load = async () => ({
     SandboxManager: {
       initialize: async () => {},
+      updateConfig: () => {},
       isSupportedPlatform: () => true,
       wrapWithSandboxArgv: async () => ({ argv: ["true"], env: {} }),
       annotateStderrWithSandboxFailures: (_commandId, stderr) => stderr,

@@ -135,6 +135,7 @@ const OptionsSchema = z.strictObject({
         .custom(hasMethods(["adopt", "foreground"]), "must implement adopt and foreground")
         .optional(),
       commandInterceptor: z.custom(hasMethods(["intercept"]), "must implement intercept").optional(),
+      webExposure: z.custom(hasMethods(["assess"]), "must implement assess").optional(),
     })
     .optional(),
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),

@@ -225,6 +225,9 @@ export interface SubagentHostOptions {
   readonly runInput?: Record<string, unknown>;
   /** Events the scripted chat session emits itself, after its run call and before its `turn_end`. */
   readonly chatEvents?: readonly SessionEvent[];
+  /** Optional live nested-tool script, driven with the actual captured native options. */
+  readonly nestedScript?: (backend: NestedBackendOptions) => AsyncIterable<SessionEvent>;
+  readonly nestedAnswer?: (requestId: string, reply: AnswerReply) => AnswerStatus;
   /** Events the nested session emits before it ends its turn. */
   readonly nestedEvents?: readonly SessionEvent[];
   /** Keep the nested turn open until `releaseNested()` or the nested session is cancelled. */
@@ -425,6 +428,8 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   }
 
   async function* nestedTurn(): AsyncGenerator<SessionEvent> {
+    const backend = nestedBackends.at(-1);
+    if (options.nestedScript && backend) yield* options.nestedScript(backend);
     for (const event of options.nestedEvents ?? []) yield event;
     if (options.holdNested) {
       await Promise.race([released.promise, options.holdNestedPastCancel ? new Promise(() => {}) : cancelled.promise]);
@@ -461,6 +466,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     nestedSessionOptions.push(sessionOptions);
     const session = makeScriptedSession(`nested-${nestedSessions.length + 1}`, nestedTurn, {
       onCancel: () => cancelled.resolve(),
+      ...(options.nestedAnswer ? { answer: options.nestedAnswer } : {}),
       ...(options.holdNestedClose ? { closeGate: closeGate.promise } : {}),
     });
     nestedSessions.push(session);

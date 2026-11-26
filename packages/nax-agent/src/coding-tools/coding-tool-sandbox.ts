@@ -24,12 +24,14 @@ import {
   rawBashRefusalReason,
   resolveGitLayout,
   runTempRoots,
+  type SandboxBackend,
   sandboxBackendFor,
   strayCommonDirTripwire,
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
 import { listNestedMandatoryDenies } from "#src/sandbox/nested-mandatory-denies";
 import { placeholderLedgerDirForPolicy } from "#src/sandbox/placeholder-ledger";
+import type { WebExposurePort } from "#src/session/agent-session-types";
 import type { ProtectedPathsPolicy } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 
@@ -104,6 +106,7 @@ export async function resolveSessionSandbox(args: {
   readonly outputDir?: string;
   readonly needsLauncher: boolean;
   readonly storyId?: string;
+  readonly webExposure?: WebExposurePort;
   /** US-004 — per-session temp directory the launcher creates and exports as TMPDIR/TMP/TEMP. */
   readonly tmpDir?: string;
   /** US-002 — the run's own temp root, present whenever `tmpDir` is (dispatch-supplied). */
@@ -210,6 +213,7 @@ export async function resolveSessionSandbox(args: {
     });
   }
   const afterWrapped = await _sessionSandboxDeps.commonDirTripwire(git, args.storyId);
+  registerExposedNetwork(backend, args.webExposure);
   const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
   return createCommandLauncher({
     // `sharedTmp` is present only when confined: absent means the shared temp
@@ -222,9 +226,37 @@ export async function resolveSessionSandbox(args: {
   });
 }
 
+/** One-way process-wide swap. Failure leaves the session's per-call asks intact. */
+function registerExposedNetwork(backend: SandboxBackend, port: WebExposurePort | undefined): void {
+  if (backend.updateNetwork === undefined || port?.onExposed === undefined) return;
+  port.onExposed(() => {
+    const update = async () => {
+      const domains = port.exposedNetwork?.();
+      if (domains !== undefined) await backend.updateNetwork?.(domains);
+    };
+    void update().catch((error) => {
+      getSafeLogger()?.warn("sandbox", "web exposure network update failed", { error: errorMessage(error) });
+    });
+  });
+}
+
 /** The compile-time policy refusal for `raw` (Task 8), or undefined. */
 export function rawRefusalFor(launcher: CommandLauncher | undefined): string | undefined {
   return launcher?.state.kind === "unavailable" ? rawBashRefusalReason(launcher.state.reason) : undefined;
+}
+
+/**
+ * US-012: whether this session's commands run inside the OS sandbox.
+ *
+ * True exactly when the launcher's state is `available` — the same reading
+ * `rawScreenOptionsFor` and `isTempConfined` take, kept here for the same reason:
+ * `buildCodingToolSupport` reads the launcher's state through this module and sits
+ * at its complexity baseline. A disabled launcher, an unavailable one and no
+ * launcher at all all read as NOT sandboxed, which is what the web-exposure guard
+ * asks about: `false` means "outside the filesystem and network fences".
+ */
+export function isSandboxed(launcher: CommandLauncher | undefined): boolean {
+  return launcher?.state.kind === "available";
 }
 
 /**

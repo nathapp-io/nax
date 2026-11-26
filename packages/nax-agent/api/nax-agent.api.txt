@@ -796,6 +796,7 @@ type SandboxRecord
 type SandboxState
 type SandboxStatus
 type SandboxWrapRequest
+type SearchBackend
 type SecretSpan
 type SecretValuePattern
 type SelectChoice
@@ -852,6 +853,16 @@ type TurnRetryDeps
 type TurnTokenTotals
 UNIVERSAL_CODING_TOOLS
 type UnknownPathResult
+WEB_SEARCH_KEY_ENV
+WEB_SEEN_URL_CAP
+type WebCallAssessment
+type WebExposure
+type WebExposureGuard
+type WebExposureSnapshot
+type WebGuardDecision
+type WebSearchBackendId
+type WebSearchResult
+type WebToolProviderOptions
 _adapterDeps
 _agentOutputEnvDeps
 _agentSessionDeps
@@ -899,6 +910,7 @@ _terminalPromptDeps
 _transcriptArchiveDeps
 _transcriptImagesDeps
 _transcriptLifecycleDeps
+_webProviderDeps
 abortableSleep
 acquireMirrorDirLock
 adaptProviderTool
@@ -963,11 +975,15 @@ createMemoryTranscriptStore
 createNativeSessionState
 createNoOpToolAuditSink
 createRunCommandTool
+createSearchBackend
 createSpinBreaker
 createSrtBackend
 createTerminalAuthInteraction
 createToolAuditSink
 createTurnAccumulator
+createWebExposure
+createWebExposureGuard
+createWebToolProvider
 credentialFaultCode
 credentialFilePath
 credentialPathTest
@@ -984,6 +1000,7 @@ estimateContextTokens
 estimateTokens
 expandMcpRuleGrants
 expandProviderGrants
+extractWebUrls
 findApproval
 findCutPoint
 findSecretSpans
@@ -1020,6 +1037,7 @@ isKnownManager
 isProcessAlive
 isProtocolStreamError
 isRetryableTransportFault
+isSandboxed
 isTempConfined
 isThenable
 keepBudget
@@ -1048,6 +1066,7 @@ newSessionKey
 normalizeCommandSpec
 normalizeExec
 normalizeManagerBinary
+normalizeWebUrl
 openNativeSession
 openUrl
 parseGitlinks

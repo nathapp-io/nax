@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { CommandInterceptor } from "#src/command-interceptor/index";
 import { type CommandGuard, type CommandShadow, openShadowTap } from "#src/command-safety/index";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { ImageAttachment } from "#src/cost/standard-types";
@@ -26,8 +27,11 @@ import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdic
 import { type SandboxRecord, sandboxStatusField } from "../sandbox/index.ts";
 import { askDenyReason, askSummary, unsandboxedReasonSuffix } from "./ask-request.ts";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect.ts";
-import type { CodingTool } from "./registry.ts";
+import type { OwnedPathsPolicy } from "./owned-paths.ts";
+import type { ProtectedPathsPolicy } from "./protected-paths.ts";
+import type { CodingTool, ToolRunContext } from "./registry.ts";
 import type { CodingToolOutcome, ToolCallContext } from "./runtime.ts";
+import type { ToolCallRecord } from "./tool-audit.ts";
 import { BASH_TOOL_NAME, EXEC_TOOL_NAME, type ToolPolicy } from "./types.ts";
 
 type PolicyVerdict = ReturnType<ToolPolicy["check"]>;
@@ -69,6 +73,41 @@ export type RunToolFn = (
 ) => Promise<CodingToolOutcome>;
 
 type Approval = { decidedBy: string; remembered: boolean; latencyMs: number };
+
+/**
+ * The console level for one call: a breach alone reaches `error`, a routine tool
+ * error is `debug`.
+ *
+ * Moved here from `runtime.ts` (which is at its 600-line cap) rather than authored
+ * here; its only caller is that file's `log`.
+ */
+export function auditLevel(
+  outcome: ToolCallRecord["outcome"],
+  breach: boolean | undefined,
+  routineErrors: boolean | undefined,
+): "debug" | "warn" | "error" {
+  if (outcome === "denied" || outcome === "denied:ask") return breach === true ? "error" : "warn";
+  return outcome === "error" && routineErrors !== true ? "warn" : "debug";
+}
+
+/**
+ * The run-scoped ports every ToolRunContext carries, present-field only.
+ * Built once per runtime and kept out of `runTool`, which sits at its
+ * complexity baseline.
+ *
+ * Moved here from `runtime.ts` with `auditLevel`, for the same file-size reason.
+ */
+export function contextPorts(opts: {
+  readonly interceptor?: CommandInterceptor;
+  readonly protectedPaths?: ProtectedPathsPolicy;
+  readonly ownedPaths?: OwnedPathsPolicy;
+}): Pick<ToolRunContext, "interceptor" | "protectedPaths" | "ownedPaths"> {
+  return {
+    ...(opts.interceptor !== undefined ? { interceptor: opts.interceptor } : {}),
+    ...(opts.protectedPaths !== undefined ? { protectedPaths: opts.protectedPaths } : {}),
+    ...(opts.ownedPaths !== undefined ? { ownedPaths: opts.ownedPaths } : {}),
+  };
+}
 
 export interface PolicyIdentity {
   readonly policyIdentity: string;

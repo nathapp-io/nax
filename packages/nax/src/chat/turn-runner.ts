@@ -4,6 +4,7 @@ import type { ChatAskController } from "./ask-controller";
 import type { ChatLedger } from "./chat-ledger";
 import type { HostQueue } from "./host-queue";
 import type { ChatSessionHandle } from "./open-chat-session";
+import { sessionWebSnapshot } from "./session-web";
 
 const TITLE_CODE_POINT_LIMIT = 80;
 
@@ -51,6 +52,7 @@ async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Prom
   const extraCost = options.extraCostUsd?.() ?? 0;
   const meta: SessionMeta = {
     ...handle.meta,
+    web: sessionWebSnapshot(handle.web, stored.web),
     updatedAt: now,
     costUsd: (stored.costUsd ?? 0) + costUsd + extraCost,
     title:
@@ -104,5 +106,6 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionM
   await ledger.drain();
   // The metadata write is the read-modify-write the host serializes; the turn above is not.
   const persist = (): Promise<SessionMeta> => writeTurnMeta(options, ended.costUsd);
-  return options.queue === undefined ? persist() : options.queue.run(persist);
+  const queue = handle.metadataQueue ?? options.queue;
+  return queue === undefined ? persist() : queue.run(persist);
 }

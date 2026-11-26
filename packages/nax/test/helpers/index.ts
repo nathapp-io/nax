@@ -48,6 +48,7 @@ export {
   turnStartEvent,
   usageEvent,
 } from "./chat-subagents";
+export { fetchChatPage, makeChatWebHarness, WEB_CONTEXT, WEB_NOW } from "./chat-web";
 export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";
 export {
   GUARD_HIGH_ANSWER,

@@ -10,6 +10,7 @@
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import type { CommandLauncher } from "#src/sandbox/index";
+import type { WebExposurePort } from "#src/session/agent-session-types";
 import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import {
   type CodingTool,
@@ -49,6 +50,7 @@ export interface DeclaredCommandToolsArgs {
    */
   readonly unsandboxedCommands?: boolean;
   readonly backgroundCommands?: BackgroundCommandPort;
+  readonly webExposure?: WebExposurePort;
 }
 
 /**
@@ -156,10 +158,17 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             ...launcherOption,
             ...unsandboxedToolOptions(args),
             ...bashBackgroundOption(args),
+            ...fullNetworkOption(args.webExposure),
           }),
         ]
       : []),
   ];
+}
+
+/** Only a networking exposure port opts Bash into the full-network escape. */
+function fullNetworkOption(port: WebExposurePort | undefined): { fullNetwork?: { isExposed(): boolean } } {
+  if (port?.exposedNetwork === undefined) return {};
+  return { fullNetwork: { isExposed: () => port.exposedNetwork?.() !== undefined } };
 }
 
 /** Preserve absence at every session/support forwarding hop. */

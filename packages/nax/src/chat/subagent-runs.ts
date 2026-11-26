@@ -19,6 +19,7 @@ import type { AgentResource, ResourceCatalog } from "@/resources";
 import type { ChatAskController } from "./ask-controller";
 import type { BackgroundAgentEnd, BackgroundAgentHandle, BackgroundAgentSink, ChatBackgroundTasks } from "./background";
 import { agentNamed, generalAgent } from "./builtin-agent";
+import type { ChatHostState } from "./chat-host-types";
 import type { ChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import {
@@ -42,6 +43,7 @@ import { mapSubagentTools } from "./subagent-tools";
 export const _subagentRunsDeps = { runSubagent };
 
 export interface SubagentRunsCurrent {
+  readonly webGuard?: ChatHostState["webGuard"];
   readonly sessionId: string;
   readonly mode: ChatMode;
   readonly model: string;
@@ -411,6 +413,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         agent,
         task,
         mode: current.mode,
+        ...(current.webGuard ? { webExposure: current.webGuard } : {}),
         model,
         ...(allowedTools !== undefined ? { allowedTools } : {}),
         toolProviders: deps.toolProviders,

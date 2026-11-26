@@ -17,7 +17,9 @@
  */
 import type { LoopHandlerSet } from "@nathapp/nax-agent";
 import { createRuleDeliveryHandlers, type RuleDeliveryInput } from "@/context/rules/rule-delivery";
+import type { ChatHostState } from "./chat-host-types";
 import type { HostMemory } from "./host-memory";
+import type { ChatSessionHandle } from "./open-chat-session";
 import { closeChatResources } from "./session-hygiene";
 
 export interface ChatLoopHandlerInput {
@@ -60,4 +62,18 @@ export async function closeChatHost(input: CloseChatHostInput): Promise<void> {
   } finally {
     await memory.closeSync();
   }
+}
+
+/** Materialize the mounted screen's state, including the live native session's web guard. */
+export function chatHostState(handle: ChatSessionHandle, contextWindow: number | undefined): ChatHostState {
+  const { session, meta } = handle;
+  return {
+    sessionId: meta.sessionId,
+    mode: meta.mode === "full" ? "full" : "guarded",
+    model: meta.model,
+    meta,
+    ...(handle.web ? { webGuard: handle.web.guard } : {}),
+    ...(session.backend.sandbox === undefined ? {} : { sandbox: session.backend.sandbox }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+  };
 }

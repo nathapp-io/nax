@@ -33,6 +33,8 @@ export interface ApprovalAsk {
    * recognise it shows the same prompt it always did.
    */
   readonly unsandboxed?: true;
+  /** Must be answered by the person, even when the host normally auto-approves. */
+  readonly webExposure?: true;
 }
 
 export async function askPerson(
@@ -49,6 +51,7 @@ export async function askPerson(
     summary: ask.summary,
     ...(ask.command !== undefined ? { command: ask.command } : {}),
     reason: ask.reason,
+    ...(ask.webExposure ? { webExposure: ask.webExposure } : {}),
     ...(ask.unsandboxed !== undefined ? { unsandboxed: ask.unsandboxed } : {}),
     expiresAt,
   });
@@ -82,6 +85,7 @@ export function createSessionAskLink(deps: SessionAskLinkDeps): AskLink {
         summary: req.summary,
         ...(masked !== undefined ? { command: masked.masked } : {}),
         reason: req.reason ?? `matched ${req.rule}`,
+        ...(req.rule === "web-exposure" ? { webExposure: true } : {}),
         ...(callId !== undefined ? { callId } : {}),
         // US-004: carried through untouched, so a host that offers a distinct
         // unsandboxed decision sees it on the port; a host that ignores it

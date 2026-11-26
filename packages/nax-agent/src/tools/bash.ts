@@ -55,6 +55,8 @@ export const DEFAULT_BASH_SHELL = "/bin/sh";
 
 export interface BashToolOptions {
   readonly background?: BackgroundCommandPort;
+  /** Offer the approved, post-exposure full-network escape. */
+  readonly fullNetwork?: { isExposed(): boolean };
   /** `quality.shell`. */
   readonly shell?: string;
   /** `quality.stripEnvVars` — secrets removed before the spawn. */
@@ -315,10 +317,11 @@ async function launchIntercepted({
           spec: { kind: "shell", shell, command: intercepted.command },
           root: ctx.root,
           ...common,
-          // US-003: `unwrapped` is present only for an exact `true` on the call.
+          // Ordinary sessions preserve the true-only escape shape; networking
+          // sessions also send false explicitly while still unexposed.
           // `unsandboxedOffered` is always sent (#2890): it only picks the
           // launcher's next-step sentence and grants nothing.
-          ...(unwrapped ? { unwrapped: true } : {}),
+          ...(opts.fullNetwork !== undefined ? { unwrapped } : unwrapped ? { unwrapped: true } : {}),
           unsandboxedOffered: opts.unsandboxedCommands === true,
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
@@ -362,13 +365,16 @@ function withUnsandboxedSentence(description: string, opts: BashToolOptions): st
   return `${description}${separator}${UNSANDBOXED_ARGUMENT_SENTENCE}`;
 }
 
+/** Describe the escape only to sessions that offer it. */
+function withFullNetworkSentence(description: string, opts: BashToolOptions): string {
+  if (opts.fullNetwork === undefined) return description;
+  const separator = description.endsWith(" ") ? "" : " ";
+  return `${description}${separator}Set "network": "full" only when the command needs a host outside the package registries and git remotes; the user is asked first, and the command then runs outside the sandbox.`;
+}
+
 /**
- * US-003: the input schema, plus the two argument fields when the session opted
- * in. Built here rather than inline in `createBashTool` so the schema's shape
- * has one owner, and the off-form is exactly the three properties it always was.
- *
- * Neither added field is `required`: the escape is per call, and a call without
- * it runs exactly as it does today.
+ * Opt-in argument fields are never required. Without options the schema keeps
+ * exactly the three properties it always had.
  */
 function bashToolInputSchema(opts: BashToolOptions): CodingTool["inputSchema"] {
   return {
@@ -381,12 +387,18 @@ function bashToolInputSchema(opts: BashToolOptions): CodingTool["inputSchema"] {
       },
       description: { type: "string", description: "One short line on what this command is for." },
       ...(opts.background !== undefined ? { runInBackground: { type: "boolean" } } : {}),
+      ...(opts.fullNetwork !== undefined ? { network: { type: "string", enum: ["full"] } } : {}),
       ...(opts.unsandboxedCommands === true
         ? { unsandboxed: { type: "boolean" }, unsandboxedReason: { type: "string" } }
         : {}),
     },
     required: ["command"],
   };
+}
+
+/** Already allowed by the runtime: a post-exposure full-network call uses the same escape. */
+function requestsUnwrapped(input: Record<string, unknown>, opts: BashToolOptions): boolean {
+  return input.unsandboxed === true || (input.network === "full" && opts.fullNetwork?.isExposed() === true);
 }
 
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
@@ -398,7 +410,7 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
     // sets this.
     routineErrors: true,
     description: withBackgroundSentence(
-      withUnsandboxedSentence(bashToolDescription(shell, opts), opts),
+      withFullNetworkSentence(withUnsandboxedSentence(bashToolDescription(shell, opts), opts), opts),
       opts.background,
     ),
     inputSchema: bashToolInputSchema(opts),
@@ -424,7 +436,7 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // US-003: exact `true` only. The tool never consults `opts.unsandboxedCommands`
         // here: whether the argument is ADVERTISED is the option's business, and what a
         // given call asked for is the call's.
-        const unwrapped = input.unsandboxed === true;
+        const unwrapped = requestsUnwrapped(input, opts);
         const request = { command, shell, opts, ctx, timeoutMs, unwrapped };
         const result = await runBashWithBackground({
           port: opts.background,
