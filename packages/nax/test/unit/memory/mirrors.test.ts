@@ -18,7 +18,7 @@ import { _memoryStoreDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import { isPrunableMirror, listMemoryMirrors, lockMemoryMirror, type MemoryMirrorInfo } from "@/memory";
 import { createKodaApprovals } from "@/memory/koda-approvals";
-import { createMcpIdMap } from "@/memory/mcp-id-map";
+import { createMcpIdMap, MCP_ID_MAP_FILE } from "@/memory/mcp-id-map";
 
 /** A mirror with nothing in it: the shape `isPrunableMirror` reads, and every flag false. */
 function emptyMirror(overrides: Partial<MemoryMirrorInfo> = {}): MemoryMirrorInfo {
@@ -134,6 +134,26 @@ describe("listMemoryMirrors", () => {
     } finally {
       _memoryStoreDeps.mkdir = mkdir;
     }
+  });
+
+  test("dropping the last confirmed MCP copy leaves a prunable mirror", async () => {
+    const dirs = { root: projectsDir, projectDir: mirrorDir(), userDir: join(projectsDir, "user") };
+    const ids = createMcpIdMap({ dirs, server: "mcp" });
+    await ids.add("project", "old", ["remote"]);
+    expect(isPrunableMirror(await onlyMirror())).toBe(false);
+    await ids.drop("project", "old", ["remote"]);
+    expect(isPrunableMirror(await onlyMirror())).toBe(true);
+  });
+
+  test.each([
+    "not json",
+    JSON.stringify({ version: 2, server: "mcp", notes: {} }),
+    JSON.stringify({ version: 1, server: "mcp", notes: [], hidden: [] }),
+    JSON.stringify({ version: 1, server: "mcp", notes: {}, hidden: "malformed" }),
+    JSON.stringify({ version: 1, server: "mcp", notes: {}, unknown: ["id"] }),
+  ])("a map outside the known empty format protects the mirror: %s", async (contents) => {
+    writeFileSync(join(mirrorDir(), MCP_ID_MAP_FILE), contents);
+    expect(isPrunableMirror(await onlyMirror())).toBe(false);
   });
 
   test("a mirror holding only a hidden MCP id cannot be pruned", async () => {

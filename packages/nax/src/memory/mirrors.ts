@@ -33,7 +33,7 @@ import { basename, isAbsolute, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { isEmptyKodaApprovals, KODA_APPROVALS_FILE } from "./koda-approvals";
 import { KODA_REFUSALS_FILE } from "./koda-refusals";
-import { MCP_ID_MAP_FILE } from "./mcp-id-map";
+import { isEmptyMcpIdMap, MCP_ID_MAP_FILE } from "./mcp-id-map";
 import { ORIGIN_FILE } from "./mirror-origin";
 
 /** The directory a mirror's note files sit in. */
@@ -275,6 +275,12 @@ async function readOriginRoot(dir: string, unreadable: string[]): Promise<string
   return typeof root === "string" && isAbsolute(root) ? root : null;
 }
 
+/** Only a regular file whose provider recognizes the empty format may be discarded. */
+async function nonemptyState(path: string, unreadable: string[], empty: (value: unknown) => boolean): Promise<boolean> {
+  const info = await lstatOrNull(path, unreadable);
+  return info !== null && (!info.isFile() || !empty(await jsonOrNull(path, unreadable)));
+}
+
 /** One mirror's inventory, read from its directory alone. */
 async function readMirror(dir: string, name: string): Promise<MemoryMirrorInfo> {
   const unreadable: string[] = [];
@@ -291,15 +297,10 @@ async function readMirror(dir: string, name: string): Promise<MemoryMirrorInfo> 
       archivePresent(dir, unreadable),
       originRoot === null ? null : isDirectory(originRoot),
     ]);
-  const approvals = join(dir, KODA_APPROVALS_FILE);
-  const info = await lstatOrNull(approvals, unreadable);
-  const hasApprovals =
-    info !== null && (!info.isFile() || !isEmptyKodaApprovals(await jsonOrNull(approvals, unreadable)));
   const hasProviderState =
-    hasApprovals ||
-    (await Promise.all([MCP_ID_MAP_FILE, KODA_REFUSALS_FILE].map((file) => present(join(dir, file), unreadable)))).some(
-      Boolean,
-    );
+    (await nonemptyState(join(dir, KODA_APPROVALS_FILE), unreadable, isEmptyKodaApprovals)) ||
+    (await nonemptyState(join(dir, MCP_ID_MAP_FILE), unreadable, isEmptyMcpIdMap)) ||
+    (await present(join(dir, KODA_REFUSALS_FILE), unreadable));
   return {
     hasProviderState,
     dir,
