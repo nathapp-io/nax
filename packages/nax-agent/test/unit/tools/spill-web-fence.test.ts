@@ -158,4 +158,24 @@ describe("a truncated web result keeps its closing fence", () => {
 
     expect(out).toBe(body);
   });
+
+  test("B3: a page cut only by the per-line cap keeps one fence and one fetch notice", async () => {
+    // A single long paragraph is shortened by the per-line cap alone, so the head still ends with
+    // the body's OWN closing fence and the fetch tool's notice: composing the trailer on top of
+    // them closes the block twice and repeats the notice, leaving the marker outside the fence.
+    const body = `${fenced("x".repeat(3_000))}\n[truncated at 2000000 bytes]`;
+    expect(linesOf(body).length).toBe(4);
+
+    const out = await applyModelTruncationPolicy(body, { toolName: FETCH, callId: "web-9" });
+    const lines = linesOf(out);
+
+    expect(closeLineCount(out)).toBe(1);
+    expect(lines.filter((line) => line.startsWith("[truncated at "))).toEqual(["[truncated at 2000000 bytes]"]);
+    // The marker sits inside the block, and the fence and the tool's own line close it.
+    expect(lines.slice(-3)).toEqual([
+      expect.stringMatching(/^\.\.\. \[truncated/),
+      WEB_CONTENT_CLOSE_LINE,
+      "[truncated at 2000000 bytes]",
+    ]);
+  });
 });

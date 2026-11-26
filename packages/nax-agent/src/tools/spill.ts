@@ -211,19 +211,39 @@ function webTrailer(body: string): readonly string[] | undefined {
 }
 
 /**
- * `head` without the closing fence the trailer is about to supply again.
+ * How many of `head`'s trailing lines the trailer is about to supply again.
  *
- * A body short enough to survive the line cap keeps its own `</web-content>`, so
- * appending the trailer after the marker would close the same block twice and read as
- * a fence that ended before the truncation did. The line is dropped only when the
- * trailer carries one, and only the fence's own line ever matches: `fenceWebContent`
- * rewrites every `</web-content` in page text to `&lt;/web-content`.
+ * The head is a prefix of the body, so whatever part of the trailer survives the cut is a PREFIX
+ * of it: the whole closing fence followed by the fetch tool's notice when only the per-line cap
+ * fired, the fence alone when the line cap dropped the notice, or even a fence line the byte cap
+ * cut in half. Left in place, any of those closes the same block twice — once where the head
+ * stopped, once where the trailer begins — with the marker outside the fence and the notice
+ * repeated after it.
  */
-function withoutTrailerClose(head: string, trailer: readonly string[] | undefined): string {
+function keptBeforeTrailer(lines: readonly string[], trailer: readonly string[]): number {
+  const last = lines[lines.length - 1] ?? "";
+  for (let kept = Math.min(trailer.length, lines.length); kept >= 1; kept -= 1) {
+    const start = lines.length - kept;
+    const before = trailer.slice(0, kept - 1).every((line, index) => line === lines[start + index]);
+    // The last one may be cut short by the byte cap; `fenceWebContent` escapes every other
+    // `</web-content` in page text, so nothing but the trailer can reach this comparison.
+    const endsWith = last !== "" && (last === trailer[kept - 1] || (trailer[kept - 1] ?? "").startsWith(last));
+    if (before && endsWith) return start;
+  }
+  return lines.length;
+}
+
+/**
+ * `head` without the closing lines the trailer is about to supply again.
+ *
+ * A head that still ends with its own fence — or with the fence and the fetch tool's notice —
+ * would otherwise carry two of them once the trailer is composed after the marker.
+ */
+function withoutTrailer(head: string, trailer: readonly string[] | undefined): string {
   if (trailer === undefined) return head;
   const lines = splitModelLines(head);
-  if (lines[lines.length - 1] !== WEB_CONTENT_CLOSE_LINE) return head;
-  return lines.slice(0, -1).join("\n");
+  const kept = keptBeforeTrailer(lines, trailer);
+  return kept === lines.length ? head : lines.slice(0, kept).join("\n");
 }
 
 /** What one head-direction composition is made of. */
@@ -254,7 +274,7 @@ function composeHead(p: HeadComposition): string {
     const bodyBudget = p.byteCap - renderedMarkerBytes(render, p.originalBytes) - trailerBytes;
     if (bodyBudget < 0) continue;
     const head = trimToLineBudget(
-      withoutTrailerClose(cutToByteCap(p.content, bodyBudget), trailer),
+      withoutTrailer(cutToByteCap(p.content, bodyBudget), trailer),
       MODEL_MAX_LINES - reservedLines,
     );
     const marked = `${head}\n${render(Buffer.byteLength(head, "utf8"))}`;
