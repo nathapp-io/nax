@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T04:54:59.468Z",
+  "updatedAt": "2026-11-26T05:15:00.395Z",
   "userStories": [
     {
       "id": "US-001",
@@ -237,14 +237,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A deterministic text converter with no new dependency or authorization decisions; fixture-driven TDD suffices."
+        "reasoning": "A deterministic text converter with no new dependency or authorization decisions; fixture-driven TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/web/content.ts"
@@ -257,7 +260,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ab03732aa22e4fd5f5d9b1510fea0e0e38875376"
     },
     {
       "id": "US-005",
