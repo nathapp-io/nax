@@ -2,7 +2,15 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type AdviceResult, type Advisor, createAdvisor } from "@/advisor";
 import { resolveAdvisorConfig } from "@/config";
-import { type PrThread, parseNaxBotMarker, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
+import {
+  type OwnComment,
+  ownComments,
+  type PrThread,
+  parseNaxBotMarker,
+  replyToThread,
+  resolveThread,
+  withNaxBotMarker,
+} from "@/forge";
 import { getLogger } from "@/logger";
 import { configuredChainNoticeGeneration, isBlockingFinding } from "../workflow/blocking-findings";
 import { buildChainQuestion } from "./chain-question";
@@ -129,12 +137,107 @@ async function resolveAfterWaive(env: BotFixEnv, thread: PrThread, key: string):
   }
 }
 
+const FIX_REPEATED_TEXT = "raised again after an advisor-ruled fix";
+const SECOND_ON_CHAIN_TEXT = "a second finding on this chain";
+const RULING_KEY_PREFIX = "cr-";
+
+interface RoutingState {
+  readonly rulings: Map<string, ChainRuling>;
+  readonly dropped: Set<string>;
+  /** Chain ruling marker keys present on the pull request or made in this call. */
+  readonly ruledKeys: Set<string>;
+  costReached: boolean;
+}
+
+function ownOnThread(env: BotFixEnv, thread: PrThread): OwnComment[] {
+  return ownComments(thread.comments, env.user.login, thread.id);
+}
+
+/** The newest own chain ruling on the thread, with the own comments after it. */
+function replayOn(env: BotFixEnv, thread: PrThread): { ruling: Omit<ChainRuling, "key">; after: OwnComment[] } | null {
+  const own = ownOnThread(env, thread);
+  for (let i = own.length - 1; i >= 0; i--) {
+    const entry = own[i];
+    if (entry === undefined || !entry.key.startsWith(RULING_KEY_PREFIX)) continue;
+    const ruling = parseChainRuling(entry.comment.body);
+    if (ruling !== null) return { ruling, after: own.slice(i + 1) };
+  }
+  return null;
+}
+
+function existingRulingKeys(env: BotFixEnv): Set<string> {
+  const all = [...env.threads.flatMap((t) => ownOnThread(env, t)), ...env.own];
+  const keys = new Set<string>();
+  for (const { key, comment } of all) {
+    if (key.startsWith(RULING_KEY_PREFIX) && parseChainRuling(comment.body) !== null) keys.add(key);
+  }
+  return keys;
+}
+
+function record(state: RoutingState, ruling: ChainRuling): void {
+  state.rulings.set(ruling.key, ruling);
+  state.ruledKeys.add(chainRulingKey(ruling.key));
+  if (ruling.outcome !== "fix") state.dropped.add(ruling.key);
+}
+
+async function holdAndPost(env: BotFixEnv, state: RoutingState, found: ChainFinding, text: string): Promise<void> {
+  if (found.thread === undefined) return;
+  const posted = await postRuling(env, found.thread, { key: found.item.key, outcome: "held", text });
+  if (posted !== null) record(state, posted);
+}
+
+/** Composition tests 4-7 for one chain finding that has an own thread and is not confirmed. */
+async function ruleOne(ctx: AskContext, found: ChainFinding & { thread: PrThread }): Promise<void> {
+  const { env, state } = ctx;
+  const key = found.item.key;
+  const replay = replayOn(env, found.thread);
+  if (replay !== null) {
+    const { ruling, after } = replay;
+    if (ruling.outcome === "waived") {
+      state.dropped.add(key);
+      state.ruledKeys.add(chainRulingKey(key));
+    } else if (ruling.outcome === "held") record(state, { key, outcome: "held", text: ruling.text });
+    else if (after.some((o) => o.key === `fix-${key}`)) await holdAndPost(env, state, found, FIX_REPEATED_TEXT);
+    else record(state, { key, outcome: "fix", text: ruling.text });
+    return;
+  }
+  const parents = found.item.lineage?.parents ?? [];
+  if (parents.some((parent) => state.ruledKeys.has(chainRulingKey(parent)))) {
+    await holdAndPost(env, state, found, SECOND_ON_CHAIN_TEXT);
+    return;
+  }
+  if (state.costReached || env.cost.spentUsd() >= env.cost.limitUsd) {
+    state.costReached = true;
+    return;
+  }
+  const proposed = await askAdvisor(env, ctx.advisor, found, ctx.feature);
+  if (proposed === null) return;
+  const posted = await postRuling(env, found.thread, proposed);
+  if (posted !== null) record(state, posted);
+}
+
+interface AskContext {
+  readonly env: BotFixEnv;
+  readonly advisor: Advisor;
+  readonly feature: string;
+  readonly state: RoutingState;
+}
+
 /** Asks the advisor once per own-thread chain finding and applies each outcome; returns the env the fix runs on. */
 export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
   const routing = chainRoutingContext(env);
   if (routing === null) return env;
   const found = selectChainFindings(env);
   if (found.length === 0) return env;
+  // An unreadable ruling aborts preparation rather than sending potentially confirmed work to a fixer.
+  const confirmed = await _chainAdviseDeps.readConfirmedKeys({
+    ref: env.ref,
+    login: env.user.login,
+    threads: env.threads,
+    comments: env.own.filter(({ threadId }) => threadId === undefined).map(({ comment }) => comment),
+    deps: env.forge,
+    cwd: env.repoRoot,
+  });
   const { runtime } = env.ctx.callCtx;
   const advisor = _chainAdviseDeps.createAdvisor({
     callCtx: env.ctx.callCtx,
@@ -145,20 +248,22 @@ export async function withChainRulings(env: BotFixEnv): Promise<BotFixEnv> {
     specPath: routing.specPath,
     workdir: env.checkout.worktree,
   });
-  const rulings = new Map<string, ChainRuling>();
+  const state: RoutingState = {
+    rulings: new Map(),
+    dropped: new Set(),
+    ruledKeys: existingRulingKeys(env),
+    costReached: false,
+  };
+  const ctx = { env, advisor, feature: routing.feature, state };
   for (const entry of found) {
-    if (entry.thread === undefined) continue;
-    const proposed = await askAdvisor(env, advisor, entry, routing.feature);
-    if (proposed === null) continue;
-    const posted = await postRuling(env, entry.thread, proposed);
-    if (posted !== null) rulings.set(entry.item.key, posted);
+    if (confirmed.has(entry.item.key) || entry.thread === undefined) continue;
+    await ruleOne(ctx, { ...entry, thread: entry.thread });
   }
-  if (rulings.size === 0) return env;
-  const dropped = new Set([...rulings.values()].filter((r) => r.outcome !== "fix").map((r) => r.key));
-  const ordered = env.review.agreed.flatMap((item) => rulings.get(item.key) ?? []);
+  if (state.rulings.size === 0 && state.dropped.size === 0) return env;
+  const ordered = env.review.agreed.flatMap((item) => state.rulings.get(item.key) ?? []);
   return {
     ...env,
-    review: { ...env.review, agreed: env.review.agreed.filter((item) => !dropped.has(item.key)) },
+    review: { ...env.review, agreed: env.review.agreed.filter((item) => !state.dropped.has(item.key)) },
     chainRulings: ordered,
   };
 }
