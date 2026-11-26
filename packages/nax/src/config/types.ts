@@ -46,6 +46,9 @@ export type {
   ChatBotStepConfig,
   ChatConfig,
   ChatStepConfig,
+  ChatWebConfig,
+  ChatWebFetchConfig,
+  ChatWebSearchConfig,
   ChatWorkflowConfig,
 } from "./runtime-types-chat";
 export type { MemoryConfig, MemoryMcpConfig } from "./runtime-types-memory";

@@ -64,6 +64,9 @@ export type {
   ChatCompactionConfig,
   ChatConfig,
   ChatStepConfig,
+  ChatWebConfig,
+  ChatWebFetchConfig,
+  ChatWebSearchConfig,
   ChatWorkflowConfig,
 } from "./runtime-types-chat";
 export type { ForgeConfig } from "./runtime-types-forge";
@@ -134,8 +137,14 @@ export { BotConfigSchema } from "./schemas-bot";
 export {
   CHAT_MODEL_PATTERN,
   CHAT_PROFILE_PATTERN,
+  CHAT_WEB_FETCH_MAX_BYTES_RANGE,
+  CHAT_WEB_FETCH_TIMEOUT_MS_RANGE,
+  CHAT_WEB_MAX_RESULTS_RANGE,
   ChatConfigSchema,
   DEFAULT_CHAT_COMPACT_AT_TOKENS,
+  DEFAULT_CHAT_WEB_FETCH_MAX_BYTES,
+  DEFAULT_CHAT_WEB_FETCH_TIMEOUT_MS,
+  DEFAULT_CHAT_WEB_MAX_RESULTS,
   DEFAULT_IDLE_COMPACT_AFTER_MINUTES,
   DEFAULT_SPEC_FIX_ROUNDS,
 } from "./schemas-chat";
