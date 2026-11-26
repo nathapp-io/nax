@@ -19,6 +19,17 @@ const TRAILING_PUNCTUATION = /[).,;:!?'"]+$/;
 /** The element every web tool result is wrapped in. */
 const FENCE_TAG = "web-content";
 
+/**
+ * The line that closes every fenced web result, exported as the one spelling of it.
+ *
+ * Both ends of the fence need it: `fenceWebContent` writes it, and the model-facing
+ * truncation policy (`tools/spill.ts`) keeps it — a head-direction cut drops the END of a
+ * body, which is exactly where this line is, and a result that loses it is an unterminated
+ * untrusted block. `content.ts` imports nothing, so a tool module may import this without
+ * closing a cycle.
+ */
+export const WEB_CONTENT_CLOSE_LINE = `</${FENCE_TAG}>`;
+
 /** A closing tag of the fence, in any case, wherever it appears in the page text. */
 const FENCE_CLOSE_TAG = /<\/web-content/gi;
 
@@ -72,5 +83,5 @@ export function extractWebUrls(text: string): readonly string[] {
 export function fenceWebContent(p: { source: string; fetchedAt: Date; text: string }): string {
   const source = p.source.replace(/"/g, "%22");
   const text = p.text.replace(FENCE_CLOSE_TAG, (match) => `&lt;/${match.slice(FENCE_CLOSE_TAG_PREFIX)}`);
-  return `<${FENCE_TAG} source="${source}" fetched="${p.fetchedAt.toISOString()}" untrusted="true">\n${text}\n</${FENCE_TAG}>`;
+  return `<${FENCE_TAG} source="${source}" fetched="${p.fetchedAt.toISOString()}" untrusted="true">\n${text}\n${WEB_CONTENT_CLOSE_LINE}`;
 }

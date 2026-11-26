@@ -259,11 +259,22 @@ async function untilAborted<T>(work: Promise<T>, deadline: Deadline): Promise<T>
  * The request carries the deadline's signal, so a cancelled turn or an expired budget aborts the
  * socket the search is waiting on rather than only rejecting the promise wrapped around it: a
  * request nobody is waiting for any more must not keep reading its answer.
+ *
+ * Redirects are the transport's to report, not to follow (`redirect: "manual"`). The platform
+ * follows a 3xx by default, so a backend that answered `302` to its login page would arrive here
+ * as a `200` carrying that page's body and be read as a search with no results; the search spec
+ * requires a non-2xx status to be `WEB_SEARCH_FAILED`, and a redirect is a non-2xx status. The
+ * policy is set here rather than in each adapter's `init` so every backend gets it, including
+ * any added later, and so a backend cannot forget it.
  */
 async function send(request: SearchRequest, backend: WebSearchBackendId, deadline: Deadline): Promise<Response> {
   let response: Response;
   try {
-    response = await _webSearchDeps.fetch(request.url, { ...request.init, signal: deadline.signal });
+    response = await _webSearchDeps.fetch(request.url, {
+      ...request.init,
+      redirect: "manual",
+      signal: deadline.signal,
+    });
   } catch (error) {
     throw searchFailure(`${backend} search failed: ${errorMessage(error)}`, { backend });
   }

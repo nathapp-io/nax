@@ -29,6 +29,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
+import { WEB_CONTENT_CLOSE_LINE } from "#src/web/content";
 import { SCRATCHPAD_DIR } from "./scratchpad.ts";
 import {
   capModelLine,
@@ -177,18 +178,89 @@ function renderedMarkerBytes(render: MarkerRenderer, deliveredBytes: number): nu
 }
 
 /**
- * Compose the head-direction result: the policy's content, then the marker on
- * its own last line. The marker is inside the byte and line budgets, never
- * appended past them.
+ * How a fenced web result's first line opens: the element, then its attributes.
+ * `fenceWebContent` writes `<web-content source="…" fetched="…" untrusted="true">`.
  */
-function composeHead(content: string, originalBytes: number, byteCap: number, spillPath: string | undefined): string {
-  for (const render of markerShapes(originalBytes, spillPath)) {
-    const bodyBudget = byteCap - renderedMarkerBytes(render, originalBytes);
+const WEB_CONTENT_OPEN_PREFIX = "<web-content ";
+
+/** How many lines may follow a web result's closing fence and still count as its trailer. */
+const WEB_TRAILER_FOLLOWING_LINES = 1;
+
+/**
+ * The closing lines a fenced web result must keep after the marker, in order, or
+ * `undefined` when this body is not a web result with one.
+ *
+ * The trailer is the closing fence plus whatever follows it — the fetch tool's own
+ * `[truncated at <n> bytes]` line, at most one — and nothing else: a web result is
+ * fenced last by construction, so more than one line after the fence means this is
+ * not the shape to preserve. Read from the ORIGINAL body, never from the shaped
+ * content: the head direction drops the end of the body, which is exactly where the
+ * trailer sits, so the content no longer holds it by the time the marker is composed.
+ */
+function webTrailer(body: string): readonly string[] | undefined {
+  // The cheap discriminator first: every body that is not a fenced web result returns
+  // here, without the full split a 2 MB command output would cost.
+  if (!body.startsWith(WEB_CONTENT_OPEN_PREFIX)) return undefined;
+  const lines = splitModelLines(body);
+  // The LAST closing fence: `fenceWebContent` escapes any in page text, so there is
+  // normally one, and taking the last keeps the reading total if one ever survives.
+  const closeAt = lines.lastIndexOf(WEB_CONTENT_CLOSE_LINE);
+  if (closeAt === -1) return undefined;
+  if (lines.length - closeAt - 1 > WEB_TRAILER_FOLLOWING_LINES) return undefined;
+  return lines.slice(closeAt);
+}
+
+/**
+ * `head` without the closing fence the trailer is about to supply again.
+ *
+ * A body short enough to survive the line cap keeps its own `</web-content>`, so
+ * appending the trailer after the marker would close the same block twice and read as
+ * a fence that ended before the truncation did. The line is dropped only when the
+ * trailer carries one, and only the fence's own line ever matches: `fenceWebContent`
+ * rewrites every `</web-content` in page text to `&lt;/web-content`.
+ */
+function withoutTrailerClose(head: string, trailer: readonly string[] | undefined): string {
+  if (trailer === undefined) return head;
+  const lines = splitModelLines(head);
+  if (lines[lines.length - 1] !== WEB_CONTENT_CLOSE_LINE) return head;
+  return lines.slice(0, -1).join("\n");
+}
+
+/** What one head-direction composition is made of. */
+interface HeadComposition {
+  /** The policy's shaped content: the head the marker follows. */
+  readonly content: string;
+  /** The closing lines this body keeps after the marker, when it is a fenced web result. */
+  readonly trailer: readonly string[] | undefined;
+  readonly originalBytes: number;
+  readonly byteCap: number;
+  readonly spillPath: string | undefined;
+}
+
+/**
+ * Compose the head-direction result: the policy's content, then the marker on its own
+ * last line, then the body's web trailer when it has one.
+ *
+ * The marker and the trailer are both inside the byte and line budgets, never appended
+ * past them: the trailer's lines and bytes are reserved from the same cap before the head
+ * is cut, so a result at the ceiling is still at the ceiling once its fence is back.
+ */
+function composeHead(p: HeadComposition): string {
+  const { trailer } = p;
+  // One newline opens the trailer; its own lines follow it.
+  const trailerBytes = trailer === undefined ? 0 : Buffer.byteLength(trailer.join("\n"), "utf8") + 1;
+  const reservedLines = 1 + (trailer?.length ?? 0);
+  for (const render of markerShapes(p.originalBytes, p.spillPath)) {
+    const bodyBudget = p.byteCap - renderedMarkerBytes(render, p.originalBytes) - trailerBytes;
     if (bodyBudget < 0) continue;
-    const head = trimToLineBudget(cutToByteCap(content, bodyBudget), MODEL_MAX_LINES - 1);
-    return `${head}\n${render(Buffer.byteLength(head, "utf8"))}`;
+    const head = trimToLineBudget(
+      withoutTrailerClose(cutToByteCap(p.content, bodyBudget), trailer),
+      MODEL_MAX_LINES - reservedLines,
+    );
+    const marked = `${head}\n${render(Buffer.byteLength(head, "utf8"))}`;
+    return trailer === undefined ? marked : `${marked}\n${trailer.join("\n")}`;
   }
-  return cutToByteCap(content, byteCap);
+  return cutToByteCap(p.content, p.byteCap);
 }
 
 /**
@@ -286,7 +358,15 @@ export async function applyModelTruncationPolicy(body: string, opts: ModelTrunca
   const spillPath = await spillMarkerPath(opts, body);
 
   return direction === "head"
-    ? composeHead(shaped.content, originalBytes, byteCap, spillPath)
+    ? composeHead({
+        content: shaped.content,
+        // From the ORIGINAL body: the head direction has already dropped the trailer
+        // from `shaped.content`, which is why it cannot be read back off it.
+        trailer: webTrailer(body),
+        originalBytes,
+        byteCap,
+        spillPath,
+      })
     : composeTail(body, shaped.content, originalBytes, byteCap, spillPath);
 }
 
