@@ -23,8 +23,12 @@ import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import type { LookupFunction } from "node:net";
 import { NaxError } from "#src/infra/index";
 
-/** What a refused destination carries, so the fetch layer can re-raise it unchanged. */
-const ADDRESS_BLOCKED = "WEB_ADDRESS_BLOCKED";
+/**
+ * What a refused destination carries, so the fetch layer can re-raise it unchanged: a
+ * destination refused by the connect-time lookup reaches the caller as the same error, never
+ * as a generic connection failure.
+ */
+export const ADDRESS_BLOCKED = "WEB_ADDRESS_BLOCKED";
 
 /** The `stage` on every error this module raises. */
 const STAGE = "web-fetch";
@@ -109,8 +113,12 @@ function firstBlockedAnswer(address: string | readonly LookupAddress[]): string 
   return answers.find((candidate) => isBlockedAddress(candidate));
 }
 
-/** The refusal a blocked destination raises, naming the host that resolved to it. */
-function blockedAddressError(host: string, address: string): NaxError {
+/**
+ * The refusal a blocked destination raises, naming the host that resolved to it. Exported
+ * because the fetch layer raises the same refusal for an IP literal, which Node never resolves
+ * and so never hands to the checked lookup: one refusal, one message, both entry points.
+ */
+export function blockedAddressError(host: string, address: string): NaxError {
   return new NaxError(`refused to fetch ${host}: it resolves to a private or local address`, ADDRESS_BLOCKED, {
     stage: STAGE,
     host,
@@ -121,9 +129,10 @@ function blockedAddressError(host: string, address: string): NaxError {
 /**
  * Whether the request's origin is exempt. Both sides are reduced to their origin first,
  * so an allow-list entry written as a base URL (`http://host:8080/`) matches the origin
- * it belongs to, and an entry that is not a URL matches nothing.
+ * it belongs to, and an entry that is not a URL matches nothing. Exported because the
+ * fetch layer exempts an allowed origin's IP literal too, which never reaches the lookup.
  */
-function isAllowedOrigin(origin: string, allowOrigins: readonly string[]): boolean {
+export function isAllowedOrigin(origin: string, allowOrigins: readonly string[]): boolean {
   const requested = originOf(origin);
   if (requested === null) return false;
   return allowOrigins.some((allowed) => originOf(allowed) === requested);
