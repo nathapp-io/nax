@@ -17,7 +17,13 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { createMemoryOutbox, createMemoryStore, type MemorySyncResult } from "@nathapp/nax-agent";
+import {
+  createLocalMemoryProvider,
+  createMemoryOutbox,
+  createMemoryStore,
+  type MemorySyncResult,
+  saveMemoryNote,
+} from "@nathapp/nax-agent";
 import { applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import { assertDefined, compactNote, makeLogger, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
 import { Command } from "commander";
@@ -195,6 +201,7 @@ function makeResetHarness(fix: ResetFixture = {}): ResetHarness {
   const listed: string[] = [];
   const events: string[] = [];
   const hostCalls: CreateMemoryHostInput[] = [];
+  _memoryAdminDeps.lockMirror = async () => async () => {};
   _memoryAdminDeps.listDir = async (path) => {
     listed.push(path);
     events.push(`list ${path}`);
@@ -288,6 +295,41 @@ describe("nax memory reset — what it refuses", () => {
 // ─── the mirror it rebuilds ─────────────────────────────────────────────────
 
 describe("nax memory reset — the mirror it rebuilds", () => {
+  test("refuses a reset racing a save still declaring its queue entry", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      const logger = makeLogger();
+      const store = createMemoryStore({ ...dirs, logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir });
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const save = saveMemoryNote({
+        store,
+        logger,
+        outbox: {
+          ...outbox,
+          enqueue: async (request) => {
+            started.resolve();
+            await resume.promise;
+            return outbox.enqueue(request);
+          },
+        },
+        provider: { ...createLocalMemoryProvider(store), reachable: async () => false },
+        write: compactNote("racing"),
+        source: "test",
+        writeMode: "direct",
+      });
+      await started.promise;
+      try {
+        expect(await runReset(makeResetHarness({ fs: realAdminDeps, dirs }))).toBe(1);
+      } finally {
+        resume.resolve();
+        await save;
+      }
+      expect(await outbox.list()).toHaveLength(1);
+    });
+  });
+
   test("AC-4: reset clears the cache but retains approvals and undo history", async () => {
     const h = makeResetHarness();
 

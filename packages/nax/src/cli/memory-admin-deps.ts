@@ -16,6 +16,8 @@
 import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
+import { lockMemoryMirror } from "@/memory";
 
 /** The `[stage]` label every line these commands print carries. */
 export const STAGE = "memory";
@@ -27,6 +29,7 @@ export const MEMORY_LINK_REFUSED = "MEMORY_LINK_REFUSED";
 export const MEMORY_RESET_REFUSED = "MEMORY_RESET_REFUSED";
 
 export const _memoryAdminDeps: {
+  lockMirror(dir: string): Promise<(() => Promise<void>) | null>;
   /** The file's text, or `null` when it does not exist. */
   readText(path: string): Promise<string | null>;
   /** Write `text` to `path`, creating the parent directories. */
@@ -37,6 +40,7 @@ export const _memoryAdminDeps: {
   /** Remove `path` and everything under it; a missing path is not an error. */
   removePath(path: string): Promise<void>;
 } = {
+  lockMirror: (dir) => lockMemoryMirror({ dir, logger: getLogger() }),
   readText: async (path) => {
     const file = Bun.file(path);
     return (await file.exists()) ? await file.text() : null;

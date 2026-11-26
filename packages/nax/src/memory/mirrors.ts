@@ -31,7 +31,7 @@ import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { KODA_APPROVALS_FILE } from "./koda-approvals";
+import { isEmptyKodaApprovals, KODA_APPROVALS_FILE } from "./koda-approvals";
 import { KODA_REFUSALS_FILE } from "./koda-refusals";
 import { MCP_ID_MAP_FILE } from "./mcp-id-map";
 import { ORIGIN_FILE } from "./mirror-origin";
@@ -291,11 +291,15 @@ async function readMirror(dir: string, name: string): Promise<MemoryMirrorInfo> 
       archivePresent(dir, unreadable),
       originRoot === null ? null : isDirectory(originRoot),
     ]);
-  const hasProviderState = (
-    await Promise.all(
-      [MCP_ID_MAP_FILE, KODA_APPROVALS_FILE, KODA_REFUSALS_FILE].map((file) => present(join(dir, file), unreadable)),
-    )
-  ).some(Boolean);
+  const approvals = join(dir, KODA_APPROVALS_FILE);
+  const info = await lstatOrNull(approvals, unreadable);
+  const hasApprovals =
+    info !== null && (!info.isFile() || !isEmptyKodaApprovals(await jsonOrNull(approvals, unreadable)));
+  const hasProviderState =
+    hasApprovals ||
+    (await Promise.all([MCP_ID_MAP_FILE, KODA_REFUSALS_FILE].map((file) => present(join(dir, file), unreadable)))).some(
+      Boolean,
+    );
   return {
     hasProviderState,
     dir,
@@ -326,7 +330,7 @@ export async function listMemoryMirrors(projectsDir: string): Promise<readonly M
   const entries = await entriesIn(projectsDir, []);
   if (entries === null) return [];
   const mirrors = entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".nax-pruning-"))
+    .filter((entry) => entry.isDirectory())
     .map((entry) => ({ dir: join(projectsDir, entry.name), name: entry.name }))
     .sort((left, right) => byCodePoint(left.name, right.name));
   return await Promise.all(mirrors.map((mirror) => readMirror(mirror.dir, mirror.name)));

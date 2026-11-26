@@ -12,10 +12,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { _memoryStoreDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
-import { isPrunableMirror, listMemoryMirrors, type MemoryMirrorInfo } from "@/memory";
+import { isPrunableMirror, listMemoryMirrors, lockMemoryMirror, type MemoryMirrorInfo } from "@/memory";
 import { createKodaApprovals } from "@/memory/koda-approvals";
 import { createMcpIdMap } from "@/memory/mcp-id-map";
 
@@ -112,6 +113,29 @@ describe("listMemoryMirrors", () => {
     for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
   });
 
+  test("inventory includes a pruning-prefixed project, never the generation mutex", async () => {
+    projectsDir = join(projectsDir, "projects");
+    const dir = mirrorDir(".nax-pruning-project-01234567");
+    const mkdir = _memoryStoreDeps.mkdir;
+    let namesDuringAcquisition: readonly string[] = [];
+    try {
+      _memoryStoreDeps.mkdir = async (path, opts) => {
+        // The generation mutex is held when acquisition reaches the inner writer lock.
+        if (basename(path) === basename(dir)) {
+          namesDuringAcquisition = (await inventory()).map((m) => m.name);
+          expect(readdirSync(projectsDir)).toEqual([basename(dir)]);
+        }
+        return mkdir(path, opts);
+      };
+      const release = await lockMemoryMirror({ dir, logger: makeLogger() });
+      if (!release) throw new Error("expected lock");
+      await release();
+      expect(namesDuringAcquisition).toEqual([basename(dir)]);
+    } finally {
+      _memoryStoreDeps.mkdir = mkdir;
+    }
+  });
+
   test("a mirror holding only a hidden MCP id cannot be pruned", async () => {
     const dirs = { root: projectsDir, projectDir: mirrorDir(), userDir: join(projectsDir, "user") };
     const ids = createMcpIdMap({ dirs, server: "mcp" });
@@ -121,13 +145,16 @@ describe("listMemoryMirrors", () => {
   });
 
   test("a user-scope Koda approval protects the project mirror", async () => {
-    await createKodaApprovals({ dir: mirrorDir(), logger: makeLogger() }).record({
+    const approvals = createKodaApprovals({ dir: mirrorDir(), logger: makeLogger() });
+    await approvals.record({
       scope: "user",
       approvalId: "waiting",
       slug: "proposal",
       clientId: "proposed",
     });
     expect(isPrunableMirror(await onlyMirror())).toBe(false);
+    await approvals.drop(["waiting"]);
+    expect(isPrunableMirror(await onlyMirror())).toBe(true);
   });
 
   test("AC-6 returns one entry per directory, named after the directory", async () => {

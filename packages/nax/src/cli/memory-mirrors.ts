@@ -42,9 +42,10 @@
  * authorizes the removal. A declined question removes nothing and exits 1. Any throw is the
  * group's error contract — `Error: <message>` on stderr and exit 1.
  */
-import { mkdtemp, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { errorMessage } from "@nathapp/nax-agent/internal";
+
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { errorMessage, mirrorCoordinationDir } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import {
   isPrunableMirror,
@@ -144,7 +145,9 @@ export const _memoryMirrorsCliDeps: MemoryMirrorsCliDeps = {
   // in its default-no mode, where only an explicit `y` authorizes removing mirrors (review B3).
   confirm: (question, channel) => promptForConfirmation(question, { defaultAnswer: "no", channel }),
   removeDir: async (dir) => {
-    const detached = await mkdtemp(join(dirname(dir), ".nax-pruning-"));
+    const coordination = mirrorCoordinationDir(dir);
+    await mkdir(coordination, { recursive: true });
+    const detached = await mkdtemp(join(coordination, "pruning-"));
     try {
       await rename(dir, join(detached, "mirror"));
     } finally {

@@ -66,6 +66,7 @@ export {
   acquireMirrorDirLock,
   type MirrorDirLockInput,
   type MirrorLockSeam,
+  mirrorCoordinationDir,
   type ReleaseLock,
   storeLockTargets,
 } from "#src/memory/mirror-lock";

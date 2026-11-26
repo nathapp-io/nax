@@ -1037,6 +1037,7 @@ markNativeTurnOutcome
 maskForPrompt
 mcpRuleAdmits
 memoryCompactionCandidates
+mirrorCoordinationDir
 namespacedToolName
 narrowGrants
 nativeSessionId

@@ -355,9 +355,15 @@ export async function acquireMirrorDirLock(input: MirrorDirLockInput): Promise<(
 const pruneClaims = new Set<string>();
 const generationClaims = new Set<string>();
 
+/** Administrative state is a sibling of the inventory, never a mirror candidate itself. */
+export function mirrorCoordinationDir(projectDir: string): string {
+  const projects = realOrRaw(dirname(projectDir));
+  return join(dirname(projects), `.${basename(projects)}-coordination`);
+}
+
 /** Unlike sync.lock this name survives detaching the entire mirror. */
 async function takeGenerationLock(input: MirrorLockSeam, projectDir: string): Promise<(() => Promise<void>) | null> {
-  const dir = realOrRaw(dirname(projectDir));
+  const dir = mirrorCoordinationDir(projectDir);
   const path = join(dir, `.${basename(projectDir)}.generation.lock`);
   if (generationClaims.has(path)) return null;
   generationClaims.add(path);
@@ -366,7 +372,7 @@ async function takeGenerationLock(input: MirrorLockSeam, projectDir: string): Pr
     if (release)
       return async () => {
         try {
-          await release();
+          await releaseMirrorDirLock({ ...input, dir }, dir, release);
         } finally {
           generationClaims.delete(path);
         }

@@ -383,6 +383,8 @@ async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<vo
 async function clearProjectMirror(projectDir: string): Promise<void> {
   for (const entry of await _memoryAdminDeps.listDir(projectDir)) {
     if (
+      entry.startsWith("sync.lock.") ||
+      entry.startsWith("compaction.lock.") ||
       [KODA_APPROVALS_FILE, "archive", "compactions.jsonl", "origin.json", "compaction.lock", "sync.lock"].includes(
         entry,
       )
@@ -405,8 +407,14 @@ async function runReset(opts: MemoryCliOptions, deps: MemoryCliDeps): Promise<nu
   return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
     if (host === null) throw memoryDisabledError();
     assertKodaMirror(host.providerId);
-    await assertNothingUndeliveredBeforeReset(host);
-    await clearProjectMirror(host.dirs.projectDir);
+    const release = await _memoryAdminDeps.lockMirror(host.dirs.projectDir);
+    if (!release) throw resetRefusal("another writer holds the mirror; retry reset after it finishes");
+    try {
+      await assertNothingUndeliveredBeforeReset(host);
+      await clearProjectMirror(host.dirs.projectDir);
+    } finally {
+      await release();
+    }
     const result = await host.sync();
     deps.log(opts.json === true ? JSON.stringify(result) : formatMemorySyncResult(result));
     return result.outcome === "synced" ? 0 : 1;

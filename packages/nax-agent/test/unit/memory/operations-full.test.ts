@@ -39,6 +39,7 @@ import {
 } from "@nathapp/nax-agent";
 import { acquireMirrorDirLock, storeLockTargets } from "#src/memory/mirror-lock";
 import { claimSync, releaseSync } from "#src/memory/sync-flight";
+import { _lockDeps } from "#src/session-store/session-lock";
 import {
   assertDefined,
   assertNaxError,
@@ -402,5 +403,27 @@ test("a fenced save during prune survives in the next mirror generation", async 
     }
     await save;
     expect((await h.outbox.list()).map((e) => e.slug)).toEqual([write().slug]);
+  });
+});
+
+test("a fenced save returns its committed result despite release failure", async () => {
+  await withTempDir(async (dir) => {
+    const h = harness(join(dir, "projects"));
+    const [target] = storeLockTargets(h.store);
+    assertDefined(target, "project lock");
+    claimSync(target.path);
+    const remove = _lockDeps.remove;
+    _lockDeps.remove = (path, options) => {
+      if (String(path).endsWith(".generation.lock")) throw new Error("cannot release generation");
+      return remove(path, options);
+    };
+    try {
+      expect((await h.save()).delivered).toBe(false);
+      expect(await h.outbox.list()).toHaveLength(1);
+      expect(h.logger.warn).toHaveBeenCalled();
+    } finally {
+      _lockDeps.remove = remove;
+      releaseSync(target.path);
+    }
   });
 });

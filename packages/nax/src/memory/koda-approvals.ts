@@ -203,6 +203,12 @@ function approvalsOf(parsed: unknown): { readonly approvals: readonly KodaApprov
   return { approvals };
 }
 
+/** Only a verified empty record may be discarded by mirror pruning. */
+export function isEmptyKodaApprovals(value: unknown): boolean {
+  const result = approvalsOf(value);
+  return "approvals" in result && result.approvals.length === 0;
+}
+
 /** Read the file, treating every unusable answer as no approvals. */
 async function readApprovals(path: string): Promise<ApprovalsRead> {
   let text: string;
