@@ -79,4 +79,11 @@ describe("buildBotPrReviewPrompt finding origin request (US-002)", () => {
       prompts.buildBotPrReviewPrompt({ ...base, incrementalSince: since, botPushes: [push], conversationOnly: true }),
     );
   });
+  test("#2987 an incremental review that lists bot pushes carries each scope line exactly once", () => {
+    for (const line of [
+      "Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description says it fixes it.",
+      "A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.",
+    ])
+      expect(askedLines.filter((l) => l === line)).toEqual([line]);
+  });
 });

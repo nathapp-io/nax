@@ -22,12 +22,12 @@ const OFF =
 const SKEW = "version-skew: needs two versions of the product running together, or data written by an earlier version.";
 const FAULT = "backend-fault: needs a store, network or clock failure between two steps of one operation.";
 const EVIDENCE =
-  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use; a document that describes the behaviour itself as intended shows there is no finding.';
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding.';
 
 const NOT_A_FINDING =
-  "Behaviour the base branch already has, or that the spec lists as out of scope, is not a finding of this pull request.";
+  "Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description says it fixes it.";
 const SMALLEST_CHANGE =
-  "A suggestion is the smallest change that removes the problem. When the problem can only be removed by new public API, a new mechanism, or a change in another repository, say that in the issue instead of suggesting it.";
+  "A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.";
 
 describe("buildBotPrReviewPrompt trigger classes (bot-trigger-classes US-001)", () => {
   const lines = taskLines(base);

@@ -81,20 +81,16 @@ describe("buildBotPrFixPrompt", () => {
     expect(text).toContain("Fix every item");
     expect(text).toContain("add a test where an item names a missing one");
   });
-  test("#2987: fix states when an item is done and where an item that cannot be fixed here is reported", () => {
+  test("#2987: fix states when an item is done", () => {
     const text = prompts.buildBotPrFixPrompt(base);
     expect(text).toContain(
       "- An item is fixed when its problem is gone and behaviour the item does not name is unchanged. A Suggestion is one way to do it, not a requirement.",
-    );
-    expect(text).toContain(
-      '- An item that can only be fixed with new public API, a new mechanism, something the spec lists as out of scope, or by undoing an earlier nax bot fix push on this pull request is not fixed here: leave the code as it is for that item, and name it with the reason in "concerns" with status DONE_WITH_CONCERNS and in the Fix section of the report.',
     );
   });
   test("#2987: repair and prepare do not carry the fix-only facts", () => {
     for (const mode of ["repair", "prepare"] as const) {
       const text = prompts.buildBotPrFixPrompt({ ...base, mode });
       expect(text).not.toContain("An item is fixed when");
-      expect(text).not.toContain("is not fixed here");
     }
   });
   test("AC-11: fix appends report details after committing", () => {

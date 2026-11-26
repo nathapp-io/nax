@@ -102,13 +102,6 @@ function factsSection(input: BotPrFixPromptInput): string {
 const FIX_DONE_RULE =
   "An item is fixed when its problem is gone and behaviour the item does not name is unchanged. A Suggestion is one way to do it, not a requirement.";
 
-/**
- * #2987: where an item that cannot be fixed within the PR's scope goes. It reuses the report path
- * `FIX_PROTECTED_PATHS_RULE` already uses ("concerns" with DONE_WITH_CONCERNS) and adds the Fix section.
- */
-const FIX_NOT_FIXED_HERE_RULE =
-  'An item that can only be fixed with new public API, a new mechanism, something the spec lists as out of scope, or by undoing an earlier nax bot fix push on this pull request is not fixed here: leave the code as it is for that item, and name it with the reason in "concerns" with status DONE_WITH_CONCERNS and in the Fix section of the report.';
-
 function intent(input: BotPrFixPromptInput): string {
   const paths = [
     ...(input.prdPath !== undefined ? [`- PRD: ${input.prdPath}`] : []),
@@ -122,7 +115,6 @@ function instructions(input: BotPrFixPromptInput): string {
     case "fix":
       return `- Fix every item; add a test where an item names a missing one (TDD: see it fail first).
 - ${FIX_DONE_RULE}
-- ${FIX_NOT_FIXED_HERE_RULE}
 - ${GATE_INTEGRITY_RULE}
 - ${FIX_PROTECTED_PATHS_RULE}
 - Before you commit, run every command in The bar; if one fails for missing setup, prepare the checkout first, then re-run the commands.
