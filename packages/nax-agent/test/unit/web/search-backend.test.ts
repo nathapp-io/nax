@@ -41,6 +41,16 @@ function answer(status: number, body: unknown): () => Response {
   return () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
 }
 
+/** A fetch that records the request and never answers it: a server that has gone quiet. */
+function stubSilentSearch(): SentSearch[] {
+  const sent: SentSearch[] = [];
+  _webSearchDeps.fetch = (url, init) => {
+    sent.push({ url, init });
+    return new Promise<Response>(() => {});
+  };
+  return sent;
+}
+
 /** One header of a request the stub recorded, read the way a server reads it. */
 function headerOf(sent: SentSearch | undefined, name: string): string | null {
   assertDefined(sent, "a search request");
@@ -260,7 +270,7 @@ describe("the failures a search reports", () => {
     const armed = useFakeTimers(clock);
     // A server that never answers raises nothing the fetch could notice, so the deadline is
     // the only way out; the promise stays open for the whole test.
-    _webSearchDeps.fetch = () => new Promise<Response>(() => {});
+    stubSilentSearch();
     const error = await rejectionAfter(
       createSearchBackend({ id: "tavily", apiKey: "k" }).search("q", { limit: 3 }),
       () => clock.advance(15_000),
@@ -271,8 +281,20 @@ describe("the failures a search reports", () => {
     expect(clock.pending()).toBe(0);
   });
 
+  test("a search that runs out of budget aborts the request it started", async () => {
+    const clock = makeFakeClock();
+    useFakeTimers(clock);
+    const sent = stubSilentSearch();
+    await rejectionAfter(createSearchBackend({ id: "tavily", apiKey: "k" }).search("q", { limit: 3 }), () =>
+      clock.advance(15_000),
+    );
+    const request = sent[0];
+    assertDefined(request, "a search request");
+    expect(request.init.signal?.aborted).toBe(true);
+  });
+
   test("a search the caller aborts is a WEB_SEARCH_FAILED", async () => {
-    _webSearchDeps.fetch = () => new Promise<Response>(() => {});
+    stubSilentSearch();
     const caller = new AbortController();
     const error = await rejectionAfter(
       createSearchBackend({ id: "tavily", apiKey: "k" }).search("q", { limit: 3, signal: caller.signal }),
@@ -282,6 +304,20 @@ describe("the failures a search reports", () => {
     );
     assertNaxError(error);
     expect(error.code).toBe("WEB_SEARCH_FAILED");
+  });
+
+  test("a caller's cancellation aborts the request it started", async () => {
+    const sent = stubSilentSearch();
+    const caller = new AbortController();
+    await rejectionAfter(
+      createSearchBackend({ id: "tavily", apiKey: "k" }).search("q", { limit: 3, signal: caller.signal }),
+      async () => {
+        caller.abort(new Error("user cancelled"));
+      },
+    );
+    const request = sent[0];
+    assertDefined(request, "a search request");
+    expect(request.init.signal?.aborted).toBe(true);
   });
 });
 

@@ -93,7 +93,7 @@ export async function fetchSearchJson(p: {
 }): Promise<unknown> {
   const deadline = startDeadline({ backend: p.backend, signal: p.signal });
   try {
-    const response = await untilAborted(send(p.request, p.backend), deadline);
+    const response = await untilAborted(send(p.request, p.backend, deadline), deadline);
     return await untilAborted(readJson(response, p.backend), deadline);
   } finally {
     deadline.release();
@@ -243,11 +243,17 @@ async function untilAborted<T>(work: Promise<T>, deadline: Deadline): Promise<T>
   }
 }
 
-/** Send one request and hand back its response, or raise the failure it answered with. */
-async function send(request: SearchRequest, backend: WebSearchBackendId): Promise<Response> {
+/**
+ * Send one request and hand back its response, or raise the failure it answered with.
+ *
+ * The request carries the deadline's signal, so a cancelled turn or an expired budget aborts the
+ * socket the search is waiting on rather than only rejecting the promise wrapped around it: a
+ * request nobody is waiting for any more must not keep reading its answer.
+ */
+async function send(request: SearchRequest, backend: WebSearchBackendId, deadline: Deadline): Promise<Response> {
   let response: Response;
   try {
-    response = await _webSearchDeps.fetch(request.url, request.init);
+    response = await _webSearchDeps.fetch(request.url, { ...request.init, signal: deadline.signal });
   } catch (error) {
     throw searchFailure(`${backend} search failed: ${errorMessage(error)}`, { backend });
   }
