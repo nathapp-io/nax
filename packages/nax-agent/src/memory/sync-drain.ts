@@ -151,9 +151,20 @@ interface OutboxView {
   refused(entry: MemoryOutboxEntry, reason: string): void;
   /** Record that `clientId` has left the outbox. */
   removed(clientId: string): void;
+  /**
+   * Re-read one entry from the outbox and record what it holds now; `undefined` when it holds
+   * none (or left) under that id.
+   *
+   * The view is the listing this drain read plus this run's own changes, and a change another
+   * process made is neither: `nax memory requeue` and `nax memory discard` act on rejected
+   * entries from outside the sync. A refusal the view remembers can therefore be a queued write
+   * again, and a decision that would refuse, delete or wait on it asks the outbox once more
+   * before it acts — see `awaitsOutcome` and `dropSuperseded`.
+   */
+  refresh(clientId: string): Promise<MemoryOutboxEntry | undefined>;
 }
 
-function outboxView(entries: readonly MemoryOutboxEntry[]): OutboxView {
+function outboxView(entries: readonly MemoryOutboxEntry[], outbox: MemoryOutbox): OutboxView {
   const held = new Map<string, MemoryOutboxEntry>();
   for (const entry of entries) held.set(entry.clientId, entry);
   return {
@@ -164,6 +175,12 @@ function outboxView(entries: readonly MemoryOutboxEntry[]): OutboxView {
     },
     removed: (clientId) => {
       held.delete(clientId);
+    },
+    refresh: async (clientId) => {
+      const now = await outbox.held(clientId);
+      if (now === undefined) held.delete(clientId);
+      else held.set(clientId, now);
+      return now;
     },
   };
 }
@@ -194,14 +211,21 @@ type AwaitsOutcome =
  * behind it must see, which is why the run records its own changes in the view. An id the outbox
  * no longer holds — delivered, or dropped as superseded — is not a reason to wait, because
  * nothing can arrive under it any more.
+ *
+ * A *remembered* refusal is confirmed once more with the outbox before this entry is refused
+ * with it. `nax memory requeue` runs in another process: the entry it puts back in the queue is
+ * one the view still lists as refused, and refusing this one along with a refusal that no longer
+ * stands would leave its note retired with no replacement.
  */
-function awaitsOutcome(run: DrainRun, entry: MemoryOutboxEntry): AwaitsOutcome {
+async function awaitsOutcome(run: DrainRun, entry: MemoryOutboxEntry): Promise<AwaitsOutcome> {
   const awaitedId = entry.awaits;
   if (awaitedId === undefined) return { kind: "free" };
-  const awaited = run.outbox.held(awaitedId);
+  const seen = run.outbox.held(awaitedId);
+  if (seen === undefined) return { kind: "free" };
+  const awaited = seen.state === "rejected" ? await run.outbox.refresh(awaitedId) : seen;
   if (awaited === undefined) return { kind: "free" };
-  if (awaited.state === "rejected") return { kind: "refused", slug: awaited.slug };
-  return { kind: "waiting" };
+  if (awaited.state !== "rejected") return { kind: "waiting" };
+  return { kind: "refused", slug: awaited.slug };
 }
 
 /**
@@ -260,12 +284,14 @@ async function settle(
   return { ...tally, pushed: tally.pushed + 1 };
 }
 
-/** Remove the rejected writes of `delivered`'s note that were taken before it. */
+/** Remove the rejected writes of `delivered`'s note that were taken before it, while they are still rejected. */
 async function dropSuperseded(run: DrainRun, delivered: MemoryOutboxEntry): Promise<void> {
   for (const entry of run.outbox.rejected(entryKey(delivered))) {
     if (entry.seq >= delivered.seq) continue;
-    await run.input.outbox.remove(entry.clientId);
-    run.outbox.removed(entry.clientId);
+    // What this listing calls rejected may be a queued retry again: `nax memory requeue` runs in
+    // another process, and deleting the write it put back would lose work nobody delivered. The
+    // outbox removes an entry only while the entry itself still holds a refusal.
+    if (await run.input.outbox.removeIfRejected(entry.clientId)) run.outbox.removed(entry.clientId);
   }
 }
 
@@ -289,13 +315,17 @@ export { rewindPullCursor };
  */
 export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult> {
   const all = await input.outbox.list();
-  const run: DrainRun = { input, outbox: outboxView(all), timers: input.timers ?? GLOBAL_MEMORY_TIMERS };
+  const run: DrainRun = {
+    input,
+    outbox: outboxView(all, input.outbox),
+    timers: input.timers ?? GLOBAL_MEMORY_TIMERS,
+  };
   const queue = all.filter((entry) => entry.state === "queued");
   const proven = new Set<string>();
   let tally: DrainTally = { pushed: 0, rejected: 0, parked: [] };
   for (const [index, entry] of queue.entries()) {
     if (proven.has(entry.clientId)) continue;
-    const waits = awaitsOutcome(run, entry);
+    const waits = await awaitsOutcome(run, entry);
     // A write still waiting on another one is neither sent nor counted: it is queued work the
     // order has not reached, and the entry it waits on is somewhere on this same queue.
     if (waits.kind === "waiting") continue;

@@ -325,6 +325,61 @@ describe("drainOutbox: what the outbox currently holds under an awaited id", () 
     });
   });
 
+  test("[B4] a replacement requeued while the drain runs stops refusing the write that waits on it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      h.provider.push.mockImplementation(async (request) => {
+        if (request.clientId === SAVE_ID) throw refusal();
+        if (request.clientId === "client-other") {
+          // `nax memory requeue` from another process: the refusal this drain remembers no longer
+          // stands, so refusing the source's forget along with it would retire the source while
+          // its replacement is still on its way.
+          await h.outbox.requeue(SAVE_ID);
+          return ANSWER_ACTIVE;
+        }
+        return ANSWER_DELETED;
+      });
+      await h.store.writeNote(note(MERGED_SLUG));
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      await h.outbox.enqueue(saveRequest(note("budget-c"), "client-other"));
+      await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+
+      const result = await drain(h);
+
+      expect(result).toEqual({ pushed: 1, rejected: 1, parked: [] });
+      // The forget waits, as it would for a replacement that was queued all along.
+      expect(pushed(h)).toEqual([`save:${MERGED_SLUG}`, "save:budget-c"]);
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "queued", awaits: SAVE_ID });
+      expect(await entryOf(h.outbox, SAVE_ID)).toMatchObject({ state: "queued" });
+    });
+  });
+
+  test("[B4] a replacement discarded while the drain runs leaves nothing to wait for", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      h.provider.push.mockImplementation(async (request) => {
+        if (request.clientId === SAVE_ID) throw refusal();
+        if (request.clientId === "client-other") {
+          // `nax memory discard` from another process: the outbox no longer holds the id, which
+          // is the same answer a delivered replacement gives.
+          await h.outbox.remove(SAVE_ID);
+          return ANSWER_ACTIVE;
+        }
+        return ANSWER_DELETED;
+      });
+      await h.store.writeNote(note(MERGED_SLUG));
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      await h.outbox.enqueue(saveRequest(note("budget-c"), "client-other"));
+      await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+
+      const result = await drain(h);
+
+      expect(result).toEqual({ pushed: 2, rejected: 1, parked: [] });
+      expect(pushed(h)).toEqual([`save:${MERGED_SLUG}`, "save:budget-c", `forget:${SOURCE_SLUG}`]);
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
   test("M1: one drain reads the outbox once, however many entries wait on another", async () => {
     await withTempDir(async (dir) => {
       // A merge queues one save and one forget per source it folded. Every one of those forgets

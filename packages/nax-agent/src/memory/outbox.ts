@@ -19,6 +19,12 @@
  * outbox (`state: "rejected"`) instead of being deleted — the reason is the
  * record of why the provider refused it, and a later CLI may requeue it.
  *
+ * Removal on a caller's decision follows the same rule as a read: the entry file
+ * is the fact, never a caller's listing of it. `requeue` and `discard` run from
+ * the CLI while a sync may be draining, so an entry a caller saw as rejected may
+ * already be a queued write again; `removeIfRejected` claims the file by rename,
+ * reads what it holds there, and puts a live entry back untouched.
+ *
  * The one length rule an entry carries — a reason is at most
  * `MEMORY_FORGET_REASON_MAX_CHARS` — is enforced where an entry is *taken*
  * (`enqueue`), never where it is read. An entry that fails a read check does not
@@ -56,6 +62,14 @@ const ERROR_STAGE = "memory";
 const ENTRY_FILE_RE = /^(\d{8})-([A-Za-z0-9_-]+)\.json$/;
 const ENTRY_SEQ_DIGITS = 8;
 const ENTRY_SUFFIX = ".json";
+/**
+ * The suffix a claimed entry file carries while its removal is being decided.
+ *
+ * It is appended after `.json`, so `ENTRY_FILE_RE` never matches a claimed name: the claim is
+ * outside the entry namespace for every listing, and it is only ever held for the length of one
+ * removal.
+ */
+const CLAIM_SUFFIX = ".claim";
 /** A link at an entry name is not an entry this outbox wrote, so reads never follow one. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
@@ -105,6 +119,20 @@ export interface MemoryOutbox {
   list(): Promise<MemoryOutboxEntry[]>;
   listInvalid(): Promise<string[]>;
   remove(clientId: string): Promise<void>;
+  /**
+   * The entry the outbox holds under `clientId` right now, read from its file; `undefined` when
+   * it holds none. A caller's `list` is a snapshot — this is the entry as it is at the call.
+   */
+  held(clientId: string): Promise<MemoryOutboxEntry | undefined>;
+  /**
+   * Remove an entry only while it still holds a **rejected** entry, answering whether it did.
+   *
+   * The entry file is claimed by rename and its content read there, so the entry that is
+   * removed is the one that was checked: a `queued` entry (put back by `requeue` between a
+   * caller's listing and this call) is renamed back untouched. Removing a requeued retry would
+   * throw away a write nobody has delivered.
+   */
+  removeIfRejected(clientId: string): Promise<boolean>;
   markRejected(clientId: string, reason: string): Promise<void>;
   /**
    * Count one bad response against a queued entry and keep its message; answers the entry's new
@@ -293,10 +321,14 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       return null;
     }
   }
+  /** One path as an entry, or `null` when its content is not one. */
+  async function readEntryAt(path: string): Promise<MemoryOutboxEntry | null> {
+    const text = await readEntryText(path);
+    return text === null ? null : toEntry(text);
+  }
   /** One named file as an entry, or `null` when its content is not one. */
   async function readEntry(file: EntryFile): Promise<MemoryOutboxEntry | null> {
-    const text = await readEntryText(join(dir, file.name));
-    return text === null ? null : toEntry(text);
+    return readEntryAt(join(dir, file.name));
   }
   /** The whole directory: readable entries in sequence order, plus the names that are not. */
   async function scan(): Promise<OutboxScan> {
@@ -370,6 +402,54 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     }
   }
 
+  async function held(clientId: string): Promise<MemoryOutboxEntry | undefined> {
+    for (const file of await filesFor(clientId)) {
+      const entry = await readEntry(file);
+      if (entry !== null) return entry;
+    }
+    return undefined;
+  }
+
+  /**
+   * One entry file, removed only if it still holds a rejected entry.
+   *
+   * The file is claimed by rename before it is read, because the read and the removal have to
+   * see the same bytes: `requeue` in another process rewrites the entry in place, so a name
+   * checked and then removed could take back the queued retry that landed in between. A claim
+   * name is not an entry name (`entryFileNamed` refuses it), so nothing else can rewrite the
+   * claim while it is held, and an entry that turns out not to be rejected is renamed back
+   * untouched. Losing the race the other way — the entry left before the claim — removes
+   * nothing, which is what the caller asked for anyway. A claim left behind by a crash is outside
+   * every listing; it holds an entry the drain may have decided to remove, so the loss is the
+   * removal it was already making.
+   */
+  async function removeOneIfRejected(file: EntryFile): Promise<boolean> {
+    const path = join(dir, file.name);
+    const claim = join(dir, `${file.name}${CLAIM_SUFFIX}`);
+    try {
+      await _memoryStoreDeps.rename(path, claim);
+    } catch (error) {
+      // Gone between the listing and now: there is nothing left to remove.
+      if (isMissing(error)) return false;
+      throw error;
+    }
+    const claimed = await readEntryAt(claim);
+    if (claimed === null || claimed.state !== "rejected") {
+      await _memoryStoreDeps.rename(claim, path);
+      return false;
+    }
+    await _memoryStoreDeps.rm(claim, { force: true });
+    return true;
+  }
+
+  async function removeIfRejected(clientId: string): Promise<boolean> {
+    let removed = false;
+    for (const file of await filesFor(clientId)) {
+      if (await removeOneIfRejected(file)) removed = true;
+    }
+    return removed;
+  }
+
   async function markRejected(clientId: string, reason: string): Promise<void> {
     for (const file of await filesFor(clientId)) {
       const entry = await readEntry(file);
@@ -414,5 +494,16 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return keys;
   }
 
-  return { enqueue, list, listInvalid, remove, markRejected, recordBadResponse, requeue, heldKeys };
+  return {
+    enqueue,
+    list,
+    listInvalid,
+    remove,
+    held,
+    removeIfRejected,
+    markRejected,
+    recordBadResponse,
+    requeue,
+    heldKeys,
+  };
 }
