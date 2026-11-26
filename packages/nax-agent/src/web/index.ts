@@ -9,6 +9,7 @@
  * fence a cross-package contract. Each story adds its own names as nax starts using them.
  */
 export { extractWebUrls, normalizeWebUrl } from "./content.ts";
+export { createWebExposure, type WebExposure } from "./exposure.ts";
 export {
   WEB_SEEN_URL_CAP,
   type WebExposureSnapshot,

@@ -853,6 +853,7 @@ type TurnTokenTotals
 UNIVERSAL_CODING_TOOLS
 type UnknownPathResult
 WEB_SEEN_URL_CAP
+type WebExposure
 type WebExposureSnapshot
 type WebSearchBackendId
 type WebSearchResult
@@ -972,6 +973,7 @@ createSrtBackend
 createTerminalAuthInteraction
 createToolAuditSink
 createTurnAccumulator
+createWebExposure
 credentialFaultCode
 credentialFilePath
 credentialPathTest
