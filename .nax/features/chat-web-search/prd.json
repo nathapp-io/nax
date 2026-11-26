@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T08:44:15.181Z",
+  "updatedAt": "2026-11-26T09:12:15.001Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1162,14 +1162,17 @@
         "US-014",
         "US-017"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session lifecycle, crash durability, parent/subagent authorization and full-mode asks form a cross-cutting security integration."
+        "reasoning": "Session lifecycle, crash durability, parent/subagent authorization and full-mode asks form a cross-cutting security integration.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -1211,7 +1214,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8c6655173b206bd0b0b32fad9d759bfc63a452bc"
     },
     {
       "id": "US-019",
