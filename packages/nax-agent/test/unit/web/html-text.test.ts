@@ -200,6 +200,22 @@ describe("htmlToText text shaping", () => {
     expect(page.links).toEqual([]);
   });
 
+  test("does not let tag-shaped CSS hide a subsequent script opening", () => {
+    const page = htmlToText(
+      '<style>/* <div data-x=" */</style><script>// " <a href=https://hidden.example/>hidden</a></script><p>visible</p>',
+      BASE,
+    );
+    expect(page).toEqual({ text: "visible", links: [] });
+  });
+
+  test.each([
+    ["style", "script"],
+    ["script", "style"],
+  ])("ignores a fake %s body tag naming %s", (outer, inner) => {
+    const page = htmlToText(`<${outer}>"<${inner}>"</${outer}><p>visible</p>`, BASE);
+    expect(page).toEqual({ text: "visible", links: [] });
+  });
+
   test("ends a style where a quoted tag-shaped attribute value does not", () => {
     const page = htmlToText('<style data-note="> </style>">p{}</style><p>x</p>', BASE);
     expect(page.text).toBe("x");

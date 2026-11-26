@@ -30,10 +30,10 @@ export interface HtmlText {
 }
 
 /**
- * Elements whose contents are not page text: code, styles, fallbacks, and an embedded
+ * Non-raw-text elements whose contents are not page text: fallbacks and an embedded
  * vector rendering that is an image in everything but name.
  */
-const HIDDEN_TAGS: readonly string[] = ["script", "style", "noscript", "template", "svg"];
+const HIDDEN_TAGS: readonly string[] = ["noscript", "template", "svg"];
 
 /**
  * The hidden elements whose contents are raw text. No tag opens or closes inside one until its
@@ -145,7 +145,7 @@ interface RenderState {
  * link on it, resolved against `baseUrl` and collected in first-seen order.
  */
 export function htmlToText(html: string, baseUrl: string): HtmlText {
-  const visible = dropElements(html.replace(MARK_IN_PAGE, "").replace(COMMENT, ""), HIDDEN_TAGS);
+  const visible = dropElements(dropRawText(html.replace(MARK_IN_PAGE, "").replace(COMMENT, "")), HIDDEN_TAGS);
   const title = readTitle(visible);
   const { body, blocks } = liftPres(dropElements(visible, CHROME_TAGS));
   const state: RenderState = { out: [], links: [], seen: new Set(), openLinks: [], baseUrl };
@@ -165,14 +165,13 @@ function dropElements(html: string, tags: readonly string[]): string {
 
 /** Remove one element's paired form, then any tag of that exact name left over. */
 function dropElement(html: string, tag: string): string {
-  const dropped = RAW_TEXT_TAGS.has(tag) ? dropRawText(html, tag) : dropPaired(html, tag);
-  return dropLoneTags(dropped, tag);
+  return dropLoneTags(dropPaired(html, tag), tag);
 }
 
 /**
- * Remove every `tag` element whose contents are raw text. No tag is recognised inside one until
- * its own closing tag, so a `"<script>"` in a script is text rather than a nested element and
- * the element ends where the browser ends it.
+ * Remove script and style elements in one document-order walk. No tag is recognised inside
+ * either until its own closing tag, so tag-shaped code or CSS cannot hide a later opening or
+ * create a fake element. Each raw-text body is skipped before ordinary tokenization resumes.
  *
  * Both ends are found by the quote-aware tokenizer, which is what keeps an attribute that holds
  * a `>` and a tag-shaped value (`<script data-note="> </script>">`) from being read as the end
@@ -182,7 +181,7 @@ function dropElement(html: string, tag: string): string {
  * the element -- a byte cap lands there as readily as a malformed document does -- so what
  * follows is that element's own code or style, not page text, and none of it is a link.
  */
-function dropRawText(html: string, tag: string): string {
+function dropRawText(html: string): string {
   const out: string[] = [];
   let cursor = 0;
   let keepFrom = 0;
@@ -190,9 +189,9 @@ function dropRawText(html: string, tag: string): string {
     const open = nextTag(html, cursor);
     if (open === null) break;
     cursor = open.tag.end;
-    if (open.tag.closing || open.tag.name !== tag) continue;
+    if (!RAW_TEXT_TAGS.has(open.tag.name)) continue;
     out.push(html.slice(keepFrom, open.start));
-    const close = rawTextEnd(html, open.tag.end, tag);
+    const close = open.tag.closing ? open.tag.end : rawTextEnd(html, open.tag.end, open.tag.name);
     // Never closed: everything from the opening tag on is the element's own contents.
     if (close === null) return out.join("");
     keepFrom = close;
