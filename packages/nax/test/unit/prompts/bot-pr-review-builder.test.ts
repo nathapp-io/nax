@@ -41,7 +41,7 @@ const taskContract = `Answer every listed thread id and comment id exactly once.
 Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
 Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
 Severity: "critical" = unsafe behaviour or lost data a user or caller can reach; "important" = other wrong behaviour a user or caller can reach, a changed behaviour no test would catch, or a break of a listed project rule; "minor" = worth noting.
-Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description says it fixes it.
+Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description, a linked issue or the PRD says it fixes it.
 A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.
 Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
 normal: reachable in ordinary use of the product, as this repository documents or configures it.
