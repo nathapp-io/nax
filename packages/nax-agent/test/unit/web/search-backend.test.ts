@@ -338,7 +338,9 @@ describe("createSearchBackend", () => {
     expect(createSearchBackendFromInternal).toBe(createSearchBackend);
   });
 
-  test("refuses an id this story has no adapter for yet", () => {
-    expect(() => createSearchBackend({ id: "exa", apiKey: "k" })).toThrow(/exa/);
+  test("answers every backend id the union names, and keeps each id", () => {
+    for (const id of ["tavily", "brave", "exa", "searxng"] as const) {
+      expect(createSearchBackend({ id, apiKey: "k", baseUrl: "https://search.example" }).id).toBe(id);
+    }
   });
 });

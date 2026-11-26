@@ -33,7 +33,7 @@ export const SEARCH_FAILED = "WEB_SEARCH_FAILED";
 export const SEARCH_TIMEOUT_MS = 15_000;
 
 /** How many characters of a result's snippet a call keeps. */
-const SNIPPET_MAX_CHARS = 500;
+export const SNIPPET_MAX_CHARS = 500;
 
 /** An HTML tag inside a snippet: markup rather than the text it describes. */
 const HTML_TAG = /<[^>]*>/g;
@@ -59,6 +59,14 @@ export interface RawSearchResult {
 
 /** How one adapter reads a result of its own answer into the fields above. */
 export type RawResultReader = (record: Record<string, unknown>) => RawSearchResult;
+
+/**
+ * What a result its answer gave no title for is titled. `"url"` repeats the result's normalised
+ * URL: an answer that omits a title it could not produce still has to name the result, and a
+ * title that is empty reads to a model as a result with nothing in it. An adapter opts in, so
+ * a backend whose answers always carry a title keeps an empty one empty.
+ */
+export type MissingTitle = "url";
 
 /**
  * Test seam: the fetch a search is sent through, and the timer pair its deadline runs on. The
@@ -150,22 +158,24 @@ export function toSearchResults(p: {
   readonly backend: WebSearchBackendId;
   readonly items: readonly unknown[];
   readonly read: RawResultReader;
+  readonly missingTitle?: MissingTitle;
 }): readonly WebSearchResult[] {
   const results: WebSearchResult[] = [];
   for (const item of p.items) {
     const record = recordOf(item);
     if (record === undefined) throw malformedAnswer(p.backend, "a result that is not an object");
-    const mapped = toSearchResult(p.read(record));
+    const mapped = toSearchResult(p.read(record), p.missingTitle);
     if (mapped !== null) results.push(mapped);
   }
   return results;
 }
 
 /** One result in this subsystem's spelling, or `null` when its URL is not one nax records. */
-function toSearchResult(raw: RawSearchResult): WebSearchResult | null {
+function toSearchResult(raw: RawSearchResult, missingTitle: MissingTitle | undefined): WebSearchResult | null {
   const url = typeof raw.url === "string" ? normalizeWebUrl(raw.url) : null;
   if (url === null) return null;
-  return { title: text(raw.title), url, snippet: snippet(raw.snippet) };
+  const title = text(raw.title);
+  return { title: title === "" && missingTitle === "url" ? url : title, url, snippet: snippet(raw.snippet) };
 }
 
 /** A result's title as written, with no markup removed: these APIs send plain text here. */

@@ -12,20 +12,15 @@
  * credential store -- `WEB_SEARCH_KEY_ENV` is the one place the variable names live.
  */
 
-import { NaxError } from "#src/infra/index";
 import { createBraveBackend } from "./backends/brave.ts";
+import { createExaBackend } from "./backends/exa.ts";
+import { createSearxngBackend } from "./backends/searxng.ts";
 import { createTavilyBackend } from "./backends/tavily.ts";
 import type { WebSearchBackendId, WebSearchResult } from "./types.ts";
 
 // The transport's seam belongs to the transport, but a test of any backend reaches for it
 // here: one import path for the machinery a search is made through.
 export { _webSearchDeps } from "./search-request.ts";
-
-/** The `stage` an unimplemented backend's error carries. */
-const STAGE = "web-search";
-
-/** The code raised for a backend id this build has no adapter for. */
-const UNSUPPORTED = "WEB_SEARCH_UNSUPPORTED";
 
 /** One search service, as the web tool sees it: an id to report and one call to make. */
 export interface SearchBackend {
@@ -54,8 +49,12 @@ export const WEB_SEARCH_KEY_ENV: Readonly<Record<"tavily" | "brave" | "exa", str
 };
 
 /**
- * The backend a configuration names. An id with no adapter yet is a configuration this build
- * cannot honour, so it fails here rather than at the first search.
+ * The backend a configuration names.
+ *
+ * The switch is exhaustive over `WebSearchBackendId` on purpose: a fifth backend added to the
+ * union without an adapter is a compile error here, not a search that resolves to `undefined`.
+ * The id is validated against that same union by `chat.web.search` config validation before this
+ * factory is reached, so an id with no adapter is not a state a running session can be in.
  */
 export function createSearchBackend(p: SearchBackendOptions): SearchBackend {
   switch (p.id) {
@@ -63,10 +62,9 @@ export function createSearchBackend(p: SearchBackendOptions): SearchBackend {
       return createTavilyBackend(p);
     case "brave":
       return createBraveBackend(p);
-    default:
-      throw new NaxError(`search backend ${p.id} is not implemented`, UNSUPPORTED, {
-        stage: STAGE,
-        backend: p.id,
-      });
+    case "exa":
+      return createExaBackend(p);
+    case "searxng":
+      return createSearxngBackend(p);
   }
 }
