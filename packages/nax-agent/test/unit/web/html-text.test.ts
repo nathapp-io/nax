@@ -172,8 +172,23 @@ describe("htmlToText text shaping", () => {
     expect(htmlToText("<template><template>t</template>leak</template><p>x</p>", BASE).text).toBe("x");
   });
 
-  test("keeps the contents of an element the page never closes", () => {
-    expect(htmlToText("<p>x</p><script>evil()", BASE).text).toBe("x\nevil()");
+  test("drops the contents of an element the page never closes", () => {
+    expect(htmlToText("<p>x</p><script>evil()", BASE).text).toBe("x");
+  });
+
+  test("drops a hidden element's link when the element is never closed", () => {
+    const page = htmlToText('<p>visible</p><script>const secret = 1; <a href="https://hidden.example/">h</a>', BASE);
+    expect(page.text).toBe("visible");
+    expect(page.links).toEqual([]);
+  });
+
+  test("drops an unclosed style or template to the end of the page", () => {
+    expect(htmlToText("<p>x</p><style>p{color:red}", BASE).text).toBe("x");
+    expect(htmlToText("<p>x</p><template><b>t</b>", BASE).text).toBe("x");
+  });
+
+  test("ends a script where its own closing tag is, not at a tag written inside it", () => {
+    expect(htmlToText('<script>var a = "<script>";</script><p>x</p>', BASE).text).toBe("x");
   });
 
   test("ignores a doctype", () => {

@@ -36,6 +36,12 @@ export interface HtmlText {
 const HIDDEN_TAGS: readonly string[] = ["script", "style", "noscript", "template", "svg"];
 
 /**
+ * The hidden elements whose contents are raw text. No tag opens or closes inside one until its
+ * own closing tag, so `var a = "<script>"` in a script is text rather than a nested element.
+ */
+const RAW_TEXT_TAGS: ReadonlySet<string> = new Set(["script", "style"]);
+
+/**
  * The page's chrome and metadata. Dropped after the title has been read out of it, which is
  * the one thing in a `head` a reader wants.
  */
@@ -160,15 +166,47 @@ function dropElements(html: string, tags: readonly string[]): string {
 /** Remove one element's paired form, then any tag of that name left over. */
 function dropElement(html: string, tag: string): string {
   const loneTag = new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi");
-  return dropPaired(html, tag).replace(loneTag, "");
+  const dropped = RAW_TEXT_TAGS.has(tag) ? dropRawText(html, tag) : dropPaired(html, tag);
+  return dropped.replace(loneTag, "");
+}
+
+/**
+ * Remove every `tag` element whose contents are raw text. No tag is recognised inside one until
+ * its own closing tag, so a `"<script>"` in a script is text rather than a nested element and
+ * the element ends where the browser ends it.
+ *
+ * An opening tag with no closing tag takes the rest of the page with it: the page stopped inside
+ * the element -- a byte cap lands there as readily as a malformed document does -- so what
+ * follows is that element's own code or style, not page text, and none of it is a link.
+ */
+function dropRawText(html: string, tag: string): string {
+  const opening = new RegExp(`<${tag}\\b[^>]*>`, "gi");
+  const closing = new RegExp(`</${tag}\\s*>`, "gi");
+  const out: string[] = [];
+  let keepFrom = 0;
+  for (;;) {
+    opening.lastIndex = keepFrom;
+    const open = opening.exec(html);
+    if (open === null) break;
+    out.push(html.slice(keepFrom, open.index));
+    closing.lastIndex = open.index + open[0].length;
+    const close = closing.exec(html);
+    // Never closed: everything from the opening tag on is the element's own contents.
+    if (close === null) return out.join("");
+    keepFrom = close.index + close[0].length;
+  }
+  out.push(html.slice(keepFrom));
+  return out.join("");
 }
 
 /**
  * Remove every complete `tag` element, contents and nested copies included. Depth is counted
  * rather than matched with a non-greedy pattern: truncating at the first closing tag would
  * leave a nested element's own contents behind, and `<template><template>t</template>leak` is
- * exactly the shape a copied framework fragment has. An open tag with no matching close is
- * left for `dropElement`'s tag-only pass, which keeps its contents rather than the page's tail.
+ * exactly the shape a copied framework fragment has.
+ *
+ * An element still open when the page ends is removed to the end of the page, not just its tags:
+ * the page stopped inside it, so the tail is its contents.
  */
 function dropPaired(html: string, tag: string): string {
   const out: string[] = [];
@@ -193,7 +231,9 @@ function dropPaired(html: string, tag: string): string {
     out.push(html.slice(keepFrom, openedAt));
     keepFrom = found.end;
   }
-  out.push(html.slice(keepFrom));
+  // An element still open when the page ends holds the rest of it: its contents are not text,
+  // so the tail from its opening tag goes with it rather than becoming readable page content.
+  out.push(html.slice(keepFrom, depth === 0 ? html.length : openedAt));
   return out.join("");
 }
 

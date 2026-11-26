@@ -21,6 +21,12 @@
  * a cancelled fetch destroys the request it was waiting on and the response it was reading
  * instead of leaving either open.
  *
+ * Nothing this fetch owns is ever left draining. A body it will not read -- a redirect's, or one
+ * whose type is not a page -- is destroyed rather than resumed, because a resumed stream is a
+ * server free to keep sending bytes long after the deadline this fetch released; and a request
+ * it destroys to get out of a stall keeps its error listener attached, because a destroyed
+ * request reports a failure of its own (`socket hang up`) and an unheard one is thrown.
+ *
  * The body is capped on the bytes that arrived, before anything is decoded, and the media type
  * decides what those bytes become: HTML and XHTML are converted by `htmlToText`, the plain text
  * types and JSON are decoded as UTF-8 and passed through as written, and anything else is
@@ -102,8 +108,6 @@ export interface WebResponseHandle {
   readonly headers: WebHeaders;
   /** The body's chunks in arrival order; a stream failure surfaces as the iteration's error. */
   body(): AsyncIterable<Uint8Array>;
-  /** Drain a body nothing will read, so the connection is not left half-open. */
-  resume(): void;
   /** Terminate the stream: the body is over, whether or not all of it arrives. */
   destroy(): void;
 }
@@ -288,8 +292,10 @@ async function followRedirects(start: URL, opts: WebFetchOptions, deadline: Dead
     const response = await sendGet(url, opts, deadline);
     const location = redirectLocation(response);
     if (location === null) return { response, url };
-    // The redirect's own body is not read; drain it so the connection is not left hanging.
-    response.resume();
+    // The redirect's own body is not the page, and it is destroyed rather than drained: a
+    // resumed body is a server free to keep streaming, while the deadline that would have cut
+    // it off is released the moment this fetch hands back the page at the end of the chain.
+    response.destroy();
     url = redirectUrl(location, url);
   }
   throw failedFetch("too many redirects", { url: url.href, redirects: MAX_REDIRECTS });
@@ -348,39 +354,64 @@ function resolvedAgainst(raw: string, base: URL): string | null {
  * Open one GET and hand back its response, reporting a request failure as a failed fetch.
  *
  * The request is also where a cancelled fetch is stopped: a server that never answers raises no
- * error of its own, so the deadline listener destroys the request and rejects. Whatever ends the
- * request -- a response, an error, a cancel -- detaches the other two listeners, so a settled
- * hop leaves nothing registered behind it.
+ * error of its own, so the deadline listener destroys the request and rejects. Whichever side
+ * ends the hop -- a response, an error, a cancel -- settles this promise exactly once; a side
+ * that arrived too late settles nothing.
+ *
+ * A destroyed request reports a failure of its own asynchronously (`socket hang up`, an
+ * `ECONNRESET`), and an `error` an emitter has no listener for is thrown: it would escape the
+ * fetch entirely and take the process with it rather than reaching a tool result. So the error
+ * listener outlives the destroy that provokes it, and removes itself when the report arrives.
+ * The same listener is detached on a response, because from then on the stream carries the
+ * body's failures.
  */
 function sendGet(url: URL, opts: WebFetchOptions, deadline: Deadline): Promise<WebResponseHandle> {
   if (deadline.signal.aborted) return Promise.reject(deadline.failure());
   return new Promise<WebResponseHandle>((resolve, reject) => {
     let request: WebRequestHandle | undefined;
-    const detach = (): void => {
-      // A stub -- the seam exists so one can answer without a socket -- may hand back its
-      // response before this function's own return value exists, and there is then nothing to
-      // detach from: no listener had been registered on a request yet.
+    let settled = false;
+    const stopListening = (): void => {
       request?.off("error", onError);
       deadline.signal.removeEventListener("abort", onCancel);
     };
     const onError = (error: Error): void => {
-      detach();
-      reject(connectionFailure(error, url));
+      // A request destroyed by the fetch itself reports its own failure afterwards. It is
+      // received rather than left unheard, and it changes nothing: the fetch settled already.
+      const first = !settled;
+      settled = true;
+      stopListening();
+      if (first) reject(connectionFailure(error, url));
     };
     const onCancel = (): void => {
-      detach();
+      if (settled) return;
+      // Settled before the destroy, so an error the destroy provokes cannot take the failure
+      // this fetch reports with it.
+      settled = true;
+      deadline.signal.removeEventListener("abort", onCancel);
       request?.destroy();
       reject(deadline.failure());
     };
-    request = requestFn(url)(url, requestOptions(url, opts), (response) => {
-      detach();
+    const onResponse = (response: WebResponseHandle): void => {
+      if (settled) {
+        // A response no one is waiting for any more: it is let go rather than read.
+        response.destroy();
+        return;
+      }
+      settled = true;
+      stopListening();
       resolve(response);
-    });
-    request.on("error", onError);
-    deadline.signal.addEventListener("abort", onCancel, { once: true });
-    // A stub -- or a caller's listener -- can abort between the check above and the listener
-    // just added, and that abort is never replayed: check once more now that it is registered.
-    if (deadline.signal.aborted) onCancel();
+    };
+    request = requestFn(url)(url, requestOptions(url, opts), onResponse);
+    // A stub -- the seam exists so one can answer without a socket -- may hand back its
+    // response before this function's own return value exists, and the hop has then settled
+    // with nothing left to listen for.
+    if (!settled) {
+      request.on("error", onError);
+      deadline.signal.addEventListener("abort", onCancel, { once: true });
+      // A stub -- or a caller's listener -- can abort between the check above and the listener
+      // just added, and that abort is never replayed: check once more now that it is registered.
+      if (deadline.signal.aborted) onCancel();
+    }
     request.end();
   });
 }
@@ -438,8 +469,10 @@ async function readPage(
   const status = response.statusCode ?? 0;
   const contentType = mediaType(headerValue(response.headers, "content-type"));
   if (!HTML_TYPES.has(contentType) && !PASS_THROUGH_TYPES.has(contentType)) {
-    // Nothing of this body is wanted, so the connection is drained rather than read.
-    response.resume();
+    // Nothing of this body is wanted, so it is destroyed rather than drained: a resumed body
+    // would keep streaming bytes this fetch has already stopped waiting for, and the deadline
+    // that could have cut it off is released as soon as this page is handed back.
+    response.destroy();
     return {
       url: url.href,
       status,
@@ -532,11 +565,15 @@ function headerValue(headers: WebHeaders, name: string): string | undefined {
 
 /** One `IncomingMessage` as the handle a page fetch reads. */
 function responseHandle(response: IncomingMessage): WebResponseHandle {
+  // A body cut short -- at the byte cap, at a deadline, or because nothing wanted it -- can make
+  // the transport report a failure on the response afterwards. Nothing is left to receive it
+  // here, and an unlistened `error` on a stream is thrown, so it is received and dropped: this
+  // fetch reports its own outcome, and the read that mattered saw its failure through the body.
+  response.on("error", () => {});
   return {
     statusCode: response.statusCode,
     headers: response.headers,
     body: () => response,
-    resume: () => response.resume(),
     destroy: () => response.destroy(),
   };
 }

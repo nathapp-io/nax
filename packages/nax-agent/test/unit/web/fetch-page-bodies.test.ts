@@ -7,6 +7,7 @@
  * no test in this file reaches the network.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
 import { NaxError } from "#src/infra/index";
 import {
   _webFetchDeps,
@@ -48,13 +49,23 @@ type Answer =
       readonly kind: "page";
       readonly status?: number;
       readonly contentType?: string;
+      /** A `location` header, for an answer that redirects. */
+      readonly location?: string;
       readonly body?: string;
       /** The body never arrives: the response is open and streaming nothing. */
       readonly stalled?: boolean;
       /** Thrown by the body stream after `body` arrived: a connection lost mid-read. */
       readonly streamError?: Error;
     }
-  | { readonly kind: "silent" }
+  | {
+      readonly kind: "silent";
+      /**
+       * The failure the transport reports once this request is destroyed, the way a real
+       * `ClientRequest` reports `socket hang up`. Emitted on the next turn, because a destroyed
+       * socket reports afterwards rather than from inside `destroy`.
+       */
+      readonly destroyError?: Error;
+    }
   | { readonly kind: "failure"; readonly error: Error };
 
 /** A response the module can read, and the one thing this file asks about it. */
@@ -67,24 +78,35 @@ interface FakeResponse {
   readonly started: Promise<void>;
 }
 
-/** A request handle that does exactly what a stub needs: it records, and reports once. */
+/** A request handle that does exactly what a stub needs: it records, and reports when it must. */
 interface FakeRequest {
   readonly handle: WebRequestHandle;
   readonly destroyed: () => boolean;
   /** How many `error` listeners the module detached from this request. */
   readonly detached: () => number;
+  /**
+   * The failures the transport emitted with no listener attached — the uncaught exceptions a
+   * real emitter would have thrown. `error` is special on an EventEmitter: with no listener it
+   * is thrown, and there is no fetch left to throw into, so this file records the emission
+   * instead of letting it end the test run.
+   */
+  readonly unheard: () => readonly Error[];
+  /** Resolves once the transport has emitted its post-destroy failure, if it has one. */
+  readonly reported: Promise<void>;
 }
 
 /** The response a page answer stands for; its body is one chunk, then optionally an error. */
 function fakeResponse(answer: {
   readonly status?: number;
   readonly contentType?: string;
+  readonly location?: string;
   readonly body?: string;
   readonly stalled?: boolean;
   readonly streamError?: Error;
 }): FakeResponse {
   const headers: Record<string, string> = {};
   if (answer.contentType !== undefined) headers["content-type"] = answer.contentType;
+  if (answer.location !== undefined) headers.location = answer.location;
   const streamError = answer.streamError;
   let destroyed = false;
   let streamed = false;
@@ -95,7 +117,6 @@ function fakeResponse(answer: {
   const handle: WebResponseHandle = {
     statusCode: answer.status ?? 200,
     headers,
-    resume: () => {},
     destroy: () => {
       destroyed = true;
     },
@@ -111,23 +132,42 @@ function fakeResponse(answer: {
   return { handle, destroyed: () => destroyed, streamed: () => streamed, started };
 }
 
-/** A request handle: it reports `onError` once the module listens, and records what it was done. */
-function fakeRequest(onError: Error | undefined): FakeRequest {
+/**
+ * A request handle: it reports `onError` once the module listens, and it reports the transport's
+ * own failure once destroyed -- which is the one thing a page fetch cannot ignore, since an
+ * `error` nobody hears is thrown.
+ */
+function fakeRequest(onError: Error | undefined, destroyError?: Error): FakeRequest {
+  const emitter = new EventEmitter();
+  const unheard: Error[] = [];
   let destroyed = false;
   let detached = 0;
+  let markReported = (): void => {};
+  const reported = new Promise<void>((resolve) => {
+    markReported = resolve;
+  });
+  if (destroyError === undefined) markReported();
   const handle: WebRequestHandle = {
-    on: (_event, listener) => {
+    on: (event, listener) => {
+      emitter.on(event, listener);
       if (onError !== undefined) queueMicrotask(() => listener(onError));
     },
-    off: () => {
+    off: (event, listener) => {
       detached++;
+      emitter.off(event, listener);
     },
     destroy: () => {
       destroyed = true;
+      if (destroyError === undefined) return;
+      setImmediate(() => {
+        if (emitter.listenerCount("error") === 0) unheard.push(destroyError);
+        else emitter.emit("error", destroyError);
+        markReported();
+      });
     },
     end: () => {},
   };
-  return { handle, destroyed: () => destroyed, detached: () => detached };
+  return { handle, destroyed: () => destroyed, detached: () => detached, unheard: () => unheard, reported };
 }
 
 /** What the stub was asked for, and what it handed back. */
@@ -144,7 +184,10 @@ function stubFetch(answers: readonly Answer[]): FetchStub {
   const options: WebRequestOptions[] = [];
   const record: WebRequestFn = (_url, sent, onResponse) => {
     const answer: Answer = answers[requests.length] ?? { kind: "page" };
-    const request = fakeRequest(answer.kind === "failure" ? answer.error : undefined);
+    const request = fakeRequest(
+      answer.kind === "failure" ? answer.error : undefined,
+      answer.kind === "silent" ? answer.destroyError : undefined,
+    );
     requests.push(request);
     options.push(sent);
     if (answer.kind !== "page") return request.handle;
@@ -332,6 +375,17 @@ describe("fetchWebPage bodies", () => {
       expect(page.truncated).toBe(true);
       expect(page.text.length).toBeLessThanOrEqual(1000);
     });
+
+    test("a body cut inside a hidden element yields none of its text and none of its links", async () => {
+      // Otherwise-valid HTML whose byte cap lands inside `<script>`: the closing tag never
+      // arrives, and what is left of the element must not become page text or seen URLs.
+      const script = `<script>const secret = 1; <a href="https://hidden.example/">hidden</a>${"x".repeat(2000)}`;
+      stubFetch([{ kind: "page", contentType: "text/html", body: `<p>visible</p>${script}` }]);
+      const page = await fetchWebPage("https://a.example/p", OPTS);
+      expect(page.truncated).toBe(true);
+      expect(page.text).toBe("visible");
+      expect(page.links).toEqual([]);
+    });
   });
 
   describe("what it will not read", () => {
@@ -360,6 +414,28 @@ describe("fetchWebPage bodies", () => {
       await fetchWebPage("https://a.example/p", OPTS);
       const [request] = stub.requests;
       expect(request?.destroyed()).toBe(false);
+    });
+
+    test("a body nothing wants is terminated rather than drained", async () => {
+      // A body that never ends: draining it would leave the server streaming forever, long
+      // after the deadline this fetch released.
+      const stub = stubFetch([{ kind: "page", contentType: "image/png", stalled: true }]);
+      const page = await fetchWebPage("https://a.example/p", OPTS);
+      expect(page.unsupported).toBe(true);
+      expect(stub.responses[0]?.destroyed()).toBe(true);
+      expect(stub.responses[0]?.streamed()).toBe(false);
+    });
+
+    test("a redirect's body is terminated rather than drained", async () => {
+      const stub = stubFetch([
+        { kind: "page", status: 302, location: "/next", stalled: true },
+        { kind: "page", contentType: "text/plain", body: "hi" },
+      ]);
+      const page = await fetchWebPage("https://a.example/p", OPTS);
+      expect(page.url).toBe("https://a.example/next");
+      expect(page.text).toBe("hi");
+      expect(stub.responses[0]?.destroyed()).toBe(true);
+      expect(stub.responses[0]?.streamed()).toBe(false);
     });
   });
 
@@ -412,6 +488,39 @@ describe("fetchWebPage bodies", () => {
       await pending;
       const [request] = stub.requests;
       expect(request?.destroyed()).toBe(true);
+    });
+
+    test("a deadline that destroys the request still hears the transport's own failure", async () => {
+      const clock = makeFakeClock();
+      useFakeTimers(clock);
+      // The failure a real ClientRequest reports after a destroy, one turn later.
+      const stub = stubFetch([{ kind: "silent", destroyError: new Error("socket hang up") }]);
+      const pending = rejection(fetchWebPage("https://a.example/p", OPTS));
+      await clock.advance(OPTS.timeoutMs);
+      const error = await pending;
+      const [request] = stub.requests;
+      assertDefined(request, "the stub made a request");
+      await request.reported;
+      // The tool error is the deadline's, not the socket's...
+      expect(error.code).toBe("WEB_FETCH_FAILED");
+      expect(error.message).toBe(`timed out after ${OPTS.timeoutMs} ms`);
+      // ...and the socket's report landed on a listener instead of being thrown out of the
+      // fetch as an uncaught `error`, which would have ended the chat rather than the call.
+      expect(request.unheard()).toEqual([]);
+      expect(request.detached()).toBe(1);
+    });
+
+    test("a caller abort that destroys the request still hears the transport's own failure", async () => {
+      const stub = stubFetch([{ kind: "silent", destroyError: new Error("socket hang up") }]);
+      const controller = new AbortController();
+      const pending = rejection(fetchWebPage("https://a.example/p", { ...OPTS, signal: controller.signal }));
+      const [request] = stub.requests;
+      assertDefined(request, "the stub made a request");
+      controller.abort(new Error("turn over"));
+      const error = await pending;
+      await request.reported;
+      expect(error.message).toBe("the fetch was aborted");
+      expect(request.unheard()).toEqual([]);
     });
 
     test("the deadline timer is released once the page is in hand", async () => {

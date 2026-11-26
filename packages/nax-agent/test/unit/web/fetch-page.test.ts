@@ -77,7 +77,6 @@ function fakeResponse(p: {
   return {
     statusCode: p.status,
     headers: p.headers ?? {},
-    resume: () => {},
     destroy: () => {},
     body: async function* () {
       yield body;
