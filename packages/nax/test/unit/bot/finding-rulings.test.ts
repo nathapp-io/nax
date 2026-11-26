@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
 import * as bot from "@/bot";
-import type { FindingRulingsInput } from "@/bot/finding-rulings";
+import { chainRulingKey, renderChainRuling } from "@/bot/chain-rulings";
+import { type FindingRulingsInput, latestFindingRuling } from "@/bot/finding-rulings";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 
@@ -263,5 +264,69 @@ describe("recordFindingRulings", () => {
       expect.stringContaining("Could not resolve settled finding"),
       expect.objectContaining({ threadId: "T1", error: "resolve failed" }),
     );
+  });
+});
+
+describe("latestFindingRuling with advisor chain rulings", () => {
+  const f1 = "f-1";
+  const chain = (outcome: "waived" | "held" | "fix", id = "cr", text = "base behaviour") =>
+    marked(id, renderChainRuling({ key: f1, outcome, text }), chainRulingKey(f1));
+  const t = (...replies: PrComment[]) => thread(opener(f1), ...replies);
+  const latest = (th: PrThread) => latestFindingRuling({ login: "bot", isWriter }, th);
+
+  test("AC-1/2/3 an own waived chain ruling is a waived candidate with its text and index", async () => {
+    const c = await latest(t(chain("waived")));
+    expect(c?.keyword.disposition).toBe("waived");
+    expect(c?.keyword).toMatchObject({ reason: "base behaviour" });
+    expect(c?.index).toBe(1);
+  });
+  test("AC-4 does not call isWriter for an own chain ruling", async () => {
+    await latest(t(chain("waived")));
+    expect(isWriter).not.toHaveBeenCalled();
+  });
+  test("AC-5 a later writer confirm outranks the chain ruling", async () => {
+    const c = await latest(t(chain("waived"), comment("w", "confirm")));
+    expect(c?.keyword.disposition).toBe("confirmed");
+    expect(c?.reply.id).toBe("w");
+  });
+  test("AC-6 a chain ruling after a writer confirm outranks it", async () => {
+    const c = await latest(t(comment("w", "confirm"), chain("waived")));
+    expect(c?.keyword.disposition).toBe("waived");
+    expect(c?.reply.id).toBe("cr");
+  });
+  test.each(["held", "fix"] as const)("AC-7/8 an own %s chain ruling is not a ruling", async (outcome) => {
+    expect(await latest(t(chain(outcome)))).toBeNull();
+  });
+  test("AC-9 an unauthorized later reply does not hide the chain ruling", async () => {
+    isWriter.mockImplementation(async () => false);
+    const c = await latest(t(chain("waived"), comment("w", "confirm", "outsider")));
+    expect(c?.reply.id).toBe("cr");
+  });
+  test("AC-10 an own comment with a non-cr key is not a chain ruling", async () => {
+    const fake = marked("x", "Advisor ruling — waived: reason", "fix-f-1");
+    expect(await latest(t(fake))).toBeNull();
+  });
+  test("AC-11 another author's rendered chain ruling is not a ruling", async () => {
+    expect(
+      await latest(t(comment("x", renderChainRuling({ key: f1, outcome: "waived", text: "r" }), "alice"))),
+    ).toBeNull();
+  });
+  test.each(["waive: nope", "override: nope"])("AC-20 a later writer %s outranks the chain ruling", async (body) => {
+    const c = await latest(t(chain("waived"), comment("w", body)));
+    expect(c?.reply.id).toBe("w");
+  });
+  test("AC-12/13/14 an unresolved thread settles, resolves once, posts no echo", async () => {
+    const out = await bot.recordFindingRulings(input([t(chain("waived"))]));
+    expect(out.settled).toHaveLength(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+    expect(out.echoed).toBe(0);
+    expect(out.failed).toBe(0);
+  });
+  test("AC-15/16 a resolved thread settles with no reply and no resolve", async () => {
+    const out = await bot.recordFindingRulings(input([{ ...t(chain("waived")), resolved: true }]));
+    expect(out.settled).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
   });
 });

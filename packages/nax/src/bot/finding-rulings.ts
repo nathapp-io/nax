@@ -13,6 +13,7 @@ import { getLogger } from "@/logger";
 import type { BotSettledRuling } from "@/prompts";
 import { type PrRuling, renderRulingEcho } from "../workflow/item-threads";
 import { parseRulingKeyword, type RulingKeyword } from "../workflow/ruling-keyword";
+import { parseChainRuling } from "./chain-rulings";
 import { earlierIssue } from "./post-earlier";
 import { earlierKey } from "./render";
 
@@ -63,9 +64,20 @@ export function isConfirmingRuling(ruling: Pick<RulingKeyword, "disposition">): 
   return ruling.disposition === "confirmed" || ruling.disposition === "verified";
 }
 
+const CHAIN_RULING_KEY_PREFIX = "cr-";
+
+/** The advisor's waived ruling when `comment` is an own chain ruling comment that waives; otherwise null. */
+function ownChainWaiver(login: string, thread: PrThread, comment: PrComment): RulingKeyword | null {
+  const own = ownComments(thread.comments, login).find((o) => o.comment === comment);
+  if (!own?.key.startsWith(CHAIN_RULING_KEY_PREFIX)) return null;
+  const parsed = parseChainRuling(comment.body);
+  return parsed?.outcome === "waived" ? { disposition: "waived", reason: parsed.text } : null;
+}
+
 /**
- * The newest non-own reply whose first line is a ruling keyword and whose author may rule. Own comments
- * (openers, echoes, fix replies) never count, and a reply whose permission cannot be read denies only
+ * The newest ruling reply: a non-own reply whose first line is a ruling keyword and whose author may rule. An own advisor
+ * chain ruling (`cr-` key, outcome waived) counts as a waived ruling without a permission check; every
+ * other own comment (openers, echoes, fix replies) never counts, and a reply whose permission cannot be read denies only
  * itself.
  */
 export async function latestFindingRuling(
@@ -75,7 +87,12 @@ export async function latestFindingRuling(
   const own = new Set(ownComments(thread.comments, input.login).map(({ comment }) => comment));
   for (let index = thread.comments.length - 1; index > 0; index--) {
     const reply = thread.comments[index];
-    if (!reply || own.has(reply)) continue;
+    if (!reply) continue;
+    if (own.has(reply)) {
+      const waived = ownChainWaiver(input.login, thread, reply);
+      if (waived) return { keyword: waived, reply, index };
+      continue;
+    }
     const keyword = parseRulingKeyword(reply.body);
     if (!keyword) continue;
     try {
@@ -128,7 +145,8 @@ async function recordThread(
     const hasEcho = ownComments(thread.comments.slice(index + 1), input.login).some(
       (own) => own.key === findingRulingKey(thread.id),
     );
-    if (!hasEcho) {
+    const chainRuling = ownChainWaiver(input.login, thread, reply) !== null;
+    if (!hasEcho && !chainRuling) {
       if (await echo(input, thread, { ...keyword, itemKey: key, itemId: key, by: reply.author })) echoed++;
       else failed++;
     }
