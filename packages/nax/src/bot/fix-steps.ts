@@ -14,6 +14,7 @@ import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gat
 import { runBranchFix } from "../workflow/branch-fix";
 import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
+import type { ChainRuling } from "./chain-rulings";
 import { changedPaths, type PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
@@ -129,6 +130,8 @@ export interface BotFixEnv {
   readonly own: readonly OwnComment[];
   /** The validated `--waive-starved` reason; absent means this pass may not waive a starved CI (US-007). */
   readonly waiveStarved?: string;
+  /** The advisor's chain rulings made or replayed in this run, in `review.agreed` order (US-006). */
+  readonly chainRulings?: readonly ChainRuling[];
 }
 
 const PUSH_TIMEOUT_MS = 120_000;
