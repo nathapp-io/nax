@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T07:08:53.925Z",
+  "updatedAt": "2026-11-26T07:22:17.005Z",
   "userStories": [
     {
       "id": "US-001",
@@ -693,14 +693,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The decision table is access control even though deterministic and small; security override."
+        "reasoning": "The decision table is access control even though deterministic and small; security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/web/exposure.ts",
@@ -726,7 +729,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3760602d074571a140aeb18db67237b0b77080c3"
     },
     {
       "id": "US-012",
