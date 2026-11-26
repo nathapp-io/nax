@@ -129,7 +129,9 @@ function useTaskNoticeSteer(options: SteerOptions): void {
     }
     pending.current = true;
     try {
-      const result = host.steer(notice);
+      // A notice is the host's own text, never a person's: it steers marked automatic, so none
+      // of the URLs its command line names is recorded as seen (US-005).
+      const result = host.steer(notice, { automatic: true });
       if (result.status === "accepted") settleSteer(run, notice, result.applied);
       else keepNotice(run, notice);
     } catch (error) {

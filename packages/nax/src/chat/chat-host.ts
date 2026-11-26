@@ -49,6 +49,7 @@ import { createSessionHygiene, resumableRows } from "./session-hygiene";
 import { sessionAcceptsImages } from "./session-images";
 import { latestResumableId, listCwdSessions } from "./session-listing";
 import { switchChatSession } from "./session-switch";
+import { recordTypedUrls } from "./session-web";
 import { createSubagentRuns, type SubagentRuns, turnSpendHooks } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
@@ -122,7 +123,7 @@ class NativeChatHost implements ChatHost {
     this.hygiene = createSessionHygiene(deps);
     this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
     // Read through a getter: a switch, a resume and a clear all replace the handle.
-    this.steering = createHostSteering({ session: () => this.handle?.session });
+    this.steering = createHostSteering({ session: () => this.handle?.session, web: () => this.handle?.web });
     this.accounting = createHostQueue();
     this.compacting = createHostCompacting({
       session: () => this.handle?.session,
@@ -469,6 +470,8 @@ class NativeChatHost implements ChatHost {
       // appear a microtask later, the key would find no turn, and the turn would then run
       // uncancelled.
       const handle = this.requireHandle();
+      // Only a person's text, and only once claimed: a refused send and a notice record nothing (US-005).
+      if (options?.automatic !== true) recordTypedUrls(handle.web, message);
       this.hygiene.markSent(handle.meta.sessionId);
       // Queue only metadata, never the synchronous turn claim.
       const meta = await runChatTurn({
@@ -532,10 +535,11 @@ class NativeChatHost implements ChatHost {
   /**
    * US-004: hand text to the running turn. The session's own answer travels back unchanged —
    * `no_turn` without an open session rather than the facade's not-open error, because a key
-   * handler asks this on every ctrl+s and must not have to catch.
+   * handler asks this on every ctrl+s and must not have to catch. Recording a taken steer is the
+   * steering module's (US-005); this forwards the options and nothing else.
    */
-  steer(text: string): SteerResult {
-    return this.steering.steer(text);
+  steer(text: string, options?: { readonly automatic?: boolean }): SteerResult {
+    return this.steering.steer(text, options);
   }
 
   /**

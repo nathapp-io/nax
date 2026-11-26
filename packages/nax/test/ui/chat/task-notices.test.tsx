@@ -622,3 +622,45 @@ describe("a task notice the guard is holding", () => {
     expect(ui.tasks.peekNotice()).toBeUndefined();
   });
 });
+
+/**
+ * US-005: the notice this screen delivers is text the host generated, not text a person typed,
+ * so it travels marked `automatic` and the host records none of its URLs as seen. A typed
+ * message stays unmarked, which is the control that the marking is the notice's alone.
+ */
+describe("where a notice's text came from", () => {
+  test("AC-7 an idle task's notice is sent with options exactly { automatic: true }", async () => {
+    const ui = mount();
+    const id = await ui.endTask();
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    const [text, , options] = ui.send.mock.calls[0] ?? [];
+    expect(text).toContain(id);
+    expect(options).toEqual({ automatic: true });
+    await ui.finishTurn(0);
+  });
+
+  test("AC-8 a task that ends mid-turn steers its notice with { automatic: true }", async () => {
+    const applied = Promise.withResolvers<boolean>();
+    const steer = acceptedSteer(() => applied.promise);
+    const ui = mount(false, undefined, steer);
+    await ui.submit("hello");
+    const id = await ui.endTask();
+    expect(steer).toHaveBeenCalledTimes(1);
+    const [text, options] = steer.mock.calls[0] ?? [];
+    expect(text).toContain(id);
+    expect(options).toEqual({ automatic: true });
+    await ui.settleAfter(() => applied.resolve(true));
+    await ui.settle();
+    await ui.finishTurn(0);
+  });
+
+  test("AC-9 a typed message reaches host.send with no automatic option", async () => {
+    const ui = mount();
+    await ui.submit("hello");
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    const [text, , options] = ui.send.mock.calls[0] ?? [];
+    expect(text).toBe("hello");
+    expect(options).toBeUndefined();
+    await ui.finishTurn(0);
+  });
+});
