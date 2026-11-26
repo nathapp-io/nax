@@ -260,10 +260,21 @@ const TASK_CONTRACT_HEAD = [
 const SEVERITY_SCALE_LINE =
   'Severity: "critical" = unsafe behaviour or lost data a user or caller can reach; "important" = other wrong behaviour a user or caller can reach, a changed behaviour no test would catch, or a break of a listed project rule; "minor" = worth noting.';
 
+/**
+ * #2987: in every contract that asks for findings, conversation-only included. A finding about
+ * behaviour the base branch already has, or the spec rules out, got fixed by new machinery that the
+ * next round then reported as damage. The two lines state what is not a finding and what a
+ * suggestion is; they add no rule about readiness.
+ */
+const SCOPE_AND_SUGGESTION_LINES = [
+  "Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description, a linked issue or the PRD says it fixes it.",
+  "A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.",
+];
+
 const TRIGGER_CLASS_LINES = [
   'Name each finding\'s class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:',
   "normal: reachable in ordinary use of the product, as this repository documents or configures it.",
-  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use.',
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding.',
   "off-contract: needs a caller, subclass or configuration value that breaks a type, schema or documented contract of this repository.",
   "version-skew: needs two versions of the product running together, or data written by an earlier version.",
   "backend-fault: needs a store, network or clock failure between two steps of one operation.",
@@ -298,6 +309,7 @@ function taskContract(asksOrigin: boolean): string {
   return [
     ...TASK_CONTRACT_HEAD,
     SEVERITY_SCALE_LINE,
+    ...SCOPE_AND_SUGGESTION_LINES,
     ...TRIGGER_CLASS_LINES,
     ...(asksOrigin ? ORIGIN_CLASS_LINES : []),
     "Reply with only one JSON object:",
@@ -311,8 +323,9 @@ function taskContract(asksOrigin: boolean): string {
 
 /**
  * A conversation-only task carries the same contract minus the approval line. US-002 gave every
- * contract the severity scale and the grounded `normal` definition, so it is no longer
- * byte-for-byte the text from before the approval line existed.
+ * contract the severity scale and the grounded `normal` definition, and #2987 added the scope and
+ * suggestion lines and the base-branch clause on `normal`, so it is no longer byte-for-byte the
+ * text from before the approval line existed.
  */
 function replyTask(conversationOnly: boolean | undefined, asksOrigin: boolean): string {
   return [

@@ -95,6 +95,13 @@ function factsSection(input: BotPrFixPromptInput): string {
   return `\n## Facts about these findings\n${parts.join("\n")}\n`;
 }
 
+/**
+ * #2987: what "fixed" means for an item. A Suggestion that asks for a new mechanism was followed
+ * literally and changed behaviour the item did not name, so each later fix undid an earlier one.
+ */
+const FIX_DONE_RULE =
+  "An item is fixed when its problem is gone and behaviour the item does not name is unchanged. A Suggestion is one way to do it, not a requirement.";
+
 function intent(input: BotPrFixPromptInput): string {
   const paths = [
     ...(input.prdPath !== undefined ? [`- PRD: ${input.prdPath}`] : []),
@@ -107,6 +114,7 @@ function instructions(input: BotPrFixPromptInput): string {
   switch (input.mode) {
     case "fix":
       return `- Fix every item; add a test where an item names a missing one (TDD: see it fail first).
+- ${FIX_DONE_RULE}
 - ${GATE_INTEGRITY_RULE}
 - ${FIX_PROTECTED_PATHS_RULE}
 - Before you commit, run every command in The bar; if one fails for missing setup, prepare the checkout first, then re-run the commands.

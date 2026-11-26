@@ -81,6 +81,18 @@ describe("buildBotPrFixPrompt", () => {
     expect(text).toContain("Fix every item");
     expect(text).toContain("add a test where an item names a missing one");
   });
+  test("#2987: fix states when an item is done", () => {
+    const text = prompts.buildBotPrFixPrompt(base);
+    expect(text).toContain(
+      "- An item is fixed when its problem is gone and behaviour the item does not name is unchanged. A Suggestion is one way to do it, not a requirement.",
+    );
+  });
+  test("#2987: repair and prepare do not carry the fix-only facts", () => {
+    for (const mode of ["repair", "prepare"] as const) {
+      const text = prompts.buildBotPrFixPrompt({ ...base, mode });
+      expect(text).not.toContain("An item is fixed when");
+    }
+  });
   test("AC-11: fix appends report details after committing", () => {
     expect(prompts.buildBotPrFixPrompt(base)).toContain(
       'Commit, then append a "Fix" section to reports/fix.md: items changed, commands run, results.',
