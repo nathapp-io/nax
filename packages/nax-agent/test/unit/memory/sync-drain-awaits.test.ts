@@ -22,7 +22,7 @@
  * block pins the other half of the rule — a write stuck on bad responses is never proved by an
  * entry that waits on it, because that entry's answer says nothing about the stuck one.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
@@ -322,6 +322,27 @@ describe("drainOutbox: what the outbox currently holds under an awaited id", () 
       // The save it waited on is gone now, so the next drain delivers the forget.
       expect(await drain(h)).toEqual({ pushed: 1, rejected: 0, parked: [] });
       expect(pushed(h)).toEqual([`save:${MERGED_SLUG}`, `forget:${SOURCE_SLUG}`]);
+    });
+  });
+
+  test("M1: one drain reads the outbox once, however many entries wait on another", async () => {
+    await withTempDir(async (dir) => {
+      // A merge queues one save and one forget per source it folded. Every one of those forgets
+      // asks the outbox the same question when the drain reaches it, so a drain of many sources
+      // is where a fresh read per question shows.
+      const h = harness(dir, { push: [ANSWER_ACTIVE, ANSWER_DELETED, ANSWER_DELETED, ANSWER_DELETED] });
+      await h.store.writeNote(note(MERGED_SLUG));
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      for (const slug of ["budget-c", "budget-d", "budget-e"]) {
+        await h.outbox.enqueue(forgetRequest(slug, `client-${slug}`, SAVE_ID));
+      }
+      const list = spyOn(h.outbox, "list");
+
+      const result = await drain(h);
+
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ pushed: 4, rejected: 0, parked: [] });
+      expect(await h.outbox.list()).toEqual([]);
     });
   });
 });

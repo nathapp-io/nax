@@ -91,14 +91,10 @@ type PushOutcome =
  * raises: only the first is worth keeping on the entry, and only the others are worth
  * another attempt.
  */
-async function pushEntry(
-  input: MemoryDrainInput,
-  entry: MemoryOutboxEntry,
-  timers: MemoryTimers,
-): Promise<PushOutcome> {
+async function pushEntry(run: DrainRun, entry: MemoryOutboxEntry): Promise<PushOutcome> {
   try {
-    const pushed = input.provider.push(requestOf(entry));
-    return { kind: "pushed", result: await raceTimeout(pushed, MEMORY_OP_TIMEOUT_MS, timers) };
+    const pushed = run.input.provider.push(requestOf(entry));
+    return { kind: "pushed", result: await raceTimeout(pushed, MEMORY_OP_TIMEOUT_MS, run.timers) };
   } catch (error) {
     const reason = errorMessage(error);
     if (isMemoryPushRejected(error)) return { kind: "rejected", reason };
@@ -135,14 +131,53 @@ function entryKey(entry: MemoryOutboxEntry): string {
   return `${entry.scope}/${entry.slug}`;
 }
 
-/** The client ids the outbox currently holds, rejected entries included. */
-async function heldIds(outbox: MemoryOutbox): Promise<ReadonlySet<string>> {
-  return new Set((await outbox.list()).map((entry) => entry.clientId));
+/**
+ * The outbox as one drain knows it: the list it read once, kept current as the run settles
+ * entries.
+ *
+ * A merge queues one save and one forget per source, and every one of those forgets asks the
+ * outbox the same question when the drain reaches it — "do you still hold the entry I wait on,
+ * and what became of it?" Answering from the list the drain already read makes the question free
+ * instead of a fresh read and parse of the whole outbox per forget. The view is kept truthful by
+ * the run itself: every entry this drain refuses, removes or supersedes is recorded here as it
+ * happens, so a write that waits on one of them still sees what the drain just did to it.
+ */
+interface OutboxView {
+  /** The entry held under `clientId`, as this run has left it. */
+  held(clientId: string): MemoryOutboxEntry | undefined;
+  /** The rejected entries of `key` this run has not removed — the ones a delivery supersedes. */
+  rejected(key: string): readonly MemoryOutboxEntry[];
+  /** Record `entry` as refused, so a later entry that waits on it sees the refusal. */
+  refused(entry: MemoryOutboxEntry, reason: string): void;
+  /** Record that `clientId` has left the outbox. */
+  removed(clientId: string): void;
+}
+
+function outboxView(entries: readonly MemoryOutboxEntry[]): OutboxView {
+  const held = new Map<string, MemoryOutboxEntry>();
+  for (const entry of entries) held.set(entry.clientId, entry);
+  return {
+    held: (clientId) => held.get(clientId),
+    rejected: (key) => [...held.values()].filter((entry) => entry.state === "rejected" && entryKey(entry) === key),
+    refused: (entry, reason) => {
+      held.set(entry.clientId, { ...entry, state: "rejected", reason });
+    },
+    removed: (clientId) => {
+      held.delete(clientId);
+    },
+  };
+}
+
+/** One drain's state, carried from entry to entry: what it reads and writes, and the queue as it is now. */
+interface DrainRun {
+  readonly input: MemoryDrainInput;
+  readonly outbox: OutboxView;
+  readonly timers: MemoryTimers;
 }
 
 /** Whether `entry` waits on an id the outbox still holds: such an entry is never a proof. */
-function waitsOnHeld(entry: MemoryOutboxEntry, held: ReadonlySet<string>): boolean {
-  return entry.awaits !== undefined && held.has(entry.awaits);
+function waitsOnHeld(entry: MemoryOutboxEntry, outbox: OutboxView): boolean {
+  return entry.awaits !== undefined && outbox.held(entry.awaits) !== undefined;
 }
 
 /** What the entry an `awaiting` one names means for it right now. */
@@ -156,13 +191,14 @@ type AwaitsOutcome =
  *
  * The question is answered against the outbox as it is *now*, not against the queue this drain
  * read at the start: an entry refused a moment ago in this very drain is a refusal the write
- * behind it must see. An id the outbox no longer holds — delivered, or dropped as superseded —
- * is not a reason to wait, because nothing can arrive under it any more.
+ * behind it must see, which is why the run records its own changes in the view. An id the outbox
+ * no longer holds — delivered, or dropped as superseded — is not a reason to wait, because
+ * nothing can arrive under it any more.
  */
-async function awaitsOutcome(input: MemoryDrainInput, entry: MemoryOutboxEntry): Promise<AwaitsOutcome> {
+function awaitsOutcome(run: DrainRun, entry: MemoryOutboxEntry): AwaitsOutcome {
   const awaitedId = entry.awaits;
   if (awaitedId === undefined) return { kind: "free" };
-  const awaited = (await input.outbox.list()).find((held) => held.clientId === awaitedId);
+  const awaited = run.outbox.held(awaitedId);
   if (awaited === undefined) return { kind: "free" };
   if (awaited.state === "rejected") return { kind: "refused", slug: awaited.slug };
   return { kind: "waiting" };
@@ -176,13 +212,15 @@ async function awaitsOutcome(input: MemoryDrainInput, entry: MemoryOutboxEntry):
  * the mirror in full, exactly as `park` does for an entry the provider keeps answering badly.
  */
 async function refuseUnsent(
-  input: MemoryDrainInput,
+  run: DrainRun,
   entry: MemoryOutboxEntry,
   awaitedSlug: string,
   tally: DrainTally,
 ): Promise<DrainTally> {
+  const { input } = run;
   const reason = `not sent: the replacement it waits on (${awaitedSlug}) was refused`;
   await input.outbox.markRejected(entry.clientId, reason);
+  run.outbox.refused(entry, reason);
   await rewindPullCursor(input.store, entry.scope);
   warnQuietly(input.logger, "memory sync refused an outbox entry whose replacement was refused", {
     clientId: entry.clientId,
@@ -204,28 +242,30 @@ async function refuseUnsent(
  * over it (a forget would delete what was just saved).
  */
 async function settle(
-  input: MemoryDrainInput,
+  run: DrainRun,
   entry: MemoryOutboxEntry,
   outcome: AnsweredOutcome,
   tally: DrainTally,
 ): Promise<DrainTally> {
+  const { outbox } = run.input;
   if (outcome.kind === "rejected") {
-    await input.outbox.markRejected(entry.clientId, outcome.reason);
+    await outbox.markRejected(entry.clientId, outcome.reason);
+    run.outbox.refused(entry, outcome.reason);
     return { ...tally, rejected: tally.rejected + 1 };
   }
-  await applyPushed(input, entry, outcome.result);
-  await input.outbox.remove(entry.clientId);
-  await dropSuperseded(input.outbox, entry);
+  await applyPushed(run.input, entry, outcome.result);
+  await outbox.remove(entry.clientId);
+  run.outbox.removed(entry.clientId);
+  await dropSuperseded(run, entry);
   return { ...tally, pushed: tally.pushed + 1 };
 }
 
 /** Remove the rejected writes of `delivered`'s note that were taken before it. */
-async function dropSuperseded(outbox: MemoryOutbox, delivered: MemoryOutboxEntry): Promise<void> {
-  const key = entryKey(delivered);
-  for (const entry of await outbox.list()) {
-    if (entry.state === "rejected" && entryKey(entry) === key && entry.seq < delivered.seq) {
-      await outbox.remove(entry.clientId);
-    }
+async function dropSuperseded(run: DrainRun, delivered: MemoryOutboxEntry): Promise<void> {
+  for (const entry of run.outbox.rejected(entryKey(delivered))) {
+    if (entry.seq >= delivered.seq) continue;
+    await run.input.outbox.remove(entry.clientId);
+    run.outbox.removed(entry.clientId);
   }
 }
 
@@ -248,28 +288,29 @@ export { rewindPullCursor };
  * waits on another (`awaits`) is asked about first, and a refused dependency refuses it.
  */
 export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  const queue = (await input.outbox.list()).filter((entry) => entry.state === "queued");
+  const all = await input.outbox.list();
+  const run: DrainRun = { input, outbox: outboxView(all), timers: input.timers ?? GLOBAL_MEMORY_TIMERS };
+  const queue = all.filter((entry) => entry.state === "queued");
   const proven = new Set<string>();
   let tally: DrainTally = { pushed: 0, rejected: 0, parked: [] };
   for (const [index, entry] of queue.entries()) {
     if (proven.has(entry.clientId)) continue;
-    const waits = await awaitsOutcome(input, entry);
+    const waits = awaitsOutcome(run, entry);
     // A write still waiting on another one is neither sent nor counted: it is queued work the
     // order has not reached, and the entry it waits on is somewhere on this same queue.
     if (waits.kind === "waiting") continue;
     if (waits.kind === "refused") {
-      tally = await refuseUnsent(input, entry, waits.slug, tally);
+      tally = await refuseUnsent(run, entry, waits.slug, tally);
       continue;
     }
-    const outcome = await pushEntry(input, entry, timers);
+    const outcome = await pushEntry(run, entry);
     if (outcome.kind !== "failed") {
-      tally = await settle(input, entry, outcome, tally);
+      tally = await settle(run, entry, outcome, tally);
       continue;
     }
-    const candidate = { head: entry, rest: queue.slice(index + 1), proven, error: outcome.reason, timers };
+    const candidate = { head: entry, rest: queue.slice(index + 1), proven, error: outcome.reason };
     const proof: ProofOutcome = outcome.badResponse
-      ? await proveAndPark(input, candidate, tally)
+      ? await proveAndPark(run, candidate, tally)
       : { kind: "stopped", answered: false };
     if (proof.kind === "stopped")
       return { ...tally, failure: outcome.reason, ...(proof.answered ? { answered: true } : {}) };
@@ -286,7 +327,6 @@ interface ParkCandidate {
   /** Entries an earlier proof this run already delivered: never a proof a second time. */
   readonly proven: ReadonlySet<string>;
   readonly error: string;
-  readonly timers: MemoryTimers;
 }
 
 /**
@@ -301,25 +341,20 @@ interface ParkCandidate {
  * badly) and nothing is parked; the proof's own failure is not counted against it. A proof that
  * fails on an outage makes the stop an outage too, so the sync does not pull after it.
  */
-async function proveAndPark(
-  input: MemoryDrainInput,
-  candidate: ParkCandidate,
-  tally: DrainTally,
-): Promise<ProofOutcome> {
-  const { head, rest, proven, error, timers } = candidate;
-  const count = await input.outbox.recordBadResponse(head.clientId, error);
+async function proveAndPark(run: DrainRun, candidate: ParkCandidate, tally: DrainTally): Promise<ProofOutcome> {
+  const { head, rest, proven, error } = candidate;
+  const count = await run.input.outbox.recordBadResponse(head.clientId, error);
   if (count < MEMORY_PUSH_MAX_BAD_RESPONSES) return { kind: "stopped", answered: true };
   // A write that waits on an entry the outbox still holds is not a proof: the head's fault
   // cannot be read from an answer to work whose own fate is not settled yet.
-  const held = await heldIds(input.outbox);
   const proof = rest.find(
-    (entry) => !proven.has(entry.clientId) && entryKey(entry) !== entryKey(head) && !waitsOnHeld(entry, held),
+    (entry) => !proven.has(entry.clientId) && entryKey(entry) !== entryKey(head) && !waitsOnHeld(entry, run.outbox),
   );
   if (proof === undefined) return { kind: "stopped", answered: true };
-  const outcome = await pushEntry(input, proof, timers);
+  const outcome = await pushEntry(run, proof);
   if (outcome.kind === "failed") return { kind: "stopped", answered: outcome.badResponse };
-  const settled = await settle(input, proof, outcome, tally);
-  const parked = await park(input, head, `parked after ${count} bad responses: ${error}`);
+  const settled = await settle(run, proof, outcome, tally);
+  const parked = await park(run, head, `parked after ${count} bad responses: ${error}`);
   return {
     kind: "parked",
     clientId: proof.clientId,
@@ -333,11 +368,12 @@ type ProofOutcome =
   | { readonly kind: "stopped"; readonly answered: boolean };
 
 /** Mark `entry` rejected with `reason`, warning once: a parked forget leaves its note live on the provider. */
-async function park(input: MemoryDrainInput, entry: MemoryOutboxEntry, reason: string): Promise<MemoryParkedEntry> {
-  await input.outbox.markRejected(entry.clientId, reason);
-  await rewindPullCursor(input.store, entry.scope);
+async function park(run: DrainRun, entry: MemoryOutboxEntry, reason: string): Promise<MemoryParkedEntry> {
+  await run.input.outbox.markRejected(entry.clientId, reason);
+  run.outbox.refused(entry, reason);
+  await rewindPullCursor(run.input.store, entry.scope);
   const { clientId, kind, scope, slug } = entry;
-  warnQuietly(input.logger, "memory sync parked an outbox entry the provider keeps answering badly", {
+  warnQuietly(run.input.logger, "memory sync parked an outbox entry the provider keeps answering badly", {
     clientId,
     kind,
     scope,
