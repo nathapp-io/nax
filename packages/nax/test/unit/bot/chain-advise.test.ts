@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
-import { makeBotFixEnv } from "@test/helpers/bot-fix";
+import { makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import type { AgreedItem, BotFixEnv } from "@/bot";
 import { chainRoutingContext, selectChainFindings } from "@/bot/chain-advise";
 import { featureIntentPaths } from "@/bot/intent";
