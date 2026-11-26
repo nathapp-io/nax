@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T06:29:23.605Z",
+  "updatedAt": "2026-11-26T06:29:26.929Z",
   "userStories": [
     {
       "id": "US-001",
@@ -99,7 +99,10 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "New pure leaf codec and tests with fixed grammar; delegates existing text neutralisation and does not change authorization."
+        "reasoning": "New pure leaf codec and tests with fixed grammar; delegates existing text neutralisation and does not change authorization.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/render.ts",
@@ -116,6 +119,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "27fccef1c29589b555444f034431fef406c84262",
       "outOfScope": [
         "US-002 only: redaction, link breaking and mention neutralising themselves are `safeText`'s behaviour and are not re-tested here; the ACs assert that the rendered text is what `safeText` returns."
       ]
