@@ -3,7 +3,7 @@
   "feature": "review-f32f-fixes",
   "branchName": "feat/review-f32f-fixes",
   "createdAt": "2026-11-26T13:17:09.742Z",
-  "updatedAt": "2026-11-26T15:12:10.820Z",
+  "updatedAt": "2026-11-26T15:31:10.796Z",
   "userStories": [
     {
       "id": "US-001",
@@ -357,14 +357,17 @@
         "policy"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Three-source-file provider capability and preflight integration are bounded, but the security override requires strict isolation for policy-derived write access."
+        "reasoning": "Three-source-file provider capability and preflight integration are bounded, but the security override requires strict isolation for policy-derived write access.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host-compact.ts",
@@ -380,7 +383,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c9081a60f431f086b5432165bb2ca732bc78b441"
     },
     {
       "id": "US-007",
