@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T08:09:58.962Z",
+  "updatedAt": "2026-11-26T08:23:16.053Z",
   "userStories": [
     {
       "id": "US-001",
@@ -973,14 +973,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Configuration validates origins and sandbox allowlist inputs that control access; use security override despite standard Zod patterns."
+        "reasoning": "Configuration validates origins and sandbox allowlist inputs that control access; use security override despite standard Zod patterns.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-chat.ts",
@@ -996,7 +999,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e9bc13bb1a02530ff62cf256989871b8d124b34f"
     },
     {
       "id": "US-016",
