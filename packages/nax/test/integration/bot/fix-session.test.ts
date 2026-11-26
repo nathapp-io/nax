@@ -398,26 +398,27 @@ describe("runBotFix chain rulings", () => {
         posted.push(String(a[2]));
         return { id: "9" };
       },
-      createAdvisor: (): Advisor =>
-        ({
-          advise: async () => ({
-            decision: {
-              id: "D-1",
-              questionId: "Q-1",
-              kind: "bot-fix-chain",
-              chosenOptionId: "A",
-              action: { type: "fix", instruction: "restore the guard" },
-              rationale: "r",
-              confidence: "high",
-              reversible: true,
-              needsHumanConfirm: false,
-              decidedAt: "",
-              model: "m",
-              memoryMode: "stateless",
-              auditRef: "",
-            },
-          }),
-        }) as unknown as Advisor,
+      createAdvisor: (): Advisor => ({
+        advise: async () => ({
+          decision: {
+            id: "D-1",
+            questionId: "Q-1",
+            kind: "bot-fix-chain",
+            chosenOptionId: "A",
+            action: { type: "fix", instruction: "restore the guard" },
+            rationale: "r",
+            confidence: "high",
+            reversible: true,
+            needsHumanConfirm: false,
+            decidedAt: "",
+            model: "m",
+            memoryMode: "stateless",
+            auditRef: "",
+          },
+        }),
+        recordReuse: async () => null,
+        adviseBatch: async () => ({ kind: "preflight" as const, items: [], overlap: [] }),
+      }),
     });
     await go(root);
     expect(run.mock.calls[0]?.[1].prompt).toContain("Advisor ruling: restore the guard");
