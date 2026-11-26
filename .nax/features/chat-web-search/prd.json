@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T05:31:17.068Z",
+  "updatedAt": "2026-11-26T06:00:15.755Z",
   "userStories": [
     {
       "id": "US-001",
@@ -363,14 +363,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends the US-005 transport with standard body-format, byte-limit and timeout processing in one module; DNS/address access control remains unchanged, so focused failing stream/timer tests are sufficient."
+        "reasoning": "Extends the US-005 transport with standard body-format, byte-limit and timeout processing in one module; DNS/address access control remains unchanged, so focused failing stream/timer tests are sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/web/fetch-page.ts",
@@ -389,7 +392,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d2f8dd853b8843ab9888ad6cc034a2f3dcca12dd"
     },
     {
       "id": "US-007",
