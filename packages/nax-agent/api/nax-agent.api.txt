@@ -796,6 +796,7 @@ type SandboxRecord
 type SandboxState
 type SandboxStatus
 type SandboxWrapRequest
+type SearchBackend
 type SecretSpan
 type SecretValuePattern
 type SelectChoice
@@ -852,6 +853,7 @@ type TurnRetryDeps
 type TurnTokenTotals
 UNIVERSAL_CODING_TOOLS
 type UnknownPathResult
+WEB_SEARCH_KEY_ENV
 WEB_SEEN_URL_CAP
 type WebExposure
 type WebExposureSnapshot
@@ -968,6 +970,7 @@ createMemoryTranscriptStore
 createNativeSessionState
 createNoOpToolAuditSink
 createRunCommandTool
+createSearchBackend
 createSpinBreaker
 createSrtBackend
 createTerminalAuthInteraction

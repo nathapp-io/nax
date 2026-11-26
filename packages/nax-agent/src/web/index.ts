@@ -10,6 +10,7 @@
  */
 export { extractWebUrls, normalizeWebUrl } from "./content.ts";
 export { createWebExposure, type WebExposure } from "./exposure.ts";
+export { createSearchBackend, type SearchBackend, WEB_SEARCH_KEY_ENV } from "./search-backend.ts";
 export {
   WEB_SEEN_URL_CAP,
   type WebExposureSnapshot,
