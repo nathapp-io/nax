@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T06:00:15.755Z",
+  "updatedAt": "2026-11-26T06:16:53.829Z",
   "userStories": [
     {
       "id": "US-001",
@@ -427,14 +427,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New external adapter abstraction transports API credentials and untrusted responses; credential/security override."
+        "reasoning": "New external adapter abstraction transports API credentials and untrusted responses; credential/security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/command-safety/systemone-client.ts",
@@ -459,7 +462,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "44381c07729718663a4fec8ba5644cdf4dd46c75"
     },
     {
       "id": "US-008",
