@@ -42,7 +42,7 @@ import { chatCompactAtTokens } from "./chat-compaction";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 import { createHostQueue, type HostQueue } from "./host-queue";
 import { persistSessionWeb, sessionWebProviders } from "./session-web";
-import { type ChatWeb, createChatWeb } from "./web/wiring";
+import { type ChatWeb, createChatWeb } from "./web";
 
 export const _openChatSessionDeps = {
   createChatWeb,
