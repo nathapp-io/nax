@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, symlink, writeFile } from "node:fs/promises";
+import { readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { MemoryStore } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { _compactionArchiveDeps } from "#src/memory/compaction-archive";
 import { undoMemoryCompaction } from "#src/memory/compaction-undo";
-import { _memoryStoreDeps, type MemoryStore } from "#src/memory/store";
+import { _memoryStoreDeps } from "#src/memory/store";
 import {
+  assertDefined,
   assertNaxError,
   COMPACTION_ID,
   compactionFailure,
@@ -48,6 +50,50 @@ function expectFailed(error: Error, cause: unknown) {
 }
 
 describe("applyMemoryCompaction rollback", () => {
+  test("validates every source by filename under a single notes directory pin", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const readNotes = h.store.readNotes;
+      assertDefined(readNotes, "built-in batch reader");
+      const batches: string[][] = [];
+      const pins: string[] = [];
+      await h.apply({
+        store: {
+          ...h.store,
+          readNotes: async (scope, slugs) => {
+            const pin = _memoryStoreDeps.pin;
+            try {
+              _memoryStoreDeps.pin = (target, work) => {
+                pins.push(target.path);
+                return pin(target, work);
+              };
+              const entries = await readNotes(scope, slugs);
+              batches.push(
+                [...entries].map(([filename, note]) => `${filename}:${note.id}`).sort((a, b) => a.localeCompare(b)),
+              );
+              return entries;
+            } finally {
+              _memoryStoreDeps.pin = pin;
+            }
+          },
+        },
+      });
+      expect(batches).toEqual([["retired:id-retired", "source-a:id-source-a", "source-b:id-source-b"]]);
+      expect(pins).toEqual([await realpath(h.store.paths.notesDir)]);
+    });
+  });
+
+  test("compaction supports a consumer store implementing only the original single-note reader", async () => {
+    await withTempDir(async (dir) => {
+      const h = await makeCompactionHarness(dir);
+      const { readNotes: _batch, ...legacy } = h.store;
+      const readNote = mock(legacy.readNote);
+      const consumer: MemoryStore = { ...legacy, readNote };
+      await h.apply({ store: consumer });
+      for (const slug of ["retired", "source-a", "source-b"]) expect(readNote).toHaveBeenCalledWith("project", slug);
+    });
+  });
+
   test("rejects an invalid supplied id before changing archive, mirror or queue", async () => {
     await withTempDir(async (dir) => {
       const h = await makeCompactionHarness(dir);

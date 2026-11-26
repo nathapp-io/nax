@@ -76,7 +76,7 @@ export interface MemorySyncState {
 export interface MemoryStore {
   readonly paths: MemoryStorePaths;
   readNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null>;
-  readNotes(scope: MemoryScope, slugs: readonly string[]): Promise<ReadonlyMap<string, MemoryNote>>;
+  readNotes?(scope: MemoryScope, slugs: readonly string[]): Promise<ReadonlyMap<string, MemoryNote>>;
   writeNote(note: MemoryNote): Promise<void>;
   deleteNote(scope: MemoryScope, slug: string): Promise<void>;
   listNotes(scope: MemoryScope): Promise<MemoryNote[]>;

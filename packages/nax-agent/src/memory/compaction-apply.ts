@@ -126,9 +126,9 @@ async function validatedMirror(input: MemoryCompactionApplyInput): Promise<Mirro
   const mirror = new Map(candidates.map((n) => [n.slug, n]));
   const expected = input.expectedCandidates && new Map(input.expectedCandidates.map((n) => [n.slug, n]));
   const sources = [...archivedSlugs(input.plan)];
-  const entries = await input.store.readNotes("project", sources);
+  const entries = await input.store.readNotes?.("project", sources);
   for (const slug of sources) {
-    const physical = entries.get(slug);
+    const physical = entries ? entries.get(slug) : await input.store.readNote("project", slug);
     const candidate = mirror.get(slug);
     const original = expected ? expected.get(slug) : candidate;
     if (
