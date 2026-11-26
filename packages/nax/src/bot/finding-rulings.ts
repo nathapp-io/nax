@@ -57,6 +57,7 @@ interface FindingRulingCandidate {
   readonly keyword: RulingKeyword;
   readonly reply: PrComment;
   readonly index: number;
+  readonly advisorWaiver?: true;
 }
 
 /** A ruling that reconfirms the finding: the work stands, so the finding is not settled. */
@@ -79,9 +80,8 @@ export function newestOwnChainIndex(login: string, thread: PrThread, outcome?: "
 }
 
 /** The advisor's waived ruling when `comment` is an own chain ruling comment that waives; otherwise null. */
-function ownChainWaiver(login: string, thread: PrThread, comment: PrComment): RulingKeyword | null {
-  const own = ownComments(thread.comments, login).find((o) => o.comment === comment);
-  if (!own?.key.startsWith(CHAIN_RULING_KEY_PREFIX)) return null;
+function ownChainWaiver(key: string, comment: PrComment): RulingKeyword | null {
+  if (!key.startsWith(CHAIN_RULING_KEY_PREFIX)) return null;
   const parsed = parseChainRuling(comment.body);
   return parsed?.outcome === "waived" ? { disposition: "waived", reason: parsed.text } : null;
 }
@@ -96,13 +96,14 @@ export async function latestFindingRuling(
   input: Pick<FindingRulingsInput, "login" | "isWriter">,
   thread: PrThread,
 ): Promise<FindingRulingCandidate | null> {
-  const own = new Set(ownComments(thread.comments, input.login).map(({ comment }) => comment));
+  const own = new Map(ownComments(thread.comments, input.login).map(({ comment, key }) => [comment, key]));
   for (let index = thread.comments.length - 1; index > 0; index--) {
     const reply = thread.comments[index];
     if (!reply) continue;
-    if (own.has(reply)) {
-      const waived = ownChainWaiver(input.login, thread, reply);
-      if (waived) return { keyword: waived, reply, index };
+    const ownKey = own.get(reply);
+    if (ownKey !== undefined) {
+      const waived = ownChainWaiver(ownKey, reply);
+      if (waived) return { keyword: waived, reply, index, advisorWaiver: true };
       continue;
     }
     const keyword = parseRulingKeyword(reply.body);
@@ -157,8 +158,7 @@ async function recordThread(
     const hasEcho = ownComments(thread.comments.slice(index + 1), input.login).some(
       (own) => own.key === findingRulingKey(thread.id),
     );
-    const chainRuling = ownChainWaiver(input.login, thread, reply) !== null;
-    if (!hasEcho && !chainRuling) {
+    if (!hasEcho && !candidate.advisorWaiver) {
       if (await echo(input, thread, { ...keyword, itemKey: key, itemId: key, by: reply.author })) echoed++;
       else failed++;
     }
