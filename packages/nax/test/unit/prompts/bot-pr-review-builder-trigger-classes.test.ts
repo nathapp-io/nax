@@ -22,7 +22,12 @@ const OFF =
 const SKEW = "version-skew: needs two versions of the product running together, or data written by an earlier version.";
 const FAULT = "backend-fault: needs a store, network or clock failure between two steps of one operation.";
 const EVIDENCE =
-  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use.';
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use; a document that describes the behaviour itself as intended shows there is no finding.';
+
+const NOT_A_FINDING =
+  "Behaviour the base branch already has, or that the spec lists as out of scope, is not a finding of this pull request.";
+const SMALLEST_CHANGE =
+  "A suggestion is the smallest change that removes the problem. When the problem can only be removed by new public API, a new mechanism, or a change in another repository, say that in the issue instead of suggesting it.";
 
 describe("buildBotPrReviewPrompt trigger classes (bot-trigger-classes US-001)", () => {
   const lines = taskLines(base);
@@ -59,5 +64,18 @@ describe("buildBotPrReviewPrompt trigger classes (bot-trigger-classes US-001)", 
   });
   test("AC-17 a conversation-only review gets the off-contract line", () => {
     expect(taskLines({ ...base, conversationOnly: true })).toContain(OFF);
+  });
+  test("#2987 every contract, conversation-only included, states what is not a finding and what a suggestion is", () => {
+    for (const input of [base, { ...base, conversationOnly: true }]) {
+      const task = taskLines(input);
+      expect(task.filter((l) => l === NOT_A_FINDING)).toEqual([NOT_A_FINDING]);
+      expect(task.filter((l) => l === SMALLEST_CHANGE)).toEqual([SMALLEST_CHANGE]);
+    }
+  });
+  test("#2987 the two facts come before the class lines and the reply shape", () => {
+    const task = taskLines(base);
+    const at = (line: string) => task.indexOf(line);
+    expect(at(NOT_A_FINDING)).toBeGreaterThan(task.findIndex((l) => l.startsWith("Severity:")));
+    expect(at(SMALLEST_CHANGE)).toBeLessThan(task.findIndex((l) => l.startsWith("Name each finding's class")));
   });
 });
