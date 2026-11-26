@@ -24,7 +24,7 @@ import {
   type MemorySyncResult,
   saveMemoryNote,
 } from "@nathapp/nax-agent";
-import { applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
+import { _memoryStoreDeps, applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import { assertDefined, compactNote, makeLogger, makeNaxConfig, realAdminDeps, withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
@@ -295,6 +295,57 @@ describe("nax memory reset — what it refuses", () => {
 // ─── the mirror it rebuilds ─────────────────────────────────────────────────
 
 describe("nax memory reset — the mirror it rebuilds", () => {
+  test("reset retains an unreadable queue entry even when the status counts are zero", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      const dir = join(dirs.projectDir, "outbox");
+      const outbox = createMemoryOutbox({ dir });
+      await outbox.enqueue({
+        kind: "forget",
+        slug: "stale",
+        scope: "project",
+        clientId: "pending",
+        reason: "old",
+        writeMode: "direct",
+      });
+      const path = join(dir, "00000001-pending.json");
+      const before = await Bun.file(path).bytes();
+      const open = _memoryStoreDeps.open;
+      try {
+        _memoryStoreDeps.open = async (file, flags) => {
+          if (file === path) throw new Error("queue read failed");
+          return open(file, flags);
+        };
+        const entries = await outbox.list();
+        expect(entries).toHaveLength(0);
+        const h = makeResetHarness({ fs: realAdminDeps, dirs, counts: { queued: entries.length, rejected: 0 } });
+        expect(await runReset(h)).toBe(1);
+        expect(await Bun.file(path).bytes()).toEqual(before);
+        expect(h.events).not.toContain("sync");
+      } finally {
+        _memoryStoreDeps.open = open;
+      }
+    });
+  });
+
+  test("a lock release failure reaches stderr without changing a successful reset", async () => {
+    await withTempDir(async (root) => {
+      const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
+      await realAdminDeps.writeText(join(dirs.projectDir, "sync.json"), "{}");
+      const fs = {
+        ...realAdminDeps,
+        removePath: async (path: string) => {
+          await realAdminDeps.removePath(path);
+          // Losing the directory makes the release guard itself unavailable.
+          await realAdminDeps.removePath(dirs.projectDir);
+        },
+      };
+      const h = makeResetHarness({ dirs, fs });
+      expect(await runReset(h)).toBe(0);
+      expect(h.err.join("\n")).toContain("memory mirror lock could not be released");
+    });
+  });
+
   test("refuses a reset racing a save still declaring its queue entry", async () => {
     await withTempDir(async (root) => {
       const dirs = { root, projectDir: join(root, "projects", "proj"), userDir: join(root, "user") };
@@ -341,7 +392,7 @@ describe("nax memory reset — the mirror it rebuilds", () => {
 
   test("undo can restore a retired note after resetting the rebuildable cache", async () => {
     await withTempDir(async (root) => {
-      const dirs = { root, projectDir: join(root, "project"), userDir: join(root, "user") };
+      const dirs = { root, projectDir: join(root, "projects", "project"), userDir: join(root, "user") };
       const logger = makeLogger();
       const store = createMemoryStore({ ...dirs, logger });
       const outbox = createMemoryOutbox({ dir: store.paths.outboxDir });
@@ -399,7 +450,7 @@ describe("nax memory reset — the mirror it rebuilds", () => {
 
     expect(await runReset(h)).toBe(0);
     expect(h.files.get(USER_NOTE_PATH)).toBe(USER_NOTE_BODY);
-    expect(h.listed).toEqual([PROJECT_DIR]);
+    expect(h.listed).toEqual([join(PROJECT_DIR, "outbox"), PROJECT_DIR]);
     expect(h.removed.some((path) => path === USER_DIR || path.startsWith(`${USER_DIR}/`))).toBe(false);
   });
 
@@ -408,6 +459,7 @@ describe("nax memory reset — the mirror it rebuilds", () => {
 
     expect(await runReset(h)).toBe(0);
     expect(h.events).toEqual([
+      `list ${join(PROJECT_DIR, "outbox")}`,
       `list ${PROJECT_DIR}`,
       `remove ${join(PROJECT_DIR, "notes")}`,
       `remove ${OUTBOX_PATH}`,
