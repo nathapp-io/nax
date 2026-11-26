@@ -6,12 +6,9 @@
  * whole through `writeFileAtomic`: the bytes land in a sibling `.tmp` stage and
  * are renamed over the entry name, so a crash leaves either the old entry or
  * none, never a torn one, and a reader never sees a half-written file. `seq`
- * numbers the entries in the order they were taken. It is assigned inside a
- * promise chain local to this instance, so two concurrent `enqueue` calls on
- * one outbox get distinct sequences; a second process writing the same
- * directory is outside that chain and may hand out an equal sequence, which is
- * why `list` breaks a tie by client id — the order stays deterministic rather
- * than globally correct.
+ * numbers the entries in the order they were taken. A promise chain orders this
+ * instance's enqueues, and the shared file lock guards assignment across processes.
+ * `list` still breaks a tie by client id for entries written by earlier versions.
  *
  * A file whose name matches the entry pattern but whose content is not an entry
  * is never silently dropped: `list` leaves it out and `listInvalid` names it, so
@@ -50,6 +47,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { NaxError } from "#src/infra/nax-error";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { withFileLock } from "#src/internal/file-lock";
 import { byCodePoint, byNumber } from "#src/internal/sort";
 import { parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
@@ -66,8 +64,8 @@ const ENTRY_SUFFIX = ".json";
  * The suffix a claimed entry file carries while its removal is being decided.
  *
  * It is appended after `.json`, so `ENTRY_FILE_RE` never matches a claimed name: the claim is
- * outside the entry namespace for every listing, and it is only ever held for the length of one
- * removal.
+ * outside the entry namespace. Every operation first restores leftover claims under the same
+ * lock that guards removal, so even a queued write claimed just before a crash stays discoverable.
  */
 const CLAIM_SUFFIX = ".claim";
 /** A link at an entry name is not an entry this outbox wrote, so reads never follow one. */
@@ -300,6 +298,72 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       throw error;
     }
   }
+  /**
+   * Restore every unfinished removal, including unreadable entries, before exposing the queue.
+   * The shared lock proves no current remover owns a claim. Recovery is itself one rename: a
+   * crash leaves either the claim for the next recovery or the entry in its normal namespace.
+   * A collision is not permission to overwrite either version; name it instead of losing bytes.
+   */
+  async function recoverClaims(): Promise<void> {
+    const names = new Set(await entryNames());
+    for (const name of names) {
+      if (!name.endsWith(CLAIM_SUFFIX)) continue;
+      const original = name.slice(0, -CLAIM_SUFFIX.length);
+      if (entryFileNamed(original) === null) continue;
+      if (names.has(original)) {
+        throw new NaxError(
+          "memory outbox claim conflicts with an existing entry; preserve both files for recovery",
+          "MEMORY_OUTBOX_CLAIM_CONFLICT",
+          {
+            stage: ERROR_STAGE,
+            entryPath: join(dir, original),
+            claimPath: join(dir, name),
+          },
+        );
+      }
+      await _memoryStoreDeps.rename(join(dir, name), join(dir, original));
+    }
+  }
+
+  /**
+   * Snapshot reads stay nonblocking while an atomic write is staged. If a claim is visible,
+   * join the removal lock before recovering it: it may still belong to a live remover.
+   */
+  async function reading<T>(operation: () => Promise<T>, empty: T): Promise<T> {
+    const names = await entryNames();
+    const hasClaim = names.some(
+      (name) => name.endsWith(CLAIM_SUFFIX) && entryFileNamed(name.slice(0, -CLAIM_SUFFIX.length)) !== null,
+    );
+    return hasClaim ? locked(operation, empty) : operation();
+  }
+
+  /**
+   * Writers and recovery share the removal lock, across instances and processes. Mutators of
+   * an absent directory return their empty result without creating artifacts. Enqueue creates
+   * the directory before entering; validation still happens before any I/O. Older versions
+   * without this lock must not run against the same queue concurrently.
+   */
+  async function locked<T>(operation: () => Promise<T>, empty: T): Promise<T> {
+    try {
+      await _memoryStoreDeps.lstat(dir);
+    } catch (error) {
+      if (isMissing(error)) return empty;
+      throw error;
+    }
+    return underLock(operation);
+  }
+
+  function underLock<T>(operation: () => Promise<T>): Promise<T> {
+    return withFileLock(
+      join(dir, ".outbox.lock"),
+      async () => {
+        await recoverClaims();
+        return operation();
+      },
+      { lockName: "memory-outbox", errorPrefix: "[memory]" },
+    );
+  }
+
   /** Every entry file in the directory, in name order: the only names this outbox reads. */
   async function entryFiles(): Promise<EntryFile[]> {
     return (await entryNames())
@@ -379,7 +443,10 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     // delay the next one, and a reason the queue cannot carry writes no entry at all.
     const prepared = withClientId(request);
     assertReasonCarries(prepared);
-    const run = chain.then(() => writeEntry(prepared));
+    const run = chain.then(async () => {
+      await _memoryStoreDeps.mkdir(dir, { recursive: true });
+      return underLock(() => writeEntry(prepared));
+    });
     // The chain never carries a rejection forward: one failed enqueue must not poison the next.
     chain = run.then(
       () => undefined,
@@ -419,9 +486,10 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
    * name is not an entry name (`entryFileNamed` refuses it), so nothing else can rewrite the
    * claim while it is held, and an entry that turns out not to be rejected is renamed back
    * untouched. Losing the race the other way — the entry left before the claim — removes
-   * nothing, which is what the caller asked for anyway. A claim left behind by a crash is outside
-   * every listing; it holds an entry the drain may have decided to remove, so the loss is the
-   * removal it was already making.
+   * nothing, which is what the caller asked for anyway. The outbox lock covers the whole claim
+   * and every writer, so a requeue cannot rewrite the entry during this decision. A claim left
+   * by a crash is restored under that same lock before the next reader or writer runs; the
+   * removal was not committed until the claim was deleted, whatever state its bytes carry.
    */
   async function removeOneIfRejected(file: EntryFile): Promise<boolean> {
     const path = join(dir, file.name);
@@ -496,14 +564,14 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
 
   return {
     enqueue,
-    list,
-    listInvalid,
-    remove,
-    held,
-    removeIfRejected,
-    markRejected,
-    recordBadResponse,
-    requeue,
-    heldKeys,
+    list: () => reading(list, []),
+    listInvalid: () => reading(listInvalid, []),
+    remove: (clientId) => locked(() => remove(clientId), undefined),
+    held: (clientId) => reading(() => held(clientId), undefined),
+    removeIfRejected: (clientId) => locked(() => removeIfRejected(clientId), false),
+    markRejected: (clientId, reason) => locked(() => markRejected(clientId, reason), undefined),
+    recordBadResponse: (clientId, error) => locked(() => recordBadResponse(clientId, error), 0),
+    requeue: (clientId) => locked(() => requeue(clientId), false),
+    heldKeys: (kind) => reading(() => heldKeys(kind), new Set<string>()),
   };
 }

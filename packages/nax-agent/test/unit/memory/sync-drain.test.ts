@@ -14,7 +14,7 @@
  * microtasks only, and everything after the race is real filesystem I/O.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
@@ -165,6 +165,25 @@ function drain(
 }
 
 describe("syncMemory step 3 (drain)", () => {
+  test("a restarted sync delivers a requeued write left in an abandoned removal claim", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_old", status: "deleted" } });
+      const request = forgetRequest("old-budget", "client-retry");
+      await h.outbox.enqueue(request);
+      await h.outbox.markRejected(request.clientId, "try again");
+      await h.outbox.requeue(request.clientId);
+      const path = join(h.store.paths.outboxDir, "00000001-client-retry.json");
+      await rename(path, `${path}.claim`);
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+
+      const result = await syncMemory(h.input({ outbox: reopened }));
+
+      expect(result).toMatchObject({ outcome: "synced", pushed: 1, rejected: 0 });
+      expect(pushed(h.provider)).toEqual([request]);
+      expect(await reopened.list()).toEqual([]);
+    });
+  });
+
   test("AC-1: two queued saves are pushed once each in seq order, and the run is synced", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir);
