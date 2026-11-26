@@ -64,7 +64,12 @@ import {
   searchMemoryNotes,
   syncMemory,
 } from "@nathapp/nax-agent";
-import { applyMemoryCompaction, byCodePoint, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
+import {
+  applyMemoryCompaction,
+  byCodePoint,
+  mirrorCoordinationDir,
+  undoMemoryCompaction,
+} from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
@@ -362,20 +367,6 @@ function composeKoda(input: {
   });
 }
 
-/** A koda host's composition: its records first, then the mirror, its queue and the provider. */
-async function composeKodaMemory(input: CreateMemoryHostInput, dirs: MemoryDirs): Promise<MemoryParts> {
-  const records = composeKodaRecords(input, dirs);
-  const store = _memoryHostDeps.createMemoryStore({
-    projectDir: dirs.projectDir,
-    userDir: dirs.userDir,
-    logger: input.logger,
-    heldForgets: () => kodaHeldForgetKeys(records.approvals),
-  });
-  const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
-  const provider = composeKoda({ host: input, store, records });
-  return { dirs, store, outbox, provider, kodaApprovals: records.approvals, kodaRefusals: records.refusals };
-}
-
 /** Resolve the directories and build the store, the outbox and the configured provider over them. */
 async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts> {
   const dirs = await _memoryHostDeps.memoryDirs({ config: input.config, repoRoot: input.repoRoot });
@@ -385,15 +376,25 @@ async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts>
   await ensureMirrorOrigin(origin);
   const provider = memoryConfigOf(input.config).provider;
   // koda's records come first: the mirror store reads its index's held forgets from them.
-  if (provider === "koda") return await composeKodaMemory(input, dirs);
+  const records = provider === "koda" ? composeKodaRecords(input, dirs) : null;
   const store = _memoryHostDeps.createMemoryStore({
     projectDir: dirs.projectDir,
+    coordinationDir: mirrorCoordinationDir(dirs.projectDir),
     userDir: dirs.userDir,
     logger: input.logger,
+    ...(records && { heldForgets: () => kodaHeldForgetKeys(records.approvals) }),
   });
   const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
-  if (provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
-  return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
+  const mirror = { dirs, store, outbox };
+  if (records)
+    return {
+      ...mirror,
+      provider: composeKoda({ host: input, store, records }),
+      kodaApprovals: records.approvals,
+      kodaRefusals: records.refusals,
+    };
+  if (provider === "mcp") return { ...mirror, ...composeMcp(input, dirs) };
+  return { ...mirror, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 
 /**

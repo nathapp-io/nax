@@ -103,7 +103,7 @@ interface Harness {
 
 function harness(dir: string, script: MemoryProviderScript = {}): Harness {
   const logger = makeLogger();
-  const store = createMemoryStore({ projectDir: join(dir, "project"), logger });
+  const store = createMemoryStore({ projectDir: join(dir, "projects", "project"), logger });
   const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
   const provider = makeMemoryProvider(script);
   const shared = { store, outbox, provider, logger, now: () => new Date(STAMP) };

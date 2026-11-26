@@ -36,6 +36,8 @@ export const COMPACTIONS_LOG_FILE = "compactions.jsonl";
 /** The files this store owns, spelled out once so every caller agrees on them. */
 export interface MemoryStorePaths {
   readonly projectDir: string;
+  /** Optional writable directory outside the mirror for generation locks. */
+  readonly coordinationDir?: string;
   readonly userDir: string | null;
   readonly index: string;
   readonly notesDir: string;

@@ -31,6 +31,7 @@ import {
   type MemoryUndoInput,
   type MemoryUndoResult,
   memoryCompactionCandidates,
+  mirrorCoordinationDir,
 } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import type { NaxConfig } from "@/config";
@@ -133,7 +134,12 @@ describe("host compaction", () => {
 
   /** The mirror the host reads, built from the directories it resolved. */
   function mirror(): MemoryStore {
-    return createMemoryStore({ projectDir: host.dirs.projectDir, userDir: host.dirs.userDir, logger });
+    return createMemoryStore({
+      projectDir: host.dirs.projectDir,
+      coordinationDir: mirrorCoordinationDir(host.dirs.projectDir),
+      userDir: host.dirs.userDir,
+      logger,
+    });
   }
 
   /** The outbox the host reads, at the path the store gives it. */

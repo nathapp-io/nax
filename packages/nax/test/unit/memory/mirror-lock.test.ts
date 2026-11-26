@@ -32,14 +32,16 @@ function lockBody(pid: number): string {
 }
 
 /** A fresh mirror directory, and its lock path. */
-function mirror(): { dir: string; lock: string } {
-  const dir = makeTempDir("nax-mirror-lock-");
-  return { dir, lock: join(dir, LOCK_FILE) };
+function mirror(): { root: string; dir: string; lock: string } {
+  const root = makeTempDir("nax-mirror-lock-");
+  const dir = join(root, "projects", "mirror");
+  mkdirSync(dir, { recursive: true });
+  return { root, dir, lock: join(dir, LOCK_FILE) };
 }
 
 describe("lockMemoryMirror", () => {
   test("takes the mirror's sync.lock and hands back a release that removes it", async () => {
-    const { dir, lock } = mirror();
+    const { root, dir, lock } = mirror();
     try {
       const release = await lockMemoryMirror({
         dir,
@@ -55,12 +57,12 @@ describe("lockMemoryMirror", () => {
       await release?.();
       expect(existsSync(lock)).toBe(false);
     } finally {
-      cleanupTempDir(dir);
+      cleanupTempDir(root);
     }
   });
 
   test("answers null while another live process holds the mirror", async () => {
-    const { dir, lock } = mirror();
+    const { root, dir, lock } = mirror();
     try {
       writeFileSync(lock, lockBody(FOREIGN_PID));
 
@@ -75,12 +77,12 @@ describe("lockMemoryMirror", () => {
       // The holder's file is untouched: this command did not take the mirror over.
       expect(JSON.parse(readFileSync(lock, "utf8")).pid).toBe(FOREIGN_PID);
     } finally {
-      cleanupTempDir(dir);
+      cleanupTempDir(root);
     }
   });
 
   test("takes over a lock whose holder is gone, as any writer of the mirror would", async () => {
-    const { dir, lock } = mirror();
+    const { root, dir, lock } = mirror();
     try {
       writeFileSync(lock, lockBody(FOREIGN_PID));
 
@@ -95,13 +97,13 @@ describe("lockMemoryMirror", () => {
       expect(JSON.parse(readFileSync(lock, "utf8")).pid).toBe(process.pid);
       await release?.();
     } finally {
-      cleanupTempDir(dir);
+      cleanupTempDir(root);
     }
   });
 
   test("creates the mirror directory the lock lives in", async () => {
     const parent = makeTempDir("nax-mirror-lock-parent-");
-    const dir = join(parent, "api-01234567");
+    const dir = join(parent, "projects", "api-01234567");
     try {
       const release = await lockMemoryMirror({ dir, logger: makeLogger(), now: () => new Date(STAMP) });
 
@@ -114,19 +116,23 @@ describe("lockMemoryMirror", () => {
   });
 
   test("the release resolves after the mirror is gone, warning instead of throwing", async () => {
-    const { dir, lock } = mirror();
-    const logger = makeLogger();
-    const release = await lockMemoryMirror({ dir, logger, now: () => new Date(STAMP) });
-    expect(release).not.toBeNull();
-    mkdirSync(join(dir, "notes"), { recursive: true });
+    const { root, dir, lock } = mirror();
+    try {
+      const logger = makeLogger();
+      const release = await lockMemoryMirror({ dir, logger, now: () => new Date(STAMP) });
+      expect(release).not.toBeNull();
+      mkdirSync(join(dir, "notes"), { recursive: true });
 
-    // Exactly what a prune does: the directory goes while the lock that guards it is still held.
-    await rm(dir, { recursive: true, force: true });
+      // Exactly what a prune does: the directory goes while the lock that guards it is still held.
+      await rm(dir, { recursive: true, force: true });
 
-    expect(existsSync(lock)).toBe(false);
-    await expect(release?.()).resolves.toBeUndefined();
-    // The protocol really did fail to find its lock again — the warning is the swallow, not a
-    // release that quietly succeeded.
-    expect(logger.calls.some((call) => call.level === "warn")).toBe(true);
+      expect(existsSync(lock)).toBe(false);
+      await expect(release?.()).resolves.toBeUndefined();
+      // The protocol really did fail to find its lock again — the warning is the swallow, not a
+      // release that quietly succeeded.
+      expect(logger.calls.some((call) => call.level === "warn")).toBe(true);
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });

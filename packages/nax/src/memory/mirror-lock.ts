@@ -17,7 +17,7 @@
  * safe to call after the directory is gone — the lock, its guard and the heartbeat all live
  * inside it — which is why the caller can remove the directory while still holding it.
  */
-import { acquireMirrorDirLock, type MirrorDirLockInput } from "@nathapp/nax-agent/internal";
+import { acquireMirrorDirLock, type MirrorDirLockInput, mirrorCoordinationDir } from "@nathapp/nax-agent/internal";
 import type { MemoryLogger } from "./paths";
 
 /** What taking one mirror's lock needs: the directory, the logger a takeover is reported to. */
@@ -47,6 +47,7 @@ export const _mirrorLockDeps: { acquire: typeof acquireMirrorDirLock } = { acqui
 function protocolInput(input: MirrorLockInput): MirrorDirLockInput {
   return {
     dir: input.dir,
+    coordinationDir: mirrorCoordinationDir(input.dir),
     logger: input.logger,
     ...(input.pid === undefined ? {} : { pid: input.pid }),
     ...(input.now === undefined ? {} : { now: input.now }),

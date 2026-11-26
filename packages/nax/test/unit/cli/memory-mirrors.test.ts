@@ -34,6 +34,7 @@ import {
   PROJECTS_DIR,
   probe,
   runMirrors,
+  withTempDir,
 } from "@test/helpers";
 import { Command } from "commander";
 import {
@@ -464,10 +465,12 @@ describe("registerMemoryCommand — mirrors", () => {
       expect(_memoryMirrorsCliDeps.readMirror).toBe(readMemoryMirror);
       expect(_memoryMirrorsCliDeps.isTTY()).toBe(process.stdin.isTTY === true);
 
-      const dir = makeTempDir("nax-mirrors-rm-");
-      await _memoryMirrorsCliDeps.removeDir(dir);
-      expect(existsSync(dir)).toBe(false);
-      cleanupTempDir(dir);
+      await withTempDir(async (root) => {
+        const dir = join(root, "projects", "mirror");
+        mkdirSync(dir, { recursive: true });
+        await _memoryMirrorsCliDeps.removeDir(dir);
+        expect(existsSync(dir)).toBe(false);
+      });
     });
 
     test("B3: the real confirm offers [y/N], so a bare Enter removes nothing", async () => {
@@ -507,15 +510,17 @@ describe("registerMemoryCommand — mirrors", () => {
     });
 
     test("F1: the real lock seam takes the mirror's own sync.lock", async () => {
-      const dir = makeTempDir("nax-mirrors-lock-");
+      await withTempDir(async (root) => {
+        const dir = join(root, "projects", "mirror");
+        mkdirSync(dir, { recursive: true });
 
-      const release = await _memoryMirrorsCliDeps.lockMirror(dir);
+        const release = await _memoryMirrorsCliDeps.lockMirror(dir);
 
-      expect(release).not.toBeNull();
-      expect(existsSync(join(dir, "sync.lock"))).toBe(true);
-      await expect(release?.()).resolves.toBeUndefined();
-      expect(existsSync(join(dir, "sync.lock"))).toBe(false);
-      cleanupTempDir(dir);
+        expect(release).not.toBeNull();
+        expect(existsSync(join(dir, "sync.lock"))).toBe(true);
+        await expect(release?.()).resolves.toBeUndefined();
+        expect(existsSync(join(dir, "sync.lock"))).toBe(false);
+      });
     });
   });
 });

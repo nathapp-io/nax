@@ -198,13 +198,18 @@ function heldForgetReadOf(
  */
 export function createMemoryStore(input: {
   readonly projectDir: string;
+  /** Stable writable generation-lock directory, shared by all writers and directory lockers of this mirror. */
+  readonly coordinationDir?: string;
   readonly userDir?: string | null;
   readonly logger: AgentLogger;
   /** `"<scope>/<slug>"` of every note a held forget is waiting on, read on each index refresh. */
   readonly heldForgets?: () => Promise<ReadonlySet<string>>;
 }): MemoryStore {
   const { logger } = input;
-  const paths = memoryStorePaths(input.projectDir, dirOrNull(input.userDir));
+  const paths = {
+    ...memoryStorePaths(input.projectDir, dirOrNull(input.userDir)),
+    ...(input.coordinationDir === undefined ? {} : { coordinationDir: input.coordinationDir }),
+  };
   /**
    * The held-forget read the store exposes, or nothing when the caller gave no source.
    *

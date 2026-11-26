@@ -252,7 +252,7 @@ describe("a user directory two projects share", () => {
 describe("acquireMirrorDirLock", () => {
   /** A mirror directory with nothing in it, and the lock path inside it. */
   async function mirrorDir(dir: string, name: string): Promise<{ dir: string; lock: string }> {
-    const mirror = join(dir, name);
+    const mirror = join(dir, "projects", name);
     await mkdir(mirror, { recursive: true });
     return { dir: mirror, lock: join(mirror, "sync.lock") };
   }

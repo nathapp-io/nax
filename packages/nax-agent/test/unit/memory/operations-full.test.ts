@@ -106,7 +106,7 @@ interface Harness {
 function harness(dir: string, script: Parameters<typeof makeMemoryProvider>[0] = {}): Harness {
   const logger = makeLogger();
   const clock = makeFakeClock();
-  const store = createMemoryStore({ projectDir: join(dir, "project"), logger });
+  const store = createMemoryStore({ projectDir: join(dir, "projects", "project"), logger });
   const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
   const provider = makeMemoryProvider(script);
   return {
@@ -382,9 +382,11 @@ test("a fenced save during prune survives in the next mirror generation", async 
     const h = harness(dir);
     const projectDir = h.store.paths.projectDir;
     const userDir = join(dir, "user");
-    const store = createMemoryStore({ projectDir, userDir, logger: h.logger });
-    const release = await acquireMirrorDirLock({ dir: projectDir, logger: h.logger });
+    const coordinationDir = join(dir, "lock-state");
+    const store = createMemoryStore({ projectDir, userDir, coordinationDir, logger: h.logger });
+    const release = await acquireMirrorDirLock({ dir: projectDir, coordinationDir, logger: h.logger });
     assertDefined(release, "prune lock");
+    expect(existsSync(join(coordinationDir, ".project.generation.lock"))).toBe(true);
     const userLock = storeLockTargets(store).find((target) => target.dir.endsWith("/user"))?.path;
     assertDefined(userLock, "canonical user lock");
     claimSync(userLock);
@@ -408,7 +410,7 @@ test("a fenced save during prune survives in the next mirror generation", async 
 
 test("a fenced save returns its committed result despite release failure", async () => {
   await withTempDir(async (dir) => {
-    const h = harness(join(dir, "projects"));
+    const h = harness(dir);
     const [target] = storeLockTargets(h.store);
     assertDefined(target, "project lock");
     claimSync(target.path);

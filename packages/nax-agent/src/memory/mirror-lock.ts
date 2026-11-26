@@ -79,6 +79,8 @@ export interface MirrorLockSeam {
 
 /** One mirror directory whose lock a caller with no store takes. */
 export interface MirrorDirLockInput extends MirrorLockSeam {
+  /** Match the store's override for a standalone mirror. */
+  readonly coordinationDir?: string;
   /** The mirror directory itself: its lock lives at `<dir>/sync.lock`. */
   readonly dir: string;
 }
@@ -330,7 +332,7 @@ export async function acquireMirrorDirLock(input: MirrorDirLockInput): Promise<(
   let generation: (() => Promise<void>) | null = null;
   let acquired = false;
   try {
-    generation = await takeGenerationLock(input, dir);
+    generation = await takeGenerationLock(input, dir, input.coordinationDir);
     if (!generation) return null;
     const release = await takeMirrorLock(input, { dir, path }, false, true);
     if (!release) return null;
@@ -362,8 +364,17 @@ export function mirrorCoordinationDir(projectDir: string): string {
 }
 
 /** Unlike sync.lock this name survives detaching the entire mirror. */
-async function takeGenerationLock(input: MirrorLockSeam, projectDir: string): Promise<(() => Promise<void>) | null> {
-  const dir = mirrorCoordinationDir(projectDir);
+async function takeGenerationLock(
+  input: MirrorLockSeam,
+  projectDir: string,
+  coordinationDir?: string,
+): Promise<(() => Promise<void>) | null> {
+  // Directory lockers and writers must agree. Recognize the usual projects layout
+  // for direct store clients, but don't require an arbitrary grandparent to be writable.
+  const parent = realOrRaw(dirname(projectDir));
+  const dir = realOrRaw(
+    coordinationDir ?? (basename(parent) === "projects" ? mirrorCoordinationDir(projectDir) : parent),
+  );
   const path = join(dir, `.${basename(projectDir)}.generation.lock`);
   if (generationClaims.has(path)) return null;
   generationClaims.add(path);
@@ -388,7 +399,7 @@ async function takeGenerationLock(input: MirrorLockSeam, projectDir: string): Pr
 /** A fenced operation bypasses sync.lock, but not a change of mirror generation. */
 export async function withFencedQueue<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
   for (;;) {
-    const release = await takeGenerationLock(input, input.store.paths.projectDir);
+    const release = await takeGenerationLock(input, input.store.paths.projectDir, input.store.paths.coordinationDir);
     if (release) {
       try {
         return await work();
