@@ -94,6 +94,13 @@ export async function resolveWebExposureDenial(p: {
   readonly runtimeSignal: AbortSignal | undefined;
   readonly logCall: LogCallFn;
   readonly runTool: RunToolFn;
+  /**
+   * US-002: the clause the ask carries because this call runs outside the
+   * sandbox — an explicit escape's reason, or the runtime's full-network
+   * decision. Forwarded to `resolveAskOutcome`, which is the one place an ask's
+   * reason and its `unsandboxed: true` marker are built.
+   */
+  readonly unsandboxed?: { readonly suffix: string };
 }): Promise<CodingToolOutcome | undefined> {
   if (p.port === undefined) return undefined;
   const decision = assessOrFailClosed({
@@ -125,6 +132,7 @@ export async function resolveWebExposureDenial(p: {
     root: p.root,
     logCall: p.logCall,
     runTool: p.runTool,
+    ...(p.unsandboxed !== undefined ? { unsandboxed: p.unsandboxed } : {}),
   });
 }
 

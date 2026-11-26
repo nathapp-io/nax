@@ -396,9 +396,20 @@ function bashToolInputSchema(opts: BashToolOptions): CodingTool["inputSchema"] {
   };
 }
 
-/** Already allowed by the runtime: a post-exposure full-network call uses the same escape. */
-function requestsUnwrapped(input: Record<string, unknown>, opts: BashToolOptions): boolean {
-  return input.unsandboxed === true || (input.network === "full" && opts.fullNetwork?.isExposed() === true);
+/**
+ * Already allowed by the runtime: a post-exposure full-network call uses the same escape.
+ *
+ * US-002: the RUNTIME's decision wins where it made one — `false` as well as
+ * `true`, because a call the runtime assessed while the session was unexposed
+ * must not become an escape just because the session read a page while the ask
+ * was open. The tool's own option is the fallback for a direct `run` with no
+ * runtime in front of it.
+ */
+function requestsUnwrapped(input: Record<string, unknown>, opts: BashToolOptions, ctx: ToolRunContext): boolean {
+  return (
+    input.unsandboxed === true ||
+    (input.network === "full" && (ctx.fullNetworkUnwrapped ?? opts.fullNetwork?.isExposed() === true))
+  );
 }
 
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
@@ -436,7 +447,7 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // US-003: exact `true` only. The tool never consults `opts.unsandboxedCommands`
         // here: whether the argument is ADVERTISED is the option's business, and what a
         // given call asked for is the call's.
-        const unwrapped = requestsUnwrapped(input, opts);
+        const unwrapped = requestsUnwrapped(input, opts, ctx);
         const request = { command, shell, opts, ctx, timeoutMs, unwrapped };
         const result = await runBashWithBackground({
           port: opts.background,

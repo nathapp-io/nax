@@ -140,6 +140,15 @@ export interface ToolRunContext {
    * address its live output by (Bash registers it on the foreground call).
    */
   readonly toolCallId?: string;
+  /**
+   * US-002: the runtime's ONE decision about whether this call runs outside
+   * the sandbox because it asked for the full network under an exposed
+   * session. Present whenever the runtime took the decision — false as well as
+   * true — so Bash never re-reads the session's mutable exposure at launch.
+   * Absent for a direct `run` (a test, or an embedder driving the tool itself),
+   * where the tool's own `fullNetwork` option is the only source.
+   */
+  readonly fullNetworkUnwrapped?: boolean;
 }
 
 export interface CodingTool {
