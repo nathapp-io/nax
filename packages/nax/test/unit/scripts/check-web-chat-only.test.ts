@@ -9,12 +9,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   ALLOWED_WEB_FILE,
   findWebChatOnlyViolations,
   runWebChatOnlyGate,
+  scanWebChatBoundary,
   WEB_FACTORY_NAMES,
 } from "@scripts/check-web-chat-only";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -175,6 +176,41 @@ describe("check-web-chat-only", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.report).toContain("src");
+  });
+
+  test("F1: a source directory the scan cannot read fails instead of passing as clean", () => {
+    writeFixture("src/i18n/locale.ts", "export const locale = 'en';\n");
+    const locked = join(root, "src", "i18n");
+    const mode = statSync(locked).mode & 0o777;
+    // Unlistable but traversable: exactly the partial-visibility case that used to pass silently.
+    chmodSync(locked, 0o111);
+    try {
+      const scan = scanWebChatBoundary(root);
+      const result = runWebChatOnlyGate(root);
+
+      expect(scan.unreadable).toEqual(["src/i18n"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.report).toContain("src/i18n");
+    } finally {
+      chmodSync(locked, mode);
+    }
+  });
+
+  test("F1: a source file the scan cannot read also fails the gate", () => {
+    writeFixture("src/bot/x.ts", "export const x = 1;\n");
+    const locked = join(root, "src", "bot", "x.ts");
+    const mode = statSync(locked).mode & 0o777;
+    chmodSync(locked, 0o000);
+    try {
+      const scan = scanWebChatBoundary(root);
+      const result = runWebChatOnlyGate(root);
+
+      expect(scan.unreadable).toEqual(["src/bot/x.ts"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.report).toContain("src/bot/x.ts");
+    } finally {
+      chmodSync(locked, mode);
+    }
   });
 
   test("the CLI exits 1 and prints the file for a fixture root given as argv", async () => {

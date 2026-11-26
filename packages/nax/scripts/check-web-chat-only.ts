@@ -76,6 +76,19 @@ export interface WebChatOnlyGateResult {
   readonly report: string;
 }
 
+/**
+ * One scan of a tree: what it found, and what it could not read.
+ *
+ * `unreadable` is a first-class result rather than a swallowed error: a directory or file the scan
+ * could not open leaves part of `src/` unchecked, and an incomplete scan must never be reported as
+ * a clean tree (F1). Any entry here fails the gate exactly as a violation does.
+ */
+export interface WebChatOnlyScan {
+  readonly violations: readonly WebChatOnlyViolation[];
+  /** Repo-relative paths the walk could not read, in discovery order. */
+  readonly unreadable: readonly string[];
+}
+
 /** True for the three characters that open a literal whose contents are not code. */
 function isQuote(ch: string | undefined): boolean {
   return ch === '"' || ch === "'" || ch === "`";
@@ -172,13 +185,16 @@ export function scanFileForWebFactories(relFile: string, source: string): WebCha
 /**
  * Every `.ts`/`.tsx` file under `dir`, skipping dependencies, build output and symlinks (following
  * one could walk out of the tree being checked).
+ *
+ * A directory that cannot be listed is pushed onto `unreadable` and the walk continues: the gate
+ * reports the gap and fails, while still naming every violation it did see (F1).
  */
-function* walk(dir: string): Generator<string> {
+function* walk(root: string, dir: string, unreadable: string[]): Generator<string> {
   let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
-    // An unreadable directory contributes no files; a missing `src/` is reported by the caller.
+    unreadable.push(posixRelative(root, dir));
     return;
   }
   for (const entry of entries) {
@@ -187,11 +203,16 @@ function* walk(dir: string): Generator<string> {
     const stat = lstatSync(full, { throwIfNoEntry: false });
     if (stat === undefined || stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      yield* walk(full);
+      yield* walk(root, full, unreadable);
     } else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
       yield full;
     }
   }
+}
+
+/** A path in the frame the gate reports in: repo-relative, POSIX separators. */
+function posixRelative(root: string, path: string): string {
+  return relative(root, path).split(sep).join("/");
 }
 
 /** True when `root` holds the `src/` tree this gate scans. */
@@ -199,37 +220,68 @@ function hasSourceRoot(root: string): boolean {
   return statSync(join(root, "src"), { throwIfNoEntry: false })?.isDirectory() === true;
 }
 
-/** Every file under `root`'s `src/` that imports a fenced web factory, in path order. */
-export function findWebChatOnlyViolations(root: string): WebChatOnlyViolation[] {
-  if (!hasSourceRoot(root)) return [];
-  const violations: WebChatOnlyViolation[] = [];
-  for (const file of walk(join(root, "src"))) {
-    const relFile = relative(root, file).split(sep).join("/");
-    const violation = scanFileForWebFactories(relFile, readFileSync(file, "utf8"));
-    if (violation !== null) violations.push(violation);
+/** One file's source, or `null` when it cannot be read (recorded, so the scan cannot pass). */
+function readSource(root: string, file: string, unreadable: string[]): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    unreadable.push(posixRelative(root, file));
+    return null;
   }
-  return violations.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
 }
 
 /**
- * The text a failing gate prints: what is wrong, then every offending statement. A clean tree gets
- * one line, so the gate is quiet in a passing pipeline and specific in a failing one.
+ * Scan `root`'s `src/` for imports of a fenced factory, and record every path the scan could not
+ * read. Violations come back in path order; `unreadable` is empty for a complete scan.
  */
-export function formatWebChatOnlyReport(violations: readonly WebChatOnlyViolation[]): string {
-  if (violations.length === 0) {
-    return `[OK] the web factories are imported by ${ALLOWED_WEB_FILE} only`;
+export function scanWebChatBoundary(root: string): WebChatOnlyScan {
+  if (!hasSourceRoot(root)) return { violations: [], unreadable: [] };
+  const unreadable: string[] = [];
+  const violations: WebChatOnlyViolation[] = [];
+  for (const file of walk(root, join(root, "src"), unreadable)) {
+    const relFile = posixRelative(root, file);
+    const source = readSource(root, file, unreadable);
+    if (source === null) continue;
+    const violation = scanFileForWebFactories(relFile, source);
+    if (violation !== null) violations.push(violation);
   }
-  const lines = [
-    `[FAIL] ${violations.length} file(s) import a chat-only web factory from @nathapp/nax-agent/internal.`,
-    `${ALLOWED_WEB_FILE} is the only permitted import site: every other session`,
-    "(nax run, story, bot, workflow, subagent) opens without these tools and without the",
-    "exposure state they record into. Call createChatWeb from the chat session instead.",
-    "",
-  ];
-  for (const violation of violations) {
-    lines.push(`  ${violation.file}:${violation.line}  ${violation.names.join(", ")}`);
+  return {
+    violations: violations.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0)),
+    unreadable,
+  };
+}
+
+/** Every file under `root`'s `src/` that imports a fenced web factory, in path order. */
+export function findWebChatOnlyViolations(root: string): WebChatOnlyViolation[] {
+  return [...scanWebChatBoundary(root).violations];
+}
+
+/**
+ * The text a failing gate prints: what could not be read, then every offending statement. A clean
+ * tree gets one line, so the gate is quiet in a passing pipeline and specific in a failing one.
+ */
+export function formatWebChatOnlyReport(scan: WebChatOnlyScan): string {
+  const lines: string[] = [];
+  if (scan.unreadable.length > 0) {
+    lines.push(
+      `[FAIL] ${scan.unreadable.length} path(s) under src/ could not be read, so this scan is incomplete:`,
+      "an unchecked file is not a clean file. Fix the permissions and re-run.",
+      "",
+      ...scan.unreadable.map((path) => `  ${path}  (unreadable)`),
+      "",
+    );
   }
-  return lines.join("\n");
+  if (scan.violations.length > 0) {
+    lines.push(
+      `[FAIL] ${scan.violations.length} file(s) import a chat-only web factory from @nathapp/nax-agent/internal.`,
+      `${ALLOWED_WEB_FILE} is the only permitted import site: every other session`,
+      "(nax run, story, bot, workflow, subagent) opens without these tools and without the",
+      "exposure state they record into. Call createChatWeb from the chat session instead.",
+      "",
+      ...scan.violations.map((violation) => `  ${violation.file}:${violation.line}  ${violation.names.join(", ")}`),
+    );
+  }
+  return lines.length === 0 ? `[OK] the web factories are imported by ${ALLOWED_WEB_FILE} only` : lines.join("\n");
 }
 
 /**
@@ -243,8 +295,9 @@ export function runWebChatOnlyGate(root: string): WebChatOnlyGateResult {
       report: `[FAIL] no src/ directory under ${root}: the web-factory scan would check nothing.`,
     };
   }
-  const violations = findWebChatOnlyViolations(root);
-  return { exitCode: violations.length === 0 ? 0 : 1, report: formatWebChatOnlyReport(violations) };
+  const scan = scanWebChatBoundary(root);
+  const complete = scan.unreadable.length === 0 && scan.violations.length === 0;
+  return { exitCode: complete ? 0 : 1, report: formatWebChatOnlyReport(scan) };
 }
 
 /** CLI entry: the root from argv, else the current package. */
