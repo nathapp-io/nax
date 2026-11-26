@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T04:33:33.323Z",
+  "updatedAt": "2026-11-26T04:43:37.937Z",
   "userStories": [
     {
       "id": "US-001",
@@ -97,14 +97,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session security state controls later approvals and must not clear or over-approve URLs; strict security TDD."
+        "reasoning": "Session security state controls later approvals and must not clear or over-approve URLs; strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/web/content.ts",
@@ -130,7 +133,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3237d62c0f6f7307c8b2d371aedf16715aa383a3"
     },
     {
       "id": "US-003",
