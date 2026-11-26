@@ -859,6 +859,7 @@ type WebExposure
 type WebExposureSnapshot
 type WebSearchBackendId
 type WebSearchResult
+type WebToolProviderOptions
 _adapterDeps
 _agentOutputEnvDeps
 _agentSessionDeps
@@ -977,6 +978,7 @@ createTerminalAuthInteraction
 createToolAuditSink
 createTurnAccumulator
 createWebExposure
+createWebToolProvider
 credentialFaultCode
 credentialFilePath
 credentialPathTest
