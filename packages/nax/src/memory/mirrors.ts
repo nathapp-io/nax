@@ -28,9 +28,12 @@
  * publishes no constant through the package entry. Keep the two in step.
  */
 import type { Dirent, Stats } from "node:fs";
-import { lstat, readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
+import { KODA_APPROVALS_FILE } from "./koda-approvals";
+import { KODA_REFUSALS_FILE } from "./koda-refusals";
+import { MCP_ID_MAP_FILE } from "./mcp-id-map";
 import { ORIGIN_FILE } from "./mirror-origin";
 
 /** The directory a mirror's note files sit in. */
@@ -75,6 +78,7 @@ export interface MemoryMirrorInfo {
   /** Whether its `sync.lock` exists: a sync is in flight, or died holding the lock. */
   readonly inUse: boolean;
   /** Whether it holds an `archive/` entry, from any compaction, applied or rolled back. */
+  readonly hasProviderState?: boolean;
   readonly hasArchive: boolean;
   /** How many decisions its `decisions.jsonl` holds. */
   readonly decisions: number;
@@ -124,7 +128,7 @@ async function entriesIn(dir: string, unreadable: string[]): Promise<readonly Di
 /** One file's text, or `null` when it is absent or cannot be read. */
 async function textOrNull(path: string, unreadable: string[]): Promise<string | null> {
   try {
-    return await readFile(path, "utf8");
+    return await Bun.file(path).text();
   } catch (error) {
     // A record the mirror does not hold (yet) is not a failure to report; one it holds and
     // will not give up is.
@@ -287,7 +291,13 @@ async function readMirror(dir: string, name: string): Promise<MemoryMirrorInfo> 
       archivePresent(dir, unreadable),
       originRoot === null ? null : isDirectory(originRoot),
     ]);
+  const hasProviderState = (
+    await Promise.all(
+      [MCP_ID_MAP_FILE, KODA_APPROVALS_FILE, KODA_REFUSALS_FILE].map((file) => present(join(dir, file), unreadable)),
+    )
+  ).some(Boolean);
   return {
+    hasProviderState,
     dir,
     name,
     notes,
@@ -316,7 +326,7 @@ export async function listMemoryMirrors(projectsDir: string): Promise<readonly M
   const entries = await entriesIn(projectsDir, []);
   if (entries === null) return [];
   const mirrors = entries
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".nax-pruning-"))
     .map((entry) => ({ dir: join(projectsDir, entry.name), name: entry.name }))
     .sort((left, right) => byCodePoint(left.name, right.name));
   return await Promise.all(mirrors.map((mirror) => readMirror(mirror.dir, mirror.name)));
@@ -379,6 +389,7 @@ export function isPrunableMirror(mirror: MemoryMirrorInfo): boolean {
     mirror.unreadable.length === 0 &&
     mirror.notes === 0 &&
     mirror.outbox === 0 &&
+    !mirror.hasProviderState &&
     !mirror.hasArchive &&
     mirror.decisions === 0 &&
     mirror.pendingForgets === 0 &&

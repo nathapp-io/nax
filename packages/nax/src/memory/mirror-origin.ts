@@ -18,7 +18,7 @@
  * with its own.
  */
 import type { Stats } from "node:fs";
-import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, realpath, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getProjectKey, type NaxConfig } from "@/config";
@@ -47,7 +47,21 @@ export const _mirrorOriginDeps: {
   mkdir: async (path: string): Promise<void> => {
     await mkdir(path, { recursive: true });
   },
-  writeFile: (path: string, text: string): Promise<void> => writeFile(path, text, "utf8"),
+  writeFile: async (path, text) => {
+    const tmp = `${path}.${crypto.randomUUID()}.tmp`;
+    try {
+      await Bun.write(tmp, text);
+      try {
+        await link(tmp, path);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      }
+    } finally {
+      await unlink(tmp).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    }
+  },
 };
 
 /** Whether the mirror already records its origin. */
@@ -55,10 +69,9 @@ async function originPresent(path: string): Promise<boolean> {
   try {
     await _mirrorOriginDeps.lstat(path);
     return true;
-  } catch {
-    // Absent, or a directory that cannot be looked into: either way this call writes nothing
-    // more, and a genuinely unusable mirror stays the store's problem, not the inventory's.
-    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
 }
 
@@ -80,8 +93,8 @@ export async function ensureMirrorOrigin(input: {
   readonly logger: MemoryLogger;
 }): Promise<void> {
   const path = join(input.projectDir, ORIGIN_FILE);
-  if (await originPresent(path)) return;
   try {
+    if (await originPresent(path)) return;
     const root = await _mirrorOriginDeps.realpath(input.repoRoot);
     const name = getProjectKey({ name: input.config.name ?? "" }, root);
     await _mirrorOriginDeps.mkdir(input.projectDir);

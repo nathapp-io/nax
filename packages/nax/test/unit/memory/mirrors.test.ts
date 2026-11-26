@@ -14,8 +14,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
 import { isPrunableMirror, listMemoryMirrors, type MemoryMirrorInfo } from "@/memory";
+import { createKodaApprovals } from "@/memory/koda-approvals";
+import { createMcpIdMap } from "@/memory/mcp-id-map";
 
 /** A mirror with nothing in it: the shape `isPrunableMirror` reads, and every flag false. */
 function emptyMirror(overrides: Partial<MemoryMirrorInfo> = {}): MemoryMirrorInfo {
@@ -108,6 +110,24 @@ describe("listMemoryMirrors", () => {
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+  });
+
+  test("a mirror holding only a hidden MCP id cannot be pruned", async () => {
+    const dirs = { root: projectsDir, projectDir: mirrorDir(), userDir: join(projectsDir, "user") };
+    const ids = createMcpIdMap({ dirs, server: "mcp" });
+    await ids.add("project", "forgotten", ["remote"]);
+    await ids.hide("project", "forgotten");
+    expect(isPrunableMirror(await onlyMirror())).toBe(false);
+  });
+
+  test("a user-scope Koda approval protects the project mirror", async () => {
+    await createKodaApprovals({ dir: mirrorDir(), logger: makeLogger() }).record({
+      scope: "user",
+      approvalId: "waiting",
+      slug: "proposal",
+      clientId: "proposed",
+    });
+    expect(isPrunableMirror(await onlyMirror())).toBe(false);
   });
 
   test("AC-6 returns one entry per directory, named after the directory", async () => {

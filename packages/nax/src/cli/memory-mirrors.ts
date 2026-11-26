@@ -42,7 +42,8 @@
  * authorizes the removal. A declined question removes nothing and exits 1. Any throw is the
  * group's error contract — `Error: <message>` on stderr and exit 1.
  */
-import { rm } from "node:fs/promises";
+import { mkdtemp, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import {
@@ -98,7 +99,7 @@ export interface MemoryMirrorsCliDeps {
   logErr(msg: string): void;
   exit(code: number): void;
   isTTY(): boolean;
-  confirm(question: string): Promise<boolean>;
+  confirm(question: string, channel?: "stdout" | "stderr"): Promise<boolean>;
   projectsDir(): string;
   listMemoryMirrors: typeof listMemoryMirrors;
   /**
@@ -141,8 +142,15 @@ export const _memoryMirrorsCliDeps: MemoryMirrorsCliDeps = {
   lockMirror: (dir) => lockMemoryMirror({ dir, logger: mirrorLockLogger((msg) => _memoryMirrorsCliDeps.logErr(msg)) }),
   // The one question this command asks offers `[y/N]`, so a bare Enter is a no: the prompt runs
   // in its default-no mode, where only an explicit `y` authorizes removing mirrors (review B3).
-  confirm: (question) => promptForConfirmation(question, { defaultAnswer: "no" }),
-  removeDir: (dir) => rm(dir, { recursive: true, force: true }),
+  confirm: (question, channel) => promptForConfirmation(question, { defaultAnswer: "no", channel }),
+  removeDir: async (dir) => {
+    const detached = await mkdtemp(join(dirname(dir), ".nax-pruning-"));
+    try {
+      await rename(dir, join(detached, "mirror"));
+    } finally {
+      await rm(detached, { recursive: true, force: true });
+    }
+  },
 };
 
 /**
@@ -258,15 +266,20 @@ async function removeOne(mirror: MemoryMirrorInfo, deps: MemoryMirrorsCliDeps): 
 }
 
 /** Remove each mirror in turn, naming each one as it goes and saying why any was left. */
-async function removeAll(mirrors: readonly MemoryMirrorInfo[], deps: MemoryMirrorsCliDeps): Promise<void> {
+async function removeAll(mirrors: readonly MemoryMirrorInfo[], deps: MemoryMirrorsCliDeps, json: boolean) {
+  const removed: string[] = [];
+  const skipped: { name: string; reason: string }[] = [];
   for (const mirror of mirrors) {
     const removal = await removeOne(mirror, deps);
     if (removal === "removed") {
-      deps.log(`${REMOVED_PREFIX}${mirror.name}`);
+      removed.push(mirror.name);
+      if (!json) deps.log(`${REMOVED_PREFIX}${mirror.name}`);
       continue;
     }
-    deps.logErr(`${SKIPPED_PREFIX}${mirror.name}: ${skipReason(removal)}`);
+    skipped.push({ name: mirror.name, reason: skipReason(removal) });
+    if (!json) deps.logErr(`${SKIPPED_PREFIX}${mirror.name}: ${skipReason(removal)}`);
   }
+  return { removed, skipped };
 }
 
 /** Why one mirror was left in place: the one line a skipped row prints. */
@@ -293,16 +306,20 @@ async function pruneMirrors(opts: MemoryMirrorsOptions, deps: MemoryMirrorsCliDe
   const inventory = await deps.listMemoryMirrors(deps.projectsDir());
   const prunable = inventory.filter(isPrunableMirror);
   if (prunable.length === 0) {
-    deps.log(NOTHING_TO_PRUNE);
+    deps.log(opts.json ? JSON.stringify({ mirrors: [], removed: [], skipped: [] }) : NOTHING_TO_PRUNE);
     return OK_CODE;
   }
-  printInventory(prunable, opts.json === true, deps);
-  const confirmed = opts.yes === true || (await deps.confirm(removeQuestion(prunable.length)));
+  if (!opts.json) printInventory(prunable, false, deps);
+  else if (!opts.yes) for (const mirror of prunable) deps.logErr(mirrorLine(mirror));
+  const confirmed =
+    opts.yes === true || (await deps.confirm(removeQuestion(prunable.length), opts.json ? "stderr" : "stdout"));
   if (!confirmed) {
     deps.logErr(ABORTED);
+    if (opts.json) deps.log(JSON.stringify({ mirrors: prunable, removed: [], skipped: [], aborted: true }));
     return FAILED_CODE;
   }
-  await removeAll(prunable, deps);
+  const changes = await removeAll(prunable, deps, opts.json === true);
+  if (opts.json) deps.log(JSON.stringify({ mirrors: prunable, ...changes }));
   return OK_CODE;
 }
 

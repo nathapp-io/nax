@@ -23,7 +23,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
@@ -37,7 +37,7 @@ import {
   type MemoryStore,
   saveMemoryNote,
 } from "@nathapp/nax-agent";
-import { storeLockTargets } from "#src/memory/mirror-lock";
+import { acquireMirrorDirLock, storeLockTargets } from "#src/memory/mirror-lock";
 import { claimSync, releaseSync } from "#src/memory/sync-flight";
 import {
   assertDefined,
@@ -48,6 +48,7 @@ import {
   makeFakeClock,
   makeLogger,
   makeMemoryProvider,
+  waitForCondition,
   withTempDir,
 } from "#test/helpers/index";
 
@@ -372,5 +373,34 @@ describe("saveMemoryNote and the indexOverflows guard", () => {
       expect(caught.code).toBe("MEMORY_FULL");
       expect(seen.map((candidate) => candidate.slug)).toEqual(["deploy-window"]);
     });
+  });
+});
+
+test("a fenced save during prune survives in the next mirror generation", async () => {
+  await withTempDir(async (dir) => {
+    const h = harness(dir);
+    const projectDir = h.store.paths.projectDir;
+    const userDir = join(dir, "user");
+    const store = createMemoryStore({ projectDir, userDir, logger: h.logger });
+    const release = await acquireMirrorDirLock({ dir: projectDir, logger: h.logger });
+    assertDefined(release, "prune lock");
+    const userLock = storeLockTargets(store).find((target) => target.dir.endsWith("/user"))?.path;
+    assertDefined(userLock, "canonical user lock");
+    claimSync(userLock);
+    let finished = false;
+    const save = h.save({ store }).finally(() => {
+      finished = true;
+    });
+    try {
+      await waitForCondition(() => h.clock.pending() > 0 || finished, 5000);
+      await rename(projectDir, join(dir, "detached"));
+      await rm(join(dir, "detached"), { recursive: true });
+    } finally {
+      await release();
+      await h.clock.advance(10);
+      releaseSync(userLock);
+    }
+    await save;
+    expect((await h.outbox.list()).map((e) => e.slug)).toEqual([write().slug]);
   });
 });

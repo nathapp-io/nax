@@ -77,6 +77,7 @@ import {
   type MirrorLockInput,
   mirrorSyncInFlight,
   orderedByMirrorLocks,
+  withFencedQueue,
   withMirrorLock,
 } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
@@ -347,7 +348,7 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
  * when the holder is paused before enqueueing.
  */
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
-  if (mirrorSyncInFlight(input.store)) return await queueWithoutMirror(input);
+  if (mirrorSyncInFlight(input.store)) return await withFencedQueue(input, () => queueWithoutMirror(input));
   return await withMirrorLock(input, () => deliverLocked(input));
 }
 

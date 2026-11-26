@@ -190,6 +190,14 @@ describe("nax memory mirrors --json", () => {
 
 // ─── prune ───────────────────────────────────────────────────────────────────
 
+test("prune JSON is one document including the removals or the empty result", async () => {
+  for (const mirrors of [[], [PROBE_MIRROR]]) {
+    const h = makeMirrorsHarness({ mirrors });
+    expect(await runMirrors(h, { prune: true, yes: true, json: true })).toBe(0);
+    expect(JSON.parse(h.out.join("\n"))).toMatchObject({ removed: mirrors.map((m) => m.name), skipped: [] });
+  }
+});
+
 describe("nax memory mirrors --prune", () => {
   /** Two leftover probes and the two mirrors that still hold something. */
   function mixedInventory(): MemoryMirrorInfo[] {

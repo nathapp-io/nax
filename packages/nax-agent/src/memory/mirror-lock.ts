@@ -21,7 +21,7 @@
  * each other's: `operations.ts` reaches it for saves, forgets and approvals alike, and the
  * split keeps that file inside its size limit without forking the protocol.
  */
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
@@ -200,7 +200,9 @@ async function takeMirrorLock(
   input: MirrorLockSeam,
   target: MirrorLockTarget,
   ownSync: boolean,
-): Promise<ReleaseLock | null> {
+  pruning = false,
+): Promise<(() => Promise<void>) | null> {
+  if (pruneClaims.has(target.path) && !pruning) return null;
   if (!ownSync && syncInFlight(target.path)) return null;
   const deps = lockDeps(input, target.dir);
   const isAlive = livenessOf(input);
@@ -320,11 +322,76 @@ export function withMirrorLock<T>(input: MirrorLockInput, work: () => Promise<T>
  * holds. The heartbeat is stopped either way, so an abandoned lock ages into stale recovery
  * rather than beating from a process that has moved on.
  */
-export async function acquireMirrorDirLock(input: MirrorDirLockInput): Promise<ReleaseLock | null> {
+export async function acquireMirrorDirLock(input: MirrorDirLockInput): Promise<(() => Promise<void>) | null> {
   const dir = realOrRaw(input.dir);
-  const release = await takeMirrorLock(input, { path: join(dir, LOCK_FILE), dir }, false);
-  if (release === null) return null;
-  return async () => await releaseMirrorDirLock(input, dir, release);
+  const path = join(dir, LOCK_FILE);
+  if (pruneClaims.has(path) || operationInFlight(path) || syncInFlight(path)) return null;
+  pruneClaims.add(path);
+  let generation: (() => Promise<void>) | null = null;
+  let acquired = false;
+  try {
+    generation = await takeGenerationLock(input, dir);
+    if (!generation) return null;
+    const release = await takeMirrorLock(input, { dir, path }, false, true);
+    if (!release) return null;
+    acquired = true;
+    const unlockGeneration: () => Promise<void> = generation;
+    return async () => {
+      try {
+        await releaseMirrorDirLock(input, dir, release);
+      } finally {
+        pruneClaims.delete(path);
+        await unlockGeneration();
+      }
+    };
+  } finally {
+    if (!acquired) {
+      pruneClaims.delete(path);
+      await generation?.();
+    }
+  }
+}
+
+const pruneClaims = new Set<string>();
+const generationClaims = new Set<string>();
+
+/** Unlike sync.lock this name survives detaching the entire mirror. */
+async function takeGenerationLock(input: MirrorLockSeam, projectDir: string): Promise<(() => Promise<void>) | null> {
+  const dir = realOrRaw(dirname(projectDir));
+  const path = join(dir, `.${basename(projectDir)}.generation.lock`);
+  if (generationClaims.has(path)) return null;
+  generationClaims.add(path);
+  try {
+    const release = await takeMirrorLock(input, { dir, path }, false);
+    if (release)
+      return async () => {
+        try {
+          await release();
+        } finally {
+          generationClaims.delete(path);
+        }
+      };
+  } catch (error) {
+    generationClaims.delete(path);
+    throw error;
+  }
+  generationClaims.delete(path);
+  return null;
+}
+
+/** A fenced operation bypasses sync.lock, but not a change of mirror generation. */
+export async function withFencedQueue<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
+  for (;;) {
+    const release = await takeGenerationLock(input, input.store.paths.projectDir);
+    if (release) {
+      try {
+        return await work();
+      } finally {
+        await release();
+      }
+    }
+    await pause(input.timers ?? GLOBAL_MEMORY_TIMERS, FENCED_POLL_MS);
+  }
 }
 
 /**
@@ -381,7 +448,7 @@ function combinedRelease(releases: readonly ReleaseLock[]): ReleaseLock {
 export async function acquireMirrorLocks(
   input: MirrorLockInput,
   targets: readonly MirrorLockTarget[],
-): Promise<ReleaseLock | null> {
+): Promise<(() => Promise<void>) | null> {
   const held: ReleaseLock[] = [];
   try {
     for (const target of targets) {

@@ -73,6 +73,16 @@ describe("ensureMirrorOrigin", () => {
     }).toEqual({ text: existing, warns: 0 });
   });
 
+  test("a competing origin published after the presence check wins", async () => {
+    _mirrorOriginDeps.writeFile = async (path, text) => {
+      await originalDeps.writeFile(path, JSON.stringify({ name: "first", root: repoRoot }));
+      await originalDeps.writeFile(path, text);
+    };
+    await ensureMirrorOrigin({ projectDir, repoRoot, config: { name: "second" }, logger });
+    expect(originJson()).toEqual({ name: "first", root: repoRoot });
+    expect(warns()).toEqual([]);
+  });
+
   test("AC-3 resolves and warns once when writing the origin fails", async () => {
     const failure = new Error("ENOSPC: no space left on device");
     _mirrorOriginDeps.writeFile = async () => {

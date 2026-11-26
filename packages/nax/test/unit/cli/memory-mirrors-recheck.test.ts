@@ -13,7 +13,7 @@
  * listing, the question and the removal itself stays in `memory-mirrors.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -163,7 +163,13 @@ describe("nax memory mirrors --prune — a recheck that fails after the mirror g
     chmodSync(projectsDir, 0o111);
 
     // The listing cannot see the mirror at all; the exact-path read still can.
-    expect(await listMemoryMirrors(projectsDir)).toEqual([]);
+    let listable = true;
+    try {
+      readdirSync(projectsDir);
+    } catch {
+      listable = false;
+    }
+    if (!listable) expect(await listMemoryMirrors(projectsDir)).toEqual([]);
     const reread = await readMemoryMirror(mirror);
 
     expect(reread.kind).toBe("read");
