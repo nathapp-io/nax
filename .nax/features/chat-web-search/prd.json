@@ -3,7 +3,7 @@
   "feature": "chat-web-search",
   "branchName": "feat/chat-web-search",
   "createdAt": "2026-11-26T04:17:46.924Z",
-  "updatedAt": "2026-11-26T08:00:14.384Z",
+  "updatedAt": "2026-11-26T08:09:58.962Z",
   "userStories": [
     {
       "id": "US-001",
@@ -914,14 +914,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Persisted session security state must recover fail-closed without breaking existing metadata; session/security override."
+        "reasoning": "Persisted session security state must recover fail-closed without breaking existing metadata; session/security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/session-store/session-meta.ts",
@@ -936,7 +939,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c3a7eed99133722399602b413b25b2ce3456b6d6"
     },
     {
       "id": "US-015",
