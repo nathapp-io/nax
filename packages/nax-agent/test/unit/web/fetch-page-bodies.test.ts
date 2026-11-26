@@ -13,9 +13,10 @@ import {
   fetchWebPage,
   type WebRequestFn,
   type WebRequestHandle,
+  type WebRequestOptions,
   type WebResponseHandle,
 } from "#src/web/fetch-page";
-import { type FakeClock, makeFakeClock } from "#test/helpers/index";
+import { assertDefined, type FakeClock, makeFakeClock } from "#test/helpers/index";
 
 /** The options every test fetches with; a test overrides the cap and the budget it is about. */
 const OPTS: { maxBytes: number; timeoutMs: number; allowOrigins: readonly string[] } = {
@@ -60,12 +61,18 @@ type Answer =
 interface FakeResponse {
   readonly handle: WebResponseHandle;
   readonly destroyed: () => boolean;
+  /** Whether the body stream was ever pulled from: `false` for a page nothing read. */
+  readonly streamed: () => boolean;
+  /** Resolves when the body read begins, so a test can act on a stream that never ends. */
+  readonly started: Promise<void>;
 }
 
 /** A request handle that does exactly what a stub needs: it records, and reports once. */
 interface FakeRequest {
   readonly handle: WebRequestHandle;
   readonly destroyed: () => boolean;
+  /** How many `error` listeners the module detached from this request. */
+  readonly detached: () => number;
 }
 
 /** The response a page answer stands for; its body is one chunk, then optionally an error. */
@@ -80,6 +87,11 @@ function fakeResponse(answer: {
   if (answer.contentType !== undefined) headers["content-type"] = answer.contentType;
   const streamError = answer.streamError;
   let destroyed = false;
+  let streamed = false;
+  let markStarted = (): void => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
   const handle: WebResponseHandle = {
     statusCode: answer.status ?? 200,
     headers,
@@ -88,65 +100,104 @@ function fakeResponse(answer: {
       destroyed = true;
     },
     body: async function* body() {
+      streamed = true;
+      markStarted();
       // A stalled body: the stream is open, and it neither yields nor ends.
       if (answer.stalled === true) await new Promise(() => {});
       yield bytes(answer.body ?? "");
       if (streamError !== undefined) throw streamError;
     },
   };
-  return { handle, destroyed: () => destroyed };
+  return { handle, destroyed: () => destroyed, streamed: () => streamed, started };
 }
 
-/** A request handle: it reports `onError` once the module listens, and records a destroy. */
+/** A request handle: it reports `onError` once the module listens, and records what it was done. */
 function fakeRequest(onError: Error | undefined): FakeRequest {
   let destroyed = false;
+  let detached = 0;
   const handle: WebRequestHandle = {
     on: (_event, listener) => {
       if (onError !== undefined) queueMicrotask(() => listener(onError));
     },
-    off: () => {},
+    off: () => {
+      detached++;
+    },
     destroy: () => {
       destroyed = true;
     },
     end: () => {},
   };
-  return { handle, destroyed: () => destroyed };
+  return { handle, destroyed: () => destroyed, detached: () => detached };
 }
 
 /** What the stub was asked for, and what it handed back. */
 interface FetchStub {
   readonly requests: FakeRequest[];
   readonly responses: FakeResponse[];
+  readonly options: WebRequestOptions[];
 }
 
 /** Answer the fetch's requests with `answers`, in order, on both request seams. */
 function stubFetch(answers: readonly Answer[]): FetchStub {
   const requests: FakeRequest[] = [];
   const responses: FakeResponse[] = [];
-  const record: WebRequestFn = (_url, _options, onResponse) => {
+  const options: WebRequestOptions[] = [];
+  const record: WebRequestFn = (_url, sent, onResponse) => {
     const answer: Answer = answers[requests.length] ?? { kind: "page" };
     const request = fakeRequest(answer.kind === "failure" ? answer.error : undefined);
     requests.push(request);
+    options.push(sent);
     if (answer.kind !== "page") return request.handle;
     const response = fakeResponse(answer);
     responses.push(response);
-    onResponse(response.handle);
+    // Answer on a microtask, the way a socket does: a response never arrives before the
+    // request it answers for exists, and the module registers its listeners in that gap.
+    queueMicrotask(() => onResponse(response.handle));
     return request.handle;
   };
   _webFetchDeps.request = record;
   _webFetchDeps.httpRequest = record;
-  return { requests, responses };
+  return { requests, responses, options };
+}
+
+/** The timer calls one fetch made, recorded on top of the virtual clock it drove them with. */
+interface Timers {
+  readonly armed: number[];
+  readonly cleared: number[];
 }
 
 /** Drive the module's deadline off a virtual clock instead of the wall clock. */
-function useFakeTimers(clock: FakeClock): void {
-  _webFetchDeps.setTimeout = clock.setTimeout;
+function useFakeTimers(clock: FakeClock): Timers {
+  const timers: { armed: number[]; cleared: number[] } = { armed: [], cleared: [] };
+  _webFetchDeps.setTimeout = (fn, ms) => {
+    timers.armed.push(ms);
+    return clock.setTimeout(fn, ms);
+  };
   // The seam's handle is opaque (`unknown`), so the virtual clock's numeric id is narrowed
   // here rather than cast: this adapter is the only place that knows the handle it was handed
   // is one of the clock's own ids.
   _webFetchDeps.clearTimeout = (handle) => {
-    if (typeof handle === "number") clock.clearTimeout(handle);
+    if (typeof handle !== "number") return;
+    timers.cleared.push(handle);
+    clock.clearTimeout(handle);
   };
+  return timers;
+}
+
+/**
+ * Assert the fetch ran under the story's one deadline: a single timer armed for the whole
+ * budget and cleared when the fetch ended, however it ended.
+ *
+ * This is the half of every fetch US-006 owns. The page behaviour the ACs below read --
+ * conversion, title, links, the unsupported page, the status, request-error wrapping -- landed
+ * with US-005, so this is also what makes those tests fail on a tree without US-006; each one
+ * asserts it alongside its AC so the pair is what the test pins.
+ */
+function expectOneDeadline(timers: Timers, stub: FetchStub): void {
+  expect(timers.armed).toEqual([OPTS.timeoutMs]);
+  expect(timers.cleared).toHaveLength(1);
+  // The hop settled, so the error listener it needed is gone with it.
+  expect(stub.requests[0]?.detached()).toBe(1);
 }
 
 /** The NaxError a fetch rejected with; fails the test when it resolved or threw something else. */
@@ -226,15 +277,24 @@ describe("fetchWebPage bodies", () => {
     });
 
     test("AC-7: an application/xhtml+xml body is converted like HTML", async () => {
-      stubFetch([{ kind: "page", contentType: "application/xhtml+xml", body: "<p>x</p>" }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", contentType: "application/xhtml+xml", body: "<p>x</p>" }]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.text).toBe("x");
+      expect(page.contentType).toBe("application/xhtml+xml");
+      expectOneDeadline(timers, stub);
     });
 
     test("AC-16: a text/html body is converted, charset parameter and all", async () => {
-      stubFetch([{ kind: "page", contentType: "text/html; charset=utf-8", body: "<p>hi</p>" }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", contentType: "text/html; charset=utf-8", body: "<p>hi</p>" }]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.text).toBe("hi");
+      expect(page.contentType).toBe("text/html");
+      // The request US-005 established is the one this story kept making for the same call.
+      expect(stub.options[0]?.method).toBe("GET");
+      expect(stub.options[0]?.headers["user-agent"]).toBe("nax-web/1");
+      expectOneDeadline(timers, stub);
     });
 
     test("a body it reads is not reported as unsupported", async () => {
@@ -247,17 +307,23 @@ describe("fetchWebPage bodies", () => {
 
   describe("the HTML it converts", () => {
     test("AC-8: reports the page's title", async () => {
-      stubFetch([
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([
         { kind: "page", contentType: "text/html", body: "<html><head><title>T</title></head><p>x</p></html>" },
       ]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.title).toBe("T");
+      expect(page.text).toBe("x");
+      expectOneDeadline(timers, stub);
     });
 
     test("AC-9: collects an absolute link resolved against the page's URL", async () => {
-      stubFetch([{ kind: "page", contentType: "text/html", body: '<a href="/d">D</a>' }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", contentType: "text/html", body: '<a href="/d">D</a>' }]);
       const page = await fetchWebPage("https://a.example/", OPTS);
       expect(page.links).toEqual(["https://a.example/d"]);
+      expect(page.text).toBe("D (https://a.example/d)");
+      expectOneDeadline(timers, stub);
     });
 
     test("a truncated HTML body keeps the truncation flag through the conversion", async () => {
@@ -270,15 +336,23 @@ describe("fetchWebPage bodies", () => {
 
   describe("what it will not read", () => {
     test("AC-10: an image/png response reports itself unsupported", async () => {
-      stubFetch([{ kind: "page", contentType: "image/png", body: "png" }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", contentType: "image/png", body: "png" }]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.unsupported).toBe(true);
+      // Nothing was read: the body stream was never even pulled from.
+      expect(stub.responses[0]?.streamed()).toBe(false);
+      expectOneDeadline(timers, stub);
     });
 
     test("AC-11: an image/png response says nothing was read", async () => {
-      stubFetch([{ kind: "page", contentType: "image/png", body: "png" }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", contentType: "image/png", body: "png" }]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.text).toBe("Unsupported content type image/png; nothing was read.");
+      expect(page.contentType).toBe("image/png");
+      expect(page.truncated).toBe(false);
+      expectOneDeadline(timers, stub);
     });
 
     test("an unsupported body is never streamed", async () => {
@@ -291,9 +365,14 @@ describe("fetchWebPage bodies", () => {
 
   describe("the status it reports", () => {
     test("AC-12: a 404 is a page carrying its status, not a failure", async () => {
-      stubFetch([{ kind: "page", status: 404, contentType: "text/html", body: "<p>gone</p>" }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "page", status: 404, contentType: "text/html", body: "<p>gone</p>" }]);
       const page = await fetchWebPage("https://a.example/p", OPTS);
       expect(page.status).toBe(404);
+      // The page is still read and converted; only the status says it went wrong.
+      expect(page.text).toBe("gone");
+      expect(page.unsupported).toBe(false);
+      expectOneDeadline(timers, stub);
     });
   });
 
@@ -309,15 +388,19 @@ describe("fetchWebPage bodies", () => {
     });
 
     test("AC-14: a request error fails the fetch", async () => {
-      stubFetch([{ kind: "failure", error: new Error("ECONNRESET") }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "failure", error: new Error("ECONNRESET") }]);
       const error = await rejection(fetchWebPage("https://a.example/p", OPTS));
       expect(error.code).toBe("WEB_FETCH_FAILED");
+      expectOneDeadline(timers, stub);
     });
 
     test("AC-15: a request error's message reaches the failure", async () => {
-      stubFetch([{ kind: "failure", error: new Error("ECONNRESET") }]);
+      const timers = useFakeTimers(makeFakeClock());
+      const stub = stubFetch([{ kind: "failure", error: new Error("ECONNRESET") }]);
       const error = await rejection(fetchWebPage("https://a.example/p", OPTS));
-      expect(error.message).toContain("ECONNRESET");
+      expect(error.message).toBe("ECONNRESET");
+      expectOneDeadline(timers, stub);
     });
 
     test("a deadline destroys the request it was waiting on", async () => {
@@ -333,9 +416,11 @@ describe("fetchWebPage bodies", () => {
 
     test("the deadline timer is released once the page is in hand", async () => {
       const clock = makeFakeClock();
-      useFakeTimers(clock);
+      const timers = useFakeTimers(clock);
       stubFetch([{ kind: "page", contentType: "text/plain", body: "hi" }]);
       await fetchWebPage("https://a.example/p", OPTS);
+      expect(timers.armed).toEqual([OPTS.timeoutMs]);
+      expect(timers.cleared).toHaveLength(1);
       expect(clock.pending()).toBe(0);
     });
 
@@ -354,11 +439,14 @@ describe("fetchWebPage bodies", () => {
       useFakeTimers(clock);
       const stub = stubFetch([{ kind: "page", contentType: "text/plain", stalled: true }]);
       const pending = rejection(fetchWebPage("https://a.example/p", OPTS));
+      const [response] = stub.responses;
+      assertDefined(response, "the stub answered the request");
+      // Act only once the body read is live, so this is the body stage that the deadline cuts.
+      await response.started;
       await clock.advance(OPTS.timeoutMs);
       const error = await pending;
       expect(error.code).toBe("WEB_FETCH_FAILED");
-      const [response] = stub.responses;
-      expect(response?.destroyed()).toBe(true);
+      expect(response.destroyed()).toBe(true);
     });
 
     test("a body lost mid-read fails the fetch, naming the cause", async () => {
