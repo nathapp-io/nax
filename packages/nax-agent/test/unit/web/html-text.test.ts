@@ -168,6 +168,14 @@ describe("htmlToText text shaping", () => {
     expect(htmlToText("a <b", BASE).text).toBe("a <b");
   });
 
+  test("drops a nested element whole, not only up to its first closing tag", () => {
+    expect(htmlToText("<template><template>t</template>leak</template><p>x</p>", BASE).text).toBe("x");
+  });
+
+  test("keeps the contents of an element the page never closes", () => {
+    expect(htmlToText("<p>x</p><script>evil()", BASE).text).toBe("x\nevil()");
+  });
+
   test("ignores a doctype", () => {
     expect(htmlToText("<!DOCTYPE html><p>x</p>", BASE).text).toBe("x");
   });

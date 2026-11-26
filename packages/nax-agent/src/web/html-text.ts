@@ -149,9 +149,9 @@ export function htmlToText(html: string, baseUrl: string): HtmlText {
 }
 
 /**
- * Remove the named elements, contents included. A paired element goes whole; a tag left
- * without its closing tag loses only the tag, so an unclosed `<script>` leaves its contents
- * as text rather than swallowing the rest of the page.
+ * Remove the named elements, contents included. A paired element goes whole, however deeply
+ * it nests copies of itself; a tag left without its closing tag loses only the tag, so an
+ * unclosed `<script>` leaves its contents as text rather than swallowing the rest of the page.
  */
 function dropElements(html: string, tags: readonly string[]): string {
   return tags.reduce((text, tag) => dropElement(text, tag), html);
@@ -159,9 +159,42 @@ function dropElements(html: string, tags: readonly string[]): string {
 
 /** Remove one element's paired form, then any tag of that name left over. */
 function dropElement(html: string, tag: string): string {
-  const paired = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}\\s*>`, "gi");
   const loneTag = new RegExp(`<\\/?${tag}\\b[^>]*>`, "gi");
-  return html.replace(paired, "").replace(loneTag, "");
+  return dropPaired(html, tag).replace(loneTag, "");
+}
+
+/**
+ * Remove every complete `tag` element, contents and nested copies included. Depth is counted
+ * rather than matched with a non-greedy pattern: truncating at the first closing tag would
+ * leave a nested element's own contents behind, and `<template><template>t</template>leak` is
+ * exactly the shape a copied framework fragment has. An open tag with no matching close is
+ * left for `dropElement`'s tag-only pass, which keeps its contents rather than the page's tail.
+ */
+function dropPaired(html: string, tag: string): string {
+  const out: string[] = [];
+  let cursor = 0;
+  let keepFrom = 0;
+  let openedAt = 0;
+  let depth = 0;
+  while (cursor < html.length) {
+    const start = html.indexOf("<", cursor);
+    if (start === -1) break;
+    const found = TAG_START.test(html.charAt(start + 1)) ? readTag(html, start) : null;
+    cursor = found === null ? start + 1 : found.end;
+    if (found === null || found.name !== tag) continue;
+    if (!found.closing) {
+      if (depth === 0) openedAt = start;
+      depth++;
+      continue;
+    }
+    if (depth === 0) continue;
+    depth--;
+    if (depth > 0) continue;
+    out.push(html.slice(keepFrom, openedAt));
+    keepFrom = found.end;
+  }
+  out.push(html.slice(keepFrom));
+  return out.join("");
 }
 
 /** The document's title, decoded and on one line; `undefined` when it has none worth reading. */
