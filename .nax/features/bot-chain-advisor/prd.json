@@ -3,7 +3,7 @@
   "feature": "bot-chain-advisor",
   "branchName": "feat/bot-chain-advisor",
   "createdAt": "2026-11-26T06:13:21.668Z",
-  "updatedAt": "2026-11-26T06:47:18.481Z",
+  "updatedAt": "2026-11-26T06:52:38.931Z",
   "userStories": [
     {
       "id": "US-001",
@@ -364,14 +364,17 @@
         "US-002",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Integrates advisor decisions, durable forge writes, immutable transforms and base-pinned sessions; session trust boundaries require strict isolated TDD."
+        "reasoning": "Integrates advisor decisions, durable forge writes, immutable transforms and base-pinned sessions; session trust boundaries require strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/chain-advise.ts",
@@ -393,6 +396,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "81f0ad5be6e215c26cca951cc5995081919972fa",
       "outOfScope": [
         "US-006 only: composition tests 2, 4, 5 and 6 and the `readConfirmedKeys` read are US-007's code; here `readConfirmedKeys` is stubbed and not asserted on, and `env.cost` is never at its limit.",
         "US-006 only: the forced-confirm rule for a `critical` waive is the advisor service's; it is exercised through the real service in US-008's integration ACs, not here."
