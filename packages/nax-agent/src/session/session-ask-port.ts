@@ -6,7 +6,13 @@
  */
 import { NaxError } from "#src/infra/nax-error";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
-import type { SessionEventBody } from "./agent-session-types.ts";
+import type { AnswerReply, SessionEventBody } from "./agent-session-types.ts";
+import {
+  type ChoiceQuestion,
+  formatChoiceAnswers,
+  renderChoiceQuestionsText,
+  validateChoiceAnswers,
+} from "./choice-questions.ts";
 import type { PendingAskTable } from "./pending-asks.ts";
 import { askPerson } from "./session-ask-link.ts";
 import type { ApprovalRequest, SessionAskPort } from "./session-backend.ts";
@@ -18,6 +24,12 @@ export interface SessionAskPortDeps {
 }
 
 const ALREADY_ABORTED = AbortSignal.abort();
+
+/** Rejects only an answer that carries choice answers the questions do not accept. */
+function choiceValidator(questions: readonly ChoiceQuestion[]) {
+  return (reply: AnswerReply): string | undefined =>
+    "text" in reply && reply.answers !== undefined ? validateChoiceAnswers(questions, reply.answers) : undefined;
+}
 
 function noTurn(): NaxError {
   return new NaxError("No turn is running; an approval needs a running turn", "AGENT_SESSION_TURN_FAILED", {
@@ -67,6 +79,24 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
       deps.emit({ type: "question", requestId, text, expiresAt });
       const settlement = await settled;
       return settlement.by === "human" && "text" in settlement.reply ? settlement.reply.text : null;
+    },
+    async askChoices(prompt, questions, opts) {
+      const turn = deps.turn();
+      if (turn === undefined) return null;
+      const signal = opts?.signal === undefined ? turn.signal : AbortSignal.any([turn.signal, opts.signal]);
+      const { requestId, expiresAt, settled } = deps.table.issue("question", signal, choiceValidator(questions));
+      deps.emit({
+        type: "question",
+        requestId,
+        text: renderChoiceQuestionsText(prompt, questions),
+        expiresAt,
+        questions,
+        prompt,
+      });
+      const settlement = await settled;
+      if (settlement.by !== "human" || !("text" in settlement.reply)) return null;
+      const { text, answers } = settlement.reply;
+      return answers === undefined ? { text } : { text: formatChoiceAnswers(questions, answers), answers };
     },
     noteQuestion(text) {
       if (deps.turn() === undefined) return;

@@ -10,6 +10,7 @@ import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { WebCallAssessment, WebGuardDecision } from "#src/web/guard";
+import type { ChoiceAnswer, ChoiceQuestion } from "./choice-questions.ts";
 import type { SendInput } from "./image-input.ts";
 import type { BackendInfo, SessionBackend } from "./session-backend.ts";
 import type { JSONSchema } from "./tool-descriptor.ts";
@@ -184,6 +185,10 @@ export type SessionEventBody =
       readonly expiresAt: string;
       /** `false`: informational (`noteQuestion`); `answer()` on it does nothing. Absent: an answer is awaited. */
       readonly answerable?: false;
+      /** Set only on a choice ask (US-001); `text` then carries renderChoiceQuestionsText(prompt, questions). */
+      readonly questions?: readonly ChoiceQuestion[];
+      /** The context line above the questions, as the asker wrote it. Set only on a choice ask. */
+      readonly prompt?: string;
     }
   | {
       readonly type: "usage";
@@ -215,7 +220,10 @@ export type SessionEventBody =
  */
 export type SessionEvent = SessionEventBase & SessionEventBody;
 
-export type AnswerReply = { readonly decision: "allow" | "deny" } | { readonly text: string };
+export type AnswerReply =
+  | { readonly decision: "allow" | "deny" }
+  /** `answers` answers a choice ask; absent, `text` is a plain reply (US-001). */
+  | { readonly text: string; readonly answers?: readonly ChoiceAnswer[] };
 
 export type AnswerStatus = "accepted" | "expired" | "cancelled" | "unknown";
 

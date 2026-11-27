@@ -22,7 +22,15 @@ export interface IssuedAsk {
 }
 
 export interface PendingAskTable {
-  issue(kind: PendingAskKind, signal: AbortSignal | undefined): IssuedAsk;
+  /**
+   * `validate` runs on a human answer while the entry is pending, after the
+   * kind check; a reason rejects the answer and leaves the entry pending.
+   */
+  issue(
+    kind: PendingAskKind,
+    signal: AbortSignal | undefined,
+    validate?: (reply: AnswerReply) => string | undefined,
+  ): IssuedAsk;
   answer(requestId: string, reply: AnswerReply): AnswerStatus;
   /** Settles every pending request as cancelled. */
   cancelAll(): void;
@@ -33,6 +41,7 @@ export interface PendingAskTable {
 interface Entry {
   readonly kind: PendingAskKind;
   readonly state: "pending" | AskSettlement["by"];
+  readonly validate?: (reply: AnswerReply) => string | undefined;
   readonly finish?: (settlement: AskSettlement) => void;
 }
 
@@ -56,7 +65,11 @@ export function createPendingAskTable(timeoutMs: number): PendingAskTable {
   const entries = new Map<string, Entry>();
   let closed = false;
 
-  function issue(kind: PendingAskKind, signal: AbortSignal | undefined): IssuedAsk {
+  function issue(
+    kind: PendingAskKind,
+    signal: AbortSignal | undefined,
+    validate?: (reply: AnswerReply) => string | undefined,
+  ): IssuedAsk {
     const requestId = _agentSessionDeps.randomUUID();
     const expiresAt = new Date(_agentSessionDeps.now() + timeoutMs).toISOString();
     const settled = new Promise<AskSettlement>((resolve) => {
@@ -69,7 +82,7 @@ export function createPendingAskTable(timeoutMs: number): PendingAskTable {
         entries.set(requestId, { kind, state: settlement.by });
         resolve(settlement);
       }
-      entries.set(requestId, { kind, state: "pending", finish });
+      entries.set(requestId, { kind, state: "pending", validate, finish });
       timer = _agentSessionDeps.setTimeout(() => finish({ by: "timeout" }), timeoutMs);
       if (closed || signal?.aborted === true) finish({ by: "cancelled" });
       else signal?.addEventListener("abort", onAbort, { once: true });
@@ -91,6 +104,12 @@ export function createPendingAskTable(timeoutMs: number): PendingAskTable {
     }
     if (replyKind(reply) !== entry.kind) throw kindMismatch(requestId, entry.kind);
     if (entry.state === "pending") {
+      // A validator's reason rejects this answer; the entry stays pending, so a
+      // corrected answer is accepted.
+      const reason = entry.validate?.(reply);
+      if (reason !== undefined) {
+        throw new AgentSessionError(reason, "AGENT_SESSION_INVALID_ANSWER", { requestId, kind: entry.kind });
+      }
       entry.finish?.({ by: "human", reply });
       return "accepted";
     }
