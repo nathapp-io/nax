@@ -292,6 +292,44 @@ describe("choiceQuestionLayout minimum", () => {
     expect(promptRows(measurement.minimum)).toBe(1);
     expect(promptRows(measurement.desired)).toBeGreaterThan(1);
   });
+
+  test("AC-8: one row above the minimum completes the list, it does not widen the prompt", () => {
+    const card = model([question({ allowOther: true })], "context ".repeat(15));
+    const measurement = measure(card, 40);
+    const promptRows = (layout: ReturnType<typeof choiceQuestionLayout>) =>
+      rows(layout).filter((row) => row.startsWith("context ")).length;
+    const atMinimum = draw(card, stateFor(card), measurement.minimum, 40);
+    const above = draw(card, stateFor(card), measurement.minimum + 1, 40);
+    expect(atMinimum.rows).toBeLessThanOrEqual(measurement.minimum);
+    expect(above.rows).toBeLessThanOrEqual(measurement.minimum + 1);
+    // The prompt stays collapsed while the list is still short of room: its rows go last.
+    expect(promptRows(atMinimum)).toBe(1);
+    expect(promptRows(above)).toBe(1);
+    // That one row completes the list — both options and `Other...` — instead of the prompt.
+    expect(above.elided).toBeLessThan(atMinimum.elided);
+    expect(above.elided).toBe(0);
+    expect(rows(above).join("\n")).toContain("Other...");
+  });
+
+  test("AC-8: a multi-row question collapses before a choice is withheld", () => {
+    const card = model([question({ allowOther: true, question: "word ".repeat(20).trim() })], "context ".repeat(15));
+    const measurement = measure(card, 40);
+    expect(measurement.desired).toBeGreaterThan(measurement.minimum);
+    let withheld = 0;
+    for (let budget = measurement.minimum; budget <= measurement.desired; budget += 1) {
+      const fitted = draw(card, stateFor(card), budget, 40);
+      const drawn = rows(fitted);
+      expect(fitted.rows).toBeLessThanOrEqual(budget);
+      if (fitted.elided === 0) continue;
+      withheld += 1;
+      // Nothing is withheld while either text section keeps rows above its collapsed size.
+      expect(drawn.filter((row) => row.startsWith("context "))).toHaveLength(1);
+      expect(drawn.find((row) => row.startsWith("context "))?.endsWith(THEME.glyphs.ellipsis)).toBe(true);
+      expect(drawn.filter((row) => row.startsWith("word "))).toHaveLength(1);
+      expect(drawn.find((row) => row.startsWith("word "))?.endsWith(THEME.glyphs.ellipsis)).toBe(true);
+    }
+    expect(withheld).toBeGreaterThan(0);
+  });
 });
 
 describe("choiceQuestionLayout single-row text", () => {

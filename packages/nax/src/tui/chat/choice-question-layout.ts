@@ -15,10 +15,12 @@
  * Long option lists are windowed rather than truncated: the rows that fit keep the cursor
  * visible and `(n more above)` / `(n more below)` name what the window refused, and those
  * markers count against the budget like any other row. The question line, the hint row and the
- * countdown are never withheld; the prompt and the question are cut to one row each before a
- * single option row is given up, and the prompt is fitted only into the room the body's own
- * floor leaves over. The review step is windowed the same way, a whole question at a time,
- * around the question its cursor names — so every answer is reachable before submitting.
+ * countdown are never withheld, and the rows between the tab strip and the tail are given out
+ * in one order: every list row first, then the question's own extra rows, then the prompt's —
+ * so the prompt and the question are each cut to one row before a single option row is given
+ * up, and a row that cannot complete a text section completes the list instead. The review step
+ * is windowed the same way, a whole question at a time, around the question its cursor names —
+ * so every answer is reachable before submitting.
  *
  * Every option label, option description, question header, `Other...` text and review line is
  * flattened to one row before it is cut to the width: each of those is one row by definition,
@@ -62,8 +64,8 @@ const ONE_QUESTION_ROW = 1;
 const ONE_OPTION_ROW = 1;
 /** A `(n more ...)` row is cut to the width, so a marker is always exactly one row. */
 const ONE_MARKER_ROW = 1;
-/** The rows the body keeps before the prompt may have one: its question and one option. */
-const BODY_FLOOR_ROWS = ONE_QUESTION_ROW + ONE_OPTION_ROW;
+/** What a text section keeps when it is collapsed: one row, cut to the width and marked. */
+const ONE_TEXT_ROW = 1;
 /** "Unlimited": a budget no card can reach, so a measurement sees the whole drawing. */
 export const CHOICE_UNLIMITED_BUDGET = Number.POSITIVE_INFINITY;
 
@@ -375,75 +377,78 @@ function windowRows(list: readonly StyledLine[], budget: number, cursor: number,
   return { rows: row === undefined ? [] : [row], elided: total - 1 };
 }
 
-/** What the body drew: the question's own rows, and the window under them. */
+/** What the body drew: the prompt's rows, the question's own rows, and the window under them. */
 interface BodyRows {
+  readonly promptRows: readonly StyledLine[];
   readonly questionRows: readonly StyledLine[];
   readonly middle: readonly StyledLine[];
   readonly elided: number;
 }
 
-/** The body at the room it has left: the review list, or the question and its options. */
+/** A section's rows: none of them, all of them, or — collapsed — the one marked row. */
+function fittedText(all: readonly StyledLine[], text: string, take: number, context: LayoutContext): StyledLine[] {
+  if (take >= all.length) return [...all];
+  return take >= ONE_TEXT_ROW ? [elidedRow(text, {}, context)] : [];
+}
+
+/** How many rows the prompt and the question keep once the list has had what it needs. */
+interface TextPlan {
+  readonly prompt: number;
+  readonly question: number;
+}
+
+/**
+ * The rows the prompt and the question keep when the list under them needs `listRows` of
+ * `room`. The list is served first — every list row before the question's extra rows, and the
+ * question's before the prompt's — so both texts are collapsed to one row before a single list
+ * row is withheld. That is the order the minimum's reserved rows describe, and the reason a row
+ * the prompt cannot use whole goes to the list instead of widening the prompt.
+ */
+function textPlan(promptRows: number, questionRows: number, listRows: number, room: number): TextPlan {
+  const prompt = promptRows > 0 ? ONE_TEXT_ROW : 0;
+  const question = questionRows > 0 ? ONE_TEXT_ROW : 0;
+  if (promptRows + questionRows + listRows <= room) return { prompt: promptRows, question: questionRows };
+  if (prompt + questionRows + listRows <= room) return { prompt, question: questionRows };
+  return { prompt, question };
+}
+
+/** The body at the room it has left: the review list, or the prompt, the question and its options. */
 function bodyRows(
   model: AskCardChoiceQuestion,
   state: ChoiceState,
   question: ChoiceQuestion | undefined,
-  context: LayoutContext,
+  promptAll: readonly StyledLine[],
   room: number,
+  context: LayoutContext,
 ): BodyRows {
   if (state.review) {
-    const window = reviewWindow(reviewGroups(model, state, context), state.cursor, room, context);
-    return { questionRows: [], middle: window.rows, elided: window.elided };
+    const groups = reviewGroups(model, state, context);
+    const plan = textPlan(promptAll.length, 0, groupRows(groups), room);
+    const promptRows = fittedText(promptAll, model.prompt, plan.prompt, context);
+    const window = reviewWindow(groups, state.cursor, Math.max(room - promptRows.length, 0), context);
+    return { promptRows, questionRows: [], middle: window.rows, elided: window.elided };
   }
-  if (question === undefined) return { questionRows: [], middle: [], elided: 0 };
+  if (question === undefined) {
+    return { promptRows: fittedText(promptAll, model.prompt, room, context), questionRows: [], middle: [], elided: 0 };
+  }
   const questionAll = textRows(question.question, {}, context);
   const list = optionListRows(question, state, context);
-  const questionRows = fitQuestion(question, questionAll, list.length, room, context);
-  const window = windowRows(list, Math.max(room - questionRows.length, 0), state.cursor, context);
-  return { questionRows, middle: window.rows, elided: window.elided };
+  const plan = textPlan(promptAll.length, questionAll.length, list.length, room);
+  const promptRows = fittedText(promptAll, model.prompt, plan.prompt, context);
+  const questionRows = fittedText(questionAll, question.question, plan.question, context);
+  const window = windowRows(list, Math.max(room - promptRows.length - questionRows.length, 0), state.cursor, context);
+  return { promptRows, questionRows, middle: window.rows, elided: window.elided };
 }
 
 /**
- * The question's rows at the room it has: all of them while they fit beside at least one option
- * row, one marked row when they do not, and nothing at all when not even that fits. It is the
- * question half of "the question line is never withheld" — the option row beside it is the
- * other half, and neither is ever drawn into rows the card was not given.
- */
-function fitQuestion(
-  question: ChoiceQuestion,
-  questionAll: readonly StyledLine[],
-  options: number,
-  room: number,
-  context: LayoutContext,
-): StyledLine[] {
-  const reserve = options === 0 ? 0 : ONE_OPTION_ROW;
-  if (questionAll.length + reserve <= room) return [...questionAll];
-  return room >= 1 ? [elidedRow(question.question, {}, context)] : [];
-}
-
-/**
- * The rows the prompt may have: every row while they fit in `room`, one marked row when they
- * do not, and none at all when there is no room for even that. `room` is what the body's own
- * floor left over, so a long prompt can never withhold the question and its options.
- */
-function fitPrompt(
-  promptAll: readonly StyledLine[],
-  prompt: string,
-  room: number,
-  context: LayoutContext,
-): StyledLine[] {
-  if (promptAll.length <= room) return [...promptAll];
-  return room >= 1 ? [elidedRow(prompt, {}, context)] : [];
-}
-
-/**
- * Every row the card draws at a width and a budget. The prompt keeps its rows while they fit
- * and is cut to one marked row before anything else is given up; the frame, the title, the tab
- * strip, the question line, the hint and the countdown are never withheld.
+ * Every row the card draws at a width and a budget. The rows between the tab strip and the tail
+ * are shared out in one order — the list's rows, then the question's own extra rows, then the
+ * prompt's — so the prompt and the question are each cut to one marked row before an option row
+ * is withheld; the frame, the title, the tab strip, the question line, the hint and the
+ * countdown are never withheld.
  *
- * The prompt is fitted against the room the *body* leaves over, not against every row between
- * the tab strip and the tail: a prompt that ate the whole gap would measure the card honestly
- * and then draw no question and no options at all, which is exactly what the minimum reserves
- * rows for.
+ * A prompt that ate the whole gap would measure the card honestly and then draw no question and
+ * no options at all, which is exactly what the minimum reserves rows for.
  *
  * The rows returned never outnumber the rows reserved, whatever budget it is handed: a budget
  * below the card's own minimum — which the frame allocator never gives, but a constrained
@@ -471,11 +476,8 @@ export function choiceQuestionLayout(
   // What the prompt and the body may have: whatever the frame, the title, the strip and the tail left.
   const room = Math.max(budget - head.length - tail.length, 0);
   const promptAll = model.prompt === "" ? [] : textRows(model.prompt, {}, context);
-  const bodyFloor = state.review || question !== undefined ? BODY_FLOOR_ROWS : 0;
-  const prompt = fitPrompt(promptAll, model.prompt, Math.max(room - bodyFloor, 0), context);
-  head.push(...prompt);
-  const body = bodyRows(model, state, question, context, Math.max(room - prompt.length, 0));
-  head.push(...body.questionRows);
+  const body = bodyRows(model, state, question, promptAll, room, context);
+  head.push(...body.promptRows, ...body.questionRows);
   return clipToBudget(head, body.middle, tail, body.elided, budget);
 }
 
