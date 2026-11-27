@@ -15,9 +15,10 @@ import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 import { creditedFiles } from "./coverage-credit";
 import type { BotDecision } from "./decisions";
 import type { BotPushEntry } from "./push-ledger";
+import { type RestoredFile, readRangeRestores } from "./range-restores";
 import { reviewScopeOf } from "./review-rulings";
 
-export const _reviewStepDeps = { writeBranchReviewPackage };
+export const _reviewStepDeps = { writeBranchReviewPackage, readRangeRestores };
 
 export interface PrReviewInput {
   readonly settled?: readonly BotSettledRuling[];
@@ -50,6 +51,8 @@ interface ReviewStep {
   required: readonly string[];
   /** The subset a settled `verified` ruling already covered at an unchanged commit. */
   credited: readonly string[];
+  /** nax#3050: files an incremental range takes back toward the merge base. */
+  restored: readonly RestoredFile[];
 }
 
 async function writePackage(
@@ -102,11 +105,13 @@ function outstanding(step: ReviewStep): readonly string[] {
 }
 
 function reviewPrompt(input: PrReviewInput, step: ReviewStep): string {
+  const incremental = reviewScopeOf(input) === "incremental";
   return buildBotPrReviewPrompt({
     packagePath: step.packagePath,
     range: `${step.rangeBase}..HEAD`,
     conversationOnly: input.conversationOnly,
-    ...(reviewScopeOf(input) === "incremental" && { incrementalSince: step.rangeBase }),
+    ...(incremental && { incrementalSince: step.rangeBase, mergeBase: input.mergeBase }),
+    ...(step.restored.length > 0 && { restoredFiles: step.restored }),
     pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
     issues: input.issues,
     threads: input.threads,
@@ -135,6 +140,11 @@ async function prepareReview(ctx: PrStepContext, input: PrReviewInput, step: Rev
     required: step.required,
     changedSince: (sha) => changedSince(ctx, sha),
   });
+  if (reviewScopeOf(input) === "incremental")
+    step.restored = await _reviewStepDeps.readRangeRestores(_workflowDeps.git, ctx.projectDir, {
+      mergeBase: input.mergeBase,
+      rangeBase: step.rangeBase,
+    });
 }
 
 function dispatchReview(
@@ -179,6 +189,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     rangeBase: input.rangeBase ?? input.mergeBase,
     required: [],
     credited: [],
+    restored: [],
   };
   const outcome = await underReviewLimit(
     ctx,

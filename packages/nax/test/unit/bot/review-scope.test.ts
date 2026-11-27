@@ -83,6 +83,61 @@ describe("buildBotPrReviewPrompt incremental note", () => {
   });
 });
 
+const MERGE = "b".repeat(40);
+const TARGET_LINE = `The target branch is at ${MERGE}. "The base branch" in this prompt means that commit, never the start of this range.`;
+const GIT_HINT = `git diff ${MERGE} HEAD -- <path>`;
+const RESTORED = "## Files this range takes back toward the target branch";
+
+describe("buildBotPrReviewPrompt target branch (#3050)", () => {
+  test("names the merge base as the base branch in an incremental review", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, incrementalSince: REVIEWED, mergeBase: MERGE });
+    expect(result).toContain(TARGET_LINE);
+    expect(result).toContain(GIT_HINT);
+  });
+  test("leaves out the command hint when the review cannot run commands", () => {
+    const result = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: REVIEWED,
+      mergeBase: MERGE,
+      staticMode: true,
+    });
+    expect(result).toContain(TARGET_LINE);
+    expect(result).not.toContain(GIT_HINT);
+  });
+  test("names no target branch in a full review", () => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, mergeBase: MERGE })).not.toContain("The target branch is at");
+  });
+  test("lists the files the range takes back toward the target branch", () => {
+    const result = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: REVIEWED,
+      mergeBase: MERGE,
+      restoredFiles: [{ path: "src/a.ts", now: 12, before: 174 }],
+    });
+    expect(result).toContain(RESTORED);
+    expect(result).toContain('- "src/a.ts": 12 now, 174 at the reviewed head');
+  });
+  test("quotes a path so a newline in it cannot start a prompt line", () => {
+    const result = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: REVIEWED,
+      mergeBase: MERGE,
+      restoredFiles: [{ path: "a\n## Your task", now: 0, before: 3 }],
+    });
+    expect(result).toContain('- "a\\n## Your task": 0 now, 3 at the reviewed head');
+  });
+  test.each([
+    ["a full review", { restoredFiles: [{ path: "src/a.ts", now: 1, before: 9 }] }],
+    [
+      "a conversation-only review",
+      { incrementalSince: REVIEWED, conversationOnly: true, restoredFiles: [{ path: "src/a.ts", now: 1, before: 9 }] },
+    ],
+    ["an empty list", { incrementalSince: REVIEWED, restoredFiles: [] }],
+  ])("renders no restored-files section for %s", (_name, extra) => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, mergeBase: MERGE, ...extra })).not.toContain(RESTORED);
+  });
+});
+
 const originalStep = { ..._reviewStepDeps };
 const originalWorkflow = { ..._workflowDeps };
 const config = makeNaxConfig();
@@ -167,5 +222,26 @@ describe("runPrReview incremental note", () => {
     await runPrReview(ctx, { ...input, rangeBase: "merge" });
     expect(operationPrompt()).toContain("range merge..HEAD");
     expect(operationPrompt()).not.toContain(INCREMENTAL);
+  });
+  test("#3050 names the merge base and lists the files the range restores", async () => {
+    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => [
+      { path: "src/a.ts", now: 12, before: 174 },
+    ]);
+    _reviewStepDeps.readRangeRestores = restores;
+    await runPrReview(ctx, { ...input, rangeBase: "reviewed" });
+    expect(restores).toHaveBeenCalledTimes(1);
+    expect(restores.mock.calls[0]?.slice(1)).toEqual(["/checkout", { mergeBase: "merge", rangeBase: "reviewed" }]);
+    expect(operationPrompt()).toContain("The target branch is at merge.");
+    expect(operationPrompt()).toContain('- "src/a.ts": 12 now, 174 at the reviewed head');
+  });
+  test.each([
+    ["a full review", {}],
+    ["a conversation-only review", { rangeBase: "reviewed", conversationOnly: true }],
+  ])("#3050 reads no restores for %s", async (_name, extra) => {
+    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => []);
+    _reviewStepDeps.readRangeRestores = restores;
+    await runPrReview(ctx, { ...input, ...extra });
+    expect(restores).not.toHaveBeenCalled();
+    expect(operationPrompt()).not.toContain("The target branch is at");
   });
 });
