@@ -530,9 +530,9 @@ function desiredRows(model: AskCardChoiceQuestion, options: ChoiceQuestionConten
 
 /**
  * The rows the card cannot be drawn in fewer of: both frame rules, the title, the tab strip
- * when it is shown, one question row, one option row, both window markers, the hint and the
- * countdown. It is what the frame allocator may not go below — the card draws a truncated
- * option window there, never a card with its question or its countdown missing.
+ * when shown, one row for a non-empty prompt, one question row, one option row, both markers,
+ * the hint and the countdown. At that floor the option window may be truncated, but neither
+ * the question nor its countdown is missing.
  *
  * A card whose whole drawing is already that small — a two-option question with no prompt —
  * measures its floor as its `desired`: a minimum above what the card ever draws would make the
@@ -558,6 +558,7 @@ export function choiceQuestionMeasurement(
     FRAME_RULE_ROWS * 2 +
     textRows(model.title, { bold: true }, context).length +
     tabRows +
+    (model.prompt === "" ? 0 : ONE_TEXT_ROW) +
     ONE_QUESTION_ROW +
     ONE_OPTION_ROW +
     ONE_MARKER_ROW * 2 +

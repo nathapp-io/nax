@@ -81,6 +81,9 @@ function measure(card: AskCardChoiceQuestion, width = WIDTH) {
   return measureAskCard(card, { width, theme: THEME, answer: EMPTY_DRAFT, expiresAt: EXPIRES_AT, nowMs: NOW_MS });
 }
 
+/** Four list rows including Other: still windowed at the marker-inclusive minimum. */
+const FOUR_ROWS = question({ options: [{ label: "bun" }, { label: "vitest" }, { label: "node" }] });
+
 /** The options a twelve-row list is built from: enough to be windowed by any short budget. */
 const MANY: readonly ChoiceQuestion[] = [
   question({
@@ -228,6 +231,27 @@ describe("choiceQuestionLayout minimum", () => {
     expect(drawn.at(-1)).toBe(THEME.glyphs.rule.repeat(40));
   });
 
+  test("at minimum a prompt leaves room for all three choices at an interior cursor", () => {
+    const card = model([question()], "context");
+    const { minimum } = measure(card, 40);
+    const fitted = draw(card, stateFor(card, { cursor: 1 }), minimum, 40);
+    expect(fitted.middle.map(plainText)).toEqual([
+      `${BLANK_POINTER}( ) 1. bun`,
+      `${POINTER}( ) 2. vitest`,
+      `${BLANK_POINTER}Other...`,
+    ]);
+    expect(fitted.elided).toBe(0);
+    expect(fitted.rows).toBeLessThanOrEqual(minimum);
+  });
+
+  test("a prompt leaves both window markers around an interior cursor at minimum", () => {
+    const card = model([FOUR_ROWS], "context");
+    const { minimum } = measure(card, 40);
+    const fitted = draw(card, stateFor(card, { cursor: 1 }), minimum, 40);
+    expect(fitted.middle.map(plainText)).toEqual(["(1 more above)", `${POINTER}( ) 2. vitest`, "(2 more below)"]);
+    expect(fitted.rows).toBeLessThanOrEqual(minimum);
+  });
+
   test("AC-8: a budget below the frame's own rows still never exceeds the budget", () => {
     const card = model([question({ allowOther: true })]);
     const measurement = measure(card);
@@ -256,7 +280,7 @@ describe("choiceQuestionLayout minimum", () => {
     // A prompt wide enough to fill the gap between the title and the tail on its own: it is
     // collapsed to one marked row, and the body's own floor is reserved before it gets one.
     for (const repetitions of [15, 20]) {
-      const card = model([question({ allowOther: true })], "context ".repeat(repetitions));
+      const card = model([FOUR_ROWS], "context ".repeat(repetitions));
       const measurement = measure(card, 40);
       const fitted = draw(card, stateFor(card), measurement.minimum, 40);
       const drawn = rows(fitted);
@@ -294,7 +318,7 @@ describe("choiceQuestionLayout minimum", () => {
   });
 
   test("AC-8: one row above the minimum completes the list, it does not widen the prompt", () => {
-    const card = model([question({ allowOther: true })], "context ".repeat(15));
+    const card = model([FOUR_ROWS], "context ".repeat(15));
     const measurement = measure(card, 40);
     const promptRows = (layout: ReturnType<typeof choiceQuestionLayout>) =>
       rows(layout).filter((row) => row.startsWith("context ")).length;
@@ -305,14 +329,14 @@ describe("choiceQuestionLayout minimum", () => {
     // The prompt stays collapsed while the list is still short of room: its rows go last.
     expect(promptRows(atMinimum)).toBe(1);
     expect(promptRows(above)).toBe(1);
-    // That one row completes the list — both options and `Other...` — instead of the prompt.
+    // That one row completes the list — all three options and `Other...` — instead of the prompt.
     expect(above.elided).toBeLessThan(atMinimum.elided);
     expect(above.elided).toBe(0);
     expect(rows(above).join("\n")).toContain("Other...");
   });
 
   test("AC-8: a multi-row question collapses before a choice is withheld", () => {
-    const card = model([question({ allowOther: true, question: "word ".repeat(20).trim() })], "context ".repeat(15));
+    const card = model([{ ...FOUR_ROWS, question: "word ".repeat(20).trim() }], "context ".repeat(15));
     const measurement = measure(card, 40);
     expect(measurement.desired).toBeGreaterThan(measurement.minimum);
     let withheld = 0;
