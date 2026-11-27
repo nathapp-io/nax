@@ -1,7 +1,7 @@
 /** Carry only an append-only main-checkout advisor ledger into the PR checkout. */
-import { mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { ledgerPath } from "@/advisor";
 import { featureDir, PROJECT_FEATURES_DIR } from "@/config";
@@ -27,6 +27,30 @@ export function isLedgerAppend(before: string | null, after: string | null): aft
   return after !== null && after.length > prefix.length && after.startsWith(prefix);
 }
 
+/** Every line of `text` followed by a newline; an unterminated last line is not a complete line. */
+function completeLines(text: string): string[] {
+  return text.split("\n").slice(0, -1);
+}
+
+/**
+ * #3058: the ledger text `carry` commits. A whole-text append is carried verbatim; anything else —
+ * a divergent PR ledger, or an append that touches an unterminated last line — merges by line, so
+ * the PR keeps its own lines and gains every complete main line it lacks, in main's order.
+ *
+ * `null` when main holds no complete line the PR lacks: there is nothing to carry.
+ */
+export function mergedLedgerText(previous: string | null, main: string): string | null {
+  const prefix = previous ?? "";
+  const terminated = prefix === "" || prefix.endsWith("\n");
+  if (terminated && main.endsWith("\n") && isLedgerAppend(previous, main)) return main;
+  const held = new Set(prefix.split("\n"));
+  const missing = completeLines(main).filter(
+    (line, index, lines) => line !== "" && !held.has(line) && lines.indexOf(line) === index,
+  );
+  if (missing.length === 0) return null;
+  return `${terminated ? prefix : `${prefix}\n`}${missing.map((line) => `${line}\n`).join("")}`;
+}
+
 /** Git against a throwaway index, so the user's index and working file are never read for the commit. */
 function indexGit(args: string[], cwd: string, indexFile: string): ReturnType<typeof gitWithTimeout> {
   // nax-git-env-allow: handed to gitWithTimeout, which hardens it
@@ -47,6 +71,18 @@ export const _ledgerCarryDeps = {
   removeFile: async (path: string): Promise<void> => {
     await Bun.file(path).delete();
   },
+  /** Take a lock file the way git does — exclusively — answering false when someone else holds it. */
+  createExclusive: async (path: string): Promise<boolean> => {
+    try {
+      await writeFile(path, "", { flag: "wx" });
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw error;
+    }
+  },
+  copyFile: (from: string, to: string): Promise<void> => copyFile(from, to),
+  rename: (from: string, to: string): Promise<void> => rename(from, to),
   getLogger,
 };
 
@@ -111,13 +147,14 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
     _ledgerCarryDeps.readText(path),
   ]);
   if (main === null || main === previous) return false;
-  if (!isLedgerAppend(previous, main)) {
+  const merged = mergedLedgerText(previous, main);
+  if (merged === null) {
     warn(env, "Main checkout ledger does not extend the PR's; not carried");
     return false;
   }
   const rel = relative(env.checkout.worktree, path);
   try {
-    await _ledgerCarryDeps.writeText(path, main);
+    await _ledgerCarryDeps.writeText(path, merged);
     await git(["add", "-f", "--", rel], env.checkout.worktree);
     await git(["commit", "--no-verify", "-m", ledgerCommitMessage(feature), "--", rel], env.checkout.worktree);
     return true;
@@ -163,22 +200,179 @@ async function ledgerMode(cwd: string, rel: string, index: string): Promise<stri
   return mode;
 }
 
-/** The real index entry follows the new HEAD, as `git commit -- <path>` would leave it. */
-async function refreshIndexEntry(env: BotFixEnv, rel: string): Promise<void> {
-  const args = ["reset", "-q", "HEAD", "--", `:(literal)${rel}`];
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      await git(args, env.checkout.worktree);
+/** #3057: an index entry holding the user's own staged version is theirs, never cleared. */
+const INDEX_LEFT_AS_IS = "Advisor ledger committed; the staged ledger differs and was left as is";
+
+/** What git records for one path in a tree or an index entry: the mode and the blob at it. */
+interface LedgerEntry {
+  readonly mode: string;
+  readonly blob: string;
+}
+
+/** One row of `git ls-files --stage`: an entry at one of the index's three merge stages. */
+interface IndexRow extends LedgerEntry {
+  readonly stage: string;
+}
+
+/** The real index file and the lock git takes to write it, spelled for this worktree. */
+interface IndexPaths {
+  readonly index: string;
+  readonly lock: string;
+}
+
+/**
+ * #3057/#B2: what the user's index holds for the ledger.
+ *
+ * `unmerged` is a conflict the user has not settled: stages 1-3 are the three sides of it, so
+ * there is no single entry to compare and nothing of the user's to overwrite. Rewriting a
+ * conflicted entry's first row — normally stage 2, the side this branch holds — resolves their
+ * conflict to one side without them ever asking, and throws away the other two.
+ */
+type IndexLedger =
+  | { readonly kind: "absent" }
+  | { readonly kind: "unmerged" }
+  | { readonly kind: "entry"; readonly entry: LedgerEntry };
+
+/** `git ls-files --stage -z` rows: `<mode> <blob> <stage>\t<path>`, one NUL-terminated record each. */
+function parseIndexRows(stdout: string): IndexRow[] {
+  const rows: IndexRow[] = [];
+  for (const record of stdout.split("\0")) {
+    const tab = record.indexOf("\t");
+    if (tab === -1) continue;
+    const [mode = "", blob = "", stage = ""] = record.slice(0, tab).split(" ");
+    rows.push({ mode, blob, stage });
+  }
+  return rows;
+}
+
+/** What `parseIndexRows` rows say about the ledger. More than one row, or a nonzero stage, is a conflict. */
+function indexLedger(rows: readonly IndexRow[]): IndexLedger {
+  const only = rows.length === 1 ? rows[0] : undefined;
+  if (rows.length === 0) return { kind: "absent" };
+  if (only === undefined || only.stage !== "0") return { kind: "unmerged" };
+  return { kind: "entry", entry: { mode: only.mode, blob: only.blob } };
+}
+
+/** The real index's rows for `rel` — all of them, so an unresolved conflict is visible as one. */
+async function readIndexRows(cwd: string, rel: string): Promise<IndexRow[]> {
+  return parseIndexRows(await git(["ls-files", "--stage", "-z", "--", `:(literal)${rel}`], cwd));
+}
+
+/** `git ls-tree -z` rows are `<mode> <type> <blob>\t<path>`; only the first record is the ledger. */
+function treeEntry(stdout: string): LedgerEntry | undefined {
+  const record = stdout.split("\0")[0] ?? "";
+  const tab = record.indexOf("\t");
+  if (tab === -1) return undefined;
+  const [mode = "", , blob = ""] = record.slice(0, tab).split(" ");
+  return { mode, blob };
+}
+
+/** The parent commit's mode and blob for `rel`; `undefined` when the parent did not hold the file. */
+async function parentLedgerEntry(cwd: string, parent: string, rel: string): Promise<LedgerEntry | undefined> {
+  const result = await _ledgerCarryDeps.runGit(["ls-tree", "-z", parent, "--", `:(literal)${rel}`], cwd);
+  return result.exitCode === 0 ? treeEntry(result.stdout) : undefined;
+}
+
+/** Whether two entries are the same index entry: git records a mode as well as a content hash. */
+function sameEntry(a: LedgerEntry | undefined, b: LedgerEntry | undefined): boolean {
+  return a !== undefined && b !== undefined && a.mode === b.mode && a.blob === b.blob;
+}
+
+/**
+ * #3057: whether the index entry holds nothing of the user's — it matches the parent commit or
+ * already the blob just committed, or neither the parent nor the index had an entry. A staged mode
+ * change is as much the user's as a staged version is, which is why the mode is compared too. An
+ * unmerged entry is never one's own to rewrite (#B2).
+ */
+function refreshIsOurs(held: IndexLedger, parent: LedgerEntry | undefined, committed: LedgerEntry): boolean {
+  if (held.kind === "unmerged") return false;
+  if (held.kind === "absent") return parent === undefined;
+  return sameEntry(held.entry, parent) || sameEntry(held.entry, committed);
+}
+
+/** The real index and its lock, honouring `GIT_INDEX_FILE` and a linked worktree's own index. */
+async function realIndex(cwd: string): Promise<IndexPaths> {
+  const index = resolve(cwd, await git(["rev-parse", "--git-path", "index"], cwd));
+  return { index, lock: `${index}.lock` };
+}
+
+/**
+ * Seed the index lock with the index it is about to replace, so every unrelated staged entry
+ * survives. With no index at all there is nothing of the user's to preserve: HEAD's entries are
+ * then the base, which is also the state a fresh index would have.
+ */
+async function seedIndexLock(paths: IndexPaths, cwd: string): Promise<void> {
+  try {
+    await _ledgerCarryDeps.copyFile(paths.index, paths.lock);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await git(["read-tree", "HEAD"], cwd, paths.lock);
+  }
+}
+
+/**
+ * Point the ledger's index entry at `entry`, preserving every other entry.
+ *
+ * The lock file is git's own write protocol: the index is copied into it, updated there through
+ * `GIT_INDEX_FILE`, and renamed over the real index. A concurrent git either saw the index before
+ * the rename or sees this one after it, never a half-written one, and every other staged entry is
+ * carried across untouched.
+ */
+async function writeIndexEntry(input: {
+  paths: IndexPaths;
+  cwd: string;
+  rel: string;
+  entry: LedgerEntry;
+}): Promise<void> {
+  const { paths, cwd, rel, entry } = input;
+  await seedIndexLock(paths, cwd);
+  await git(["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.blob},${rel}`], cwd, paths.lock);
+  await _ledgerCarryDeps.rename(paths.lock, paths.index);
+}
+
+/**
+ * #3057/#B1: refresh the real index entry only when it held nothing of the user's, and do the
+ * comparison and the write while holding the repository's real index lock.
+ *
+ * The lock is what makes the pair atomic: holding `<index>.lock` is exactly what makes a
+ * concurrent `git add` of the ledger fail instead of landing between the read and the write and
+ * being discarded by it. Because that lock is the whole guarantee, the refresh is never retried:
+ * a second attempt would only be a second window. An index that cannot be read, or is held by
+ * someone else, skips the refresh — the append is already committed and must not be undone by it.
+ */
+async function refreshIndexEntry(input: {
+  env: BotFixEnv;
+  rel: string;
+  parent: LedgerEntry | undefined;
+  committed: LedgerEntry;
+}): Promise<void> {
+  const { env, rel, parent, committed } = input;
+  const cwd = env.checkout.worktree;
+  let paths: IndexPaths;
+  try {
+    paths = await realIndex(cwd);
+  } catch (error) {
+    warn(env, INDEX_LEFT_AS_IS, error);
+    return;
+  }
+  if (!(await _ledgerCarryDeps.createExclusive(paths.lock))) {
+    warn(env, INDEX_LEFT_AS_IS);
+    return;
+  }
+  let written = false;
+  try {
+    const held = indexLedger(await readIndexRows(cwd, rel));
+    if (!refreshIsOurs(held, parent, committed)) {
+      warn(env, INDEX_LEFT_AS_IS);
       return;
-    } catch (error) {
-      // A held index.lock (the user's own git or editor) is the likely cause; one retry, then say what to run.
-      if (attempt === 1)
-        warn(
-          env,
-          `Advisor ledger committed, but the index still holds the old ledger: run git reset -q HEAD -- ${rel}`,
-          error,
-        );
     }
+    await writeIndexEntry({ paths, cwd, rel, entry: committed });
+    written = true;
+  } catch (error) {
+    warn(env, INDEX_LEFT_AS_IS, error);
+  } finally {
+    // The rename consumes the lock; every other way out has to release it here.
+    if (!written) await _ledgerCarryDeps.removeFile(paths.lock).catch(() => {});
   }
 }
 
@@ -205,8 +399,9 @@ async function commitExactText(input: { env: BotFixEnv; rel: string; text: strin
     if (tree === (await git(["rev-parse", `${parent}^{tree}`], cwd))) return;
     const sign = await signFlag(cwd);
     const commit = await git(["commit-tree", ...sign, tree, "-p", parent, "-m", message], cwd);
+    const parentEntry = await parentLedgerEntry(cwd, parent, rel);
     await git(["update-ref", "-m", `commit: ${message}`, "HEAD", commit, parent], cwd);
-    await refreshIndexEntry(env, rel);
+    await refreshIndexEntry({ env, rel, parent: parentEntry, committed: { mode, blob } });
   } finally {
     await _ledgerCarryDeps.removeDir(dir).catch(() => {});
   }

@@ -104,6 +104,30 @@ function searxng(baseUrl: string = SEARXNG_BASE) {
   return createSearchBackend({ id: "searxng", baseUrl });
 }
 
+/** Every backend the factory can build, each configured the way a session configures it. */
+const ALL_BACKENDS = ["tavily", "brave", "exa", "searxng"] as const;
+
+/** The backend an id names, across the whole factory rather than this story's two. */
+function everyBackend(id: (typeof ALL_BACKENDS)[number]) {
+  return id === "searxng" ? searxng() : createSearchBackend({ id, apiKey: "k" });
+}
+
+/**
+ * A fetch stub that answers a 3xx the way the platform does: a redirect is FOLLOWED
+ * unless the request asked for `redirect: "manual"`, and handed back untouched when it
+ * did. Answering 302 either way would make every test here pass without the policy
+ * this story sets, which is the one thing the two ACs are about.
+ */
+function stubRedirectingSearch(status: number, location: string): SentSearch[] {
+  const sent: SentSearch[] = [];
+  _webSearchDeps.fetch = async (url, init) => {
+    sent.push({ url, init });
+    if (init.redirect === "manual") return new Response("", { status, headers: { location } });
+    return new Response(JSON.stringify({ results: [] }), { status: 200 });
+  };
+  return sent;
+}
+
 /** Both backends this story adds: a test that builds them proves they register. */
 function addedBackends() {
   return [exa(), searxng()];
@@ -268,6 +292,40 @@ describe("the failures an Exa or SearXNG search reports", () => {
       const error = await rejectionAfter(backendOf(id).search("q", { limit: 2 }), async () => {});
       assertNaxError(error);
       expect(error.code).toBe("WEB_SEARCH_FAILED");
+    });
+  }
+});
+
+/**
+ * US-003 (review-f32f-fixes): the transport's redirect policy.
+ *
+ * The search spec requires a non-2xx status to be `WEB_SEARCH_FAILED`, and a 3xx is the one
+ * status a request can turn into a 2xx on its own: the platform follows a redirect by default,
+ * so a backend answering `302 location: …` used to be read as a successful search of whatever
+ * the hop pointed at. The transport asks for `redirect: "manual"` so the status arrives as it
+ * was sent and `assertStatus` classifies it like any other non-2xx.
+ */
+describe("the transport's redirect policy", () => {
+  test("AC-3: a SearXNG 302 answer is a WEB_SEARCH_FAILED carrying the status", async () => {
+    stubRedirectingSearch(302, "https://search.example.lan:8080/login");
+    const error = await rejectionAfter(searxng().search("q", { limit: 2 }), async () => {});
+    assertNaxError(error);
+    expect(error.code).toBe("WEB_SEARCH_FAILED");
+    expect(error.context).toMatchObject({ backend: "searxng", status: 302 });
+  });
+
+  test("AC-4: the SearXNG 302 message names the backend and the status", async () => {
+    stubRedirectingSearch(302, "https://search.example.lan:8080/login");
+    const error = await rejectionAfter(searxng().search("q", { limit: 2 }), async () => {});
+    assertNaxError(error);
+    expect(error.message).toBe("searxng search failed with status 302");
+  });
+
+  for (const id of ALL_BACKENDS) {
+    test(`AC-5 (${id}): the request asks for 'manual' redirects`, async () => {
+      const sent = stubSearch(answer(200, { results: [] }));
+      await everyBackend(id).search("q", { limit: 2 });
+      expect(sent[0]?.init.redirect).toBe("manual");
     });
   }
 });

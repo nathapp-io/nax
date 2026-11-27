@@ -24,6 +24,7 @@
  */
 import { randomUUID } from "node:crypto";
 import {
+  chmodSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -234,11 +235,18 @@ function removeQuietly(path: string): void {
  * one, and a failure before it leaves the old bytes untouched. The temporary
  * name is unique per call and created with `wx`, never a predictable name that
  * another process could have left behind as a symlink.
+ *
+ * `mode` is applied by a `chmod` AFTER the write (US-004, #3061): the create-time
+ * mode is masked by the process umask, so a 0664 exclude file under a 022 umask
+ * came back 0644 — the destination would lose permission bits the user set. The
+ * chmod lands before the rename, so the file git sees is never more permissive
+ * than the user's own.
  */
 function replaceAtomically(path: string, content: string, mode: number | undefined): void {
   const temp = `${dirname(path)}/.${basename(path)}.${process.pid}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, content, { flag: "wx", mode });
+    if (mode !== undefined) chmodSync(temp, mode);
     renameSync(temp, path);
   } finally {
     removeQuietly(temp);

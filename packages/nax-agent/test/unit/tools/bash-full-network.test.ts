@@ -72,3 +72,56 @@ test("stray full network input without opt-in never unwraps", async () => {
   await tool.run({ command: "true", network: "full" }, context);
   expect(requests[0]?.unwrapped).not.toBe(true);
 });
+
+/**
+ * US-002 ACs 8-10: the runtime's decision arrives on the run context, and it
+ * WINS over the tool's own `fullNetwork` option — in both directions, because
+ * an approval granted while the session was unexposed must not become an escape
+ * just because the session read a page while the ask was open.
+ */
+function recordingLauncher(requests: LaunchRequest[]): CommandLauncher {
+  return {
+    state: { kind: "available", backend: "srt", network: ["registry.npmjs.org"] },
+    run: async (req) => {
+      requests.push(req);
+      return {
+        exitCode: 0,
+        stdout: "ok",
+        stderr: "",
+        timedOut: false,
+        executed: [],
+        sandbox: { backend: "none", wrapped: false },
+      };
+    },
+  };
+}
+
+/** The run context plus US-002's field, omitted when the case is a control for its absence. */
+function contextWith(fullNetworkUnwrapped?: boolean) {
+  return { ...context, ...(fullNetworkUnwrapped === undefined ? {} : { fullNetworkUnwrapped }) };
+}
+
+test("AC-8: a run context decided unwrapped launches unwrapped over an unexposed option", async () => {
+  const requests: LaunchRequest[] = [];
+  const tool = createBashTool({ fullNetwork: { isExposed: () => false }, launcher: recordingLauncher(requests) });
+  const result = await tool.run({ command: "echo hi", network: "full" }, contextWith(true));
+  expect(result.isError).toBe(false);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.unwrapped).toBe(true);
+});
+
+test("AC-9: a run context decided wrapped launches wrapped over an exposed option", async () => {
+  const requests: LaunchRequest[] = [];
+  const tool = createBashTool({ fullNetwork: { isExposed: () => true }, launcher: recordingLauncher(requests) });
+  await tool.run({ command: "echo hi", network: "full" }, contextWith(false));
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.unwrapped).toBe(false);
+});
+
+test("AC-10: with no run-context decision the tool's exposed option still unwraps", async () => {
+  const requests: LaunchRequest[] = [];
+  const tool = createBashTool({ fullNetwork: { isExposed: () => true }, launcher: recordingLauncher(requests) });
+  await tool.run({ command: "echo hi", network: "full" }, contextWith());
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.unwrapped).toBe(true);
+});

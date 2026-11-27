@@ -4,7 +4,10 @@ import { askSummary, MAX_ASK_SUMMARY_CHARS } from "#src/tools/ask-request";
 import type { CodingToolRuntime } from "#src/tools/index";
 import { adaptProviderTool, compileToolPolicy, createCodingToolRuntime } from "#src/tools/index";
 import type { ProviderTool } from "#src/tools/provider-types";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import type { ToolScope } from "#src/tools/types";
+import { createWebExposure } from "#src/web/exposure";
+import { createWebToolProvider, WEB_PROVIDER_ID } from "#src/web/provider";
+import { assertDefined, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 /**
  * US-003: a tool's DECLARED summary-only fields, rendered on an approval line.
@@ -118,10 +121,55 @@ function providerTool(overrides: Partial<ProviderTool> = {}): ProviderTool {
   };
 }
 
+/**
+ * The scope the session really runs the web fetch tool under: the provider's own
+ * tool, through the one adaptation every provider tool goes through. Built here
+ * rather than typed out, so a declaration that never reaches the tool cannot pass.
+ */
+async function adaptedFetchScope(): Promise<ToolScope> {
+  const tools = await createWebToolProvider({
+    exposure: createWebExposure(),
+    maxResults: 5,
+    fetch: { maxBytes: 1_000, timeoutMs: 1_000 },
+    allowOrigins: [],
+  }).tools("/tmp/nax-web-summary");
+  const fetchTool = tools.find((tool) => tool.localName === "fetch");
+  assertDefined(fetchTool, "the provider's fetch tool");
+  return adaptProviderTool(WEB_PROVIDER_ID, fetchTool).scope;
+}
+
 describe("adaptProviderTool — summary fields", () => {
   test("AC-12: a provider tool's summaryFields reach the adapted tool's scope", () => {
     const adapted = adaptProviderTool("p", providerTool({ summaryFields: ["slug"] }));
     expect(adapted.scope.summaryFields).toEqual(["slug"]);
+  });
+
+  /**
+   * US-003 (review-f32f-fixes): the web provider's fetch tool declares its
+   * destination, so an approval card for a fetch names the URL it will read
+   * instead of the tool name twice. Read through the REAL provider: the
+   * declaration is only real if it is on the tool the session adapts.
+   */
+  test("AC-1: the adapted web fetch tool summarises as 'web__fetch url=<destination>'", async () => {
+    const scope = await adaptedFetchScope();
+    const s = askSummary("web__fetch", scope, { url: "https://docs.example.com/guide" });
+    expect(s).toEqual({ summary: "web__fetch url=https://docs.example.com/guide", unshowable: false });
+  });
+
+  test("AC-1 control: the adapted web search tool declares no destination field", async () => {
+    // The control: the fetch tool's scope is not simply "whatever the provider
+    // built" -- the search tool beside it stays exactly the fieldless scope it
+    // was, so the assertion above is the fetch tool's own declaration.
+    const tools = await createWebToolProvider({
+      exposure: createWebExposure(),
+      search: { id: "tavily", search: async () => [] },
+      maxResults: 5,
+      fetch: { maxBytes: 1_000, timeoutMs: 1_000 },
+      allowOrigins: [],
+    }).tools("/tmp/nax-web-summary");
+    const search = tools.find((tool) => tool.localName === "search");
+    assertDefined(search, "the provider's search tool");
+    expect(adaptProviderTool(WEB_PROVIDER_ID, search).scope).toEqual({ pathFields: [] });
   });
 
   test("AC-13: a provider tool without summaryFields adapts to exactly an empty fieldless scope", () => {

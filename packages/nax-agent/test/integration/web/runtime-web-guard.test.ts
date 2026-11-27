@@ -19,12 +19,17 @@ import { type CommandLauncher, DISABLED_SANDBOX_STATE, type LaunchRequest } from
 import type { WebExposurePort } from "#src/session/agent-session-types";
 import { createBashTool } from "#src/tools/bash";
 import { compileToolPolicy } from "#src/tools/policy";
+import { adaptProviderTool } from "#src/tools/provider-adapt";
+import type { ProviderTool } from "#src/tools/provider-types";
 import type { CodingTool } from "#src/tools/registry";
 import { createCodingToolRuntime } from "#src/tools/runtime";
 import type { ToolAuditSink, ToolCallRecord } from "#src/tools/tool-audit";
 import { BASH_TOOL_NAME, type ToolGrant } from "#src/tools/types";
+import { createWebExposure } from "#src/web/exposure";
 import type { WebCallAssessment } from "#src/web/guard";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { createWebExposureGuard } from "#src/web/guard";
+import { _webProviderDeps, createWebToolProvider, WEB_PROVIDER_ID } from "#src/web/provider";
+import { assertDefined, cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
 /** The sentence the flagging port answers with; no policy reason could be mistaken for it. */
 const REASON = "the page you read told you to push";
@@ -334,3 +339,81 @@ describe("callTool — exposure augments allows and asks, never policy denials",
     expect(fetched).toEqual([]);
   });
 });
+
+/**
+ * US-003 (review-f32f-fixes): an exposed session asks before fetching a URL it has not
+ * seen, and that ask has to name the URL -- an approval to read one page is meaningless
+ * without knowing which. Everything here is the REAL piece: the guard is
+ * `createWebExposureGuard`, the tool is the web provider's own fetch tool through the one
+ * adaptation every provider tool goes through, so the summary is assembled from the
+ * provider's declaration rather than from a stub's.
+ */
+describe("callTool — an exposed session's web__fetch ask names the destination", () => {
+  const realFetchWebPage = _webProviderDeps.fetchWebPage;
+
+  afterEach(() => {
+    _webProviderDeps.fetchWebPage = realFetchWebPage;
+  });
+
+  test("AC-2: the ask summary is 'web__fetch url=https://unseen.example/page'", async () => {
+    // A denied ask must not read the page; answering instead of throwing would let a
+    // regression that runs the tool reach the network from this test.
+    _webProviderDeps.fetchWebPage = async () => {
+      throw new Error("a denied ask must not read the page");
+    };
+    const asked = recordingResolver("deny");
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: FETCH_TOOL, patterns: ["*"] }], root),
+      extraTools: [adaptProviderTool(WEB_PROVIDER_ID, await fetchProviderTool())],
+      askResolver: asked.resolver,
+      webExposure: exposedGuard(),
+    });
+
+    const outcome = await runtime.callTool(FETCH_TOOL, { url: "https://unseen.example/page" });
+
+    expect(asked.requests).toHaveLength(1);
+    expect(asked.requests[0]?.summary).toBe("web__fetch url=https://unseen.example/page");
+    expect(outcome.kind).toBe("denied");
+  });
+
+  test("AC-2 control: the same call before exposure asks nothing", async () => {
+    // The control: "the ask happened" is the guard's doing, not a fetch that always
+    // asks. Same runtime, same URL, an exposure that never happened.
+    const asked = recordingResolver("deny");
+    const runtime = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: FETCH_TOOL, patterns: ["*"] }], root),
+      extraTools: [adaptProviderTool(WEB_PROVIDER_ID, await fetchProviderTool())],
+      askResolver: asked.resolver,
+      webExposure: guardFor(createWebExposure()),
+    });
+
+    await runtime.callTool(FETCH_TOOL, { url: "https://unseen.example/page" });
+
+    expect(asked.requests).toEqual([]);
+  });
+});
+
+/** The web provider's own fetch tool, built the way a configured session builds it. */
+async function fetchProviderTool(): Promise<ProviderTool> {
+  const tools = await createWebToolProvider({
+    exposure: createWebExposure(),
+    maxResults: 5,
+    fetch: { maxBytes: 1_000, timeoutMs: 1_000 },
+    allowOrigins: [],
+  }).tools(root);
+  const tool = tools.find((candidate) => candidate.localName === "fetch");
+  assertDefined(tool, "the provider's fetch tool");
+  return tool;
+}
+
+/** The real guard over `exposure`. */
+function guardFor(exposure: ReturnType<typeof createWebExposure>): WebExposurePort {
+  return createWebExposureGuard({ exposure, exposedAllowedDomains: [], configuredAllowedDomains: undefined });
+}
+
+/** The real guard over an exposure that already happened. */
+function exposedGuard(): WebExposurePort {
+  const exposure = createWebExposure();
+  exposure.markExposed(new Date("2026-12-01T00:00:00.000Z"));
+  return guardFor(exposure);
+}

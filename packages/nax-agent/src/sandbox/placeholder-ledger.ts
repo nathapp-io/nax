@@ -56,6 +56,17 @@ export interface LedgerFile {
   readonly entries: readonly LedgerEntry[];
 }
 
+/** What a prune keeps and what it drops: `prune(opts)` decides. */
+export interface PruneOptions {
+  /**
+   * Drop the pending entries too (US-004). A pending entry is a path a wrap MAY
+   * have created a placeholder at but none was seen at; once no wrap is left to
+   * identify it, nothing ever will, and leaving it lets a user file created later
+   * at that path be adopted by the next `observe`.
+   */
+  readonly abandonPending?: boolean;
+}
+
 /** The ledger a process keeps of the placeholders its own wraps may have made. */
 export interface PlaceholderLedger {
   /** Record every path a wrap could create a placeholder at, skipping the ones already known. */
@@ -65,8 +76,8 @@ export interface PlaceholderLedger {
    * Returns how many entries are still pending afterwards.
    */
   observe(): number;
-  /** Drop the identified entries whose placeholder is no longer on disk. */
-  prune(): void;
+  /** Drop the identified entries whose placeholder is no longer on disk, and the pending ones too with `abandonPending`. */
+  prune(opts?: PruneOptions): void;
 }
 
 /** One warn naming the file a trust check refused, and no ledger from it. */
@@ -288,12 +299,16 @@ function createLedger(host: LedgerHost): ProcessLedger {
       return entries.filter(isPending).length;
     },
 
-    prune(): void {
-      const kept = entries.filter((entry) => isPending(entry) || matchesDisk(entry));
+    prune(opts?: PruneOptions): void {
+      const kept = entries.filter(
+        (entry) =>
+          // Pending entries stay unless the caller abandons them: another wrapped
+          // command may still be starting the placeholder this one has not seen
+          // yet, and a pending entry names no inode to compare.
+          matchesDisk(entry) || (opts?.abandonPending !== true && isPending(entry)),
+      );
       const changed = kept.length !== entries.length;
       entries = kept;
-      // Pending entries stay: another wrapped command may still be starting the
-      // placeholder this one has not seen yet.
       if (entries.length === 0) {
         removeQuietly(filePath);
         return;

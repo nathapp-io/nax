@@ -100,7 +100,10 @@ test("AC-21: failed network update still sends a flagged call to the native sess
       expect(ask).toMatchObject({
         tool: "Bash",
         callId: "full-network",
-        reason: "full network after this session read web content",
+        // US-002: the ask the person approves names the escape it grants, and
+        // carries the marker a host keys on.
+        reason: "full network after this session read web content; runs OUTSIDE the sandbox: full network requested",
+        unsandboxed: true,
       });
       assertDefined(ask);
       session.answer(ask.requestId, { decision: "deny" });

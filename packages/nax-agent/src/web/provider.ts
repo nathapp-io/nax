@@ -244,6 +244,10 @@ function fetchTool(opts: WebToolProviderOptions, now: () => Date): ProviderTool 
       required: ["url"],
       additionalProperties: false,
     },
+    // US-003: an approval for a fetch is an approval to read ONE page, so the card names
+    // which. Summary-only -- the URL is never grant-checked (the tool's grant is) and is
+    // rendered exactly as the call typed it, before `normalizeWebUrl` runs.
+    summaryFields: ["url"],
     run: (input, ctx) => runFetch(forRun, input, ctx),
   };
 }

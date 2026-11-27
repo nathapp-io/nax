@@ -17,10 +17,13 @@
  * Only three sources count, because only they are paths nax knows a sandbox may
  * place a placeholder at: srt's mandatory write-deny files, srt's dangerous
  * directory names (an absent one is mounted over by a FILE placeholder, #2986),
- * and the entries of the trusted process ledger (US-002). A path git already tracks is never
- * excluded — a tracked `.gitmodules` the agent legitimately empties must still
- * stage, and the placeholder at an untracked name is the only one that could
- * enter history by accident.
+ * and the entries of the trusted process ledger (US-002). The first two are Linux
+ * sources (US-004, #3059): bwrap is the only backend that creates such a
+ * placeholder, so on any other platform the mandatory names are simply user paths
+ * and excluding one would withhold the user's own file from staging. A path git
+ * already tracks is never excluded — a tracked `.gitmodules` the agent
+ * legitimately empties must still stage, and the placeholder at an untracked name
+ * is the only one that could enter history by accident.
  *
  * Directories are deliberately absent from the result: git stages no directory,
  * so an empty placeholder directory cannot be committed (US-006 scope). The
@@ -80,6 +83,28 @@ function ledgerEntryPaths(): string[] {
 }
 
 /**
+ * The paths srt's own mandatory deny names point at under `base`, or none where
+ * no sandbox creates a placeholder at them.
+ *
+ * bwrap is the only backend that mounts an empty 0444 file (or directory) over an
+ * absent deny name, and it runs on Linux only — seatbelt creates none. So the
+ * mandatory names are a Linux source: elsewhere an empty 0444 `.mcp.json` is a
+ * file the user made, and excluding it would withhold it from every broad staging
+ * pass (US-004, #3059). The ledger is not gated this way: a ledger exists only on
+ * Linux, so its entries are already platform-truthful.
+ */
+function mandatoryPaths(base: string): string[] {
+  if (_placeholderDeps.platform() !== "linux") return [];
+  return [
+    ...SRT_MANDATORY_DENY_FILES.map((name) => join(base, name)),
+    // The dangerous-directory names too (#2986): when `.idea` or `.vscode` is absent bwrap
+    // mounts over it with an empty 0444 REGULAR FILE, not a directory, and that file is as
+    // stageable as `.mcp.json`. A name that is a directory is dropped below (`kind` check).
+    ...SRT_MANDATORY_DENY_DIRS.map((name) => join(base, name)),
+  ];
+}
+
+/**
  * The placeholder-shaped paths under `cwd` that a staging pass must exclude, as
  * paths relative to `cwd`, deduplicated and in a stable order.
  *
@@ -91,14 +116,7 @@ export function stagingPlaceholderPaths(cwd: string, trackedPaths: readonly stri
   const tracked = new Set(trackedPaths);
   const out: string[] = [];
   const seen = new Set<string>();
-  // The dangerous-directory names too (#2986): when `.idea` or `.vscode` is absent bwrap
-  // mounts over it with an empty 0444 REGULAR FILE, not a directory, and that file is as
-  // stageable as `.mcp.json`. A name that is a directory is dropped below (`kind` check).
-  const sources = [
-    ...SRT_MANDATORY_DENY_FILES.map((name) => join(base, name)),
-    ...SRT_MANDATORY_DENY_DIRS.map((name) => join(base, name)),
-    ...ledgerEntryPaths(),
-  ];
+  const sources = [...mandatoryPaths(base), ...ledgerEntryPaths()];
 
   for (const path of sources) {
     if (!inside(base, path)) continue;

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -394,6 +394,12 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
 
 describe("gitCommitTool — a placeholder is never committed (US-006)", () => {
   withDepsRestore(_placeholderDeps);
+
+  beforeEach(() => {
+    // US-004: the mandatory names are a Linux source (bwrap creates the
+    // placeholder), so pin the platform instead of inheriting the host's.
+    _placeholderDeps.platform = () => "linux";
+  });
 
   test("AC-9: the commit holds notes.md and not the 0444 empty .mcp.json", async () => {
     const repo = await makeRepo();

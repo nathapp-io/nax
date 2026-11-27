@@ -323,6 +323,19 @@ describe("the process ledger", () => {
     expect(readProcessLedger().entries).toEqual([{ path: target }]);
   });
 
+  // US-004 (#3055): a pending entry that no wrap is left to identify is a path a
+  // user file created later at would be adopted through, so the backend abandons
+  // it once its last wrap is done.
+  test("US-004 AC-7: prune({ abandonPending: true }) abandons a pending entry and deletes the ledger", () => {
+    const ledger = currentLedger();
+    ledger.recordAbsent([join(cwd, ".zprofile")]);
+    expect(existsSync(processLedgerPath())).toBe(true);
+
+    ledger.prune({ abandonPending: true });
+
+    expect(existsSync(processLedgerPath())).toBe(false);
+  });
+
   test("US-002: prune drops only the entries that no longer match, and rewrites the rest", () => {
     const gone = join(cwd, ".zprofile");
     const alive = join(cwd, ".zshrc");

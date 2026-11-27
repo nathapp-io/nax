@@ -57,6 +57,12 @@ export interface ChatSendOptions {
   readonly title?: string;
   /** Images to send with this message; an absent or empty list sends the text alone. */
   readonly images?: readonly ImageAttachment[];
+  /**
+   * A turn the host generated rather than a person — a background task or job notice (US-005).
+   * Its text is never recorded as seen URLs: a model-authored command could otherwise mark any
+   * URL as seen and a later `web__fetch` of it would skip the unseen-URL ask.
+   */
+  readonly automatic?: boolean;
 }
 
 /** Shared-session chat lifecycle, independent of the terminal shell. */
@@ -98,8 +104,11 @@ export interface ChatHost {
    * Hand text to the running turn (US-004). Optional so a hand-built host typechecks: a host
    * without it makes the screen interrupt and send instead, exactly as an `unsupported` brain
    * does. `no_turn` when there is no session to steer.
+   *
+   * A steer whose text the session takes records the URLs that text names, unless the caller
+   * marks it `automatic` — a host-generated notice, whose text must never be recorded (US-005).
    */
-  steer?(text: string): SteerResult;
+  steer?(text: string, options?: { readonly automatic?: boolean }): SteerResult;
   /**
    * Compact the conversation history now (US-005), recording what the summarizer call spent.
    * Optional so a hand-built host typechecks: one without it makes the screen's `/compact`

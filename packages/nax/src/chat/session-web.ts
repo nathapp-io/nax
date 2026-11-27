@@ -12,6 +12,21 @@ export function sessionWebSnapshot(web: ChatWeb | undefined, stored: SessionMeta
   return { ...snapshot, seenUrls: [...snapshot.seenUrls] };
 }
 
+/**
+ * The one recording rule for text a person typed (US-005): the URLs an entered message names
+ * become seen, so a later `web__fetch` of one of them does not ask again.
+ *
+ * The rule lives here, not in the session wrapper, because the wrapper cannot tell a person's
+ * text from text the model or the host composed: a background command's own `curl` line once
+ * counted, and pre-approving a URL a model chose defeats the unseen-URL ask. Callers are the
+ * host's typed entries alone — `send` without `automatic`, and an accepted `steer` — so the
+ * mention envelope is parsed here too: only the typed text counts, never an attachment's body.
+ */
+export function recordTypedUrls(web: ChatWeb | undefined, message: string): void {
+  if (web === undefined) return;
+  web.exposure.recordUrls(extractWebUrls(parseMentionMessage(message)?.text ?? message));
+}
+
 /** Only the per-open provider list changes; the host resources remain untouched. */
 export function sessionWebProviders(input: {
   readonly providers: readonly ToolProvider[] | undefined;
@@ -26,10 +41,11 @@ export function sessionWebProviders(input: {
   return [...providers.filter((provider) => provider.id !== "web"), ...(input.web ? [input.web.provider] : [])];
 }
 
-function wrapWebSession(session: AgentSession, web: ChatWeb, drain: () => Promise<void>): AgentSession {
+function wrapWebSession(session: AgentSession, drain: () => Promise<void>): AgentSession {
   const send: AgentSession["send"] = (message, ...args) => {
-    web.exposure.recordUrls(extractWebUrls(parseMentionMessage(message)?.text ?? message));
-    // Claim synchronously, before the wrapper's iterator or metadata queue is awaited.
+    // Claim synchronously, before the wrapper's iterator or metadata queue is awaited. Recording
+    // what the message names is the host's decision (US-005), never the wrapper's: this seam sees
+    // model- and host-composed text too.
     const events = session.send(message, ...args);
     return (async function* () {
       try {
@@ -79,7 +95,7 @@ export function persistSessionWeb(input: {
     if (failed) throw failed.error;
   }
   return {
-    wrap: (session) => wrapWebSession(session, web, drain),
+    wrap: (session) => wrapWebSession(session, drain),
     release: async () => {
       unsubscribe();
       await drain();

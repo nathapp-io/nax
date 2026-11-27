@@ -1,25 +1,53 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import { AgentSessionError, createMemoryTranscriptStore, type SendInput, type ToolProvider } from "@nathapp/nax-agent";
 import {
   assertDefined,
   fetchChatPage,
   makeChatWebHarness,
+  makeLogger,
   makeNaxConfig,
   turnEndEvent,
+  WEB_NOW,
   waitForAsyncCondition,
 } from "@test/helpers";
+import { createChatHost } from "@/chat";
 import { _acpSessionDeps } from "@/chat/acp/acp-session-options";
 import { formatMentionMessage } from "@/chat/mentions/mention-envelope";
+import type { ChatSessionHandle } from "@/chat/open-chat-session";
 
 let h: ReturnType<typeof makeChatWebHarness>;
+const hosts: ReturnType<typeof createChatHost>[] = [];
 const savedAcp = { ..._acpSessionDeps };
 beforeEach(() => {
   h = makeChatWebHarness();
 });
 afterEach(async () => {
+  await Promise.all(hosts.splice(0).map((host) => host.close()));
   await h.dispose();
   Object.assign(_acpSessionDeps, savedAcp);
 });
+
+/**
+ * US-005: the host a person's text enters, opened over the handle the harness just opened.
+ * Recording is the host's own decision now, so the wrapper-only cases above and the
+ * host-level cases here observe the same exposure through different entry points.
+ */
+async function createHostOver(handle: ChatSessionHandle) {
+  const host = createChatHost({
+    config: makeNaxConfig({ chat: h.config.chat, outputDir: join(h.dir, "output") }),
+    cwd: h.dir,
+    repoRoot: h.dir,
+    chain: null,
+    storage: h.storage,
+    now: () => WEB_NOW,
+    logger: makeLogger(),
+    open: async () => handle,
+  });
+  hosts.push(host);
+  await host.start({ mode: "full", model: "anthropic/test" });
+  return host;
+}
 
 function nativeOptions() {
   return h.deps.nativeBackend.mock.calls.at(-1)?.[0];
@@ -114,10 +142,11 @@ test("AC-6 successful web fetch persists exposure before turn end", async () => 
   expect(handle.web?.exposure.snapshot()).toEqual((await h.storage.readMeta(handle.meta.sessionId))?.web);
   expect(handle.meta.web).toBeUndefined();
 });
-test("AC-9 typed URL is seen synchronously before send starts and send input is preserved", async () => {
+test("AC-9 handle.session.send alone records nothing and forwards message and input unchanged", async () => {
   const handle = await h.open();
   const original = mock((message: string, _input?: SendInput) => {
-    expect(h.web()?.exposure.hasSeen("https://b.example/doc")).toBe(true);
+    // US-005: the recording moved to ChatHost.send, so the wrapped session records nothing.
+    expect(h.web()?.exposure.hasSeen("https://b.example/doc")).toBe(false);
     return (async function* () {
       yield turnEndEvent(message);
     })();
@@ -128,9 +157,11 @@ test("AC-9 typed URL is seen synchronously before send starts and send input is 
     /* consume */
   }
   expect(original).toHaveBeenCalledWith("read https://b.example/doc", input);
+  expect(handle.web?.exposure.hasSeen("https://b.example/doc")).toBe(false);
 });
 test("AC-10 URLs inside attached files are not pre-approved", async () => {
   const handle = await h.open();
+  const host = await createHostOver(handle);
   const message = formatMentionMessage("see file", [
     { path: "a.txt", status: "attached", note: "", body: "https://c.example/x" },
   ]);
@@ -138,9 +169,7 @@ test("AC-10 URLs inside attached files are not pre-approved", async () => {
     expect(h.web()?.exposure.hasSeen("https://c.example/x")).toBe(false);
     yield turnEndEvent();
   });
-  for await (const _ of handle.session.send(message)) {
-    /* consume */
-  }
+  await host.send(message, () => {});
   expect(handle.web?.exposure.snapshot().seenUrls).toEqual([]);
 });
 test("AC-11 returned handle carries the exact guard passed to the backend", async () => {

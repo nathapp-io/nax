@@ -6,18 +6,21 @@
  * whole through `writeFileAtomic`: the bytes land in a sibling `.tmp` stage and
  * are renamed over the entry name, so a crash leaves either the old entry or
  * none, never a torn one, and a reader never sees a half-written file. `seq`
- * numbers the entries in the order they were taken. It is assigned inside a
- * promise chain local to this instance, so two concurrent `enqueue` calls on
- * one outbox get distinct sequences; a second process writing the same
- * directory is outside that chain and may hand out an equal sequence, which is
- * why `list` breaks a tie by client id — the order stays deterministic rather
- * than globally correct.
+ * numbers the entries in the order they were taken. A promise chain orders this
+ * instance's enqueues, and the shared file lock guards assignment across processes.
+ * `list` still breaks a tie by client id for entries written by earlier versions.
  *
  * A file whose name matches the entry pattern but whose content is not an entry
  * is never silently dropped: `list` leaves it out and `listInvalid` names it, so
  * a caller can report what it could not read. A rejected entry stays in the
  * outbox (`state: "rejected"`) instead of being deleted — the reason is the
  * record of why the provider refused it, and a later CLI may requeue it.
+ *
+ * Removal on a caller's decision follows the same rule as a read: the entry file
+ * is the fact, never a caller's listing of it. `requeue` and `discard` run from
+ * the CLI while a sync may be draining, so an entry a caller saw as rejected may
+ * already be a queued write again; `removeIfRejected` claims the file by rename,
+ * reads what it holds there, and puts a live entry back untouched.
  *
  * The one length rule an entry carries — a reason is at most
  * `MEMORY_FORGET_REASON_MAX_CHARS` — is enforced where an entry is *taken*
@@ -30,6 +33,13 @@
  * Reads, directory creation and removal go through the mirror store's
  * filesystem seam, `_memoryStoreDeps`; the write path is `writeFileAtomic`, whose
  * own seam is `_atomicWriteDeps`. Temp names are never spelled here.
+ *
+ * One entry may name another in `awaits`: the client id it must not be delivered before. A
+ * merge stages one save for the replacement it wrote and one forget per source it folded, and
+ * the reconcile step (`sync-drain.ts`) is what enforces the order — the queue only records it.
+ * The dependency is therefore bookkeeping, not content: it is validated when the entry is taken
+ * (an id the queue could never hold is refused with the entry's own id check) and it is never
+ * part of the request a provider is handed.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -37,6 +47,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { NaxError } from "#src/infra/nax-error";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { withFileLock } from "#src/internal/file-lock";
 import { byCodePoint, byNumber } from "#src/internal/sort";
 import { parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
@@ -49,11 +60,26 @@ const ERROR_STAGE = "memory";
 const ENTRY_FILE_RE = /^(\d{8})-([A-Za-z0-9_-]+)\.json$/;
 const ENTRY_SEQ_DIGITS = 8;
 const ENTRY_SUFFIX = ".json";
+/**
+ * The suffix a claimed entry file carries while its removal is being decided.
+ *
+ * It is appended after `.json`, so `ENTRY_FILE_RE` never matches a claimed name: the claim is
+ * outside the entry namespace. Every operation first restores leftover claims under the same
+ * lock that guards removal, so even a queued write claimed just before a crash stays discoverable.
+ */
+const CLAIM_SUFFIX = ".claim";
 /** A link at an entry name is not an entry this outbox wrote, so reads never follow one. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
-/** The write the caller hands over: it owns the content, the outbox may own the id. */
-type OutboxRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string };
+/** The write the caller hands over: it owns the content, the outbox may own the ids. */
+type OutboxRequest = Omit<MemoryWriteRequest, "clientId"> & {
+  clientId?: string;
+  /** The client id of an entry this one must not be delivered before. */
+  awaits?: string;
+};
+
+/** A request the outbox has settled: its client id is known and its dependency may be carried. */
+type PreparedRequest = MemoryWriteRequest & { readonly awaits?: string };
 
 /** One queued write as the outbox holds it: the request plus where it sits in the order. */
 export type MemoryOutboxEntry = MemoryWriteRequest & {
@@ -68,6 +94,14 @@ export type MemoryOutboxEntry = MemoryWriteRequest & {
   readonly badResponses?: number;
   /** The message of the last bad response, kept so a parked entry can say why. */
   readonly lastError?: string;
+  /**
+   * The client id of the entry this one waits on: a merge's source retire names the save of the
+   * replacement it was folded into. It is queue bookkeeping, so it never reaches a provider
+   * (`requestOf` in `sync-drain.ts` projects the request from the fields the two shapes share)
+   * and it is read only by the drain, which refuses to deliver this entry once that one is gone
+   * or refused.
+   */
+  readonly awaits?: string;
 };
 
 /** The durable queue of unacknowledged writes. */
@@ -76,12 +110,27 @@ export interface MemoryOutbox {
    * Take one write, stamped with its sequence. A request the queue cannot carry is refused
    * before any file is written: `MEMORY_WRITE_REFUSED` for a reason past
    * `MEMORY_FORGET_REASON_MAX_CHARS` (or empty, or spanning lines) and
-   * `MEMORY_CLIENT_ID_INVALID` for an id that is not one.
+   * `MEMORY_CLIENT_ID_INVALID` for an id that is not one — its own client id, or the id it
+   * `awaits`.
    */
   enqueue(request: OutboxRequest): Promise<MemoryOutboxEntry>;
   list(): Promise<MemoryOutboxEntry[]>;
   listInvalid(): Promise<string[]>;
   remove(clientId: string): Promise<void>;
+  /**
+   * The entry the outbox holds under `clientId` right now, read from its file; `undefined` when
+   * it holds none. A caller's `list` is a snapshot — this is the entry as it is at the call.
+   */
+  held(clientId: string): Promise<MemoryOutboxEntry | undefined>;
+  /**
+   * Remove an entry only while it still holds a **rejected** entry, answering whether it did.
+   *
+   * The entry file is claimed by rename and its content read there, so the entry that is
+   * removed is the one that was checked: a `queued` entry (put back by `requeue` between a
+   * caller's listing and this call) is renamed back untouched. Removing a requeued retry would
+   * throw away a write nobody has delivered.
+   */
+  removeIfRejected(clientId: string): Promise<boolean>;
   markRejected(clientId: string, reason: string): Promise<void>;
   /**
    * Count one bad response against a queued entry and keep its message; answers the entry's new
@@ -117,6 +166,7 @@ const EntrySchema = z.object({
   requestReason: z.string().optional(),
   badResponses: z.number().int().positive().optional(),
   lastError: z.string().optional(),
+  awaits: z.string().regex(MEMORY_CLIENT_ID_RE).optional(),
   seq: z.number().int().positive(),
   enqueuedAt: z.string().min(1),
   state: z.enum(["queued", "rejected"]),
@@ -248,6 +298,72 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       throw error;
     }
   }
+  /**
+   * Restore every unfinished removal, including unreadable entries, before exposing the queue.
+   * The shared lock proves no current remover owns a claim. Recovery is itself one rename: a
+   * crash leaves either the claim for the next recovery or the entry in its normal namespace.
+   * A collision is not permission to overwrite either version; name it instead of losing bytes.
+   */
+  async function recoverClaims(): Promise<void> {
+    const names = new Set(await entryNames());
+    for (const name of names) {
+      if (!name.endsWith(CLAIM_SUFFIX)) continue;
+      const original = name.slice(0, -CLAIM_SUFFIX.length);
+      if (entryFileNamed(original) === null) continue;
+      if (names.has(original)) {
+        throw new NaxError(
+          "memory outbox claim conflicts with an existing entry; preserve both files for recovery",
+          "MEMORY_OUTBOX_CLAIM_CONFLICT",
+          {
+            stage: ERROR_STAGE,
+            entryPath: join(dir, original),
+            claimPath: join(dir, name),
+          },
+        );
+      }
+      await _memoryStoreDeps.rename(join(dir, name), join(dir, original));
+    }
+  }
+
+  /**
+   * Snapshot reads stay nonblocking while an atomic write is staged. If a claim is visible,
+   * join the removal lock before recovering it: it may still belong to a live remover.
+   */
+  async function reading<T>(operation: () => Promise<T>, empty: T): Promise<T> {
+    const names = await entryNames();
+    const hasClaim = names.some(
+      (name) => name.endsWith(CLAIM_SUFFIX) && entryFileNamed(name.slice(0, -CLAIM_SUFFIX.length)) !== null,
+    );
+    return hasClaim ? locked(operation, empty) : operation();
+  }
+
+  /**
+   * Writers and recovery share the removal lock, across instances and processes. Mutators of
+   * an absent directory return their empty result without creating artifacts. Enqueue creates
+   * the directory before entering; validation still happens before any I/O. Older versions
+   * without this lock must not run against the same queue concurrently.
+   */
+  async function locked<T>(operation: () => Promise<T>, empty: T): Promise<T> {
+    try {
+      await _memoryStoreDeps.lstat(dir);
+    } catch (error) {
+      if (isMissing(error)) return empty;
+      throw error;
+    }
+    return underLock(operation);
+  }
+
+  function underLock<T>(operation: () => Promise<T>): Promise<T> {
+    return withFileLock(
+      join(dir, ".outbox.lock"),
+      async () => {
+        await recoverClaims();
+        return operation();
+      },
+      { lockName: "memory-outbox", errorPrefix: "[memory]" },
+    );
+  }
+
   /** Every entry file in the directory, in name order: the only names this outbox reads. */
   async function entryFiles(): Promise<EntryFile[]> {
     return (await entryNames())
@@ -269,10 +385,14 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       return null;
     }
   }
+  /** One path as an entry, or `null` when its content is not one. */
+  async function readEntryAt(path: string): Promise<MemoryOutboxEntry | null> {
+    const text = await readEntryText(path);
+    return text === null ? null : toEntry(text);
+  }
   /** One named file as an entry, or `null` when its content is not one. */
   async function readEntry(file: EntryFile): Promise<MemoryOutboxEntry | null> {
-    const text = await readEntryText(join(dir, file.name));
-    return text === null ? null : toEntry(text);
+    return readEntryAt(join(dir, file.name));
   }
   /** The whole directory: readable entries in sequence order, plus the names that are not. */
   async function scan(): Promise<OutboxScan> {
@@ -291,10 +411,15 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return (await entryFiles()).filter((file) => file.clientId === clientId);
   }
 
-  /** The request with its client id settled: a supplied id is kept, a missing one is minted. */
-  function withClientId(request: OutboxRequest): MemoryWriteRequest {
+  /** The request with its ids settled: a supplied client id is kept, a missing one is minted. */
+  function withClientId(request: OutboxRequest): PreparedRequest {
     const clientId = request.clientId ?? randomUUID();
     if (!MEMORY_CLIENT_ID_RE.test(clientId)) throw clientIdInvalid(clientId);
+    // The awaited id names an entry of this same queue, so it is held to the same shape — and
+    // refused before anything is written, exactly as the entry's own id is. A dependency the
+    // queue could never hold would be a wait that never ends.
+    if (request.awaits !== undefined && !MEMORY_CLIENT_ID_RE.test(request.awaits))
+      throw clientIdInvalid(request.awaits);
     return { ...request, clientId };
   }
 
@@ -305,7 +430,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   }
 
   /** Write one entry file, creating the directory only now that there is something to store. */
-  async function writeEntry(request: MemoryWriteRequest): Promise<MemoryOutboxEntry> {
+  async function writeEntry(request: PreparedRequest): Promise<MemoryOutboxEntry> {
     const seq = (await highestSeq()) + 1;
     const entry: MemoryOutboxEntry = { ...request, seq, enqueuedAt: now().toISOString(), state: "queued" };
     await _memoryStoreDeps.mkdir(dir, { recursive: true });
@@ -318,7 +443,10 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     // delay the next one, and a reason the queue cannot carry writes no entry at all.
     const prepared = withClientId(request);
     assertReasonCarries(prepared);
-    const run = chain.then(() => writeEntry(prepared));
+    const run = chain.then(async () => {
+      await _memoryStoreDeps.mkdir(dir, { recursive: true });
+      return underLock(() => writeEntry(prepared));
+    });
     // The chain never carries a rejection forward: one failed enqueue must not poison the next.
     chain = run.then(
       () => undefined,
@@ -339,6 +467,55 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     for (const file of await filesFor(clientId)) {
       await _memoryStoreDeps.rm(join(dir, file.name), { force: true });
     }
+  }
+
+  async function held(clientId: string): Promise<MemoryOutboxEntry | undefined> {
+    for (const file of await filesFor(clientId)) {
+      const entry = await readEntry(file);
+      if (entry !== null) return entry;
+    }
+    return undefined;
+  }
+
+  /**
+   * One entry file, removed only if it still holds a rejected entry.
+   *
+   * The file is claimed by rename before it is read, because the read and the removal have to
+   * see the same bytes: `requeue` in another process rewrites the entry in place, so a name
+   * checked and then removed could take back the queued retry that landed in between. A claim
+   * name is not an entry name (`entryFileNamed` refuses it), so nothing else can rewrite the
+   * claim while it is held, and an entry that turns out not to be rejected is renamed back
+   * untouched. Losing the race the other way — the entry left before the claim — removes
+   * nothing, which is what the caller asked for anyway. The outbox lock covers the whole claim
+   * and every writer, so a requeue cannot rewrite the entry during this decision. A claim left
+   * by a crash is restored under that same lock before the next reader or writer runs; the
+   * removal was not committed until the claim was deleted, whatever state its bytes carry.
+   */
+  async function removeOneIfRejected(file: EntryFile): Promise<boolean> {
+    const path = join(dir, file.name);
+    const claim = join(dir, `${file.name}${CLAIM_SUFFIX}`);
+    try {
+      await _memoryStoreDeps.rename(path, claim);
+    } catch (error) {
+      // Gone between the listing and now: there is nothing left to remove.
+      if (isMissing(error)) return false;
+      throw error;
+    }
+    const claimed = await readEntryAt(claim);
+    if (claimed === null || claimed.state !== "rejected") {
+      await _memoryStoreDeps.rename(claim, path);
+      return false;
+    }
+    await _memoryStoreDeps.rm(claim, { force: true });
+    return true;
+  }
+
+  async function removeIfRejected(clientId: string): Promise<boolean> {
+    let removed = false;
+    for (const file of await filesFor(clientId)) {
+      if (await removeOneIfRejected(file)) removed = true;
+    }
+    return removed;
   }
 
   async function markRejected(clientId: string, reason: string): Promise<void> {
@@ -385,5 +562,16 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return keys;
   }
 
-  return { enqueue, list, listInvalid, remove, markRejected, recordBadResponse, requeue, heldKeys };
+  return {
+    enqueue,
+    list: () => reading(list, []),
+    listInvalid: () => reading(listInvalid, []),
+    remove: (clientId) => locked(() => remove(clientId), undefined),
+    held: (clientId) => reading(() => held(clientId), undefined),
+    removeIfRejected: (clientId) => locked(() => removeIfRejected(clientId), false),
+    markRejected: (clientId, reason) => locked(() => markRejected(clientId, reason), undefined),
+    recordBadResponse: (clientId, error) => locked(() => recordBadResponse(clientId, error), 0),
+    requeue: (clientId) => locked(() => requeue(clientId), false),
+    heldKeys: (kind) => reading(() => heldKeys(kind), new Set<string>()),
+  };
 }

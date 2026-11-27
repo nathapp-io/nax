@@ -4,7 +4,7 @@
  * `validateMemoryNoteWrite` answers one question for the save path
  * (`operations.ts`): may this note be stored at all? It returns `null` when it
  * may, or the first `MemoryWriteRefusal` it found, checking in the design's
- * order: slug, type, description, source, body size, then secrets.
+ * order: slug, type, description, source, body (blank, then size), then secrets.
  *
  * `findSecret` is the secret half on its own: it runs the logger's
  * `SECRET_VALUE_PATTERNS` over free text and reports the kind of the first
@@ -63,8 +63,16 @@ function lineRefusal(field: LineField, text: string, maxChars: number): MemoryWr
   return null;
 }
 
-/** The body cap counts UTF-8 bytes, so a multi-byte body can fail below the character limit. */
+/**
+ * The body's refusals, in the order a provider would meet them.
+ *
+ * A body with no non-whitespace character is refused first, because it is not a note at all: a
+ * provider that stores notes answers one with a 400, and the caller would then be told the
+ * write failed rather than that it was empty. The size cap follows — it is a fact about a body
+ * that has content.
+ */
 function bodyRefusal(body: string): MemoryWriteRefusal | null {
+  if (body.trim() === "") return { field: "body", reason: "body must not be blank" };
   if (Buffer.byteLength(body, "utf8") <= MEMORY_NOTE_BODY_MAX_BYTES) return null;
   return { field: "body", reason: `body must be at most ${MEMORY_NOTE_BODY_MAX_BYTES} bytes` };
 }

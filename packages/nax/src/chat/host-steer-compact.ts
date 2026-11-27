@@ -21,26 +21,42 @@ import { NaxError } from "@/errors";
 import type { ChatLedger, ChatUsageEvent } from "./chat-ledger";
 import type { HostQueue } from "./host-queue";
 import type { ChatSessionHandle } from "./open-chat-session";
-import { sessionWebSnapshot } from "./session-web";
+import { recordTypedUrls, sessionWebSnapshot } from "./session-web";
+import type { ChatWeb } from "./web/wiring";
 
 export interface HostSteerInput {
   /** The session the host has open right now, or `undefined` when it has none. */
   readonly session: () => AgentSession | undefined;
+  /**
+   * The open handle's web exposure, or `undefined` when the session has none. Steer recording
+   * lives here rather than in the host: `chat-host.ts` sits against the 600-line cap, and the
+   * rule is the same one `send` applies through `recordTypedUrls` (US-005).
+   */
+  readonly web: () => ChatWeb | undefined;
+}
+
+/** What a steer may be: a person's text, or a notice the host generated for the running turn. */
+export interface HostSteerOptions {
+  /** A host-generated notice, whose text is never recorded as seen URLs (US-005). */
+  readonly automatic?: boolean;
 }
 
 /** The steering half of the host: what `ChatHost.steer` answers. */
 export interface HostSteering {
-  steer(text: string): SteerResult;
+  steer(text: string, options?: HostSteerOptions): SteerResult;
 }
 
 export function createHostSteering(input: HostSteerInput): HostSteering {
   return {
-    steer(text: string): SteerResult {
+    steer(text: string, options?: HostSteerOptions): SteerResult {
       const session = input.session();
       if (session === undefined) return { status: "no_turn" };
       // A facade that is not the native one has no mid-turn input at all: the screen then
       // interrupts and sends, which is what an `unsupported` brain does too.
-      return session.steer?.(text) ?? { status: "unsupported" };
+      const result = session.steer?.(text) ?? { status: "unsupported" };
+      // Only text the running turn took, and only text a person typed, becomes seen (US-005).
+      if (result.status === "accepted" && options?.automatic !== true) recordTypedUrls(input.web(), text);
+      return result;
     },
   };
 }

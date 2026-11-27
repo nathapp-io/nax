@@ -418,3 +418,43 @@ describe("US-007 excludes step boundaries", () => {
     expect(excludeText(repo)).toBe(before);
   });
 });
+
+/**
+ * US-004 (#3061) — the atomic replace must carry the user's permission bits, not
+ * the process umask's. `writeFileSync` applies its `mode` THROUGH the umask, so a
+ * 0664 exclude file written under a 022 umask would come back 0644: the user's
+ * group-write bit silently gone.
+ */
+describe("US-004: the exclude file keeps its own permission bits", () => {
+  /** Run `fn` under `mask`, restoring the process umask whatever happens. */
+  async function underUmask(mask: number, fn: () => Promise<void>): Promise<void> {
+    const previous = process.umask(mask);
+    try {
+      await fn();
+    } finally {
+      process.umask(previous);
+    }
+  }
+
+  /** A user exclude file with their own mode, and something for nax to append. */
+  function userExclude(mode: number): void {
+    writeFileSync(excludePath(repo), "*.log\n");
+    chmodSync(excludePath(repo), mode);
+  }
+
+  test("US-004 AC-5: a 0664 exclude file stays 0664 through the replace under umask 022", async () => {
+    userExclude(0o664);
+
+    await underUmask(0o022, () => ensurePlaceholderExcludes(repo));
+
+    expect(lstatSync(excludePath(repo)).mode & 0o777).toBe(0o664);
+  });
+
+  test("US-004 AC-6: in that case the file still ends with every placeholder entry", async () => {
+    userExclude(0o664);
+
+    await underUmask(0o022, () => ensurePlaceholderExcludes(repo));
+
+    expect(appendedBlock(excludeText(repo))).toEqual([HEADER, ...ENTRIES, ""]);
+  });
+});

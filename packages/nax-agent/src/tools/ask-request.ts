@@ -85,8 +85,14 @@ function summaryScalar(value: unknown): string | undefined {
   return undefined;
 }
 
-/** The clause `unsandboxedReasonSuffix` renders, before the reason itself. */
-const UNSANDBOXED_PREFIX = "; runs OUTSIDE the sandbox: ";
+/**
+ * The clause `unsandboxedReasonSuffix` renders, before the reason itself.
+ *
+ * Exported (US-002) so the runtime's own escape — a full-network call the
+ * runtime decided runs unwrapped — composes the SAME clause instead of
+ * retyping it, and the two can never drift.
+ */
+export const UNSANDBOXED_PREFIX = "; runs OUTSIDE the sandbox: ";
 /** What the suffix says when the model gave no usable reason. */
 const NO_REASON = "no reason given";
 /** What the suffix says instead of a reason that cannot be shown safely. */

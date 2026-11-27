@@ -1,6 +1,6 @@
 /** Injectable filesystem operations shared by the mirror and its archives. */
 import type { Dirent } from "node:fs";
-import { lstat, mkdir, open, readdir, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { openPinnedRead, pinnedOperation, withPinnedDirectory } from "#src/internal/pinned-directory";
 export interface Identity {
   readonly dev: number;
@@ -20,12 +20,13 @@ type MakeDir = (path: string, options: { recursive: true }) => Promise<string | 
 /** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
 type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
+type RenamePath = (from: string, to: string) => Promise<void>;
 
 function identityOf(info: { dev: number; ino: number }): Identity {
   return { dev: info.dev, ino: info.ino };
 }
 
-/** I/O seam: reads run under the pinned parent; deletes use the active one; `pin` takes it. */
+/** I/O seam: reads run under the pinned parent; deletes and renames use the active one; `pin` takes it. */
 export const _memoryStoreDeps: {
   open: OpenFile;
   stat: StatPath;
@@ -33,6 +34,7 @@ export const _memoryStoreDeps: {
   mkdir: MakeDir;
   readdir: ReadDirEntries;
   rm: RemoveFile;
+  rename: RenamePath;
   pin: typeof withPinnedDirectory;
 } = {
   open: async (path, flags) => {
@@ -50,5 +52,6 @@ export const _memoryStoreDeps: {
   mkdir: (path, options) => mkdir(path, options),
   readdir: (path, options) => readdir(path, options),
   rm: (path, options) => pinnedOperation<void>(path, "rm") ?? rm(path, options),
+  rename: (from, to) => pinnedOperation<void>(from, "rename", [to]) ?? rename(from, to),
   pin: withPinnedDirectory,
 };

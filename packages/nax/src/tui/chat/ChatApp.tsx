@@ -183,11 +183,15 @@ const NO_ANSWER: QuestionAnswer = { requestId: "", draft: EMPTY_DRAFT };
  * — absent or empty when the message carries none — and the image draft the message was
  * submitted with, so the send empties exactly the pictures it took and leaves a draft the user
  * started while it was preparing (see `sendMessage`).
+ *
+ * `automatic` marks a message the host generated rather than a person — a background task's or
+ * a job's notice — so the send records none of its URLs as seen (US-005).
  */
 interface ComposedSend {
   readonly message: string;
   readonly images?: readonly ImageAttachment[];
   readonly draft?: ImageDraft;
+  readonly automatic?: boolean;
 }
 
 /**
@@ -1163,6 +1167,9 @@ export function ChatApp({
    * emptied. A picture attached while a send was being prepared is a draft the user started for
    * the next message, and a background notice — a job's, a task's — was never composed from the
    * prompt at all: it carries no draft, so the pending pictures stay exactly where they are.
+   *
+   * A notice is also the one message the host must not read as a person's text, so its
+   * `automatic` mark travels to `host.send` and none of the URLs it names becomes seen (US-005).
    */
   async function sendMessage(
     prepared: ComposedSend,
@@ -1171,7 +1178,10 @@ export function ChatApp({
   ): Promise<void> {
     const images = prepared.images ?? [];
     if (prepared.draft !== undefined) imageAttach.reset(prepared.draft);
-    if (images.length > 0)
+    // A notice is never named and never carries pictures: it reaches the host marked automatic
+    // and nothing else, so no URL its command line names becomes seen (US-005).
+    if (prepared.automatic === true) await host.send(prepared.message, onEvent, { automatic: true });
+    else if (images.length > 0)
       await host.send(prepared.message, onEvent, { title: titleWithoutPlaceholders(title), images });
     else if (prepared.message === title) await host.send(prepared.message, onEvent);
     else await host.send(prepared.message, onEvent, { title });
@@ -1243,7 +1253,7 @@ export function ChatApp({
       bottomBlocked: bottomBlocked(ask, picker.model),
       canControl: keys.canControl(),
     }),
-    deliver: (text) => sendTurn({ message: text }),
+    deliver: (text) => sendTurn({ message: text, automatic: true }),
     note: (text) => append({ kind: "notice", text }),
   });
 

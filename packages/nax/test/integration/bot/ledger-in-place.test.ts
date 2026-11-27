@@ -5,6 +5,7 @@ import {
   makeAdviceQuestion,
   makeBotFixDeps,
   makeBotFixEnv,
+  makeLogger,
   makeNaxConfig,
   makeTestRuntime,
   withTempDir,
@@ -17,18 +18,20 @@ import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixEnv } from "@/bot/fix-steps";
 import { _fixStepsDeps } from "@/bot/fix-steps";
 import { botGit } from "@/bot/git";
-import { _ledgerCarryDeps, readLedgerText } from "@/bot/ledger-carry";
+import { _ledgerCarryDeps, commitInPlaceAppend, readLedgerText } from "@/bot/ledger-carry";
 import { PROJECT_FEATURES_DIR } from "@/config";
 import { withNaxBotMarker } from "@/forge";
 
 const originalFix = { ..._botFixDeps };
 const originalChain = { ..._chainAdviseDeps };
 const originalSteps = { ..._fixStepsDeps };
+const originalCarry = { ..._ledgerCarryDeps };
 afterEach(() => {
   mock.restore();
   Object.assign(_botFixDeps, originalFix);
   Object.assign(_chainAdviseDeps, originalChain);
   Object.assign(_fixStepsDeps, originalSteps);
+  Object.assign(_ledgerCarryDeps, originalCarry);
 });
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -225,6 +228,178 @@ describe("in-place advisor ledger persistence", () => {
       } finally {
         await runtime.close();
       }
+    });
+  });
+});
+
+const AFTER = `${BEFORE}new\n`;
+const STAGED_DURING_RUN = "staged during the run\n";
+const INDEX_LEFT_AS_IS = "Advisor ledger committed; the staged ledger differs and was left as is";
+
+/** The appended text committed in place, over the feature the fixture already wrote. */
+function append(env: BotFixEnv): Promise<boolean> {
+  return commitInPlaceAppend(env, { feature: FEATURE, before: BEFORE, after: AFTER });
+}
+
+/** `git ls-files -s` for the ledger — the index entry the ACs read. */
+function indexEntry(repo: string, rel: string): Promise<string> {
+  return git(repo, ["ls-files", "-s", "--", `:(literal)${rel}`]);
+}
+
+/** The blob `git ls-files -s` reports for the ledger's index entry. */
+function indexBlob(entry: string): string | undefined {
+  return entry.split(" ")[1];
+}
+
+/** A real-index read that always fails, recording every reset the append issues. */
+function breakIndexRead(): string[][] {
+  const resets: string[][] = [];
+  const inner = _ledgerCarryDeps.runGit;
+  _ledgerCarryDeps.runGit = async (args, cwd) => {
+    if (args[0] === "reset") resets.push(args);
+    if (args[0] === "ls-files") return { exitCode: 1, stdout: "", stderr: "index unreadable" };
+    return inner(args, cwd);
+  };
+  return resets;
+}
+
+/** The gate `git` refused a write with: `<index>.lock` held by another process. */
+function isLockRefusal(result: { exitCode: number; stderr: string }): boolean {
+  return result.exitCode !== 0 && result.stderr.includes("index.lock");
+}
+
+describe("in-place ledger index refresh (#3057)", () => {
+  test("AC-1–3: a ledger version staged just before update-ref survives as the index entry", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      const path = ledgerPath(repo, FEATURE);
+      await Bun.write(path, AFTER);
+      const inner = _ledgerCarryDeps.runGit;
+      let stagedBlob = "";
+      // Deterministic race: the user's `git add` lands between the commit object and the ref move.
+      _ledgerCarryDeps.runGit = async (args, cwd) => {
+        if (args[0] === "update-ref") {
+          await Bun.write(path, STAGED_DURING_RUN);
+          await git(repo, ["add", "-f", "--", rel]);
+          stagedBlob = await git(repo, ["rev-parse", `:${rel}`]);
+        }
+        return inner(args, cwd);
+      };
+      const committed = await append(env);
+      const [entry, head] = await Promise.all([indexEntry(repo, rel), git(repo, ["rev-parse", `HEAD:${rel}`])]);
+      expect(committed).toBe(true);
+      // The staged blob is still the entry, and it is not the appended text the commit holds.
+      expect(indexBlob(entry)).toBe(stagedBlob);
+      expect(indexBlob(entry)).not.toBe(head);
+      expect((await botGit(["show", `HEAD:${rel}`], repo)).stdout).toBe(AFTER);
+    });
+  });
+
+  test("AC-4: with no concurrent staging the index entry follows HEAD", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      await Bun.write(ledgerPath(repo, FEATURE), AFTER);
+      expect(await append(env)).toBe(true);
+      const [entry, head] = await Promise.all([indexEntry(repo, rel), git(repo, ["rev-parse", `HEAD:${rel}`])]);
+      expect(indexBlob(entry)).toBe(head);
+      expect(await git(repo, ["status", "--porcelain"])).toBe("");
+    });
+  });
+
+  test("AC-14–15: an unreadable index still commits and warns the staged ledger was left as is", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      await Bun.write(ledgerPath(repo, FEATURE), AFTER);
+      const logger = makeLogger();
+      _ledgerCarryDeps.getLogger = () => logger;
+      breakIndexRead();
+      expect(await append(env)).toBe(true);
+      expect((await botGit(["show", `HEAD:${rel}`], repo)).stdout).toBe(AFTER);
+      expect(logger.calls).toContainEqual(expect.objectContaining({ level: "warn", message: INDEX_LEFT_AS_IS }));
+    });
+  });
+
+  test("AC-18: an unreadable index issues no reset of the real ledger entry", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      await Bun.write(ledgerPath(repo, FEATURE), AFTER);
+      const resets = breakIndexRead();
+      expect(await append(env)).toBe(true);
+      expect(resets).toEqual([]);
+      // The entry still holds the parent commit's blob: nothing refreshed it to the new HEAD.
+      const [entry, parent] = await Promise.all([indexEntry(repo, rel), git(repo, ["rev-parse", `HEAD~1:${rel}`])]);
+      expect(indexBlob(entry)).toBe(parent);
+    });
+  });
+
+  test("B1: a ledger staged between the index read and the update is never discarded", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      const path = ledgerPath(repo, FEATURE);
+      await Bun.write(path, AFTER);
+      const inner = _ledgerCarryDeps.runGit;
+      let refused: Awaited<ReturnType<typeof botGit>> | undefined;
+      // The deterministic race the index lock exists to close: the user's own `git add` lands
+      // after the index read returns and before the entry is updated. `runGit` reaches the real
+      // index only — the commit's own reads go through `runIndexGit` over a throwaway one.
+      _ledgerCarryDeps.runGit = async (args, cwd) => {
+        const result = await inner(args, cwd);
+        if (args[0] === "ls-files") {
+          await Bun.write(path, STAGED_DURING_RUN);
+          refused = await botGit(["add", "-f", "--", rel], repo);
+        }
+        return result;
+      };
+
+      expect(await append(env)).toBe(true);
+
+      // The lock is what serialises the two writes: the concurrent staging is refused outright
+      // rather than landing and being reset away, and the append itself is unaffected.
+      expect(refused && isLockRefusal(refused)).toBe(true);
+      expect((await botGit(["show", `HEAD:${rel}`], repo)).stdout).toBe(AFTER);
+      const [entry, head] = await Promise.all([indexEntry(repo, rel), git(repo, ["rev-parse", `HEAD:${rel}`])]);
+      expect(indexBlob(entry)).toBe(head);
+      // Retrying once the append is done still lands the user's version: nothing of it was lost.
+      expect((await botGit(["add", "-f", "--", rel], repo)).exitCode).toBe(0);
+      const staged = await indexEntry(repo, rel);
+      expect(indexBlob(staged)).toBe(await git(repo, ["rev-parse", `:${rel}`]));
+      expect(indexBlob(staged)).not.toBe(head);
+    });
+  });
+
+  test("B2: an unresolved ledger conflict is left alone, every stage intact", async () => {
+    await withTempDir(async (repo) => {
+      const { env, rel } = await inPlaceRepo(repo);
+      const path = ledgerPath(repo, FEATURE);
+      // Start from a base that does NOT hold the ledger, so both sides add it: an add/add
+      // conflict, whose only stages are 2 and 3 — and stage 2 is the parent commit's own blob,
+      // which is what made reading just the first row look like an entry nobody had touched.
+      await git(repo, ["rm", "-q", "--", rel]);
+      await git(repo, ["commit", "-q", "-m", "start without the ledger"]);
+      await git(repo, ["checkout", "-q", "-b", "side"]);
+      await Bun.write(path, "theirs\n");
+      await git(repo, ["add", "-f", "--", rel]);
+      await git(repo, ["commit", "-q", "-m", "theirs"]);
+      await git(repo, ["checkout", "-q", "fix"]);
+      await Bun.write(path, "ours\n");
+      await git(repo, ["add", "-f", "--", rel]);
+      await git(repo, ["commit", "-q", "-m", "ours"]);
+      expect((await botGit(["merge", "side"], repo)).exitCode).not.toBe(0);
+      const conflicted = await indexEntry(repo, rel);
+      const rows = conflicted.split("\n");
+      // The premise: two unmerged stages, and the first of them is what HEAD holds.
+      expect(rows.length).toBe(2);
+      expect(indexBlob(rows[0] ?? "")).toBe(await git(repo, ["rev-parse", `HEAD:${rel}`]));
+      const logger = makeLogger();
+      _ledgerCarryDeps.getLogger = () => logger;
+
+      await Bun.write(path, AFTER);
+      expect(await append(env)).toBe(true);
+
+      expect((await botGit(["show", `HEAD:${rel}`], repo)).stdout).toBe(AFTER);
+      // The conflict is still the user's to settle: both stages, untouched.
+      expect(await indexEntry(repo, rel)).toBe(conflicted);
+      expect(logger.calls).toContainEqual(expect.objectContaining({ level: "warn", message: INDEX_LEFT_AS_IS }));
     });
   });
 });

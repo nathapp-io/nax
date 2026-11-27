@@ -14,7 +14,7 @@
  * microtasks only, and everything after the race is real filesystem I/O.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
@@ -165,6 +165,25 @@ function drain(
 }
 
 describe("syncMemory step 3 (drain)", () => {
+  test("a restarted sync delivers a requeued write left in an abandoned removal claim", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_old", status: "deleted" } });
+      const request = forgetRequest("old-budget", "client-retry");
+      await h.outbox.enqueue(request);
+      await h.outbox.markRejected(request.clientId, "try again");
+      await h.outbox.requeue(request.clientId);
+      const path = join(h.store.paths.outboxDir, "00000001-client-retry.json");
+      await rename(path, `${path}.claim`);
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+
+      const result = await syncMemory(h.input({ outbox: reopened }));
+
+      expect(result).toMatchObject({ outcome: "synced", pushed: 1, rejected: 0 });
+      expect(pushed(h.provider)).toEqual([request]);
+      expect(await reopened.list()).toEqual([]);
+    });
+  });
+
   test("AC-1: two queued saves are pushed once each in seq order, and the run is synced", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir);
@@ -386,6 +405,83 @@ describe("syncMemory step 3 (drain)", () => {
       expect(await h.store.readNote("project", "replay-budget")).toEqual(newer);
       // The newer write is still waiting, so its copy of the note is the one the next run takes.
       expect(await h.outbox.list()).toEqual([queued]);
+    });
+  });
+});
+
+/**
+ * A delivery supersedes the older refused writes of its own note.
+ *
+ * That is only true while those writes are still refused. `nax memory requeue` and
+ * `nax memory discard` act on rejected entries from outside the sync, so an entry this run
+ * listed as refused can be a queued write — or gone — by the time the drain decides to remove
+ * it. The removal is therefore decided by the outbox against the entry file, never by the
+ * listing the run started from: deleting a requeued retry would throw away a write nobody has
+ * delivered.
+ */
+describe("[B4] syncMemory step 3: superseding older refused writes of the same note", () => {
+  /** An older write that is refused and a newer one of the same note: the pair a supersede is about. */
+  async function olderAndNewer(h: Harness): Promise<void> {
+    await h.outbox.enqueue(saveRequest(note({ id: "local-older", body: "older body" }), "client-older"));
+    await h.outbox.enqueue(saveRequest(note({ id: "local-newer", body: "newer body" }), "client-newer"));
+  }
+
+  /** A permanent refusal of the older write. */
+  const refusal = (): NaxError => new NaxError("note kind not available", "MEMORY_PUSH_REJECTED", { stage: "memory" });
+
+  test("a requeue that lands while the drain runs keeps the older write in the queue", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await olderAndNewer(h);
+      h.provider.push.mockImplementation(async (request) => {
+        if (request.clientId === "client-older") throw refusal();
+        // The operator, in another process, puts the refusal back in the queue as this run
+        // waits for the newer write's answer.
+        await h.outbox.requeue("client-older");
+        return ANSWER_ACTIVE;
+      });
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 1 });
+      // The retry the operator asked for is a queued write, so the newer delivery does not own it.
+      expect(await h.outbox.list()).toMatchObject([{ clientId: "client-older", state: "queued" }]);
+    });
+  });
+
+  test("an older write the operator discarded while the drain runs is not removed a second time", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await olderAndNewer(h);
+      h.provider.push.mockImplementation(async (request) => {
+        if (request.clientId === "client-older") throw refusal();
+        // `nax memory discard` from another process: the refused entry is already gone.
+        await h.outbox.remove("client-older");
+        return ANSWER_ACTIVE;
+      });
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 1 });
+      // Nothing to remove, nothing to report: the run ends exactly as it would have.
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("[control] a refused older write the operator left alone is still dropped by the delivery", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await olderAndNewer(h);
+      h.provider.push.mockImplementation(async (request) => {
+        if (request.clientId === "client-older") throw refusal();
+        return ANSWER_ACTIVE;
+      });
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 1 });
+      // Nothing was requeued, so the newer write supersedes the older one and replays nothing.
+      expect(await h.outbox.list()).toEqual([]);
     });
   });
 });

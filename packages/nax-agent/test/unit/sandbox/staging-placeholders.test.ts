@@ -33,6 +33,9 @@ beforeEach(() => {
   mkdirSync(cwd);
   mkdirSync(ledgerDir);
   _placeholderDeps.ledgerDir = () => ledgerDir;
+  // US-004: the mandatory names are a Linux source, so every case that expects
+  // one pins the platform that creates it rather than inheriting the host's.
+  _placeholderDeps.platform = () => "linux";
 });
 
 afterEach(() => cleanupTempDir(base));
@@ -172,5 +175,31 @@ describe("stagingPlaceholderPaths", () => {
     writeFileSync(join(ledgerDir, "ignore.tmp"), "not a ledger");
 
     expect(stagingPlaceholderPaths(cwd, [])).toEqual([".mcp.json"]);
+  });
+
+  // US-004 (#3059): only bwrap creates a placeholder at a mandatory deny name, so
+  // only Linux has a reason to exclude one. Elsewhere an empty 0444 `.mcp.json` is
+  // an ordinary file the user made, and a staging pass must commit it.
+  test("US-004 AC-1: on darwin an empty 0444 .mcp.json is not a staging placeholder", () => {
+    placeholder(join(cwd, ".mcp.json"));
+    _placeholderDeps.platform = () => "darwin";
+
+    expect(stagingPlaceholderPaths(cwd, [])).toEqual([]);
+  });
+
+  test("US-004 AC-2: on linux the same empty 0444 .mcp.json is one", () => {
+    placeholder(join(cwd, ".mcp.json"));
+    _placeholderDeps.platform = () => "linux";
+
+    expect(stagingPlaceholderPaths(cwd, [])).toEqual([".mcp.json"]);
+  });
+
+  test("US-004: a ledger entry still counts on darwin, because a ledger exists only on Linux", () => {
+    mkdirSync(join(cwd, "docs"));
+    placeholder(join(cwd, "docs", "x"));
+    writeLedger(424242, [{ path: join(cwd, "docs", "x") }]);
+    _placeholderDeps.platform = () => "darwin";
+
+    expect(stagingPlaceholderPaths(cwd, [])).toEqual(["docs/x"]);
   });
 });

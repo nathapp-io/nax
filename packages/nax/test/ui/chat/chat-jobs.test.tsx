@@ -162,7 +162,7 @@ describe("ChatApp jobs", () => {
     const ui = mount();
     await ui.emit(NOTICE);
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function), { automatic: true });
     await ui.finish(0);
     expect(ui.takeNotice).toHaveBeenCalledTimes(1);
     expect(ui.order).toEqual([`send:${NOTICE}`, "take"]);
@@ -206,7 +206,7 @@ describe("ChatApp jobs", () => {
     });
     await approval;
     expect(ui.host.asks.pending()).toHaveLength(0);
-    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function), { automatic: true });
     await ui.finish(0);
   });
   test("US-014 AC-13 AC-14 does not send or take while mode switching", async () => {
@@ -216,7 +216,7 @@ describe("ChatApp jobs", () => {
     expect(ui.send).not.toHaveBeenCalled();
     expect(ui.takeNotice).not.toHaveBeenCalled();
     await ui.finishSwitch();
-    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith(NOTICE, expect.any(Function), { automatic: true });
     await ui.finish(0);
   });
   test("US-014 AC-15 delivers two notices FIFO in separate non-overlapping turns", async () => {

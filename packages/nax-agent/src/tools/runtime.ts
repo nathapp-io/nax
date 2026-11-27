@@ -38,9 +38,9 @@ import {
   resolveDenialOutcome,
   resolveGuardDenial,
   resolvePolicyIdentity,
-  resolveUnsandboxedCall,
   toolOutcome,
 } from "./runtime-calltool.ts";
+import { askThroughGuard, resolveCallSandbox } from "./runtime-full-network.ts";
 import { resolveWebAwareAskOutcome, resolveWebExposureDenial } from "./runtime-web-guard.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
@@ -379,13 +379,16 @@ export function createCodingToolRuntime(opts: {
         );
       };
 
-      // US-005: a `Bash`/`Exec` escape request is answered before the policy,
-      // the ask chain and any spawn — refused when this session never enabled
-      // it, and otherwise marked so the ask below carries the reason suffix.
-      const unsandboxed = resolveUnsandboxedCall({ identity: policyIdentity, tool, input, option: opts.unsandboxed });
-      if (unsandboxed?.kind === "error") {
-        logCall(policyIdentity, "error", unsandboxed.content.length, input, context, false, unsandboxed.content);
-        return unsandboxed;
+      // US-005/US-002: the sandbox answer is taken ONCE, here, before the policy
+      // evaluates anything — refused when this session never enabled the escape,
+      // and otherwise carrying the clause every ask below repeats and the launch
+      // decision Bash reads. Reading the exposure again at launch is the defect
+      // #3053 fixes, so no route may recompute it.
+      const sandbox = resolveCallSandbox({ identity: policyIdentity, tool, input, opts });
+      if (sandbox.call?.kind === "error") {
+        const { call } = sandbox;
+        logCall(policyIdentity, "error", call.content.length, input, context, false, call.content);
+        return call;
       }
 
       const verdict = opts.policy.check(policyIdentity, tool.scope, input);
@@ -446,6 +449,9 @@ export function createCodingToolRuntime(opts: {
             maxBytes,
             maxFileBytes,
             readCeiling,
+            // US-002: the decision taken before the policy, never a fresh read of
+            // the exposure at launch time.
+            fullNetworkUnwrapped: sandbox.fullNetworkUnwrapped,
             ...(opts.denyPaths !== undefined ? { denyPaths: opts.denyPaths } : {}),
             ...ports,
             ...(callSignal !== undefined ? { signal: callSignal } : {}),
@@ -502,27 +508,30 @@ export function createCodingToolRuntime(opts: {
         }
       }
 
+      // Every ask this call can raise shares one route: the same exposure guard,
+      // resolver, ledger wrapper and execution, plus the escape clause decided
+      // above (US-002). Built once so no route can be handed a different one.
+      const webAsk = {
+        port: opts.webExposure,
+        sandboxed: opts.sandboxed === true,
+        identity: policyIdentity,
+        tool,
+        input,
+        context,
+        runtimeSignal: signal,
+        askResolver,
+        stage: opts.pipelineStage,
+        storyId: opts.storyId,
+        root: opts.policy.root,
+        logCall,
+        runTool,
+      };
+
       // One ask route, including the exposure guard when policy already asks.
-      const askVerdict = resolveAskVerdict({ identity: policyIdentity, verdict, unsandboxed });
+      // US-004/US-005: the ask says the command runs outside the sandbox.
+      const askVerdict = resolveAskVerdict({ identity: policyIdentity, verdict, unsandboxed: sandbox.call });
       if (askVerdict !== undefined) {
-        return resolveWebAwareAskOutcome({
-          port: opts.webExposure,
-          sandboxed: opts.sandboxed === true,
-          identity: policyIdentity,
-          tool,
-          input,
-          context,
-          verdict: askVerdict,
-          runtimeSignal: signal,
-          askResolver,
-          stage: opts.pipelineStage,
-          storyId: opts.storyId,
-          root: opts.policy.root,
-          logCall,
-          runTool,
-          // US-004/US-005: the ask says the command runs outside the sandbox.
-          ...(unsandboxed?.kind === "unsandboxed" ? { unsandboxed: { suffix: unsandboxed.suffix } } : {}),
-        });
+        return askThroughGuard({ ...webAsk, verdict: askVerdict, askOption: sandbox.askOption });
       }
 
       if (!verdict.allowed) {
@@ -557,41 +566,15 @@ export function createCodingToolRuntime(opts: {
         resolvedPaths: verdict.resolvedPaths,
       });
       if (guardDenial !== undefined) {
-        return resolveWebAwareAskOutcome({
-          port: opts.webExposure,
-          sandboxed: opts.sandboxed === true,
-          identity: policyIdentity,
-          tool,
-          input,
-          context,
-          verdict: guardDenial,
-          runtimeSignal: signal,
-          askResolver,
-          stage: opts.pipelineStage,
-          storyId: opts.storyId,
-          root: opts.policy.root,
-          logCall,
-          runTool,
-        });
+        return resolveWebAwareAskOutcome({ ...webAsk, verdict: guardDenial, ...sandbox.askOption });
       }
 
       // Exposure uses the same ask channel and fails closed.
       return (
         (await resolveWebExposureDenial({
-          port: opts.webExposure,
-          sandboxed: opts.sandboxed === true,
-          identity: policyIdentity,
-          tool,
-          input,
-          context,
+          ...webAsk,
           resolvedPaths: verdict.resolvedPaths,
-          root: opts.policy.root,
-          askResolver,
-          stage: opts.pipelineStage,
-          storyId: opts.storyId,
-          runtimeSignal: signal,
-          logCall,
-          runTool,
+          ...sandbox.askOption,
         })) ?? runTool(tool, input, verdict.resolvedPaths)
       );
     },

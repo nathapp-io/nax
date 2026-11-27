@@ -32,8 +32,8 @@ function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
   };
 }
 
-/** What `enqueue` takes: a write request whose client id it may assign itself. */
-type EnqueueRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string };
+/** What `enqueue` takes: a write request whose client id it may assign itself, plus its dependency. */
+type EnqueueRequest = Omit<MemoryWriteRequest, "clientId"> & { clientId?: string; awaits?: string };
 
 /** A `save` request ready to enqueue. */
 function saveRequest(overrides: Partial<EnqueueRequest> = {}): EnqueueRequest {
@@ -193,6 +193,45 @@ describe("memory outbox", () => {
       assertNaxError(error, "enqueue with a traversal client id");
       expect(error).toMatchObject({ code: "MEMORY_CLIENT_ID_INVALID", context: { stage: "memory" } });
       expect(await readdir(outDir)).toEqual(["00000001-my-client_1.json"]);
+    });
+  });
+
+  test("[US-001 AC-3] enqueue refuses an awaits that is not a client id with MEMORY_CLIENT_ID_INVALID", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+
+      const error = await caught(outbox.enqueue(forgetRequest({ awaits: "not a client id!" })));
+
+      assertNaxError(error, "enqueue with an invalid awaits");
+      expect(error).toMatchObject({ code: "MEMORY_CLIENT_ID_INVALID", context: { stage: "memory" } });
+    });
+  });
+
+  test("[US-001 AC-4] an enqueue refused for its awaits leaves the outbox empty", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+
+      expect(await caught(outbox.enqueue(forgetRequest({ awaits: "not a client id!" })))).not.toBeNull();
+
+      // The dependency is settled before any entry exists, exactly as the client id is.
+      expect(await outbox.list()).toEqual([]);
+      expect(existsSync(outDir)).toBe(false);
+    });
+  });
+
+  test("[US-001 AC-5] an entry's awaits is listed by a second outbox opened over the same directory", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const save = await outbox.enqueue(saveRequest());
+      const forget = await outbox.enqueue(forgetRequest({ awaits: save.clientId }));
+
+      const reopened = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const listed = await reopened.list();
+
+      expect(listed).toEqual([save, forget]);
+      expect(listed.map((entry) => entry.awaits)).toEqual([undefined, save.clientId]);
     });
   });
 
@@ -488,6 +527,85 @@ describe("memory outbox", () => {
       await expect(outbox.markRejected("bad", "note kind not available")).resolves.toBeUndefined();
       // The rewrite is not attempted on an entry it could not read: the file is left for a caller.
       expect(existsSync(path)).toBe(true);
+    });
+  });
+});
+
+/**
+ * Reading and removing one entry by its file.
+ *
+ * A caller's `list` is a snapshot, and `nax memory requeue` / `nax memory discard` rewrite
+ * entries from another process while a sync may be draining. So the two operations a caller
+ * uses on the strength of that snapshot decide against the entry file itself: `held` reads it,
+ * and `removeIfRejected` claims it by rename before it decides whether to remove it.
+ */
+describe("memory outbox: one entry, decided by its file", () => {
+  withDepsRestore(_memoryStoreDeps);
+
+  test("[B4] held reads the entry as the outbox holds it now", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+      const queued = await outbox.enqueue(saveRequest({ clientId: "client-a" }));
+
+      expect(await outbox.held("client-a")).toEqual(queued);
+
+      await outbox.markRejected("client-a", "note kind not available");
+
+      expect(await outbox.held("client-a")).toMatchObject({ state: "rejected", reason: "note kind not available" });
+      expect(await outbox.held("client-missing")).toBeUndefined();
+    });
+  });
+
+  test("[B4] removeIfRejected removes a refused entry, leaving no claim name behind", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      await outbox.enqueue(saveRequest({ clientId: "client-a" }));
+      await outbox.markRejected("client-a", "note kind not available");
+
+      expect(await outbox.removeIfRejected("client-a")).toBe(true);
+
+      expect(await outbox.list()).toEqual([]);
+      expect(await readdir(outDir)).toEqual([]);
+    });
+  });
+
+  test("[B4] removeIfRejected puts a queued entry back untouched and answers false", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const queued = await outbox.enqueue(saveRequest({ clientId: "client-a" }));
+      const name = "00000001-client-a.json";
+
+      // The entry was requeued after the caller listed it: the queued write is not ours to remove.
+      expect(await outbox.removeIfRejected("client-a")).toBe(false);
+
+      expect(await outbox.list()).toEqual([queued]);
+      expect(await readText(join(outDir, name))).toBe(`${JSON.stringify(queued)}\n`);
+      expect(await readdir(outDir)).toEqual([name]);
+    });
+  });
+
+  test("[B4] removeIfRejected answers false when the entry left before the claim, and propagates a real failure", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+      await outbox.enqueue(saveRequest({ clientId: "client-a" }));
+      await outbox.markRejected("client-a", "note kind not available");
+      const gone = Object.assign(new Error("no such file or directory"), { code: "ENOENT" });
+      _memoryStoreDeps.rename = async () => {
+        throw gone;
+      };
+
+      expect(await outbox.removeIfRejected("client-a")).toBe(false);
+
+      const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+      _memoryStoreDeps.rename = async () => {
+        throw denied;
+      };
+
+      expect(await caught(outbox.removeIfRejected("client-a"))).toBe(denied);
+      // Neither failure touched the entry: it is still where the caller found it.
+      expect(await outbox.held("client-a")).toMatchObject({ state: "rejected" });
     });
   });
 });

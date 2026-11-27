@@ -92,6 +92,9 @@ beforeEach(() => {
   ledgerDir = join(ledgerRoot, "ledgers");
   mkdirSync(ledgerDir);
   _placeholderDeps.ledgerDir = () => ledgerDir;
+  // US-004: every exclusion below is a Linux one (bwrap is what creates the
+  // placeholder), so the platform is pinned rather than left to the host's.
+  _placeholderDeps.platform = () => "linux";
 });
 
 afterEach(() => {
@@ -307,5 +310,31 @@ describe("gitlinkSafeAdd with non-ASCII and nested paths (#2986)", () => {
     expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" });
     expect(await staged(root)).toEqual(["pkg/keep.txt"]);
     expect(isTracked(root, "pkg/.mcp.json")).toBe(false);
+  });
+});
+
+/**
+ * US-004 (#3059) — on a platform whose sandbox creates no placeholders, an empty
+ * 0444 `.mcp.json` is a file the user made. Nothing will ever put a bwrap mount
+ * point there, so excluding it would silently withhold the user's own file from
+ * every broad staging pass.
+ */
+describe("gitlinkSafeAdd on a platform that creates no placeholder", () => {
+  test("US-004 AC-3: a darwin pass adds the untracked empty 0444 .mcp.json to the index", async () => {
+    _placeholderDeps.platform = () => "darwin";
+    placeholder(join(root, ".mcp.json"));
+
+    expect((await addAll(root)).exitCode).toBe(0);
+
+    expect(await staged(root)).toEqual([".mcp.json"]);
+  });
+
+  test("US-004 AC-4: git ls-files lists that .mcp.json, so it is really in the index", async () => {
+    _placeholderDeps.platform = () => "darwin";
+    placeholder(join(root, ".mcp.json"));
+
+    await addAll(root);
+
+    expect(gitOk(root, "ls-files").trim().split("\n")).toContain(".mcp.json");
   });
 });
