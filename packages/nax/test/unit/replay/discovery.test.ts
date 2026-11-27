@@ -5,7 +5,7 @@
  * AC-2:  resolves to { meta, jsonlPath } where meta.feature equals registry
  *        feature and jsonlPath ends in `.jsonl` for an exact-match query.
  * AC-3:  resolves to the same run via prefix matching.
- * AC-4:  with no argument, resolves to the lexicographically greatest runId
+ * AC-4:  with no argument, resolves to the record with the latest registeredAt
  *        across two registry entries.
  * AC-5:  throws NaxError with code RUN_NOT_FOUND when no registry entry matches.
  * AC-6:  throws NaxError with code RUN_NOT_FOUND when more than one entry
@@ -104,7 +104,7 @@ describe("discoverRun — AC2: exact runId resolution", () => {
 
     const result = await discoverRun("run-2026-07-04T10-51-37-987Z", deps(runsDir));
 
-    expect(result.jsonlPath.endsWith(".jsonl")).toBe(true);
+    expect(result.jsonlPath?.endsWith(".jsonl")).toBe(true);
   });
 });
 
@@ -153,29 +153,51 @@ describe("discoverRun — AC4: latest default (no argument)", () => {
     cleanupTempDir(runsDir);
   });
 
-  test("AC4: resolves to the entry whose runId is lexicographically greatest when called with no argument", async () => {
+  test("AC4: resolves to the entry with the latest registeredAt (not the greatest runId) when called with no argument", async () => {
     writeRunDir(
       runsDir,
       "demo-feat-x-run-2026-01-01T00-00-00-000Z",
       {
-        runId: "run-2026-01-01T00-00-00-000Z",
+        runId: "run-ffffffff-2026-01-01T00-00-00-000",
         feature: "feat-x",
+        registeredAt: "2026-01-01T00:00:00.000Z",
       },
-      "events/run-2026-01-01T00-00-00-000Z.jsonl",
+      "events/run-ffffffff-2026-01-01T00-00-00-000.jsonl",
     );
     writeRunDir(
       runsDir,
       "demo-feat-x-run-2026-12-31T23-59-59-999Z",
       {
-        runId: "run-2026-12-31T23-59-59-999Z",
+        runId: "run-00000000-2026-12-31T23-59-59-999",
         feature: "feat-x",
+        registeredAt: "2026-12-31T23:59:59.999Z",
       },
-      "events/run-2026-12-31T23-59-59-999Z.jsonl",
+      "events/run-00000000-2026-12-31T23-59-59-999.jsonl",
     );
 
     const result = await discoverRun(undefined, deps(runsDir));
 
-    expect(result.meta.runId).toBe("run-2026-12-31T23-59-59-999Z");
+    expect(result.meta.runId).toBe("run-00000000-2026-12-31T23-59-59-999");
+  });
+
+  test("AC9: tied registeredAt returns the greater runId", async () => {
+    for (const id of ["run-aaaaaaaa-x", "run-bbbbbbbb-x"]) {
+      writeRunDir(runsDir, id, { runId: id }, `events/${id}.jsonl`);
+    }
+    const result = await discoverRun(undefined, deps(runsDir));
+    expect(result.meta.runId).toBe("run-bbbbbbbb-x");
+  });
+
+  test("AC10: an undated entry does not outrank a dated one", async () => {
+    writeRunDir(runsDir, "dated", { runId: "run-00000000-a" }, "events/run-00000000-a.jsonl");
+    writeRunDir(
+      runsDir,
+      "undated",
+      { runId: "run-ffffffff-b", registeredAt: "not-a-date" },
+      "events/run-ffffffff-b.jsonl",
+    );
+    const result = await discoverRun(undefined, deps(runsDir));
+    expect(result.meta.runId).toBe("run-00000000-a");
   });
 });
 

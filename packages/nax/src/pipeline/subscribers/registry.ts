@@ -26,6 +26,8 @@ export interface MetaJson {
   statusPath: string;
   eventsDir: string;
   registeredAt: string;
+  /** Basename of the run's JSONL log, relative to `eventsDir`. Absent on legacy records. */
+  logFileName?: string;
 }
 
 /**
@@ -47,6 +49,7 @@ export function wireRegistry(
   runId: string,
   workdir: string,
   outputDir: string,
+  options: { logFilePath?: string; startTime?: number } = {},
 ): UnsubscribeFn {
   const logger = getSafeLogger();
   const project = basename(workdir);
@@ -64,7 +67,8 @@ export function wireRegistry(
           workdir,
           statusPath: join(outputDir, "features", feature, "status.json"),
           eventsDir: join(outputDir, "features", feature, "runs"),
-          registeredAt: new Date().toISOString(),
+          registeredAt: new Date(options.startTime ?? Date.now()).toISOString(),
+          ...(options.logFilePath ? { logFileName: basename(options.logFilePath) } : {}),
         };
         await writeFile(metaFile, JSON.stringify(meta, null, 2));
       } catch (err) {

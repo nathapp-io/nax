@@ -126,7 +126,7 @@ export async function runReplay(
     throw err;
   }
 
-  const entries = await deps.readJsonl(discovered.jsonlPath);
+  const entries = discovered.jsonlPath === null ? [] : await deps.readJsonl(discovered.jsonlPath);
   const metrics = await deps.readMetrics({
     runId: discovered.meta.runId,
     eventsDir: discovered.meta.eventsDir,

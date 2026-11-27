@@ -2,7 +2,6 @@
  * Log formatting and display utilities
  */
 
-import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
 import { formatDuration, formatLogEntry } from "../log-format/formatter";
@@ -13,7 +12,8 @@ export { formatDuration };
 
 import { cancellableDelay } from "@/utils/bun-deps";
 import type { VerbosityMode } from "../log-format/types";
-import { extractRunSummary } from "./logs-reader";
+import { logFileTimestamp } from "./log-file-name";
+import { extractRunSummary, listRunLogFiles } from "./logs-reader";
 
 /**
  * Log level hierarchy for filtering
@@ -36,10 +36,7 @@ function runStatusMark(summary: { failed: number; gateOpen: number }): string {
  * Display runs table
  */
 export async function displayRunsList(runsDir: string): Promise<void> {
-  const files = readdirSync(runsDir)
-    .filter((f) => f.endsWith(".jsonl") && f !== "latest.jsonl")
-    .sort()
-    .reverse();
+  const files = listRunLogFiles(runsDir);
 
   if (files.length === 0) {
     console.log(chalk.dim("No runs found"));
@@ -54,7 +51,7 @@ export async function displayRunsList(runsDir: string): Promise<void> {
     const filePath = join(runsDir, file);
     const summary = await extractRunSummary(filePath);
 
-    const timestamp = file.replace(".jsonl", "");
+    const timestamp = logFileTimestamp(file);
     const stories = summary ? `${summary.passed}/${summary.total}` : "?/?";
     const duration = summary ? formatDuration(summary.durationMs) : "?";
     const cost = summary ? `$${summary.totalCost.toFixed(4)}` : "$?.????";

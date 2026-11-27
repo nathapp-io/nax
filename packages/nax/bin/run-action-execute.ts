@@ -135,6 +135,7 @@ export async function executeSingleAgentRun(params: {
   eventEmitter: PipelineEventEmitter;
   statusFilePath: string;
   logFilePath: string;
+  runId?: string;
   formatterMode: FormatterMode;
   useHeadless: boolean;
   chatAsksDir?: string;
@@ -152,6 +153,7 @@ export async function executeSingleAgentRun(params: {
     eventEmitter,
     statusFilePath,
     logFilePath,
+    runId,
     formatterMode,
     useHeadless,
     agentStreamEvents,
@@ -172,6 +174,7 @@ export async function executeSingleAgentRun(params: {
       eventEmitter,
       statusFile: statusFilePath,
       logFilePath,
+      ...(runId ? { runId } : {}),
       formatterMode: useHeadless ? formatterMode : undefined,
       headless: useHeadless,
       chatAsksDir: params.chatAsksDir,
