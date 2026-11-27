@@ -3,7 +3,7 @@
   "feature": "chat-choice-asks",
   "branchName": "feat/chat-choice-asks",
   "createdAt": "2026-11-27T08:49:27.123Z",
-  "updatedAt": "2026-11-27T09:43:44.328Z",
+  "updatedAt": "2026-11-27T09:57:03.205Z",
   "userStories": [
     {
       "id": "US-001",
@@ -229,14 +229,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A deterministic pure reducer and its mirrored tests implement a fully specified key/state machine without I/O, session lifecycle changes or integration wiring."
+        "reasoning": "A deterministic pure reducer and its mirrored tests implement a fully specified key/state machine without I/O, session lifecycle changes or integration wiring.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ask-card.ts",
@@ -251,7 +254,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1b48691144ef1a299004492426c22ebbb884a4f8"
     },
     {
       "id": "US-005",
