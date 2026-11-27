@@ -1,12 +1,12 @@
 {
-  "updatedAt": "2026-11-18T14:54:38.549Z",
+  "updatedAt": "2026-11-27T09:26:06.937Z",
   "limit": 20,
   "byFile": {
     "src/coding-tools/coding-tool-support.ts": { "buildCodingToolSupport": 35 },
     "src/command-safety/shadow.ts": { "toRow": 27 },
     "src/infra/spin-breaker/index.ts": { "observe": 25 },
     "src/native/session/tool-input-validation.ts": { "validateToolInput": 26 },
-    "src/native/session/turn-tool-batch.ts": { "runToolBatch": 59 },
+    "src/native/session/turn-tool-batch.ts": { "runToolBatch": 58 },
     "src/tools/git-commit.ts": { "run": 22 },
     "src/tools/git.ts": { "buildGitArgv": 46 },
     "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 24 },
