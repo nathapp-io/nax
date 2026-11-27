@@ -45,6 +45,19 @@ function issueOf(body: string): string {
   return first.trim().slice(0, MAX_ISSUE_CHARS);
 }
 
+/**
+ * The bot's finding threads an unrecorded push can answer: every one not settled by a ruling, resolved or
+ * not, since a hand fix is often followed by a click on Resolve. An untrusted pull request answers none,
+ * so a push by someone without write access never stands in for a fix push.
+ */
+export function answerableThreads(
+  threads: readonly PrThread[],
+  settledIds: ReadonlySet<string>,
+  untrusted: boolean,
+): readonly PrThread[] {
+  return untrusted ? [] : threads.filter(({ id }) => !settledIds.has(id));
+}
+
 /** The open findings an unrecorded push can answer: threads that carry a nax marker and a path. */
 export function openFindings(threads: readonly PrThread[]): readonly OpenFinding[] {
   return threads.flatMap((thread) => {
@@ -74,9 +87,11 @@ async function recordedCommits(
   cwd: string,
 ): Promise<ReadonlySet<string>> {
   const shas = new Set<string>();
-  for (const entry of entries)
-    for (const sha of (await git(deps, ["rev-list", `${entry.base}..${entry.sha}`], cwd)).split("\n"))
-      if (sha !== "") shas.add(sha);
+  for (const entry of entries) {
+    // A push this checkout cannot reach (a force-push rewrote it) covers no commit of the range.
+    const listed = await git(deps, ["rev-list", `${entry.base}..${entry.sha}`], cwd).catch(() => "");
+    for (const sha of listed.split("\n")) if (sha !== "") shas.add(sha);
+  }
   return shas;
 }
 

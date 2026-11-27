@@ -45,6 +45,7 @@ import { rebasedField } from "./review-rebase";
 import { readReviewRulings } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
+import { answerableThreads } from "./unrecorded-pushes";
 import { hasNonWriterAuthor } from "./writers";
 
 export { _botReviewDeps } from "./review-deps";
@@ -384,7 +385,7 @@ async function reviewEnvironment(
     head: info.headSha,
     // Only an incremental review has an earlier range whose pushes its prompt must describe.
     rangeBase: scope === "incremental" ? range.rangeBase : undefined,
-    earlier: postEarlier,
+    earlier: answerableThreads(ownFindingThreads, settledIds, staticMode),
   });
   return {
     ...preparation,

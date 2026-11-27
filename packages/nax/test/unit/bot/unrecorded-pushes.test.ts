@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BotPushEntry } from "@/bot/push-ledger";
-import { openFindings, unrecordedPushes } from "@/bot/unrecorded-pushes";
+import { answerableThreads, openFindings, unrecordedPushes } from "@/bot/unrecorded-pushes";
 import { type PrThread, withNaxBotMarker } from "@/forge";
 
 const RANGE = "r".repeat(40);
@@ -129,5 +129,34 @@ describe("unrecordedPushes", () => {
     expect(
       await unrecordedPushes({ worktree: "/w", rangeBase: RANGE, head: HEAD, recorded: [], open }, git.deps),
     ).toEqual([]);
+  });
+});
+
+describe("unrecordedPushes with an unreachable recorded push (#3069 review)", () => {
+  test("skips the recorded push it cannot expand and still derives the rest", async () => {
+    const recorded: BotPushEntry[] = [{ base: P2, sha: C2, at: "", items: [] }];
+    const git = fakeGit({
+      [REV_LIST]: { stdout: `${C1} ${P1}\n` },
+      [`rev-list ${P2}..${C2}`]: { stdout: "", exitCode: 128 },
+      [files(C1)]: { stdout: "src/a.ts\0" },
+    });
+    const open = [{ key: "f-a", path: "src/a.ts", issue: "lock leaks", generation: 1 }];
+    const result = await unrecordedPushes({ worktree: "/w", rangeBase: RANGE, head: HEAD, recorded, open }, git.deps);
+    expect(result.map(({ sha }) => sha)).toEqual([C1]);
+  });
+});
+
+describe("answerableThreads (#3069 review)", () => {
+  const resolved: PrThread = { ...thread("f-r", "src/r.ts", "x"), resolved: true };
+  const settled = thread("f-s", "src/s.ts", "y");
+  const open = thread("f-o", "src/o.ts", "z");
+  test("keeps resolved threads and drops settled ones on a trusted pull request", () => {
+    expect(answerableThreads([resolved, settled, open], new Set([settled.id]), false).map(({ id }) => id)).toEqual([
+      resolved.id,
+      open.id,
+    ]);
+  });
+  test("answers nothing on an untrusted pull request", () => {
+    expect(answerableThreads([resolved, open], new Set(), true)).toEqual([]);
   });
 });
