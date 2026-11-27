@@ -19,6 +19,8 @@ export interface PipelineRunResult {
   success: boolean;
   /** Final action taken */
   finalAction: "complete" | "skip" | "decomposed" | "fail" | "escalate" | "pause";
+  /** True when the pause was the operator pausing the run, not a story needing a human. */
+  operatorPause?: true;
   /** Reason for non-complete outcomes */
   reason?: string;
   /** Number of sub-stories created (only set when finalAction === "decomposed") */
@@ -144,6 +146,7 @@ export async function runPipeline(
         return {
           success: false,
           finalAction: "pause",
+          operatorPause: result.runPause,
           reason: result.reason,
           stoppedAtStage: stage.name,
           context,

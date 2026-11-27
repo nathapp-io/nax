@@ -202,7 +202,16 @@ export type StageAction =
   /** Escalate to a higher tier and retry the pipeline */
   | { action: "escalate"; reason?: string; cost?: number }
   /** Pause execution (user intervention required via queue command) */
-  | { action: "pause"; reason: string; cost?: number };
+  | {
+      action: "pause";
+      reason: string;
+      cost?: number;
+      /**
+       * Set when the operator paused the whole RUN (queue PAUSE): no story needs a human, so the
+       * result handler must not mark the selected story paused. Absent = one story needs a human.
+       */
+      runPause?: true;
+    };
 
 /**
  * Result returned by a pipeline stage after execution.

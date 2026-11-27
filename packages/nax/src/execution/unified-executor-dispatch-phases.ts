@@ -209,6 +209,16 @@ export async function runSequentialDispatch(
   ctx.statusWriter.setCurrentStory(null);
   await ctx.statusWriter.update(totalCost, iterations);
 
+  // An operator PAUSE ends dispatch at this boundary, ahead of the all-passed shortcut: the run is
+  // paused (not completed) so the feature workflow stays held until an explicit resume.
+  if (iter.operatorPause) {
+    return {
+      action: "return",
+      state: { prd, prdDirty, totalCost, storiesCompleted, storiesGateOpen, lastStoryId, warningSent },
+      exitReason: "queue-paused",
+    };
+  }
+
   if (isStalled(prd, ctx.config.execution.rectification?.maxAttemptsTotal)) {
     pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
     return {

@@ -465,11 +465,13 @@ export async function writeFinalFeatureStatus(input: {
 }): Promise<void> {
   const finalStatus = input.pluginGateFailed
     ? "failed"
-    : input.exitReason === "cost-limit"
-      ? "cost-limit"
-      : isComplete(input.prd)
-        ? "completed"
-        : "failed";
+    : input.exitReason === "queue-paused"
+      ? "paused"
+      : input.exitReason === "cost-limit"
+        ? "cost-limit"
+        : isComplete(input.prd)
+          ? "completed"
+          : "failed";
   input.statusWriter.setRunStatus(finalStatus);
   await input.statusWriter.writeFeatureStatus(input.featureDir, input.reportedTotal, input.iterations, {
     ...(input.mcpAdoption !== undefined ? { mcpAdoption: input.mcpAdoption } : {}),
@@ -495,17 +497,19 @@ export async function writeFinalStatus(input: {
   statusWriter.setPrd(prd);
   statusWriter.setCurrentStory(null);
   statusWriter.setRunStatus(
-    exitReason === "cost-limit"
-      ? "cost-limit"
-      : isComplete(prd)
-        ? "completed"
-        : isStalled(prd, config.execution.rectification?.maxAttemptsTotal)
-          ? "stalled"
-          : // The run has stopped (this is the completion phase) with stories
-            // still pending but not stalled — e.g. exitReason "pre-merge-aborted",
-            // "max-iterations", "no-stories". "running" would leave status.json
-            // claiming the (now-dead) PID is still live (EXEC-1).
-            "aborted",
+    exitReason === "queue-paused"
+      ? "paused"
+      : exitReason === "cost-limit"
+        ? "cost-limit"
+        : isComplete(prd)
+          ? "completed"
+          : isStalled(prd, config.execution.rectification?.maxAttemptsTotal)
+            ? "stalled"
+            : // The run has stopped (this is the completion phase) with stories
+              // still pending but not stalled — e.g. exitReason "pre-merge-aborted",
+              // "max-iterations", "no-stories". "running" would leave status.json
+              // claiming the (now-dead) PID is still live (EXEC-1).
+              "aborted",
   );
   await statusWriter.update(reportedTotal, iterations);
 }

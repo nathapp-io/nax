@@ -16,7 +16,11 @@ import { queueCheckStage } from "@/pipeline";
 function makeCtx(workdir: string, overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ id: "US-001", status: "pending" });
   const prd = makePRD({ userStories: [story] });
-  return Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir }, overrides);
+  return Object.assign(
+    makeTestContext({ workdir, projectDir: workdir, prd, stories: [story], story }),
+    { featureDir: workdir },
+    overrides,
+  );
 }
 
 describe("queueCheckStage — RETRY / PRIORITY", () => {
@@ -153,6 +157,28 @@ describe("queueCheckStage — RETRY / PRIORITY", () => {
     const result = await queueCheckStage.execute(ctx);
 
     expect(result.action).toBe("pause");
+  });
+
+  test("PAUSE is an operator run-level pause, consumed at the project root rather than the package workdir", async () => {
+    const pkgDir = join(workdir, "packages", "a");
+    const ctx = makeCtx(pkgDir, { projectDir: workdir, featureDir: workdir });
+    await Bun.write(join(workdir, ".queue.txt"), "PAUSE\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result).toMatchObject({ action: "pause", runPause: true });
+    expect(await Bun.file(join(workdir, ".queue.txt")).exists()).toBe(false);
+    expect(await Bun.file(join(workdir, ".queue.txt.processing")).exists()).toBe(false);
+  });
+
+  test("ABORT is not flagged as an operator run pause", async () => {
+    const ctx = makeCtx(workdir);
+    await Bun.write(join(workdir, ".queue.txt"), "ABORT\n");
+
+    const result = await queueCheckStage.execute(ctx);
+
+    expect(result.action).toBe("pause");
+    expect(result).not.toHaveProperty("runPause");
   });
 
   test("no queue file continues without side effects", async () => {
@@ -389,7 +415,9 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
   test("PAUSE followed by an unprocessed RETRY logs a warn recording the dropped command", async () => {
     const story = makeStory({ id: "US-001", status: "pending" });
     const prd = makePRD({ userStories: [story] });
-    const ctx = Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir });
+    const ctx = Object.assign(makeTestContext({ workdir, projectDir: workdir, prd, stories: [story], story }), {
+      featureDir: workdir,
+    });
 
     await Bun.write(join(workdir, ".queue.txt"), "PAUSE\nRETRY US-002\n");
 
@@ -415,7 +443,9 @@ describe("queueCheckStage — PAUSE/ABORT dropped-command audit", () => {
     const story = makeStory({ id: "US-001", status: "pending" });
     const other = makeStory({ id: "US-002", status: "failed" });
     const prd = makePRD({ userStories: [story, other] });
-    const ctx = Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir });
+    const ctx = Object.assign(makeTestContext({ workdir, projectDir: workdir, prd, stories: [story], story }), {
+      featureDir: workdir,
+    });
 
     await Bun.write(join(workdir, ".queue.txt"), "SKIP US-001\nRETRY US-002\n");
 
