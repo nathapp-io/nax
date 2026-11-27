@@ -6,7 +6,7 @@ import type { EffectiveBlockingTriggers, FindingOrigin, FindingTrigger } from "@
 import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
 import { checkCommands } from "./checks";
-import type { FindingLineage } from "./push-ledger";
+import { addedBy, type FindingLineage } from "./push-ledger";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
 import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
@@ -94,7 +94,7 @@ export interface FindingWithTrigger extends WorkflowFindingDraft {
 /** US-005: the same fact the fixer receives — the generation, the push, and the items it fixed. */
 function lineageLine(lineage: FindingLineage): string {
   const parents = safeText(lineage.parents.join(", "), TEXT_LIMIT);
-  return `Lineage: generation ${lineage.generation}, on lines added by nax bot fix ${lineage.pushSha.slice(0, SHORT_SHA_LENGTH)}${parents === "" ? "" : ` for ${parents}`}`;
+  return `Lineage: generation ${lineage.generation}, on lines added by ${addedBy(lineage.pushSha, lineage.unrecorded)}${parents === "" ? "" : ` for ${parents}`}`;
 }
 
 /**

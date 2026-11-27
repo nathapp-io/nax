@@ -7,13 +7,14 @@
  * `review-run.ts` keeps only the calls: both are read once, from the comments triage already fetched and
  * the writer set it already resolved, so a review never asks the forge a permission question twice.
  */
-import type { OwnComment, PrComment } from "@/forge";
+import type { OwnComment, PrComment, PrThread } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { configuredBlockingTriggers, effectiveBlockingTriggers } from "@/workflow/blocking-findings";
 import { FIX_SUMMARY_KEY } from "./ci-waiver-ready";
 import type { PostReviewInput } from "./post";
 import { type BotPushEntry, readPushLedger } from "./push-ledger";
 import { ownLedgerEntries } from "./push-record";
+import { openFindings, unrecordedPushes } from "./unrecorded-pushes";
 
 /** Only `bot.blockingTriggers` is read; taking the shared reader's own parameter keeps the two in step. */
 export type BlockingPolicyConfig = Parameters<typeof configuredBlockingTriggers>[0];
@@ -50,6 +51,8 @@ export interface ReviewHistoryInput {
   /** The already-reviewed head an incremental range starts after; absent for a full review. */
   readonly rangeBase?: string;
   readonly isAncestor: (dir: string, ancestor: string, head: string) => Promise<boolean>;
+  /** #3069: the bot's finding threads still open at the reviewed head, which an unrecorded push can answer. */
+  readonly earlier?: readonly PrThread[];
 }
 
 export interface ReviewHistory {
@@ -109,8 +112,17 @@ async function pushesInRange(
 
 /** The bot's recorded pushes, and for an incremental review the subset its prompt should describe. */
 export async function reviewHistory(input: ReviewHistoryInput): Promise<ReviewHistory> {
-  const botPushes = ownLedger(input.own);
-  if (botPushes.length === 0 || input.rangeBase === undefined) return { botPushes };
+  const recorded = ownLedger(input.own);
+  if (input.rangeBase === undefined) return { botPushes: recorded };
+  const derived = await unrecordedPushes({
+    worktree: input.worktree,
+    rangeBase: input.rangeBase,
+    head: input.head,
+    recorded,
+    open: openFindings(input.earlier ?? []),
+  });
+  const botPushes = [...recorded, ...derived];
+  if (botPushes.length === 0) return { botPushes };
   return { botPushes, inRange: await pushesInRange(input, input.rangeBase, botPushes) };
 }
 

@@ -15,11 +15,9 @@
 import { MAX_FORGE_COMMENT_CHARS } from "@/forge";
 import { type FindingTrigger, isBlockingFinding } from "@/workflow/blocking-findings";
 import type { AgreedItem } from "./post";
-import { type BotPushEntry, type FindingLineage, parentIssue } from "./push-ledger";
+import { addedBy, type BotPushEntry, type FindingLineage, parentIssue } from "./push-ledger";
 import { safeText } from "./render";
 
-/** A commit is named short, as the fix summary names a push and `Lineage:` names a parent's push. */
-const SHORT_SHA_LENGTH = 7;
 export const CHAIN_HEADING = "### Findings are chasing their own fixes";
 /** A parent's issue is ledger text rendered in the public comment: neutralised and capped like any other. */
 const PARENT_ISSUE_CHARS = 120;
@@ -71,9 +69,8 @@ type FindingItem = Extract<AgreedItem, { kind: "finding" }>;
 
 /** One finding's chain: the generation, the push whose lines it sits on, and the items that push fixed. */
 function chainLine(item: FindingItem, lineage: FindingLineage, entries: readonly BotPushEntry[]): string {
-  const sha = lineage.pushSha.slice(0, SHORT_SHA_LENGTH);
   const label = `(${severityLabel(item.severity)}, ${item.trigger ?? "normal"})`;
-  return `- ${item.key} ${label}, generation ${lineage.generation}: on lines added by nax bot fix ${sha} for ${parentsText(lineage, entries)}`;
+  return `- ${item.key} ${label}, generation ${lineage.generation}: on lines added by ${addedBy(lineage.pushSha, lineage.unrecorded)} for ${parentsText(lineage, entries)}`;
 }
 
 /** A finding the chain section names: blocking, and on a fix push at or past the notice generation. */

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { BotPushEntry } from "@/bot/push-ledger";
 import type { BotPrReviewPromptInput } from "@/prompts";
 import * as prompts from "@/prompts";
 
@@ -85,5 +86,21 @@ describe("buildBotPrReviewPrompt finding origin request (US-002)", () => {
       "A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.",
     ])
       expect(askedLines.filter((l) => l === line)).toEqual([line]);
+  });
+});
+
+describe("buildBotPrReviewPrompt unrecorded pushes (#3069)", () => {
+  test("lists a push nax bot fix did not make as a commit touching the finding's file", () => {
+    const push = {
+      base: "b".repeat(40),
+      sha: "c".repeat(40),
+      at: "",
+      unrecorded: true,
+      items: [{ key: "f-a", generation: 1, issue: "lock leaks" }],
+    } satisfies BotPushEntry;
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, incrementalSince: "a".repeat(40), botPushes: [push] });
+    expect(prompt).toContain(
+      `- ${"b".repeat(7)}..${"c".repeat(7)}: commit not pushed by nax bot fix, touching the file of f-a (lock leaks), generation 1`,
+    );
   });
 });

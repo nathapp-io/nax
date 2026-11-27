@@ -155,6 +155,16 @@ describe("renderFindingComment", () => {
       lines.findIndex((line) => line.startsWith("Trigger:")) + 1,
     );
   });
+  test("#3069 names an unrecorded push as a commit, not a nax bot fix", () => {
+    const body = bot.renderFindingComment({
+      ...finding,
+      trigger: "normal",
+      lineage: { generation: 2, parents: ["f-a"], pushSha: `${"abcdef1"}${"0".repeat(33)}`, unrecorded: true },
+    });
+    expect(body.split("\n")).toContain(
+      "Lineage: generation 2, on lines added by commit abcdef1 (not a nax bot fix push) for f-a",
+    );
+  });
   test("US-005 AC-11 renders no lineage line without a lineage", () => {
     expect(bot.renderFindingComment(finding)).not.toContain("Lineage:");
   });

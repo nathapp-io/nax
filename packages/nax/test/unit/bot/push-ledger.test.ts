@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  addedBy,
   appendPushEntry,
   type BotPushEntry,
   MAX_LEDGER_CHARS,
@@ -280,5 +281,15 @@ describe("pushLedgerChars", () => {
   test("is the block line plus its newline, and nothing for an empty ledger", () => {
     expect(pushLedgerChars([])).toBe(0);
     expect(pushLedgerChars([entry()])).toBe((blockIn(withPushLedger(summary, [entry()])) ?? "").length + 1);
+  });
+});
+
+describe("addedBy (#3069)", () => {
+  const SHA = `abcdef1${"0".repeat(33)}`;
+  test("names a recorded push as a nax bot fix", () => {
+    expect(addedBy(SHA)).toBe("nax bot fix abcdef1");
+  });
+  test("names an unrecorded push as a commit that nax bot fix did not push", () => {
+    expect(addedBy(SHA, true)).toBe("commit abcdef1 (not a nax bot fix push)");
   });
 });
