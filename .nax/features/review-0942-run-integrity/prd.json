@@ -3,7 +3,7 @@
   "feature": "review-0942-run-integrity",
   "branchName": "feat/review-0942-run-integrity",
   "createdAt": "2026-11-27T16:57:01.433Z",
-  "updatedAt": "2026-11-27T17:05:40.107Z",
+  "updatedAt": "2026-11-27T17:24:42.334Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,8 +29,8 @@
         "data-preservation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
