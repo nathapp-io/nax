@@ -181,6 +181,21 @@ describe("WorktreeManager", () => {
       expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(true);
     });
 
+    test("two stale cleanups racing a successor leave the successor's tree and record (AC-6)", async () => {
+      const manager = new WorktreeManager();
+      const worktreeId = deriveFor("story-reuse-race");
+      const first = await manager.create(projectRoot, worktreeId);
+      await Promise.all([
+        manager.remove(projectRoot, worktreeId, first),
+        manager.remove(projectRoot, worktreeId, first),
+      ]);
+      const second = await manager.create(projectRoot, worktreeId);
+      await manager.remove(projectRoot, worktreeId, first);
+      expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(true);
+      await manager.remove(projectRoot, worktreeId, second);
+      expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(false);
+    });
+
     test("a stale allocation cannot remove a successor's tree (AC-6)", async () => {
       const manager = new WorktreeManager();
       const worktreeId = deriveFor("story-reuse");

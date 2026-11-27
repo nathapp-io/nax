@@ -151,6 +151,12 @@ async function ownsRecord(
   return allocation.worktreeId === worktreeId && (await readOwnerToken(recordPath)) === allocation.token;
 }
 
+/** Unlink the owner record only while it still carries this allocation's token. */
+async function releaseOwnerRecord(recordPath: string | undefined, allocation?: WorktreeAllocation): Promise<void> {
+  if (recordPath === undefined || allocation === undefined) return;
+  if ((await readOwnerToken(recordPath)) === allocation.token) await unlink(recordPath).catch(() => {});
+}
+
 /** `git worktree add <path> -b <branch>`, mapping failures to WORKTREE_ERROR. */
 async function addWorktree(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
   const context = { stage: "worktree", worktreeId, projectRoot };
@@ -334,10 +340,7 @@ export class WorktreeManager {
   async create(projectRoot: string, worktreeId: WorktreeId): Promise<WorktreeAllocation> {
     // Serialize competing creates for one ID: the loser sees the winner's tree
     // and refuses instead of racing it into git.
-    const { withPathFileLock } = await import("@nathapp/nax-agent/internal");
-    const lockTarget = join(await resolveGitInfoDir(projectRoot), `${OWNER_DIR}.${worktreeId}`);
-    await mkdir(join(lockTarget, ".."), { recursive: true });
-    return withPathFileLock(lockTarget, () => this.createExclusive(projectRoot, worktreeId));
+    return this.withIdLock(projectRoot, worktreeId, () => this.createExclusive(projectRoot, worktreeId));
   }
 
   private async createExclusive(projectRoot: string, worktreeId: WorktreeId): Promise<WorktreeAllocation> {
@@ -384,7 +387,7 @@ export class WorktreeManager {
       projectRoot,
       worktreePath,
       worktreeId,
-      removeWorktree: () => this.remove(projectRoot, worktreeId, allocation),
+      removeWorktree: () => this.removeLocked(projectRoot, worktreeId, allocation),
     });
     return allocation;
   }
@@ -432,6 +435,22 @@ export class WorktreeManager {
    * this method spells neither inline.
    */
   async remove(projectRoot: string, worktreeId: WorktreeId, allocation?: WorktreeAllocation): Promise<void> {
+    // Same per-ID lock as create(): ownership is rechecked while holding it.
+    return this.withIdLock(projectRoot, worktreeId, () => this.removeLocked(projectRoot, worktreeId, allocation));
+  }
+
+  private async withIdLock<T>(projectRoot: string, worktreeId: WorktreeId, fn: () => Promise<T>): Promise<T> {
+    const { withPathFileLock } = await import("@nathapp/nax-agent/internal");
+    const lockTarget = join(await resolveGitInfoDir(projectRoot), `${OWNER_DIR}.${worktreeId}`);
+    await mkdir(join(lockTarget, ".."), { recursive: true });
+    return withPathFileLock(lockTarget, fn);
+  }
+
+  private async removeLocked(
+    projectRoot: string,
+    worktreeId: WorktreeId,
+    allocation?: WorktreeAllocation,
+  ): Promise<void> {
     const worktreePath = storyWorktreePath(projectRoot, worktreeId);
     const branchName = storyBranchName(worktreeId);
 
@@ -484,7 +503,7 @@ export class WorktreeManager {
       });
     }
 
-    if (recordPath !== undefined) await unlink(recordPath).catch(() => {});
+    await releaseOwnerRecord(recordPath, allocation);
 
     // Delete branch
     try {
