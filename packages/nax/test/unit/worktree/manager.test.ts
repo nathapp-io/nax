@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { withWarnSpy } from "@test/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { deriveStoryWorktreeId, storyBranchName } from "@/worktree";
 import { _worktreeManagerDeps, WorktreeManager } from "@/worktree/manager";
 import { naxOrphanRefName } from "@/worktree/nax-orphan-ref";
@@ -15,12 +17,22 @@ const worktreeId = deriveStoryWorktreeId(FEATURE, RAW_STORY_ID);
 const composedBranch = storyBranchName(worktreeId);
 const composedOrphanRef = naxOrphanRefName(worktreeId);
 const composedRefsBranch = `refs/heads/${composedBranch}`;
-const composedWorktreePath = `/fake/project/.nax-wt/${worktreeId}`;
 
 const SAVED_GIT_WITH_TIMEOUT = _worktreeManagerDeps.gitWithTimeout;
 
+// create() records ownership under the project's git info dir, so the root is a
+// real temp dir; git itself stays stubbed.
+let projectRoot = "";
+let composedWorktreePath = "";
+
+beforeEach(() => {
+  projectRoot = makeTempDir("wt-unit-");
+  composedWorktreePath = join(projectRoot, ".nax-wt", worktreeId);
+});
+
 afterEach(() => {
   _worktreeManagerDeps.gitWithTimeout = SAVED_GIT_WITH_TIMEOUT;
+  cleanupTempDir(projectRoot);
 });
 
 describe("US-001 WorktreeManager — surface swallowed git failures", () => {
@@ -32,7 +44,7 @@ describe("US-001 WorktreeManager — surface swallowed git failures", () => {
     });
 
     const manager = new WorktreeManager();
-    await expect(manager.remove("/fake/project", worktreeId)).rejects.toMatchObject({
+    await expect(manager.remove(projectRoot, worktreeId)).rejects.toMatchObject({
       code: "WORKTREE_NOT_FOUND",
     });
   });
@@ -47,7 +59,7 @@ describe("US-001 WorktreeManager — surface swallowed git failures", () => {
     const manager = new WorktreeManager();
     let caught: unknown;
     try {
-      await manager.remove("/fake/project", worktreeId);
+      await manager.remove(projectRoot, worktreeId);
     } catch (err) {
       caught = err;
     }
@@ -56,39 +68,32 @@ describe("US-001 WorktreeManager — surface swallowed git failures", () => {
     expect(String((caught as { message: string }).message)).toContain("could not lock ref");
   });
 
-  test("AC-3: create() warns when remove() fails with a genuine git error during cleanup", async () => {
+  test("AC-3: create() refuses an occupied live path without any git mutation", async () => {
+    const calls: string[][] = [];
     _worktreeManagerDeps.gitWithTimeout = async (args: string[]) => {
-      if (args[0] === "worktree" && args[1] === "remove") {
-        return { exitCode: 1, stdout: "", stderr: "fatal: could not lock ref" };
-      }
+      calls.push(args);
       return { exitCode: 0, stdout: "", stderr: "" };
     };
+    mkdirSync(composedWorktreePath, { recursive: true });
 
-    const manager = new WorktreeManager();
-    await withWarnSpy(async (warnSpy) => {
-      await manager.create("/fake/project", worktreeId);
-      const call = warnSpy.mock.calls.find((c) => c[0] === "worktree");
-      expect(call).toBeDefined();
-      const data = JSON.stringify(call?.[2] ?? {});
-      expect(data).toContain(worktreeId);
-      expect(data).toContain("could not lock ref");
+    await expect(new WorktreeManager().create(projectRoot, worktreeId)).rejects.toMatchObject({
+      code: "WORKTREE_OCCUPIED",
     });
+    expect(calls.filter((c) => c[0] === "worktree" && (c[1] === "remove" || c[1] === "add"))).toEqual([]);
+    expect(calls.filter((c) => c[0] === "branch" || c[0] === "update-ref")).toEqual([]);
   });
 
-  test("AC-4: create() does not warn when remove() fails only because there is nothing to remove", async () => {
+  test("AC-4: create() makes no attempt to remove an unowned tree when the path is free", async () => {
+    const calls: string[][] = [];
     _worktreeManagerDeps.gitWithTimeout = async (args: string[]) => {
-      if (args[0] === "worktree" && args[1] === "remove") {
-        return { exitCode: 1, stdout: "", stderr: "fatal: 'x' is not a working tree" };
-      }
+      calls.push(args);
       return { exitCode: 0, stdout: "", stderr: "" };
     };
 
-    const manager = new WorktreeManager();
-    await withWarnSpy(async (warnSpy) => {
-      await manager.create("/fake/project", worktreeId);
-      const call = warnSpy.mock.calls.find((c) => c[0] === "worktree");
-      expect(call).toBeUndefined();
-    });
+    const allocation = await new WorktreeManager().create(projectRoot, worktreeId);
+
+    expect(allocation.worktreeId).toBe(worktreeId);
+    expect(calls.filter((c) => c[0] === "worktree" && c[1] === "remove")).toEqual([]);
   });
 });
 
@@ -131,7 +136,7 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
     const manager = new WorktreeManager();
-    await manager.create("/fake/project", worktreeId);
+    await manager.create(projectRoot, worktreeId);
 
     const branchDeleteCalls = calls.filter((c) => c[0] === "branch" && c[1] === "-D");
     expect(branchDeleteCalls.length).toBe(0);
@@ -164,7 +169,7 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
     const manager = new WorktreeManager();
-    await manager.create("/fake/project", worktreeId);
+    await manager.create(projectRoot, worktreeId);
 
     expect(calls.filter((c) => c[0] === "branch" && c[1] === "-D").length).toBe(0);
   });
@@ -196,7 +201,7 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
     const manager = new WorktreeManager();
-    await manager.create("/fake/project", worktreeId);
+    await manager.create(projectRoot, worktreeId);
 
     const updateRefDeleteCalls = calls.filter(
       (c) => c[0] === "update-ref" && c[1] === "-d" && c[2] === composedOrphanRef,
@@ -234,7 +239,7 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
     const manager = new WorktreeManager();
-    await manager.create("/fake/project", worktreeId);
+    await manager.create(projectRoot, worktreeId);
 
     const updateRefDeleteCalls = calls.filter(
       (c) => c[0] === "update-ref" && c[1] === "-d" && c[2] === composedOrphanRef,
@@ -257,7 +262,7 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
       return { exitCode: 0, stdout: "", stderr: "" };
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
-    await new WorktreeManager().create("/fake/project", worktreeId);
+    await new WorktreeManager().create(projectRoot, worktreeId);
 
     expect(calls).not.toContainEqual(["branch", "-D", composedBranch]);
     expect(calls).not.toContainEqual(["update-ref", "-d", composedRefsBranch, "nax-tip"]);
@@ -280,55 +285,24 @@ describe("US-002 WorktreeManager — retryable failed worktrees retain ownership
       return { exitCode: 0, stdout: "", stderr: "" };
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
 
-    await new WorktreeManager().create("/fake/project", worktreeId);
+    await new WorktreeManager().create(projectRoot, worktreeId);
 
     expect(calls).toContainEqual(["update-ref", "-d", composedRefsBranch, "nax-tip"]);
     expect(calls).not.toContainEqual(["update-ref", "-d", composedOrphanRef]);
   });
 
-  test("AC-5 (Step-2 path): clears refs/nax/orphan/<worktreeId> when Step 2 removes a live worktree", async () => {
-    // The orphan ref exists AND the worktree directory still exists. Step 2's
-    // `remove()` succeeds — it removes the worktree AND its branch, setting
-    // removedLiveWorktree = true and skipping Step 3 entirely. The orphan
-    // ref would otherwise survive, dangling at a now-unreachable commit.
-    //
-    // A subsequent retry could see a user branch named `<composedBranch>` and the
-    // dangling orphan ref, which Step 3 would interpret as nax-created and
-    // force-delete — exactly the BUG-28 hole this story closes.
-    //
-    // `git worktree remove` succeeds (Step 2 path), so the worktree and
-    // branch are both deleted. `hasWorktreeRecord` returns false (admin refs
-    // are gone after `worktree prune`).
+  test("a live tree with an orphan ref is refused; the orphan ref and branch are left alone", async () => {
     const calls: string[][] = [];
     _worktreeManagerDeps.gitWithTimeout = (async (args: string[]) => {
       calls.push(args);
-      if (args[0] === "worktree" && args[1] === "list") {
-        return { exitCode: 0, stdout: "", stderr: "" };
-      }
-      if (args[0] === "cat-file" && args[1] === "-e") {
-        return { exitCode: 0, stdout: "", stderr: "" };
-      }
-      if (args[0] === "worktree" && args[1] === "remove") {
-        // Succeeds — Step 2 takes the "removed a live worktree" branch.
-        return { exitCode: 0, stdout: "", stderr: "" };
-      }
       return { exitCode: 0, stdout: "", stderr: "" };
     }) as typeof _worktreeManagerDeps.gitWithTimeout;
+    mkdirSync(composedWorktreePath, { recursive: true });
 
-    const manager = new WorktreeManager();
-    await manager.create("/fake/project", worktreeId);
+    await expect(new WorktreeManager().create(projectRoot, worktreeId)).rejects.toMatchObject({
+      code: "WORKTREE_OCCUPIED",
+    });
 
-    const updateRefDeleteCalls = calls.filter(
-      (c) => c[0] === "update-ref" && c[1] === "-d" && c[2] === composedOrphanRef,
-    );
-    expect(updateRefDeleteCalls.length).toBe(1);
-
-    // Step 3's own `branch -D` must NOT have fired — Step 2 succeeded, so
-    // Step 3 was skipped. (`remove()` itself issues a `branch -D` as part of
-    // its cleanup, but that's Step 2's branch deletion, not Step 3's.)
-    // We assert that the ONLY `branch -D` call is from `remove()` — i.e.,
-    // exactly one. If Step 3 had also fired, we'd see two.
-    const branchDeleteCalls = calls.filter((c) => c[0] === "branch" && c[1] === "-D");
-    expect(branchDeleteCalls.length).toBe(1);
+    expect(calls.filter((c) => c[0] === "update-ref" || c[0] === "branch")).toEqual([]);
   });
 });

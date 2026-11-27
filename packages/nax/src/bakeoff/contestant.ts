@@ -9,7 +9,7 @@
 import { basename, join } from "node:path";
 import type { NaxConfig } from "../config";
 import { projectOutputDir } from "../runtime/paths";
-import { storyWorktreePath, type WorktreeId } from "../worktree";
+import { storyWorktreePath, type WorktreeAllocation, type WorktreeId } from "../worktree";
 import type { ContestantResult } from "./types";
 import { deriveBakeoffWorktreeId } from "./worktree-id";
 
@@ -68,8 +68,8 @@ export interface ContestantRunnerDeps {
     // passing it through satisfies the brand. Adapters that synthesize a
     // `WorktreeManager` for a single story (e.g. the coordinator's
     // isolation test) take the same `WorktreeId` parameter.
-    create: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;
-    remove: (projectRoot: string, worktreeId: WorktreeId) => Promise<unknown>;
+    create: (projectRoot: string, worktreeId: WorktreeId) => Promise<WorktreeAllocation | undefined>;
+    remove: (projectRoot: string, worktreeId: WorktreeId, allocation?: WorktreeAllocation) => Promise<unknown>;
   };
   /** Pipeline receives the contestant's isolated run context. */
   pipeline: (ctx: ContestantRunContext) => Promise<ContestantPipelineResult>;
@@ -143,6 +143,8 @@ export async function runContestant(
     feature,
   };
 
+  // Set only once create() succeeds: a refused or failed create confers no ownership.
+  let allocation: WorktreeAllocation | undefined;
   try {
     // BUG-03: worktreeManager.create() used to run before this try block —
     // a failure there (including the deps being unwired, e.g. undefined in
@@ -150,7 +152,7 @@ export async function runContestant(
     // runContestant entirely, crashing the whole bake-off CLI invocation
     // instead of reporting this one contestant as "dnf-crashed" and letting
     // the sequential coordinator continue with the rest.
-    await deps.worktreeManager.create(options.projectRoot, storyId);
+    allocation = await deps.worktreeManager.create(options.projectRoot, storyId);
     const result = await deps.pipeline(context);
 
     const totals = aggregateTotals(result.metrics);
@@ -178,10 +180,12 @@ export async function runContestant(
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
-    try {
-      await deps.worktreeManager.remove(options.projectRoot, storyId);
-    } catch {
-      // best-effort cleanup; do not mask the result
+    if (allocation !== undefined) {
+      try {
+        await deps.worktreeManager.remove(options.projectRoot, storyId, allocation);
+      } catch {
+        // best-effort cleanup; do not mask the result
+      }
     }
   }
 }

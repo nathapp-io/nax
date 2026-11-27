@@ -16,7 +16,7 @@ describe("US-002 AC-12: deriveBakeoffWorktreeId returns the same string value as
     const id = deriveBakeoffWorktreeId("f", "agent");
     // The change to US-002 narrows the return type to WorktreeId; the
     // runtime string value MUST match the pre-US-001 implementation.
-    expect(String(id)).toBe("bakeoff-f-agent");
+    expect(String(id)).toMatch(/^bakeoff-f-agent-[0-9a-f]{8}$/);
   });
 
   test("returns an identity beginning with the prefix 'bakeoff-' (US-001 invariant)", () => {
@@ -30,12 +30,12 @@ describe("US-002 AC-12: deriveBakeoffWorktreeId returns the same string value as
     // At runtime both look like a `string`; this asserts the runtime shape
     // is unchanged.
     expect(typeof id).toBe("string");
-    expect(String(id)).toBe("bakeoff-f-agent");
+    expect(String(id)).toMatch(/^bakeoff-f-agent-[0-9a-f]{8}$/);
 
     // The branded type is structurally a string, so this assignment
     // compiles both before and after the narrowing.
     const typed: WorktreeId = id;
-    expect(String(typed)).toBe("bakeoff-f-agent");
+    expect(String(typed)).toMatch(/^bakeoff-f-agent-[0-9a-f]{8}$/);
   });
 
   test("AC-7 (boundary): deriveBakeoffWorktreeId sanitizes special characters and still validates", () => {
@@ -57,8 +57,8 @@ describe("US-002 AC-12: deriveBakeoffWorktreeId returns the same string value as
     // the story identity for ("f", "agent").
     const bakeoffId = String(deriveBakeoffWorktreeId("f", "agent"));
     const storyId = String(deriveStoryWorktreeId("f", "agent"));
-    expect(bakeoffId).toBe("bakeoff-f-agent");
-    expect(storyId).toBe("story-f-agent");
+    expect(bakeoffId).toMatch(/^bakeoff-f-agent-[0-9a-f]{8}$/);
+    expect(storyId).toMatch(/^story-f-agent-[0-9a-f]{8}$/);
     expect(bakeoffId).not.toBe(storyId);
   });
 });

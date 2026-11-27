@@ -35,6 +35,7 @@ import type { StoryMetrics } from "@/metrics";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
 import type { UserStory } from "@/prd/types";
+import { deriveStoryWorktreeId } from "@/worktree";
 
 function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
   const prd = makePRD({ userStories: [story] });
@@ -422,9 +423,10 @@ function successResultFor(storyMetrics: StoryMetrics[] = []): PipelineRunResult 
 // ---------------------------------------------------------------------------
 
 const US003_STORY_ID = "US-001";
-const COMPOSED_TAIL = join(".nax-wt", "story-f-US-001");
-const COMPOSED_BRANCH = "nax/story-f-US-001";
-const COMPOSED_ORPHAN_REF = "refs/nax/orphan/story-f-US-001";
+const COMPOSED_ID = deriveStoryWorktreeId("f", US003_STORY_ID);
+const COMPOSED_TAIL = join(".nax-wt", COMPOSED_ID);
+const COMPOSED_BRANCH = `nax/${COMPOSED_ID}`;
+const COMPOSED_ORPHAN_REF = `refs/nax/orphan/${COMPOSED_ID}`;
 const COMPOSED_SOURCE_REF = `refs/heads/${COMPOSED_BRANCH}`;
 
 /** The retry budget already spent, so `fail` reaches cleanup. */
@@ -455,7 +457,7 @@ describe("US-003 handlePipelineFailure — cleanup keys off the composed identit
     mock.restore();
   });
 
-  test("AC-8: the worktree-existence probe tests the path ending in .nax-wt/story-f-US-001", async () => {
+  test("AC-8: the worktree-existence probe tests the path ending in .nax-wt/<composed id>", async () => {
     const probed: string[] = [];
     _resultHandlerDeps.existsSync = (...args: Parameters<typeof origUkExistsSync>) => {
       probed.push(String(args[0]));
@@ -473,7 +475,7 @@ describe("US-003 handlePipelineFailure — cleanup keys off the composed identit
     expect(probed.some((p) => p.endsWith(join(".nax-wt", US003_STORY_ID)))).toBe(false);
   });
 
-  test("AC-9: the worktree removal argv names the directory ending in .nax-wt/story-f-US-001", async () => {
+  test("AC-9: the worktree removal argv names the directory ending in .nax-wt/<composed id>", async () => {
     _resultHandlerDeps.existsSync = () => true;
     const spawnCalls: string[][] = [];
     _resultHandlerDeps.spawn = mockSpawnCapturingCalls(spawnCalls);
@@ -491,7 +493,7 @@ describe("US-003 handlePipelineFailure — cleanup keys off the composed identit
     }
   });
 
-  test("AC-10: the orphan-ref argv names both refs/nax/orphan/story-f-US-001 and its composed source branch", async () => {
+  test("AC-10: the orphan-ref argv names both refs/nax/orphan/<composed id> and its composed source branch", async () => {
     _resultHandlerDeps.existsSync = () => true;
     const spawnCalls: string[][] = [];
     _resultHandlerDeps.spawn = mockSpawnCapturingCalls(spawnCalls);
@@ -513,7 +515,7 @@ describe("US-003 handlePipelineFailure — cleanup keys off the composed identit
     expect(updateRefCalls.some((a) => a[3] === `refs/heads/nax/${US003_STORY_ID}`)).toBe(false);
   });
 
-  test("AC-14: the failure log's branch field is nax/story-f-US-001 and its storyId stays raw", async () => {
+  test("AC-14: the failure log's branch field is nax/<composed id> and its storyId stays raw", async () => {
     _resultHandlerDeps.existsSync = () => true;
     _resultHandlerDeps.spawn = makeSpawn(() => ({})).spawn;
 
@@ -575,6 +577,6 @@ describe("US-003 handlePipelineSuccess — metrics keep the raw story ID", () =>
     await handlePipelineSuccess(ctx, successResultFor([metric]));
 
     expect(allStoryMetrics.map((m) => m.storyId)).toEqual([US003_STORY_ID]);
-    expect(allStoryMetrics.some((m) => m.storyId === "story-f-US-001")).toBe(false);
+    expect(allStoryMetrics.some((m) => m.storyId === COMPOSED_ID)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-export { WorktreeManager } from "./manager";
+export { type WorktreeAllocation, WorktreeManager } from "./manager";
 export { naxOrphanRefName } from "./nax-orphan-ref";
 export type { WorktreeInfo } from "./types";
 export {
