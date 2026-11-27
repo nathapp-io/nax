@@ -234,10 +234,10 @@ Mapping the result to elicitation content:
   `choiceQuestionLayout` never draws more rows than its budget. At a budget below `desired`,
   the prompt and the question are each cut to one row ending in `...` before any option row
   is withheld.
-- Result mapping: `askCardLayout` returns the choice card's rows as `head` (rules, title, tab
-  strip, prompt, question), `rows` (option window and `Other...`), `tail` (hint, countdown,
-  bottom rule), no `input` (`inputMaxRows` 0), and `elided` as the count of option rows the
-  window withholds. `measureAskCard` returns `elided` 0 and `marker` 0 at `desired`, because
+- Result mapping: `askCardLayout` returns the choice card's `head` rows (rules, title, tab
+  strip, prompt, question, option window, `Other...`), its `tail` rows (hint, countdown,
+  bottom rule), no `input` (`inputMaxRows` 0), `rows` as the numeric total it draws, and
+  `elided` as the count of option rows the window withholds. `measureAskCard` returns `elided` 0 and `marker` 0 at `desired`, because
   the window's `(n more ...)` rows stand in for an elision marker.
 - `ChatAskController` (`packages/nax/src/chat/ask-controller.ts`) gains
   `answerChoices(requestId: string, answers: readonly ChoiceAnswer[], text: string): void`,
