@@ -13,6 +13,8 @@
  * sanitised before it becomes span text: a reason carrying `\u001b[?1049l` cannot leave the
  * alternate screen.
  */
+
+import type { ChoiceQuestion } from "@nathapp/nax-agent";
 import type { AskChoice, ChatApproval, ChatPendingAsk } from "@/chat";
 import { sanitizeText } from "./styled-line";
 import { type DiffLine, diffLines } from "./tool-card";
@@ -97,7 +99,21 @@ export interface AskCardChoice {
   readonly options: readonly { readonly index: number; readonly label: string; readonly id: string }[];
 }
 
-export type AskCardModel = AskCardApproval | AskCardQuestion | AskCardChoice;
+/**
+ * A question ask that carries a question set (US-005): the structured card `ChoiceQuestionCard`
+ * draws, rather than the free-text box an ordinary question gets. Every string is the ask's own,
+ * sanitised here, so the drawing code never has to remember to.
+ */
+export interface AskCardChoiceQuestion {
+  readonly kind: "choice-question";
+  readonly title: string;
+  /** The context line above the questions; empty when the asker wrote none. */
+  readonly prompt: string;
+  readonly border: AskBorder;
+  readonly questions: readonly ChoiceQuestion[];
+}
+
+export type AskCardModel = AskCardApproval | AskCardQuestion | AskCardChoice | AskCardChoiceQuestion;
 
 /** The card's title: what the tool does, plus the sandbox note when it wants out. */
 function askTitle(ask: ChatApproval, tool: string): string {
@@ -191,9 +207,35 @@ function askOptions(canRemember: boolean): readonly AskOption[] {
   ];
 }
 
+/** One question set, every string sanitised: the only place a choice ask's text is cleaned. */
+function choiceQuestions(questions: readonly ChoiceQuestion[]): readonly ChoiceQuestion[] {
+  return questions.map((question) => ({
+    header: sanitizeText(question.header),
+    question: sanitizeText(question.question),
+    multiSelect: question.multiSelect,
+    allowOther: question.allowOther,
+    required: question.required,
+    options: question.options.map((option) =>
+      option.description === undefined
+        ? { label: sanitizeText(option.label) }
+        : { label: sanitizeText(option.label), description: sanitizeText(option.description) },
+    ),
+  }));
+}
+
 /** The card for one ask: an approval's identity, options and diff, or a question's text. */
 export function askCardModel(ask: ChatPendingAsk, options: AskCardOptions): AskCardModel {
   if (ask.type === "question") {
+    const questions = ask.questions;
+    if (questions !== undefined && questions.length > 0) {
+      return {
+        kind: "choice-question",
+        title: ASK_QUESTION_TITLE,
+        prompt: sanitizeText(ask.prompt ?? ""),
+        border: "warning",
+        questions: choiceQuestions(questions),
+      };
+    }
     return { kind: "question", title: ASK_QUESTION_TITLE, text: sanitizeText(ask.text), border: "warning" };
   }
   if (ask.type === "host_choice") {

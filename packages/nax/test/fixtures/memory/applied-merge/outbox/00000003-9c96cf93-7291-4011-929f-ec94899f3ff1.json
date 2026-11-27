@@ -1,0 +1,12 @@
+{
+  "kind": "forget",
+  "clientId": "9c96cf93-7291-4011-929f-ec94899f3ff1",
+  "scope": "project",
+  "slug": "export-window",
+  "writeMode": "direct",
+  "reason": "merged into merged",
+  "awaits": "42198a52-7bd2-4779-bff2-eaf8ba81cfe6",
+  "seq": 3,
+  "enqueuedAt": "2026-11-12T10:15:00.000Z",
+  "state": "queued"
+}

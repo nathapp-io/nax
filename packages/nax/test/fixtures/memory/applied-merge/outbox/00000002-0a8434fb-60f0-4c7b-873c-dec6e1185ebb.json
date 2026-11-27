@@ -1,0 +1,12 @@
+{
+  "kind": "forget",
+  "clientId": "0a8434fb-60f0-4c7b-873c-dec6e1185ebb",
+  "scope": "project",
+  "slug": "replay-budget",
+  "writeMode": "direct",
+  "reason": "merged into merged",
+  "awaits": "42198a52-7bd2-4779-bff2-eaf8ba81cfe6",
+  "seq": 2,
+  "enqueuedAt": "2026-11-12T10:15:00.000Z",
+  "state": "queued"
+}

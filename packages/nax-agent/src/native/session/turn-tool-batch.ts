@@ -27,7 +27,7 @@ import { type InvalidCallBudget, rewriteToolCallInput } from "./handle-invalid-t
 import type { LoopEventRegistry } from "./loop-events/index.ts";
 import { withNudge } from "./nudge.ts";
 import { buildToolResult } from "./tool-result.ts";
-import { handleAskHumanCall } from "./turn-ask-human.ts";
+import { runAskHumanCall } from "./turn-ask-human.ts";
 import type { TurnEventEmitter } from "./turn-event-emitter.ts";
 import type { TurnDeps } from "./turn-types.ts";
 
@@ -145,14 +145,12 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
     deps.onActivity?.({ kind: "tool", toolName: call.name });
     try {
       if (call.name === ASK_HUMAN_TOOL_NAME) {
-        const question = String((call.input as { text?: unknown } | undefined)?.text ?? "");
         // These push sites — and the spin notice below — are answers to a call no
         // tool produced. They use the chokepoint and deliberately fire no
         // `after_tool` event: a policy that shapes tool output has nothing to
         // shape here.
-        const outcome = await handleAskHumanCall({
-          toolCallId: call.id,
-          question,
+        const outcome = await runAskHumanCall({
+          toolCall: call,
           interactionsSoFar: recorded,
           maxInteractions,
           roundTrips,

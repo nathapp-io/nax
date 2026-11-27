@@ -4,8 +4,6 @@
  * Every export is named: nothing reaches this entry through `export *`. No "_"
  * name belongs here; test seams and reset hooks live on ./internal. The built
  * surface of both entries is pinned by api/nax-agent.api.txt (`bun run check:api`).
- *
- * Generated once by S2-7 from the previous `export *` barrels; maintained by hand.
  */
 
 // biome-ignore assist/source/organizeImports: hand-ordered by byte code — `session-adapter` sorts before `session/` because `-` is below `/`
@@ -410,6 +408,18 @@ export type {
   AgentUsageUpdateEvent,
 } from "#src/session/agent-stream-events";
 export {
+  CHOICE_HEADER_MAX_CHARS,
+  CHOICE_MAX_QUESTIONS,
+  type ChoiceAnswer,
+  type ChoiceAskResult,
+  type ChoiceOption,
+  type ChoiceQuestion,
+  formatChoiceAnswers,
+  parseChoiceQuestions,
+  renderChoiceQuestionsText,
+  validateChoiceAnswers,
+} from "#src/session/choice-questions";
+export {
   IMAGE_MIME_TYPES,
   IMAGE_TOKEN_ESTIMATE,
   MAX_IMAGE_BASE64_CHARS,
@@ -453,14 +463,8 @@ export {
 } from "#src/session/session-types";
 export type { SteerChannel, SteerResult } from "#src/session/steer-channel";
 export { attachTurnSpend, type FailedTurnSpend, readTurnSpend } from "#src/session/turn-spend";
-export type {
-  JSONSchema,
-  ToolDescriptor,
-} from "#src/session/tool-descriptor";
-export {
-  createTurnDeadline,
-  type TurnDeadline,
-} from "#src/session/turn-deadline";
+export type { JSONSchema, ToolDescriptor } from "#src/session/tool-descriptor";
+export { createTurnDeadline, type TurnDeadline } from "#src/session/turn-deadline";
 export type { TurnEvent, TurnEventSink } from "#src/session/turn-event";
 export {
   adaptProviderTool,
@@ -585,12 +589,7 @@ export {
   writeTool,
 } from "#src/tools/index";
 export { compileArgvPattern, matchesArgvPattern, type CompiledPattern } from "#src/tools/policy-match";
-export {
-  EMPTY_OWNED_PATHS_POLICY,
-  type OwnedBashCandidate,
-  type OwnedPathsPolicy,
-} from "#src/tools/owned-paths";
-
+export { EMPTY_OWNED_PATHS_POLICY, type OwnedBashCandidate, type OwnedPathsPolicy } from "#src/tools/owned-paths";
 export type {
   BackgroundCommandPort,
   BackgroundCommandHandle,

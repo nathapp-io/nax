@@ -91,7 +91,13 @@ type BeforeTurnEndPayload
 type BeforeTurnPatch
 type BeforeTurnPayload
 type BuildCommandShadowOptions
+CHOICE_HEADER_MAX_CHARS
+CHOICE_MAX_QUESTIONS
 COMMAND_SAFETY_DIR
+type ChoiceAnswer
+type ChoiceAskResult
+type ChoiceOption
+type ChoiceQuestion
 type Classify
 type ClearTaintOutcome
 type CodingTool
@@ -435,6 +441,7 @@ findSecret
 findSecretSpans
 flushOpenToolAuditSinks
 forgetMemoryNote
+formatChoiceAnswers
 getAgentRuntime
 getCodingTool
 getLogger
@@ -477,6 +484,7 @@ normalizeExec
 normalizeManagerBinary
 openShadowTap
 parseAnswer
+parseChoiceQuestions
 parseMemoryNote
 parseModelSpec
 parseRuleList
@@ -510,6 +518,7 @@ registerCodingTool
 registerToolAuditSink
 removeApprovals
 removeStoredProvider
+renderChoiceQuestionsText
 renderMemoryIndex
 renderProviderInstructions
 requestCapabilityTool
@@ -554,6 +563,7 @@ truncateForModel
 truncationDirectionFor
 unregisterToolAuditSink
 unsandboxedSentence
+validateChoiceAnswers
 validateImageAttachments
 validateMemoryNoteWrite
 validateProviderId

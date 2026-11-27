@@ -1,0 +1,24 @@
+{
+  "id": "20261127T121730Z-80d48f",
+  "createdAt": "2026-11-27T12:17:30.530Z",
+  "status": "applied",
+  "provider": "koda",
+  "model": "balanced",
+  "retired": [],
+  "merged": [
+    {
+      "from": ["replay-budget", "export-window"],
+      "into": "merged"
+    }
+  ],
+  "notesBefore": 2,
+  "fillBefore": 0.9,
+  "created": [
+    {
+      "slug": "merged",
+      "updatedAt": "2026-11-27T12:17:30.659Z",
+      "contentHash": "36ac67870fc835e6e97186b3f24c56c71fe967d92984afe6be83690277d55863"
+    }
+  ],
+  "notesAfter": 1
+}

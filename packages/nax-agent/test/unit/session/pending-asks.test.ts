@@ -129,4 +129,50 @@ describe("createPendingAskTable", () => {
     expect(table.answer("never-issued", { decision: "allow" })).toBe("unknown");
     expect(await table.issue("question", undefined).settled).toEqual({ by: "cancelled" });
   });
+
+  test("an entry issued without a validator accepts any { text } reply to a question", async () => {
+    manualTimers();
+    const table = createPendingAskTable(30_000);
+    const ask = table.issue("question", undefined);
+    expect(table.answer(ask.requestId, { text: "anything at all" })).toBe("accepted");
+    expect(await ask.settled).toEqual({ by: "human", reply: { text: "anything at all" } });
+  });
+
+  test("a validator's reason throws AGENT_SESSION_INVALID_ANSWER and leaves the request pending", async () => {
+    manualTimers();
+    const table = createPendingAskTable(30_000);
+    const ask = table.issue("question", undefined, (reply) =>
+      "text" in reply && reply.text === "bad" ? "answers[0]: expected an object" : undefined,
+    );
+    let caught: unknown;
+    try {
+      table.answer(ask.requestId, { text: "bad" });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_ANSWER");
+    expect(caught.message).toContain("answers[0]: expected an object");
+    expect(table.answer(ask.requestId, { text: "good" })).toBe("accepted");
+    expect(await ask.settled).toEqual({ by: "human", reply: { text: "good" } });
+  });
+
+  test("a validator is not run for an answer to an entry that has already expired", async () => {
+    const timers = manualTimers();
+    const table = createPendingAskTable(30_000);
+    const validations: unknown[] = [];
+    const validator = (reply: unknown): string | undefined => {
+      validations.push(reply);
+      return undefined;
+    };
+    const answered = table.issue("question", undefined, validator);
+    expect(table.answer(answered.requestId, { text: "answered while pending" })).toBe("accepted");
+    expect(validations).toEqual([{ text: "answered while pending" }]);
+
+    const expired = table.issue("question", undefined, validator);
+    timers.fire();
+    expect(await expired.settled).toEqual({ by: "timeout" });
+    expect(table.answer(expired.requestId, { text: "late" })).toBe("expired");
+    expect(validations).toHaveLength(1);
+  });
 });

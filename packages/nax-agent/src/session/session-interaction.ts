@@ -331,15 +331,30 @@ async function runCodingTool(
   }
 }
 
-async function answerQuestion(deps: SessionInteractionDeps, text: string): Promise<AdapterInteractionResponse | null> {
-  const answer = await deps.asks.askQuestion(text);
+/**
+ * US-002: answer a question request. A request carrying `questions` takes the
+ * ask port's choice path when the port has one — a host that can draw a card or
+ * a form does; `text` already carries the rendered options, so every other
+ * consumer (koda, the ACP server, the run-time ACP port, Telegram) keeps
+ * today's `askQuestion(text)` and loses nothing.
+ */
+async function answerQuestion(
+  deps: SessionInteractionDeps,
+  request: Extract<AdapterInteraction, { kind: "question" }>,
+): Promise<AdapterInteractionResponse | null> {
+  const askChoices = deps.asks.askChoices?.bind(deps.asks);
+  if (request.questions !== undefined && askChoices !== undefined) {
+    const result = await askChoices(request.prompt ?? request.text, request.questions);
+    return result === null ? null : { answer: result.text };
+  }
+  const answer = await deps.asks.askQuestion(request.text);
   return answer === null ? null : { answer };
 }
 
 export function createSessionInteractionHandler(deps: SessionInteractionDeps): InteractionHandler {
   return {
     async onInteraction(request) {
-      if (request.kind === "question") return answerQuestion(deps, request.text);
+      if (request.kind === "question") return answerQuestion(deps, request);
       if (request.kind === "context-tool") {
         // A model may still call a denied tool it remembers from earlier turns.
         // Keep it hidden, but distinguish a policy refusal from an unknown name.

@@ -12,6 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
@@ -24,7 +25,7 @@ import {
   type MemorySyncResult,
   syncMemory,
 } from "@nathapp/nax-agent";
-import { applyMemoryCompaction, undoMemoryCompaction } from "@nathapp/nax-agent/internal";
+import { undoMemoryCompaction } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { createKodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
@@ -185,23 +186,10 @@ describe("syncMemory over the koda provider", () => {
       if (call.url.endsWith("/write-mode")) return jsonAnswer({ ret: 0, data: { mode: "direct" } });
       return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
     });
-    await koda.store.writeNote(noteFor(FIRST_SLUG));
-    await koda.store.writeNote(noteFor(SECOND_SLUG));
-    await applyMemoryCompaction({
-      ...koda,
-      provider: "koda",
-      model: "balanced",
-      fillBefore: 0.9,
-      keepArchives: 2,
-      plan: {
-        retire: [],
-        merge: [
-          {
-            from: [FIRST_SLUG, SECOND_SLUG],
-            into: { slug: "merged", description: "combined", body: "merged body", type: "project" },
-          },
-        ],
-      },
+    // Start where applyMemoryCompaction finished: two archived notes, their merged
+    // replacement, and its pending outbox entries. Only sync and undo are under test.
+    await cp(join(import.meta.dir, "../../fixtures/memory/applied-merge"), koda.store.paths.projectDir, {
+      recursive: true,
     });
     expect(await koda.sync()).toMatchObject({ outcome: "synced" });
     expect(await koda.store.readNote("project", "merged")).toMatchObject({ updatedAt: serverTime });

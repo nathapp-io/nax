@@ -16,6 +16,7 @@ import type {
   SessionConfigureInput,
   TurnTimeoutSeconds,
 } from "./agent-session-types.ts";
+import type { ChoiceAskResult, ChoiceQuestion } from "./choice-questions.ts";
 import type { AgentSessionAdapter, SendTurnOpts, SessionHandle } from "./session-types.ts";
 
 export interface BackendInfo {
@@ -63,6 +64,17 @@ export interface SessionAskPort {
    * example a backend's per-request scope that ends before the turn does).
    */
   askQuestion(text: string, opts?: { readonly signal?: AbortSignal }): Promise<string | null>;
+  /**
+   * US-001: the person's choice answers, or null on deadline, cancel or no
+   * running turn. The emitted `question` event carries `questions`, `prompt`
+   * and the rendered text, so a host that ignores `questions` still shows them.
+   * Optional: a host with no choice surface keeps the `askQuestion` path.
+   */
+  askChoices?(
+    prompt: string,
+    questions: readonly ChoiceQuestion[],
+    opts?: { readonly signal?: AbortSignal },
+  ): Promise<ChoiceAskResult | null>;
   /** An informational question event; answer() on its id returns "cancelled". No-op when no turn is running. */
   noteQuestion(text: string): void;
 }

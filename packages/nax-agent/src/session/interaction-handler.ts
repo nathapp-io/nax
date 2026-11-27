@@ -1,9 +1,22 @@
 import type { ImageAttachment } from "#src/cost/standard-types";
 import { NO_OP_INTERACTION_HANDLER as RUNTIME_NO_OP_INTERACTION_HANDLER } from "#src/session/no-op-interaction-handler";
+import type { ChoiceQuestion } from "./choice-questions.ts";
 
 export type AdapterInteraction =
   | { kind: "context-tool"; name: string; input?: unknown; error?: string }
-  | { kind: "question"; text: string }
+  | {
+      kind: "question";
+      /**
+       * What a handler that knows nothing of choice questions shows: the plain
+       * question today, and for a choice ask the rendered prompt + options
+       * (`renderChoiceQuestionsText`). Reading only `text` is still correct.
+       */
+      text: string;
+      /** US-002: the model's ask text before rendering — the prompt line of a choice ask. */
+      prompt?: string;
+      /** US-002: present when the ask carries structured choice questions. */
+      questions?: readonly ChoiceQuestion[];
+    }
   // Coding tools get their own kind rather than riding "context-tool": that
   // channel is the context engine's pull-tool vocabulary, with PullToolBudget
   // behind it. Routing Write through it would be a category error.
