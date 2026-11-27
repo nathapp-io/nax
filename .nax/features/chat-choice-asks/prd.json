@@ -3,7 +3,7 @@
   "feature": "chat-choice-asks",
   "branchName": "feat/chat-choice-asks",
   "createdAt": "2026-11-27T08:49:27.123Z",
-  "updatedAt": "2026-11-27T09:34:37.514Z",
+  "updatedAt": "2026-11-27T09:43:44.328Z",
   "userStories": [
     {
       "id": "US-001",
@@ -167,14 +167,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds one bounded branch and mapping helpers to existing elicitation.ts, tested through the existing answerElicitation handler and typed fake ask port; session interaction and display sanitization retain the mandatory strict three-session override."
+        "reasoning": "Adds one bounded branch and mapping helpers to existing elicitation.ts, tested through the existing answerElicitation handler and typed fake ask port; session interaction and display sanitization retain the mandatory strict three-session override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/elicitation.ts",
@@ -188,7 +191,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "04b2df0a57b8947eed32693190017915f0acfe7c"
     },
     {
       "id": "US-004",
