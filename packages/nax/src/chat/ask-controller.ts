@@ -1,4 +1,10 @@
-import { type AnswerReply, approvalMemoryApplies, approvalMemoryKey, type SessionEvent } from "@nathapp/nax-agent";
+import {
+  type AnswerReply,
+  approvalMemoryApplies,
+  approvalMemoryKey,
+  type ChoiceAnswer,
+  type SessionEvent,
+} from "@nathapp/nax-agent";
 import type { ChatMode } from "./chat-mode";
 
 export type AskChoice = "allow_once" | "allow_session" | "deny";
@@ -74,6 +80,11 @@ export interface ChatAskController {
   resolve(requestId: string, choice: AskChoice): void;
   canRemember(event: ChatApproval): boolean;
   answerQuestion(requestId: string, text: string): void;
+  /**
+   * Answers a session question with structured choice answers (US-005): `text` is the same
+   * answer rendered for the assessor, and `answers` is what it reads structurally.
+   */
+  answerChoices(requestId: string, answers: readonly ChoiceAnswer[], text: string): void;
   /** Settles an open question without an answer: a host question with null, a session one with the reply. */
   declineQuestion(requestId: string): void;
   setMode(mode: ChatMode): void;
@@ -294,6 +305,20 @@ class AskController implements ChatAskController {
       return;
     }
     this.options.answer(requestId, { text });
+    this.remove(requestId);
+  }
+
+  /**
+   * Answers a session question with the structured answers behind its text (US-005). The
+   * answer is dispatched before the ask is removed, so a session that refuses it — an invalid
+   * answer list, an id it never issued — throws with the ask still pending and the card still
+   * open. A host question settles through its own promise and takes no answers; an unknown id
+   * is nothing at all.
+   */
+  answerChoices(requestId: string, answers: readonly ChoiceAnswer[], text: string): void {
+    if (this.open.get(requestId)?.type !== "question") return;
+    if (this.questions.has(requestId)) return;
+    this.options.answer(requestId, { text, answers });
     this.remove(requestId);
   }
 

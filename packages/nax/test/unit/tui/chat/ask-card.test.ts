@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@nathapp/nax-agent";
+import type { ChoiceQuestion, SessionEvent } from "@nathapp/nax-agent";
 import type { ChatApproval, ChatPendingAsk } from "@/chat";
 import {
   ASK_NO,
@@ -286,6 +286,52 @@ describe("askCardModel question", () => {
 
   test("returns the question's own text, sanitised", () => {
     expect(questionCard({ text: "which\u001b[0m package?" }).text).toBe("which package?");
+  });
+});
+
+/** One choice question as the shared contract carries it; the card only draws it. */
+function choiceQuestion(overrides: Partial<ChoiceQuestion> = {}): ChoiceQuestion {
+  return {
+    header: "Runner",
+    question: "Which runner?",
+    options: [{ label: "bun" }, { label: "vitest" }],
+    multiSelect: false,
+    allowOther: true,
+    required: true,
+    ...overrides,
+  };
+}
+
+describe("askCardModel choice question", () => {
+  test("US-005 AC-1: a question carrying questions is a choice-question with sanitised strings", () => {
+    const card = askCardModel(
+      question({
+        prompt: "pick\u001b[0m one",
+        questions: [
+          choiceQuestion({
+            question: "Which\u001b[0m runner?",
+            options: [{ label: "bun\u001b[0m", description: "fast\u001b[0m" }, { label: "vitest" }],
+          }),
+        ],
+      }),
+      { canRemember: false, entries: NO_ENTRIES },
+    );
+    expect(card.kind).toBe("choice-question");
+    if (card.kind !== "choice-question") throw new Error(`expected a choice-question, got ${card.kind}`);
+    expect(card.title).toBe(ASK_QUESTION_TITLE);
+    expect(card.border).toBe("warning");
+    expect(card.prompt).toBe("pick one");
+    expect(card.questions.map((item) => item.question)).toEqual(["Which runner?"]);
+    expect(card.questions[0]?.options[0]?.label).toBe("bun");
+    expect(card.questions[0]?.options[0]?.description).toBe("fast");
+    expect(card.questions[0]?.options[1]?.label).toBe("vitest");
+  });
+
+  test("US-005 AC-2: a question carrying no questions stays a text question card", () => {
+    const card = askCardModel(question(), { canRemember: false, entries: NO_ENTRIES });
+    expect(card.kind).toBe("question");
+    if (card.kind !== "question") throw new Error(`expected a question, got ${card.kind}`);
+    expect(card.text).toBe("which package?");
   });
 });
 

@@ -215,6 +215,31 @@ describe("createChatAskController", () => {
   });
 });
 
+describe("choice answers (US-005)", () => {
+  test("AC-11: answerChoices answers an open session question with its text and its answers", () => {
+    const { asks, answer } = setup();
+    const event = question();
+    asks.handle(event);
+    const answers = [{ selected: [1] }];
+    asks.answerChoices("q1", answers, "Which runner? -> vitest");
+    expect(answer.mock.calls).toEqual([["q1", { text: "Which runner? -> vitest", answers }]]);
+    expect(asks.pending()).toEqual([]);
+  });
+
+  test("AC-12: answerChoices ignores an unknown id and a host question", async () => {
+    const { asks, answer } = setup();
+    asks.answerChoices("missing", [{ selected: [0] }], "no such ask");
+    const waiting = asks.requestHostQuestion({ text: "Which base branch?" });
+    const hostId = asks.pending()[0]?.requestId ?? "missing";
+    asks.answerChoices(hostId, [{ selected: [0] }], "a host question takes no answers");
+    expect(answer).not.toHaveBeenCalled();
+    // The host question is still waiting: a refused answer leaves it pending.
+    expect(asks.pending()).toHaveLength(1);
+    asks.reset();
+    expect(await waiting).toBeNull();
+  });
+});
+
 describe("host questions (US-009)", () => {
   const original = { ...hostAsks._askControllerDeps };
   const now = new Date("2026-10-27T00:00:00.000Z");

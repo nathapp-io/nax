@@ -52,6 +52,7 @@ function fakeHost(overrides: Partial<ChatHostState> = {}, notice?: string) {
       reset: () => {},
       handle: () => {},
       answerQuestion: () => {},
+      answerChoices: () => {},
       declineQuestion: () => {},
       onChange: () => () => {},
     },

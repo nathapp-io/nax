@@ -23,16 +23,33 @@
  * return that submits and — through the screen's `onDismiss` — escape, which closes the card
  * and declines the question rather than arming the input's own clear.
  *
+ * A `question` ask carrying a question set is a fourth kind, `choice-question`, and none of
+ * this file draws it: `ChoiceQuestionCard` owns its rows, its state and its keys, and
+ * `askCardLayout` / `measureAskCard` delegate the kind to `choice-question-layout.ts`. Every
+ * other kind keeps the framed box below, so a structured ask never grew this one.
+ *
  * The countdown is a `setTimeout` chain of `COUNTDOWN_TICK_MS`, cleared with `clearTimeout`
  * on unmount and once nothing is left to count; `setInterval` is not used because the
  * effect's cleanup could not stop a tick already queued. `_askCardDeps` carries that clock,
- * so a test moves time instead of waiting for it.
+ * so a test moves time instead of waiting for it; both cards read it from `countdown.ts`,
+ * which is re-exported here so an existing import of it from this module keeps working.
  */
 import { Box, type Key, useInput } from "ink";
 import { type ReactElement, useEffect, useRef, useState } from "react";
 import type { AskChoice, ChatAskController, ChatPendingAsk } from "@/chat";
-import type { AskCardApproval, AskCardChoice, AskCardModel, AskCardQuestion, AskOption } from "./ask-card";
+import type {
+  AskCardApproval,
+  AskCardChoice,
+  AskCardChoiceQuestion,
+  AskCardModel,
+  AskCardQuestion,
+  AskOption,
+} from "./ask-card";
 import { ChatInput, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
+import { ChoiceQuestionCard } from "./ChoiceQuestionCard";
+import { initialChoiceState } from "./choice-question";
+import { choiceQuestionLayout, choiceQuestionMeasurement } from "./choice-question-layout";
+import { _askCardDeps, COUNTDOWN_TICK_MS, countdownRows, secondsLeft } from "./countdown";
 import {
   type LayoutContext,
   oneLine,
@@ -48,17 +65,16 @@ import { displayWidth, type Span, type StyledLine, StyledLineView } from "./styl
 import type { ChatColorToken, ChatTheme } from "./theme";
 import type { DiffLine } from "./tool-card";
 
-/** The delay between countdown redraws: one second, so `m:ss` never skips a value. */
-export const COUNTDOWN_TICK_MS = 1000;
-/** Under this many seconds left the countdown turns the theme's warning colour. */
-export const COUNTDOWN_WARNING_SECONDS = 60;
+export {
+  _askCardDeps,
+  type AskCountdown,
+  COUNTDOWN_TICK_MS,
+  COUNTDOWN_WARNING_SECONDS,
+  countdownLabel,
+} from "./countdown";
+
 /** The columns a command and a summary are indented by; a diff takes the tool card's own. */
 const INDENT_COLUMNS = 3;
-/** One second, in milliseconds: what the countdown divides the time left by. */
-const MS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
-/** A minute count of one digit, and a seconds count padded to two: `m:ss`. */
-const SECONDS_PADDING = 2;
 /** The label's own words; the count is what changes. */
 const ELIDED_ONE = "1 more line";
 /**
@@ -76,46 +92,6 @@ const CARD_BLANK: StyledLine = [{ text: SPACE }];
 
 /** The text a blank source line draws: one space, so the row it was measured as is a row on screen. */
 const BLANK_ROW = SPACE;
-
-/**
- * Injected seams. `now` reads the countdown's clock, and the timer pair is the chain that
- * re-renders it: a plain `setTimeout` rather than a sleep because its handle is cancelled
- * mid-flight, by unmount and by the countdown reaching zero.
- */
-export const _askCardDeps = {
-  now: (): number => Date.now(),
-  setTimeout: (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> | number =>
-    globalThis.setTimeout(callback, delayMs),
-  clearTimeout: (handle: ReturnType<typeof setTimeout> | number): void => globalThis.clearTimeout(handle),
-};
-
-/** What the card's last row says, and the colour it says it in. */
-export interface AskCountdown {
-  readonly text: string;
-  readonly color: "muted" | "warning";
-}
-
-/**
- * Whole seconds left until an ask expires: a timestamp that does not parse, or one already
- * behind the clock, leaves none. Every fixture in the suite stamps `at: "now"`, so an
- * unparseable expiry has to read as zero rather than as `NaN` seconds.
- */
-function secondsLeft(expiresAt: string, nowMs: number): number {
-  const expires = Date.parse(expiresAt);
-  if (!Number.isFinite(expires)) return 0;
-  return Math.max(0, Math.floor((expires - nowMs) / MS_PER_SECOND));
-}
-
-/** `m:ss` left, muted until the last minute and `warning` inside it. */
-export function countdownLabel(expiresAt: string, nowMs: number): AskCountdown {
-  const left = secondsLeft(expiresAt, nowMs);
-  const minutes = Math.floor(left / SECONDS_PER_MINUTE);
-  const seconds = String(left % SECONDS_PER_MINUTE).padStart(SECONDS_PADDING, "0");
-  return {
-    text: `expires in ${minutes}:${seconds}`,
-    color: left < COUNTDOWN_WARNING_SECONDS ? "warning" : "muted",
-  };
-}
 
 /** Everything a card's rows depend on but the rows it is given. */
 export interface AskCardContentOptions {
@@ -141,10 +117,21 @@ export interface AskCardLayoutOptions extends AskCardContentOptions {
   readonly budget: number;
 }
 
+/**
+ * A card this framed box draws: every ask model but the choice question, whose rows, keys and
+ * rendering all belong to `ChoiceQuestionCard` (US-005).
+ */
+type FramedAskModel = Exclude<AskCardModel, AskCardChoiceQuestion>;
+
 /** The rows the card draws, already fitted to the rows the screen can spare. */
 export interface AskCardLayout {
   /** Everything above the question box: the frame's top rule, the title and the ask itself. */
   readonly head: readonly StyledLine[];
+  /**
+   * The rows between the head and the tail. Only a `choice-question` uses them: its option
+   * window and `Other...` row, or the list the review step draws. Every other card draws none.
+   */
+  readonly middle: readonly StyledLine[];
   /** Everything below it: the options, the countdown and the frame's bottom rule. */
   readonly tail: readonly StyledLine[];
   /** The rows the question box draws, the two rules that frame it included; 0 on an approval. */
@@ -157,7 +144,7 @@ export interface AskCardLayout {
   readonly inputMaxRows: number;
   /** How many of the card's content rows were withheld — the elision label names them. */
   readonly elided: number;
-  /** Every row the card occupies, `head` + `input` + `tail`. */
+  /** Every row the card occupies, `head` + `middle` + `input` + `tail`. */
   readonly rows: number;
 }
 
@@ -273,17 +260,6 @@ function diffRows(diff: readonly DiffLine[], context: LayoutContext): readonly S
 }
 
 /**
- * The countdown's rows as the card draws them at `nowMs`: `expires in m:ss` behind the same
- * wrap every other card text takes, so a card narrower than the label draws it over two rows
- * and the measurement reserves both. It is the card's tail, so a row it counted as one while
- * the frame could only draw two would be an overflow the allocator never saw.
- */
-function countdownRows(expiresAt: string, nowMs: number, context: LayoutContext): readonly StyledLine[] {
-  const countdown = countdownLabel(expiresAt, nowMs);
-  return prefixedLine([styled(countdown.text, { color: countdown.color })], [], context);
-}
-
-/**
  * An approval's parts: what it wants to run, why and what it would change behind its title,
  * and the choices, countdown and bottom rule the user acts on beneath it. None of the body is
  * required — a short card may withhold all of it behind the elision marker.
@@ -335,7 +311,7 @@ function questionParts(model: AskCardQuestion, options: AskCardContentOptions, c
 }
 
 /** One card's parts, whichever kind of ask it draws. */
-function cardParts(model: AskCardModel, options: AskCardContentOptions, context: LayoutContext): CardParts {
+function cardParts(model: FramedAskModel, options: AskCardContentOptions, context: LayoutContext): CardParts {
   return model.kind === "question" ? questionParts(model, options, context) : approvalParts(model, options, context);
 }
 
@@ -430,8 +406,22 @@ function fitHead(parts: CardParts, available: number, context: LayoutContext): F
 /**
  * The rows the card draws at a given width and budget: an approval's identity, reason, diff
  * and options, or a question's text above the box its answer is typed into.
+ *
+ * A `choice-question` is not this card's to lay out (US-005): its rows come from
+ * `choiceQuestionLayout`, and the mapping here is the reason it delegates — the choice card
+ * has no answer box, and its option window is drawn between the head and the tail.
  */
 export function askCardLayout(model: AskCardModel, options: AskCardLayoutOptions): AskCardLayout {
+  if (model.kind === "choice-question") {
+    const drawn = choiceQuestionLayout(model, initialChoiceState(model.questions), {
+      width: options.width,
+      budget: options.budget,
+      theme: options.theme,
+      expiresAt: options.expiresAt,
+      ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
+    });
+    return { ...drawn, input: 0, inputMaxRows: 0 };
+  }
   const context: LayoutContext = { width: resolveWidth(options.width), theme: options.theme, expanded: false };
   const budget = Math.max(1, Math.floor(options.budget));
   const parts = cardParts(model, options, context);
@@ -439,6 +429,7 @@ export function askCardLayout(model: AskCardModel, options: AskCardLayoutOptions
   const fitted = fitHead(parts, budget - box.rows - parts.tail.length, context);
   return {
     head: fitted.head,
+    middle: [],
     tail: parts.tail,
     input: box.rows,
     inputMaxRows: box.maxRows,
@@ -471,6 +462,7 @@ export interface AskCardMeasurement {
  * and one below it is a diagnostic the allocator must choose.
  */
 export function measureAskCard(model: AskCardModel, options: AskCardContentOptions): AskCardMeasurement {
+  if (model.kind === "choice-question") return measureChoiceQuestion(model, options);
   const context: LayoutContext = { width: resolveWidth(options.width), theme: options.theme, expanded: false };
   const parts = cardParts(model, options, context);
   const elided = parts.body.length - parts.bodyFloor;
@@ -483,6 +475,22 @@ export function measureAskCard(model: AskCardModel, options: AskCardContentOptio
     elided,
     marker: markerRows(elided, context),
   };
+}
+
+/**
+ * A choice card measured without its state: the rows every tab and the review step draw are
+ * what the screen has to reserve, so `desired` is the largest of them. The window's own
+ * `(n more ...)` rows stand in for an elision marker — nothing outside the card ever draws one
+ * — so `elided` and `marker` are 0 at every budget.
+ */
+function measureChoiceQuestion(model: AskCardChoiceQuestion, options: AskCardContentOptions): AskCardMeasurement {
+  const content = {
+    width: options.width,
+    theme: options.theme,
+    expiresAt: options.expiresAt,
+    ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
+  };
+  return { ...choiceQuestionMeasurement(model, content), elided: 0, marker: 0 };
 }
 
 export interface AskCardProps {
@@ -527,11 +535,22 @@ function chosenOption(input: string, key: Key, options: readonly AskOption[], se
 }
 
 /**
+ * The ask card. A `choice-question` has its own card — its rows, its state and its keys are
+ * none of this file's (US-005) — so the choice kind is delegated whole and everything else is
+ * drawn by the framed box below.
+ */
+export function AskCard(props: AskCardProps): ReactElement {
+  const { model } = props;
+  if (model.kind === "choice-question") return <ChoiceQuestionCard {...props} model={model} />;
+  return <FramedAskCard {...props} model={model} />;
+}
+
+/**
  * The framed ask card. It draws exactly the rows `askCardLayout` measured, resolves the ask
  * through the screen's controller, and reports a No so the screen can hint what to type
  * instead.
  */
-export function AskCard({
+function FramedAskCard({
   ask,
   model,
   controller,
@@ -543,7 +562,7 @@ export function AskCard({
   onDeclined,
   onDismiss,
   active = true,
-}: AskCardProps): ReactElement {
+}: AskCardProps & { readonly model: FramedAskModel }): ReactElement {
   const [nowMs, setNowMs] = useState<number>(() => _askCardDeps.now());
   const [selected, setSelected] = useState(0);
   /**
@@ -650,6 +669,10 @@ export function AskCard({
           maxRows={layout.inputMaxRows}
         />
       ) : null}
+      {layout.middle.map((line, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the card's rows are positional and redrawn whole.
+        <StyledLineView key={`middle-${index}`} line={line} theme={theme} />
+      ))}
       {layout.tail.map((line, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: the card's rows are positional and redrawn whole.
         <StyledLineView key={`tail-${index}`} line={line} theme={theme} />

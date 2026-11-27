@@ -127,6 +127,7 @@ function fakeController(canRemember: boolean) {
     requestHostQuestion: async () => null,
     resolveChoice: () => {},
     answerQuestion,
+    answerChoices: () => {},
     declineQuestion: () => {},
     setMode: () => {},
     reset: () => {},
@@ -755,7 +756,7 @@ describe("AskCard safe minimum", () => {
     const frame = rows.join("\n");
     // The complete title and the attribution tag it carries, over however many rows they wrap.
     for (const word of ["Bash", "command", "[agent", "code-reviewer]"]) expect(frame).toContain(word);
-    if (model.kind === "question") throw new Error("an approval is not a question card");
+    if (model.kind !== "approval") throw new Error("an approval is not a choice card");
     for (const option of model.options) {
       // The number the card gives it — behind the pointer on the selected one — and its label.
       expect(optionRowStarts(rows, option.index)).toBe(true);
@@ -774,7 +775,7 @@ describe("AskCard safe minimum", () => {
     expect(card.frame()).toContain("expires in");
     const frame = rows.join("\n");
     expect(frame).toContain("nax-close");
-    if (model.kind === "question") throw new Error("a choice is not a question card");
+    if (model.kind !== "choice") throw new Error("the host choice is not a question card");
     for (const option of model.options) {
       expect(optionRowStarts(rows, option.index)).toBe(true);
       for (const word of words(option.label)) expect(frame).toContain(word);
@@ -971,7 +972,7 @@ describe("AskCard in a constrained frame", () => {
     // The countdown's own two rows sit directly above the frame's bottom rule.
     expect(rows.slice(-3)).toEqual(["expires in", "10:00", rule(NARROWEST)]);
     // No option is clipped away by the rows the countdown took: every number is on screen.
-    if (card.model.kind === "question") throw new Error("an approval is not a question card");
+    if (card.model.kind !== "approval") throw new Error("an approval is not a question card");
     for (const option of card.model.options) {
       const numbered = rows.some((row) =>
         row.trimStart().replace(`${THEME.glyphs.pointer} `, "").startsWith(`${option.index}. `),
