@@ -169,6 +169,10 @@ describe("syncMemory over the koda provider", () => {
     cleanupTempDir(dir);
   });
 
+  // 30 s, not `test:confined`'s 5 s default: an apply, its sync and its undo spawn one
+  // pinned-directory worker per note write and delete — 46 child processes on this path
+  // locally — and a spawn costs several times more inside the confined sandbox, which put
+  // this case a second over the default there while every other case in this file stayed clear.
   test("an acknowledged merge can be undone after pulling its server timestamp", async () => {
     let saved: unknown[] = [];
     const serverTime = "2026-12-01T10:00:00.000Z";
@@ -206,7 +210,7 @@ describe("syncMemory over the koda provider", () => {
     expect(await koda.sync()).toMatchObject({ outcome: "synced" });
     expect(await koda.store.readNote("project", "merged")).toMatchObject({ updatedAt: serverTime });
     expect((await undoMemoryCompaction(koda)).removed).toEqual(["merged"]);
-  });
+  }, 30000);
 
   test.each([400, 403, 409, 413, 422])(
     "a save answered %d is marked rejected and the drain delivers the next one (AC-23)",
