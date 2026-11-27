@@ -8,8 +8,9 @@
  * `latest.jsonl` alias are never followed.
  */
 
-import { existsSync, realpathSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
+import { NaxError } from "../errors";
 
 const LOG_BASENAME = /^[A-Za-z0-9._-]+\.jsonl$/;
 const LATEST_ALIAS = "latest.jsonl";
@@ -41,5 +42,22 @@ export function resolveRegisteredLogPath(meta: {
     return realFile;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Read a resolved log's text through a handle opened with O_NOFOLLOW, so a symlink swapped in
+ * at the resolved path after validation is refused instead of followed. Throws ELOOP/ENOENT.
+ * `start` reads from a byte offset.
+ */
+export function readLogTextNoFollow(path: string, start = 0): string {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!fstatSync(fd).isFile())
+      throw new NaxError(`[registered-log] not a regular file: ${path}`, "LOG_NOT_REGULAR_FILE", { stage: "logs" });
+    const buf = readFileSync(fd);
+    return buf.subarray(start).toString("utf8");
+  } finally {
+    closeSync(fd);
   }
 }

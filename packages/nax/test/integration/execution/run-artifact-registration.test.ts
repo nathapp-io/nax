@@ -17,14 +17,17 @@ import {
   waitForFile,
 } from "@test/helpers";
 import { globalConfigDir } from "@/config/paths";
-import { _runnerDeps, _runnerReentrancyGuard, run } from "@/execution";
+import { _runnerDeps, _runnerReentrancyGuard } from "@/execution";
 import { stopHeartbeat } from "@/execution/crash-recovery";
 import { buildRunId } from "@/execution/run-id";
 import { executeUnified } from "@/execution/unified-executor";
 import { getSafeLogger, resetLogger } from "@/logger";
+import { PipelineEventEmitter } from "@/pipeline/events";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
 // biome-ignore lint/style/noRestrictedImports: CLI entry helpers live in bin/, outside the @/ source alias.
 import { initRunLogging } from "../../../bin/run-action";
+// biome-ignore lint/style/noRestrictedImports: CLI entry helpers live in bin/, outside the @/ source alias.
+import { executeSingleAgentRun } from "../../../bin/run-action-execute";
 
 describe("registry metadata for a run", () => {
   let out: string;
@@ -105,21 +108,21 @@ describe("registry metadata for a run", () => {
       throw new Error("stop after setup");
     };
     try {
-      await run({
-        prdPath,
-        workdir: out,
+      await executeSingleAgentRun({
+        options: { feature: "feat", dir: out, dryRun: true, batch: false, skipPrecheck: true, headless: true },
         config: makeNaxConfig({ outputDir: out }),
         hooks: { hooks: {}, _skipGlobal: false },
-        feature: "feat",
+        prdPath,
+        workdir: out,
         featureDir,
-        dryRun: true,
-        useBatch: false,
-        statusFile: join(out, "status.json"),
+        eventEmitter: new PipelineEventEmitter(),
+        statusFilePath: join(out, "status.json"),
         logFilePath: logged.logFilePath,
         runId: logged.runId,
         formatterMode: "quiet",
-        headless: false,
-        skipPrecheck: true,
+        useHeadless: false,
+        agentStreamEvents: undefined,
+        tuiInstance: undefined,
       }).catch(() => {});
       await getSafeLogger()?.flush();
     } finally {

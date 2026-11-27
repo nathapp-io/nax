@@ -12,6 +12,7 @@ export { formatDuration };
 
 import { cancellableDelay } from "@/utils/bun-deps";
 import type { VerbosityMode } from "../log-format/types";
+import { readLogTextNoFollow } from "../utils/registered-log";
 import { logFileTimestamp } from "./log-file-name";
 import { extractRunSummary, listRunLogFiles } from "./logs-reader";
 
@@ -70,8 +71,7 @@ export async function displayLogs(
   filePath: string,
   options: { json?: boolean; story?: string; level?: LogLevel },
 ): Promise<void> {
-  const file = Bun.file(filePath);
-  const content = await file.text();
+  const content = readLogTextNoFollow(filePath);
   const lines = content.trim().split("\n");
 
   const mode: VerbosityMode = options.json ? "json" : "normal";
@@ -124,7 +124,7 @@ export interface FollowLogsDeps {
 }
 
 async function defaultReadRange(filePath: string, start: number): Promise<string> {
-  return Bun.file(filePath).slice(start).text();
+  return readLogTextNoFollow(filePath, start);
 }
 
 async function defaultSize(filePath: string): Promise<number> {

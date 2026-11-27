@@ -9,7 +9,7 @@ import { NaxError } from "../errors";
 import type { LogEntry } from "../logger/types";
 import type { MetaJson } from "../pipeline/subscribers/registry";
 import { getRunsDir } from "../utils/paths";
-import { resolveRegisteredLogPath } from "../utils/registered-log";
+import { readLogTextNoFollow, resolveRegisteredLogPath } from "../utils/registered-log";
 import { logFileTimestamp } from "./log-file-name";
 
 /**
@@ -127,8 +127,7 @@ export async function extractRunSummary(filePath: string): Promise<{
   startedAt: string;
   completedAt: string | undefined;
 } | null> {
-  const file = Bun.file(filePath);
-  const content = await file.text();
+  const content = readLogTextNoFollow(filePath);
   const lines = content.trim().split("\n");
 
   let total = 0;
