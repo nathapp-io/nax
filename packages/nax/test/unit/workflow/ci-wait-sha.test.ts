@@ -329,7 +329,8 @@ test("US-001 AC-11 (control): an unparseable pre-read fails open to green", asyn
 
 // --- US-004: a SHA-less green poll takes the stable head its bracket recovered ---
 
-type Head = string | Error;
+/** A head read's script: a SHA, a failed read, or `undefined` for a read that names no head. */
+type Head = string | Error | undefined;
 const PASS = '[{"name":"test","bucket":"pass"}]';
 
 /** Independently scripted head-only reads (before/after), checks and mergeability. */
@@ -348,7 +349,7 @@ function wireHeads(script: {
     if (cmd[2] === "checks") return { exitCode: 0, stderr: "", stdout: PASS };
     if (isHeadOnly(cmd)) {
       const head = script.heads(headReads++);
-      return answer(head instanceof Error ? head : { headRefOid: head });
+      return answer(head instanceof Error ? head : head === undefined ? {} : { headRefOid: head });
     }
     return answer(script.merge ?? {});
   };
@@ -386,7 +387,7 @@ test.each([A, B])("US-004 AC-5: an A then B bracket is never green (expected %p)
 });
 
 test("US-004 AC-6: no inline and no readable head stays green", async () => {
-  wireHeads({ heads: () => ({}) as unknown as Head, merge: {} });
+  wireHeads({ heads: () => undefined, merge: {} });
   expect((await waitForChecks("github", "b", bOpts)).outcome).toBe("green");
 });
 
