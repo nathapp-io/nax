@@ -3,7 +3,7 @@
   "feature": "review-0942-run-integrity",
   "branchName": "feat/review-0942-run-integrity",
   "createdAt": "2026-11-27T16:57:01.433Z",
-  "updatedAt": "2026-11-27T17:24:42.334Z",
+  "updatedAt": "2026-11-27T17:42:01.042Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,14 +125,17 @@
         "run-status"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "The stop discriminator crosses pipeline results, dispatch, completion and two persisted snapshots; final-story/resume boundaries require end-to-end execution regressions rather than a stage-only fix. No authentication or permission changes."
+        "reasoning": "The stop discriminator crosses pipeline results, dispatch, completion and two persisted snapshots; final-story/resume boundaries require end-to-end execution regressions rather than a stage-only fix. No authentication or permission changes.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/bin/run-action-execute.ts",
@@ -155,7 +158,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8f662746962163521b93ab31ab019e79e6976868"
     },
     {
       "id": "US-003",
