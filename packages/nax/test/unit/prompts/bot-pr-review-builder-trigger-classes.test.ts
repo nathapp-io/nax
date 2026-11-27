@@ -22,7 +22,7 @@ const OFF =
 const SKEW = "version-skew: needs two versions of the product running together, or data written by an earlier version.";
 const FAULT = "backend-fault: needs a store, network or clock failure between two steps of one operation.";
 const EVIDENCE =
-  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding. A test this pull request adds, changes or removes shows what the pull request does, not ordinary use.';
+  'For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding. A test that is not on the base branch shows what the pull request does, not ordinary use.';
 
 const NOT_A_FINDING =
   "Behaviour this pull request does not change is not a finding of this pull request when the base branch already has it or the spec lists it as out of scope, unless the pull request's description, a linked issue or the PRD says it fixes it.";
@@ -81,8 +81,7 @@ describe("buildBotPrReviewPrompt trigger classes (bot-trigger-classes US-001)", 
 });
 
 describe("buildBotPrReviewPrompt normal evidence (#3069)", () => {
-  const PR_TEST_LINE =
-    "A test this pull request adds, changes or removes shows what the pull request does, not ordinary use.";
+  const PR_TEST_LINE = "A test that is not on the base branch shows what the pull request does, not ordinary use.";
   test.each([
     ["a full review", base],
     ["an incremental review", { ...base, incrementalSince: "a".repeat(40), mergeBase: "b".repeat(40) }],
