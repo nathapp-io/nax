@@ -445,15 +445,27 @@ describe("lintCheckOp — bounded output sentinel", () => {
     expect(result.findings[0]?.message).not.toContain("Output (last");
   });
 
-  test("keeps structured findings unchanged", async () => {
+  test("keeps structured metadata and attaches raw evidence and rerun guidance once", async () => {
     const result = await lintCheckOp.execute(
       { storyId: "US-009", workdir: "/repo" },
       ctxWithQuality({ commands: { lint: "bun run lint" } }),
       makeDeps({
-        runQualityCommand: async () => failedResult,
-        parseLintOutput: () => ({ format: "text-block", diagnostics: [], findings: [mockFinding] }),
+        runQualityCommand: async () => ({ ...failedResult, output: "unparsed diagnostic detail" }),
+        parseLintOutput: () => ({
+          format: "text-block",
+          diagnostics: [],
+          findings: [mockFinding, { ...mockFinding, file: "src/other.ts" }],
+        }),
       }),
     );
-    expect(result.findings).toEqual([mockFinding]);
+    expect(result.findings).toHaveLength(2);
+    const { message, ...metadata } = result.findings[0];
+    const { message: originalMessage, ...originalMetadata } = mockFinding;
+    expect(metadata).toEqual(originalMetadata);
+    expect(message).toContain(originalMessage);
+    expect(result.findings[0]?.message).toContain("unparsed diagnostic detail");
+    expect(result.findings[0]?.message).toContain('RunCommand {"command": "lint"}');
+    expect(result.findings[0]?.message).not.toContain("no structured findings parsed");
+    expect(result.findings[1]).toEqual({ ...mockFinding, file: "src/other.ts" });
   });
 });
