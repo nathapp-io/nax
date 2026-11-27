@@ -24,7 +24,7 @@ import { storyWorkdir } from "@/utils/path-frame";
 import { type FindingTrigger, isBlockingFinding } from "@/workflow/blocking-findings";
 import { botGit } from "./git";
 import type { AgreedItem } from "./post";
-import { type BotPushEntry, type FindingLineage, parentIssue } from "./push-ledger";
+import { addedBy, type BotPushEntry, type FindingLineage, parentIssue } from "./push-ledger";
 
 /** A commit is named short, as the fix summary names a push. */
 const SHORT_SHA_LENGTH = 7;
@@ -51,7 +51,7 @@ function triggerLine(item: { readonly trigger?: FindingTrigger; readonly trigger
 function lineageLine(lineage: FindingLineage, entries: readonly BotPushEntry[]): string {
   const { generation, parents, pushSha } = lineage;
   const only = parents.length === 1 ? parents[0] : undefined;
-  const written = `generation ${generation}, on lines added by nax bot fix ${pushSha.slice(0, SHORT_SHA_LENGTH)} for ${parents.join(", ")}`;
+  const written = `generation ${generation}, on lines added by ${addedBy(pushSha, lineage.unrecorded)} for ${parents.join(", ")}`;
   const issue = only === undefined ? undefined : parentIssue(pushSha, only, entries);
   return `Lineage: ${written}${issue === undefined ? "" : ` (${issue})`}`;
 }

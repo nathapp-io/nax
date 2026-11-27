@@ -384,6 +384,7 @@ async function reviewEnvironment(
     head: info.headSha,
     // Only an incremental review has an earlier range whose pushes its prompt must describe.
     rangeBase: scope === "incremental" ? range.rangeBase : undefined,
+    earlier: postEarlier,
   });
   return {
     ...preparation,

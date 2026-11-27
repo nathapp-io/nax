@@ -90,7 +90,7 @@ function pushSection(input: BotPrReviewPromptInput): string | undefined {
   const lines = (input.botPushes ?? []).flatMap((entry) =>
     entry.items.map(
       (item) =>
-        `- ${entry.base.slice(0, PUSH_SHA_LENGTH)}..${entry.sha.slice(0, PUSH_SHA_LENGTH)}: nax bot fix for ${item.key} (${item.issue}), generation ${item.generation}`,
+        `- ${entry.base.slice(0, PUSH_SHA_LENGTH)}..${entry.sha.slice(0, PUSH_SHA_LENGTH)}: ${entry.unrecorded === true ? "commit not pushed by nax bot fix, touching the file of" : "nax bot fix for"} ${item.key} (${item.issue}), generation ${item.generation}`,
     ),
   );
   return lines.length === 0 ? undefined : ["## Earlier nax bot fix pushes in this range", ...lines].join("\n");

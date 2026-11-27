@@ -135,6 +135,7 @@ function lineageOf(entry: BotPushEntry): FindingLineage {
     generation: 1 + Math.max(0, ...entry.items.map(({ generation }) => generation)),
     parents: entry.items.map(({ key }) => key),
     pushSha: entry.sha,
+    ...(entry.unrecorded === true && { unrecorded: true as const }),
   };
 }
 

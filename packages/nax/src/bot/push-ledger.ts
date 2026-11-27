@@ -37,6 +37,8 @@ export interface BotPushEntry {
   readonly sha: string;
   readonly at: string;
   readonly items: readonly BotPushItem[];
+  /** #3069: derived from git for a push `nax bot fix` did not make; never written to the ledger. */
+  readonly unrecorded?: true;
 }
 
 /** Where a finding's lines came from (US-005): the push that added them and the items it fixed. */
@@ -44,6 +46,14 @@ export interface FindingLineage {
   readonly generation: number;
   readonly parents: readonly string[];
   readonly pushSha: string;
+  /** #3069: the push was not made by `nax bot fix`. */
+  readonly unrecorded?: true;
+}
+
+/** #3069: how a fact names the push that wrote a line, so an unrecorded push is never called a bot fix. */
+export function addedBy(pushSha: string, unrecorded?: boolean): string {
+  const short = pushSha.slice(0, SHORT_SHA_LENGTH);
+  return unrecorded === true ? `commit ${short} (not a nax bot fix push)` : `nax bot fix ${short}`;
 }
 
 export const MAX_PUSH_ENTRIES = 64;
