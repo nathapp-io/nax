@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _deps as _logsReaderDeps, logsCommand } from "@/commands/logs";
 import { _replayCmdDeps, runReplay } from "@/commands/replay";
+import type { RunMetrics } from "@/metrics";
 import { _discoveryDeps } from "@/replay/discovery";
 
 const RUN = "run-aaaa1111-2026-01-01T00-00-00.000";
@@ -51,12 +52,34 @@ async function logs(): Promise<string> {
 
 async function replay(): Promise<string> {
   let out = "";
-  const metrics = {
+  const t = "2026-01-01T00:00:00.000Z";
+  const metrics: RunMetrics = {
     runId: RUN,
     feature: "f",
+    startedAt: t,
+    completedAt: t,
+    totalCost: 0,
+    totalStories: 1,
+    storiesCompleted: 1,
     storiesFailed: 0,
-    stories: [{ storyId: "US-1", success: true, finalTier: "fast", cost: 0, attempts: 1 }],
-  } as unknown as Awaited<ReturnType<typeof _replayCmdDeps.readMetrics>>; // test-ratchet-allow: as-unknown-as
+    totalDurationMs: 0,
+    stories: [
+      {
+        storyId: "US-1",
+        complexity: "simple",
+        modelTier: "fast",
+        modelUsed: "m",
+        attempts: 1,
+        finalTier: "fast",
+        success: true,
+        cost: 0,
+        durationMs: 0,
+        firstPassSuccess: true,
+        startedAt: t,
+        completedAt: t,
+      },
+    ],
+  };
   await runReplay(
     RUN,
     { json: true },

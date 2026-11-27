@@ -33,7 +33,7 @@ describe("registry metadata for a run", () => {
     wireRegistry(bus, "feat", runId, out, out, { logFilePath, startTime });
     bus.emit({ type: "run:started", feature: "feat", totalStories: 1, workdir: out });
     await waitForFile(metaFile, 1000);
-    const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
+    const meta: MetaJson = JSON.parse(await readFile(metaFile, "utf8"));
     expect(meta.logFileName).toBe("custom-name.jsonl");
     expect(meta.registeredAt).toBe("2020-05-05T05:05:05.005Z");
   });
