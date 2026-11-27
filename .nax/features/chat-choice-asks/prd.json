@@ -3,7 +3,7 @@
   "feature": "chat-choice-asks",
   "branchName": "feat/chat-choice-asks",
   "createdAt": "2026-11-27T08:49:27.123Z",
-  "updatedAt": "2026-11-27T09:16:56.911Z",
+  "updatedAt": "2026-11-27T09:34:37.514Z",
   "userStories": [
     {
       "id": "US-001",
@@ -104,14 +104,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module native tool dispatch, session interaction routing and budget preservation require a real scripted-turn seam; session-code involvement applies the strict three-session override."
+        "reasoning": "Cross-module native tool dispatch, session interaction routing and budget preservation require a real scripted-turn seam; session-code involvement applies the strict three-session override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/ask-human.ts",
@@ -128,7 +131,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "04f484e2ce7a764999fa954855c538e4336f0cea"
     },
     {
       "id": "US-003",
