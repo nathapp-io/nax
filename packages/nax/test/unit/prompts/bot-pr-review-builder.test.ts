@@ -45,7 +45,7 @@ Behaviour this pull request does not change is not a finding of this pull reques
 A suggestion is the smallest change that removes the problem. When even the smallest change needs new public API, a new mechanism, or a change in another repository, the suggestion says so.
 Name each finding's class with "trigger" and the one detail that shows it with "triggerEvidence". The classes are:
 normal: reachable in ordinary use of the product, as this repository documents or configures it.
-For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding.
+For normal, "triggerEvidence" names the document, configuration, example or test in this repository that shows that use. A document on the base branch that describes the behaviour itself as intended shows there is no finding. A test this pull request adds, changes or removes shows what the pull request does, not ordinary use.
 off-contract: needs a caller, subclass or configuration value that breaks a type, schema or documented contract of this repository.
 version-skew: needs two versions of the product running together, or data written by an earlier version.
 backend-fault: needs a store, network or clock failure between two steps of one operation.
