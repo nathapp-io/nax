@@ -60,7 +60,7 @@ function collectBlocks(output: string): TextBlock[] {
     }
     // An unfamiliar path header belongs to another file. Preserve its output
     // through the operation's raw evidence, not under the previous file's metadata.
-    if (candidate && line.trim() === candidate) {
+    if (candidate && (line.trim() === candidate || /^:\d+/.test(line.trimStart().slice(candidate.length)))) {
       pushBlock(blocks, current);
       current = null;
       continue;

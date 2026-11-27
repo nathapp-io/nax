@@ -1,4 +1,4 @@
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
@@ -180,8 +180,8 @@ export const typecheckCheckOp: DeterministicOperation<
             : "failed (no structured findings parsed)"
       }, please re-run the typecheck: ${
         detectedFromPackage
-          ? `\`${command}\``
-          : `RunCommand {"command": "typecheck"} if that tool is available to you, otherwise \`${command}\``
+          ? `\`${renderCommandSpec(command)}\``
+          : `RunCommand {"command": "typecheck"} if that tool is available to you, otherwise \`${renderCommandSpec(command)}\``
       }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
     const findings = withGateFailureContext(parsedFindings, sentinel);

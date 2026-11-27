@@ -2,17 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { parseTextBlocks } from "@/review/lint-parsing/strategies/text-block";
 
 describe("parseTextBlocks", () => {
-  test("does not attribute an unfamiliar file's body to the previous file", () => {
-    const result = parseTextBlocks(
-      "src/one.go\n  first defect\nsrc/two.ex\n  unrelated defect\nsrc/three.py\n  third defect",
-    );
-    expect(result?.diagnostics).toHaveLength(2);
-    expect(result?.diagnostics[0]?.file).toBe("src/one.go");
-    expect(result?.diagnostics[0]?.message).toBe("first defect");
-    expect(result?.diagnostics[0]?.raw).not.toContain("unrelated defect");
-    expect(result?.diagnostics[1]?.file).toBe("src/three.py");
-    expect(result?.diagnostics[1]?.message).toBe("third defect");
-  });
+  test.each(["src/two.ex", "src/two.ex:7", "src/two.ex:7:9: independent defect"])(
+    "does not attribute %s to the previous file",
+    (header) => {
+      const result = parseTextBlocks(
+        `src/one.go\n  first defect\n${header}\n  unrelated defect\nsrc/three.py\n  third defect`,
+      );
+      expect(result?.diagnostics).toHaveLength(2);
+      expect(result?.diagnostics[0]?.file).toBe("src/one.go");
+      expect(result?.diagnostics[0]?.message).toBe("first defect");
+      expect(result?.diagnostics[0]?.raw).not.toContain("unrelated defect");
+      expect(result?.diagnostics[1]?.file).toBe("src/three.py");
+      expect(result?.diagnostics[1]?.message).toBe("third defect");
+    },
+  );
   test.each(["ts", "py", "go", "rs", "java"])("preserves the body under a %s path header", (ext) => {
     const result = parseTextBlocks(
       `/repo/src/example.${ext}\n  7:3 error: first diagnostic\n  9:1 warning: second diagnostic\n\n✖ 2 problems (1 error, 1 warning)\n`,

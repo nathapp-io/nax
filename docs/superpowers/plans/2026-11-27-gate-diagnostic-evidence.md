@@ -62,3 +62,16 @@ add evidence independently of parser recognition.
 - Final `bun run check:all` and `bun run typecheck` passed after review fixes.
 - Final package suite passed: 33,891 tests, zero failures across unit, integration, and UI.
 - Independent review completed; both reported regressions were fixed with RED → GREEN tests.
+
+## Pre-PR review
+
+- Independent review of commit b13dff744 found two P2 issues.
+- Fixed unfamiliar path headers with explicit line/column locations inheriting
+  the preceding file's metadata. Four new parameter cases verified RED → GREEN.
+- Fixed list-valued quality commands rendering as comma-separated rerun guidance;
+  use the existing renderCommandSpec helper. Four new cases verified RED → GREEN
+  across lint/typecheck and parsed/unparsed output.
+- Revised focused suite: 163 passed, zero failures.
+- Revised typecheck and check:all passed; coverage gate passed with 33,666 tests,
+  43 skipped, zero failures, 97.38% lines and 96.02% functions.
+- Revised full package suite passed: 33,899 tests, zero failures across all phases.

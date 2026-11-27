@@ -252,6 +252,18 @@ describe("typecheckCheckOp — AC6: no-command early return", () => {
 });
 
 describe("typecheckCheckOp — sentinel affordances", () => {
+  test.each([false, true])("renders a command list as runnable shell guidance (parsed=%s)", async (parsed) => {
+    const result = await typecheckCheckOp.execute(
+      { storyId: "US-003", workdir: "/repo" },
+      ctxWithQuality({ commands: { typecheck: ["ruff check .", "mypy ."] } }),
+      makeDeps({
+        runQualityCommand: async () => failedResult,
+        parseTypecheckOutput: () => (parsed ? { format: "tsc", diagnostics: [], findings: [mockFinding] } : null),
+      }),
+    );
+    expect(result.findings[0]?.message).toContain("`ruff check . && mypy .`");
+    expect(result.findings[0]?.message).not.toContain("ruff check .,mypy .");
+  });
   test("a DECLARED command offers the RunCommand key and the shell string", async () => {
     // Key first for native (which has RunCommand and no shell); shell string
     // retained for ACP (which is never given codingTools at all).

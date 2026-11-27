@@ -254,6 +254,18 @@ describe("lintCheckOp — workdir routing: repoRoot vs packageDir", () => {
 });
 
 describe("lintCheckOp — sentinel affordances", () => {
+  test.each([false, true])("renders a command list as runnable shell guidance (parsed=%s)", async (parsed) => {
+    const result = await lintCheckOp.execute(
+      { storyId: "US-003", workdir: "/repo" },
+      ctxWithQuality({ commands: { lint: ["ruff check .", "mypy ."] } }),
+      makeDeps({
+        runQualityCommand: async () => failedResult,
+        parseLintOutput: () => (parsed ? { format: "text-block", diagnostics: [], findings: [mockFinding] } : null),
+      }),
+    );
+    expect(result.findings[0]?.message).toContain("`ruff check . && mypy .`");
+    expect(result.findings[0]?.message).not.toContain("ruff check .,mypy .");
+  });
   test("a DECLARED command offers the RunCommand key and the shell string", async () => {
     const result = await lintCheckOp.execute(
       { storyId: "US-003", workdir: "/repo" },
