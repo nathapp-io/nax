@@ -224,7 +224,14 @@ async function pollOnce(forge: ForgeKind, prRef: string, cwd: string, opts: Poll
       return await commitChecksPoll(_ciWaitDeps.run, opts.commitSha, cwd);
     }
     const poll = forge === "github" ? await githubWaiting(classifyGh(r), prRef, cwd) : classifyGlab(r);
-    return await bindPollToHead({ poll, headBefore, prRef, cwd, run: _ciWaitDeps.run });
+    return await bindPollToHead({
+      poll,
+      headBefore,
+      prRef,
+      cwd,
+      run: _ciWaitDeps.run,
+      bindGreen: opts.bindGreenSha === true,
+    });
   } catch (err) {
     return { state: "error", detail: errorMessage(err) };
   }
@@ -481,7 +488,7 @@ export async function waitForChecks(
       const poll = bindToHead(
         await pollOnce(forge, prRef, opts.cwd, {
           ...(opts.commitChecks === true && opts.expectedSha !== undefined ? { commitSha: opts.expectedSha } : {}),
-          ...(opts.expectedSha === undefined ? {} : { bindSha: opts.expectedSha }),
+          ...(opts.expectedSha === undefined ? {} : { bindSha: opts.expectedSha, bindGreenSha: true }),
         }),
         opts.expectedSha,
       );
