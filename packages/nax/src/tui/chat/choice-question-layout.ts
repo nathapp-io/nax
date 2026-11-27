@@ -318,6 +318,10 @@ function bodyRows(
  * Every row the card draws at a width and a budget. The prompt keeps its rows while they fit
  * and is cut to one marked row before anything else is given up; the frame, the title, the tab
  * strip, the question line, the hint and the countdown are never withheld.
+ *
+ * The rows returned never outnumber the rows reserved, whatever budget it is handed: a budget
+ * below the card's own minimum — which the frame allocator never gives, but a constrained
+ * caller can — keeps the top of the card and nothing more (see `clipToBudget`).
  */
 export function choiceQuestionLayout(
   model: AskCardChoiceQuestion,
@@ -325,6 +329,7 @@ export function choiceQuestionLayout(
   options: ChoiceQuestionLayoutOptions,
 ): ChoiceQuestionLayout {
   const context = contextFor(options);
+  const budget = rowBudget(options.budget);
   const question = currentQuestion(model, state);
   const head: StyledLine[] = [
     frameRule(context, model.border),
@@ -337,13 +342,45 @@ export function choiceQuestionLayout(
     frameRule(context, model.border),
   ];
   // What the prompt and the body may have: whatever the frame, the title, the strip and the tail left.
-  const room = rowBudget(options.budget) - head.length - tail.length;
+  const room = budget - head.length - tail.length;
   const promptAll = model.prompt === "" ? [] : textRows(model.prompt, {}, context);
   const prompt = promptAll.length <= room ? promptAll : room >= 1 ? [elidedRow(model.prompt, {}, context)] : [];
   head.push(...prompt);
   const body = bodyRows(model, state, question, context, Math.max(room - prompt.length, 0));
   head.push(...body.questionRows);
-  return { head, middle: body.middle, tail, elided: body.elided, rows: head.length + body.middle.length + tail.length };
+  return clipToBudget(head, body.middle, tail, body.elided, budget);
+}
+
+/**
+ * The card's rows fitted to the rows reserved. A budget at or above the card's minimum never
+ * reaches the trimming below — the prompt and the body already gave rows up — so the drawing is
+ * returned as it stands. A budget smaller than the frame, the title, the hint and the countdown
+ * *together* cannot honour "the hint and the countdown are never withheld" and "never more rows
+ * than the budget" at once, and the budget is the caller's reservation: the card keeps the top
+ * of itself — the frame rule, the title, the strip, then whatever else fits — and withholds the
+ * rest, so nothing is ever drawn into a row nobody reserved.
+ */
+function clipToBudget(
+  head: readonly StyledLine[],
+  middle: readonly StyledLine[],
+  tail: readonly StyledLine[],
+  elided: number,
+  budget: number,
+): ChoiceQuestionLayout {
+  const total = head.length + middle.length + tail.length;
+  if (!Number.isFinite(budget) || total <= budget) return { head, middle, tail, elided, rows: total };
+  const keptHead = head.slice(0, Math.min(head.length, budget));
+  const roomForMiddle = Math.max(budget - keptHead.length, 0);
+  const keptMiddle = middle.slice(0, Math.min(middle.length, roomForMiddle));
+  const roomForTail = Math.max(roomForMiddle - keptMiddle.length, 0);
+  const keptTail = tail.slice(0, Math.min(tail.length, roomForTail));
+  return {
+    head: keptHead,
+    middle: keptMiddle,
+    tail: keptTail,
+    elided,
+    rows: keptHead.length + keptMiddle.length + keptTail.length,
+  };
 }
 
 /** Every state the card can be measured in: each tab, and the review step it ends on. */

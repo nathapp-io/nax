@@ -140,6 +140,14 @@ describe("choice question card submission", () => {
     expect(card.frame()).toContain("1. bun");
   });
 
+  test("an unexpected submit failure is logged and rethrown rather than swallowed", () => {
+    const card = mount(askEvent([question()]));
+    card.answer.mockImplementation(() => {
+      throw new Error("the watcher is gone");
+    });
+    expect(() => card.type(RETURN)).toThrow("the watcher is gone");
+  });
+
   test("AC-16: escape dismisses the card without answering it", () => {
     const card = mount(askEvent([question()]));
     card.type(ESCAPE);

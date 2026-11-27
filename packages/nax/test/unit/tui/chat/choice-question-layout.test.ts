@@ -222,6 +222,21 @@ describe("choiceQuestionLayout minimum", () => {
     expect(drawn[0]).toBe(THEME.glyphs.rule.repeat(40));
     expect(drawn.at(-1)).toBe(THEME.glyphs.rule.repeat(40));
   });
+
+  test("AC-8: a budget below the frame's own rows still never exceeds the budget", () => {
+    const card = model([question({ allowOther: true })]);
+    const measurement = measure(card);
+    for (const budget of [1, 2, 4, measurement.minimum - 1]) {
+      const starved = draw(card, stateFor(card), budget);
+      expect(starved.rows).toBeLessThanOrEqual(budget);
+      expect(starved.head.length + starved.middle.length + starved.tail.length).toBe(starved.rows);
+    }
+    // What a starved card keeps is the top of the card: its frame and its title.
+    const tiny = draw(card, stateFor(card), 2);
+    expect(tiny.head.map(plainText)).toEqual([THEME.glyphs.rule.repeat(WIDTH), "nax asks"]);
+    expect(tiny.middle).toEqual([]);
+    expect(tiny.tail).toEqual([]);
+  });
 });
 
 describe("choiceQuestionLayout review step", () => {

@@ -110,15 +110,27 @@ export function ChoiceQuestionCard({
     };
   }, [ask.expiresAt]);
 
-  /** Hand the answers to the session, in the asker's own labels, and keep the card open on a refusal. */
+  /**
+   * Hand the answers to the session, in the asker's own labels. A session refusing an answer it
+   * will not take (`AGENT_SESSION_INVALID_ANSWER`) is expected — the ask is still pending, so the
+   * card logs it at warn and stays open. Anything else is a fault in the wiring, not an answer the
+   * session declined: it is logged at error and rethrown, because swallowing it would leave the
+   * person on a card whose submission silently did nothing.
+   */
   const submit = (answers: readonly ChoiceAnswer[]): void => {
     const text = formatChoiceAnswers(originalQuestions(ask, model), answers);
     try {
       controller.answerChoices(ask.requestId, answers, text);
     } catch (error) {
+      if (!isInvalidAnswer(error)) {
+        getLogger()?.error("chat", "Choice card answer failed", {
+          requestId: ask.requestId,
+          error: errorMessage(error),
+        });
+        throw error;
+      }
       getLogger()?.warn("chat", "Choice card answer refused; keeping the card open", {
         requestId: ask.requestId,
-        invalid: isInvalidAnswer(error),
         error: errorMessage(error),
       });
     }
