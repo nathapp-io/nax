@@ -2,7 +2,7 @@
  * US-003 — registry metadata records the actual log basename and the run start instant.
  */
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   cleanupTempDir,
@@ -21,7 +21,7 @@ import { _runnerDeps, _runnerReentrancyGuard, run } from "@/execution";
 import { stopHeartbeat } from "@/execution/crash-recovery";
 import { buildRunId } from "@/execution/run-id";
 import { executeUnified } from "@/execution/unified-executor";
-import { resetLogger } from "@/logger";
+import { getSafeLogger, resetLogger } from "@/logger";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
 // biome-ignore lint/style/noRestrictedImports: CLI entry helpers live in bin/, outside the @/ source alias.
 import { initRunLogging } from "../../../bin/run-action";
@@ -70,14 +70,14 @@ describe("registry metadata for a run", () => {
     }
   });
 
-  test("AC-1: run() receives the logger-setup runId, which setup writes to run.start", async () => {
+  test("AC-1: real setup keeps the logger-time runId and writes it to run.start", async () => {
     const setup = new Date("2026-11-28T10:00:00.123Z");
     setSystemTime(setup);
+    resetLogger();
     let logged: ReturnType<typeof initRunLogging>;
     try {
-      resetLogger();
       logged = initRunLogging({
-        options: { feature: "feat", headless: true, dryRun: false, dir: out },
+        options: { feature: "feat", headless: true, dryRun: true, dir: out },
         config: makeNaxConfig({ outputDir: out }),
         workdir: out,
         isTTY: false,
@@ -85,30 +85,34 @@ describe("registry metadata for a run", () => {
         formatterMode: "normal",
       });
     } finally {
-      setSystemTime();
-      resetLogger();
+      // Clock moves on after logger initialization; the runner must not rebuild the id.
+      setSystemTime(new Date("2026-11-28T10:05:00.999Z"));
     }
-    expect(logged.runId).toBe(buildRunId(out, setup));
-    expect(logged.runId).toMatch(/\.123$/);
-    expect(logged.logFilePath.endsWith(`${logged.runId}.jsonl`)).toBe(true);
+    const expectedId = buildRunId(out, setup);
+    expect(logged.runId).toBe(expectedId);
+    expect(logged.logFilePath.endsWith(`${expectedId}.jsonl`)).toBe(true);
 
-    // Clock has moved on; the runner must keep the supplied id rather than rebuild it.
+    const featureDir = join(out, ".nax", "features", "feat");
+    const prdPath = join(featureDir, "prd.json");
+    await mkdir(featureDir, { recursive: true });
+    await writeFile(
+      prdPath,
+      JSON.stringify(makePRD({ feature: "feat", userStories: [makeStory({ id: "US-1", status: "pending" })] })),
+    );
     const orig = { ..._runnerDeps };
-    let seen: string | undefined;
     _runnerReentrancyGuard.inFlight = false;
-    _runnerDeps.runSetupPhase = (async (o: { runId?: string }) => {
-      seen = o.runId;
+    _runnerDeps.runExecutionPhase = async () => {
       throw new Error("stop after setup");
-    }) as typeof _runnerDeps.runSetupPhase;
+    };
     try {
       await run({
-        prdPath: join(out, "prd.json"),
+        prdPath,
         workdir: out,
-        config: makeNaxConfig(),
+        config: makeNaxConfig({ outputDir: out }),
         hooks: { hooks: {}, _skipGlobal: false },
         feature: "feat",
-        featureDir: join(out, ".nax", "features", "feat"),
-        dryRun: false,
+        featureDir,
+        dryRun: true,
         useBatch: false,
         statusFile: join(out, "status.json"),
         logFilePath: logged.logFilePath,
@@ -117,10 +121,15 @@ describe("registry metadata for a run", () => {
         headless: false,
         skipPrecheck: true,
       }).catch(() => {});
+      await getSafeLogger()?.flush();
     } finally {
       Object.assign(_runnerDeps, orig);
       _runnerReentrancyGuard.inFlight = false;
+      setSystemTime();
     }
-    expect(seen).toBe(buildRunId(out, setup));
+    const lines = (await readFile(logged.logFilePath, "utf8")).split("\n").filter(Boolean);
+    const start = lines.map((l) => JSON.parse(l)).find((e) => e.stage === "run.start");
+    expect(start?.data?.runId).toBe(expectedId);
+    resetLogger();
   });
 });

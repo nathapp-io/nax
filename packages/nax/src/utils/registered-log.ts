@@ -36,8 +36,10 @@ export function resolveRegisteredLogPath(meta: {
     const realDir = realpathSync(meta.eventsDir);
     const realFile = realpathSync(candidate);
     if (!realFile.startsWith(realDir + sep)) return null;
+    // Return the resolved target, not the symlink: readers reopen this path, and
+    // retargeting the symlink after this check must not redirect them.
+    return realFile;
   } catch {
     return null;
   }
-  return candidate;
 }
