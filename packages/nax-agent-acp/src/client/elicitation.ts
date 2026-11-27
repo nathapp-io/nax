@@ -18,13 +18,31 @@
  * asking. Each decline is noted with noteQuestion. No reply
  * (deadline, cancel, turn end, process exit) cancels. Question text is agent data:
  * control and invisible characters stripped, secrets scrubbed, capped.
+ *
+ * US-003: a form whose fields are ALL selects (1 to CHOICE_MAX_QUESTIONS of them,
+ * after companion folding) becomes one structured ask through the port's
+ * `askChoices` instead of one text question per field, and its answers map back to
+ * the original field values (a chosen index to that choice's `const`, an "Other"
+ * answer to the `<key>_custom` companion). The structured questions carry cleaned
+ * copies of the agent's display text only: keys, companion keys and choice values
+ * stay the agent's own. A port without `askChoices`, a form mixing a text field
+ * with a select, or a form with more than CHOICE_MAX_QUESTIONS selects keeps the
+ * one-field-at-a-time path above.
  */
 import type {
   CreateElicitationRequest,
   CreateElicitationResponse,
   ElicitationContentValue,
 } from "@agentclientprotocol/sdk";
-import type { AgentSessionProfile, SessionAskPort } from "@nathapp/nax-agent";
+import {
+  type AgentSessionProfile,
+  CHOICE_HEADER_MAX_CHARS,
+  CHOICE_MAX_QUESTIONS,
+  type ChoiceAnswer,
+  type ChoiceOption,
+  type ChoiceQuestion,
+  type SessionAskPort,
+} from "@nathapp/nax-agent";
 import { capBytes, isRecord, scrubSecrets, stripControl, stripInvisible } from "#src/client/text";
 
 export const QUESTION_MAX_BYTES = 4096;
@@ -221,12 +239,113 @@ async function ask(text: string, ctx: ElicitationContext): Promise<string | null
   return ctx.asks.askQuestion(shown(text, ctx.secrets), { signal: ctx.signal }).catch(() => null);
 }
 
+/**
+ * US-003: every field a select, and few enough for one choice card. Anything else
+ * (a text field, more than CHOICE_MAX_QUESTIONS selects) keeps the text path.
+ */
+function isChoiceForm(fields: readonly Field[]): boolean {
+  return fields.every((field) => field.kind !== "text") && fields.length >= 1 && fields.length <= CHOICE_MAX_QUESTIONS;
+}
+
+/** The field's title, or its key when it has none, through shown() and cut to the header cap. */
+function headerOf(field: Field, secrets: readonly string[]): string {
+  const title = shown(field.title ?? field.key, secrets).trim();
+  return (title === "" ? shown(field.key, secrets) : title).slice(0, CHOICE_HEADER_MAX_CHARS);
+}
+
+/** The heading questionText puts above the choices: title and description, or the key alone. */
+function headingOf(field: Field, secrets: readonly string[]): string {
+  const heading = [field.title, field.description].filter((part) => part !== undefined).join(": ");
+  return shown(heading === "" ? field.key : heading, secrets);
+}
+
+function optionOf(choice: Choice, secrets: readonly string[]): ChoiceOption {
+  const label = shown(choice.label, secrets);
+  return choice.description === undefined ? { label } : { label, description: shown(choice.description, secrets) };
+}
+
+/** One field as a structured question; the choice values stay the agent's own, unshown. */
+function choiceQuestionOf(field: Field, secrets: readonly string[]): ChoiceQuestion {
+  return {
+    header: headerOf(field, secrets),
+    question: headingOf(field, secrets),
+    options: field.choices.map((choice) => optionOf(choice, secrets)),
+    multiSelect: field.kind === "multi",
+    // A companion is the "Other" box; a required single-select takes none, as ownAnswerHint has it.
+    allowOther: field.companion !== undefined && !(field.required && field.kind === "single"),
+    required: field.required,
+  };
+}
+
+/** The choice values an answer names, in index order; an unusable index names nothing. */
+function selectedValues(field: Field, answer: ChoiceAnswer | undefined): string[] {
+  const indexes = [...(answer?.selected ?? [])].sort((left, right) => left - right);
+  return indexes.flatMap((index) => {
+    const value = field.choices[index]?.value;
+    return value === undefined ? [] : [value];
+  });
+}
+
+/** One field's answer as content: the chosen values, and an other-answer as its companion key. */
+function choiceReply(field: Field, answer: ChoiceAnswer | undefined): Reply {
+  const values = selectedValues(field, answer);
+  // A companion only adds to a choice, so an answer naming none omits the required key.
+  if (field.required && values.length === 0) return { ok: false, note: REQUIRED_NOTE };
+  const companion = field.companion;
+  const other = companion === undefined ? undefined : nonEmpty(answer?.other);
+  return accepted({
+    ...(values.length === 0 ? {} : { [field.key]: field.kind === "multi" ? values : values[0] }),
+    ...(companion === undefined || other === undefined ? {} : { [companion]: other }),
+  });
+}
+
+function answersReply(fields: readonly Field[], answers: readonly ChoiceAnswer[]): Reply {
+  let content: Content = {};
+  for (const [index, field] of fields.entries()) {
+    const reply = choiceReply(field, answers[index]);
+    if (!reply.ok) return reply;
+    content = { ...content, ...reply.content };
+  }
+  return accepted(content);
+}
+
+/** A plain text reply: the one field's own matching, or no match when there are several. */
+function plainReply(fields: readonly Field[], text: string): Reply {
+  const field = fields.length === 1 ? fields[0] : undefined;
+  return field === undefined ? NO_MATCH : applyReply(field, text.trim());
+}
+
+/**
+ * US-003: one structured ask for a select-only form, or `undefined` when this form
+ * keeps the one-field-at-a-time path. A null answer (deadline, cancel, turn end) or
+ * a rejecting port cancels; an answer the form cannot take declines with a note.
+ */
+async function askChoiceForm(
+  message: string,
+  fields: readonly Field[],
+  ctx: ElicitationContext,
+): Promise<CreateElicitationResponse | undefined> {
+  if (ctx.asks.askChoices === undefined || !isChoiceForm(fields)) return undefined;
+  if (ctx.signal.aborted) return CANCEL;
+  const questions = fields.map((field) => choiceQuestionOf(field, ctx.secrets));
+  const result = await ctx.asks
+    .askChoices(shown(message, ctx.secrets), questions, { signal: ctx.signal })
+    .catch(() => null);
+  if (result === null) return CANCEL;
+  const outcome = result.answers === undefined ? plainReply(fields, result.text) : answersReply(fields, result.answers);
+  if (outcome.ok) return { action: "accept", content: outcome.content };
+  ctx.asks.noteQuestion(outcome.note);
+  return DECLINE;
+}
+
 async function askFields(
   message: string,
   fields: readonly Field[],
   ctx: ElicitationContext,
 ): Promise<CreateElicitationResponse> {
   if (fields.length === 0) return (await ask(message, ctx)) === null ? CANCEL : { action: "accept", content: {} };
+  const choiceResponse = await askChoiceForm(message, fields, ctx);
+  if (choiceResponse !== undefined) return choiceResponse;
   let content: Content = {};
   for (const [index, field] of fields.entries()) {
     const reply = await ask(questionText(message, field, index, fields.length), ctx);
