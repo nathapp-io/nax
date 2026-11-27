@@ -1,4 +1,4 @@
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, renderCommandSpec } from "@nathapp/nax-agent/internal";
 import { qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 import type { Finding } from "../findings/types";
@@ -11,7 +11,7 @@ import { parseLintOutput } from "../review/lint-parsing";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { resolveGateCwd } from "./gate-cwd";
 import { type CheckInterruption, interruptionEvidence, interruptionNote } from "./gate-interruption";
-import { GATE_OUTPUT_TAIL_LINES, gateOutputTail } from "./gate-output-tail";
+import { GATE_OUTPUT_TAIL_LINES, gateOutputTail, withGateFailureContext } from "./gate-output-tail";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface LintCheckInput {
@@ -155,21 +155,25 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     const parsedFindings = parsed?.findings ?? [];
     // Sentinel ensures mechanical-lintfix strategy fires even when the linter's
     // output format is unrecognised (parsedFindings empty).
-    const tail = parsedFindings.length === 0 ? gateOutputTail(result.output) : "";
+    const tail = gateOutputTail(result.output);
     const sentinel: Finding = {
       source: "lint",
       severity: "error",
       category: "lint-failure",
       // Key only when DECLARED, shell string always -- see typecheck-check.ts.
       message: `lint ${
-        result.timedOut ? `was interrupted (${interruptionNote(result)})` : "failed (no structured findings parsed)"
+        result.timedOut
+          ? `was interrupted (${interruptionNote(result)})`
+          : parsedFindings.length > 0
+            ? "failed"
+            : "failed (no structured findings parsed)"
       }, please re-run the lint check: ${
         detectedFromPackage
-          ? `\`${command}\``
-          : `RunCommand {"command": "lint"} if that tool is available to you, otherwise \`${command}\``
+          ? `\`${renderCommandSpec(command)}\``
+          : `RunCommand {"command": "lint"} if that tool is available to you, otherwise \`${renderCommandSpec(command)}\``
       }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
-    const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
+    const findings = withGateFailureContext(parsedFindings, sentinel);
     return { success: false, findings, durationMs: Date.now() - start, ...interruptionEvidence(result) };
   },
 };

@@ -3,7 +3,7 @@ import type { TypecheckDiagnostic, TypecheckParseResult, TypecheckParseStrategy 
 const SOURCE_EXT_RE = /\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|go|py|rs|rb|java|cs|cpp|c|h|swift|kt)$/;
 const PATH_RE = /^[ \t]*((?:\/[\w./-]+|\.\.?\/[\w./-]+|[\w][\w-]*(?:\/[\w./-]+)+))(?::\d+)?(?::\d+)?(?:\s|:|$)/;
 const LOCATION_RE = /:(\d+)(?::(\d+))?/;
-const SUMMARY_LINE_RE = /^(Found \d+ .+|Checked \d+ .+|[\d\s]+errors?\b.*|[\d\s]+problems?\b.*)$/i;
+const SUMMARY_LINE_RE = /^(?:✖\s*)?(Found \d+ .+|Checked \d+ .+|[\d\s]+errors?\b.*|[\d\s]+problems?\b.*)$/i;
 
 interface TextBlock {
   file: string;
@@ -58,6 +58,13 @@ function collectBlocks(output: string): TextBlock[] {
       current = { file: candidate, lines: [line] };
       continue;
     }
+    // An unfamiliar path header belongs to another file. Preserve its output
+    // through the operation's raw evidence, not under the previous file's metadata.
+    if (candidate && (line.trim() === candidate || /^:\d+/.test(line.trimStart().slice(candidate.length)))) {
+      pushBlock(blocks, current);
+      current = null;
+      continue;
+    }
     if (current) {
       current.lines.push(line);
     }
@@ -79,7 +86,9 @@ export function parseTypecheckTextBlocks(output: string): TypecheckParseResult |
       file: block.file,
       line,
       column,
-      message: firstLine.trim(),
+      // A path header is metadata; the body contains the actionable diagnostic.
+      // Keep continuation lines even when the header already has a message.
+      message: (firstLine.trim() === block.file ? block.text.slice(firstLine.length).trim() : "") || block.text.trim(),
       raw: block.text,
     };
   });
