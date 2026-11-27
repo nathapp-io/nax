@@ -3,7 +3,7 @@
   "feature": "review-0942-run-integrity",
   "branchName": "feat/review-0942-run-integrity",
   "createdAt": "2026-11-27T16:57:01.433Z",
-  "updatedAt": "2026-11-27T17:42:01.042Z",
+  "updatedAt": "2026-11-27T17:53:29.242Z",
   "userStories": [
     {
       "id": "US-001",
@@ -194,14 +194,17 @@
         "path-safety"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing CLI, subscriber and reader seams support an in-place multi-module fix rather than a new architecture; strict TDD isolation protects filesystem read-access confinement for registered filenames and symlinks as well as legacy identity compatibility."
+        "reasoning": "Existing CLI, subscriber and reader seams support an in-place multi-module fix rather than a new architecture; strict TDD isolation protects filesystem read-access confinement for registered filenames and symlinks as well as legacy identity compatibility.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/bin/run-action.ts",
@@ -225,7 +228,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "df99a1569a4b0e4eb54945a67268895ccf0afb3c"
     },
     {
       "id": "US-004",
