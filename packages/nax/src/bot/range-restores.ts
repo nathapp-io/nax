@@ -23,6 +23,14 @@ export interface RestoredFile {
   readonly before: number;
 }
 
+/** The files to list, at most `MAX_RESTORED_FILES`, and how many qualified before the cap. */
+export interface RangeRestores {
+  readonly files: readonly RestoredFile[];
+  readonly total: number;
+}
+
+const NO_RESTORES: RangeRestores = { files: [], total: 0 };
+
 export type RestoreGit = (
   args: string[],
   cwd: string,
@@ -53,13 +61,12 @@ function parseNumstat(stdout: string): ReadonlyMap<string, number> {
   return counts;
 }
 
-async function numstat(git: RestoreGit, dir: string, from: string, to: string): Promise<ReadonlyMap<string, number>> {
-  const result = await git([...NUMSTAT, from, to], dir);
+async function numstat(git: RestoreGit, dir: string, range: string): Promise<ReadonlyMap<string, number>> {
+  const result = await git([...NUMSTAT, range], dir);
   if (result.exitCode !== 0)
     throw new NaxError("[bot] Cannot diff the range against the merge base", "BOT_RANGE_DIFF_FAILED", {
       stage: "bot",
-      from,
-      to,
+      range,
       exitCode: result.exitCode,
     });
   return parseNumstat(result.stdout);
@@ -70,23 +77,25 @@ export async function readRangeRestores(
   git: RestoreGit,
   dir: string,
   range: { readonly mergeBase: string; readonly rangeBase: string },
-): Promise<readonly RestoredFile[]> {
+): Promise<RangeRestores> {
   try {
     const [touched, before, now] = await Promise.all([
-      numstat(git, dir, range.rangeBase, "HEAD"),
-      numstat(git, dir, range.mergeBase, range.rangeBase),
-      numstat(git, dir, range.mergeBase, "HEAD"),
+      numstat(git, dir, `${range.rangeBase}..HEAD`),
+      // Three dots: from the reviewed head's own merge base, so target-branch commits merged into
+      // the range after that review do not read as the pull request's earlier change.
+      numstat(git, dir, `${range.mergeBase}...${range.rangeBase}`),
+      numstat(git, dir, `${range.mergeBase}..HEAD`),
     ]);
     const restored = [...touched.keys()]
       .map((path) => ({ path, now: now.get(path) ?? 0, before: before.get(path) ?? 0 }))
       .filter((file) => file.now < file.before)
       .sort((a, b) => b.before - b.now - (a.before - a.now));
-    return restored.slice(0, MAX_RESTORED_FILES);
+    return { files: restored.slice(0, MAX_RESTORED_FILES), total: restored.length };
   } catch (error) {
-    getSafeLogger()?.debug("bot", "Could not compare the range with the merge base; no restored-file facts", {
+    getSafeLogger()?.warn("bot", "Could not compare the range with the merge base; no restored-file facts", {
       storyId: "_run",
       error: errorMessage(error),
     });
-    return [];
+    return NO_RESTORES;
   }
 }

@@ -15,7 +15,7 @@ import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 import { creditedFiles } from "./coverage-credit";
 import type { BotDecision } from "./decisions";
 import type { BotPushEntry } from "./push-ledger";
-import { type RestoredFile, readRangeRestores } from "./range-restores";
+import { type RangeRestores, readRangeRestores } from "./range-restores";
 import { reviewScopeOf } from "./review-rulings";
 
 export const _reviewStepDeps = { writeBranchReviewPackage, readRangeRestores };
@@ -52,7 +52,7 @@ interface ReviewStep {
   /** The subset a settled `verified` ruling already covered at an unchanged commit. */
   credited: readonly string[];
   /** nax#3050: files an incremental range takes back toward the merge base. */
-  restored: readonly RestoredFile[];
+  restored: RangeRestores;
 }
 
 async function writePackage(
@@ -111,7 +111,7 @@ function reviewPrompt(input: PrReviewInput, step: ReviewStep): string {
     range: `${step.rangeBase}..HEAD`,
     conversationOnly: input.conversationOnly,
     ...(incremental && { incrementalSince: step.rangeBase, mergeBase: input.mergeBase }),
-    ...(step.restored.length > 0 && { restoredFiles: step.restored }),
+    ...(step.restored.files.length > 0 && { restoredFiles: step.restored.files, restoredTotal: step.restored.total }),
     pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
     issues: input.issues,
     threads: input.threads,
@@ -189,7 +189,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     rangeBase: input.rangeBase ?? input.mergeBase,
     required: [],
     credited: [],
-    restored: [],
+    restored: { files: [], total: 0 },
   };
   const outcome = await underReviewLimit(
     ctx,

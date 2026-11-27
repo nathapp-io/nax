@@ -39,7 +39,27 @@ describe("readRangeRestores on a real checkout (#3050)", () => {
 
       const result = await readRangeRestores(botGit, repo, { mergeBase, rangeBase: reviewed });
 
-      expect(result).toEqual([{ path: "src/a.ts", now: 2, before: 30 }]);
+      expect(result).toEqual({ files: [{ path: "src/a.ts", now: 2, before: 30 }], total: 1 });
+    });
+  });
+
+  test("a target-branch merge into the range lists no file the pull request never changed", async () => {
+    await withTempDir(async (repo) => {
+      await git(repo, ["init", "-q", "-b", "main"]);
+      await git(repo, ["config", "user.email", "test@example.com"]);
+      await git(repo, ["config", "user.name", "Test"]);
+      await commit(repo, { "src/a.ts": "a\n", "src/t.ts": "t\n" }, "target");
+      await git(repo, ["checkout", "-q", "-b", "topic"]);
+      const reviewed = await commit(repo, { "src/a.ts": `a\n${lines(5, "pr")}` }, "pr change");
+      await git(repo, ["checkout", "-q", "main"]);
+      await commit(repo, { "src/t.ts": `t\n${lines(50, "target")}` }, "target moves on");
+      await git(repo, ["checkout", "-q", "topic"]);
+      await git(repo, ["merge", "-q", "--no-edit", "main"]);
+      const mergeBase = await git(repo, ["merge-base", "main", "HEAD"]);
+
+      const result = await readRangeRestores(botGit, repo, { mergeBase, rangeBase: reviewed });
+
+      expect(result).toEqual({ files: [], total: 0 });
     });
   });
 });

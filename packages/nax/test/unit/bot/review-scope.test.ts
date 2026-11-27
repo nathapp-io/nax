@@ -86,7 +86,7 @@ describe("buildBotPrReviewPrompt incremental note", () => {
 const MERGE = "b".repeat(40);
 const TARGET_LINE = `The target branch is at ${MERGE}. "The base branch" in this prompt means that commit, never the start of this range.`;
 const GIT_HINT = `git diff ${MERGE} HEAD -- <path>`;
-const RESTORED = "## Files this range takes back toward the target branch";
+const RESTORED = "## Files whose change against the target branch is smaller at this head";
 
 describe("buildBotPrReviewPrompt target branch (#3050)", () => {
   test("names the merge base as the base branch in an incremental review", () => {
@@ -116,6 +116,17 @@ describe("buildBotPrReviewPrompt target branch (#3050)", () => {
     });
     expect(result).toContain(RESTORED);
     expect(result).toContain('- "src/a.ts": 12 now, 174 at the reviewed head');
+    expect(result).not.toContain("Showing the");
+  });
+  test("says when the list is cut off", () => {
+    const result = prompts.buildBotPrReviewPrompt({
+      ...base,
+      incrementalSince: REVIEWED,
+      mergeBase: MERGE,
+      restoredFiles: [{ path: "src/a.ts", now: 12, before: 174 }],
+      restoredTotal: 73,
+    });
+    expect(result).toContain("Showing the 1 files whose change shrank most, of 73.");
   });
   test("quotes a path so a newline in it cannot start a prompt line", () => {
     const result = prompts.buildBotPrReviewPrompt({
@@ -224,9 +235,10 @@ describe("runPrReview incremental note", () => {
     expect(operationPrompt()).not.toContain(INCREMENTAL);
   });
   test("#3050 names the merge base and lists the files the range restores", async () => {
-    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => [
-      { path: "src/a.ts", now: 12, before: 174 },
-    ]);
+    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => ({
+      files: [{ path: "src/a.ts", now: 12, before: 174 }],
+      total: 1,
+    }));
     _reviewStepDeps.readRangeRestores = restores;
     await runPrReview(ctx, { ...input, rangeBase: "reviewed" });
     expect(restores).toHaveBeenCalledTimes(1);
@@ -238,7 +250,7 @@ describe("runPrReview incremental note", () => {
     ["a full review", {}],
     ["a conversation-only review", { rangeBase: "reviewed", conversationOnly: true }],
   ])("#3050 reads no restores for %s", async (_name, extra) => {
-    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => []);
+    const restores = mock<typeof _reviewStepDeps.readRangeRestores>(async () => ({ files: [], total: 0 }));
     _reviewStepDeps.readRangeRestores = restores;
     await runPrReview(ctx, { ...input, ...extra });
     expect(restores).not.toHaveBeenCalled();

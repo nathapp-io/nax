@@ -45,6 +45,8 @@ export interface BotPrReviewPromptInput {
   readonly mergeBase?: string;
   /** nax#3050: files the incremental range takes back toward the merge base. Absent or empty renders nothing. */
   readonly restoredFiles?: readonly RestoredFile[];
+  /** How many files qualified before the list was capped; the prompt says so when it is larger. */
+  readonly restoredTotal?: number;
   readonly pr: { readonly number: number; readonly title: string; readonly body: string; readonly author: string };
   readonly issues: readonly LinkedIssue[];
   readonly threads: readonly PrThread[];
@@ -232,8 +234,11 @@ function incrementalSection(input: BotPrReviewPromptInput): readonly string[] {
 function restoredSection(input: BotPrReviewPromptInput): string | undefined {
   if (input.incrementalSince === undefined || input.conversationOnly || !input.restoredFiles?.length) return undefined;
   return [
-    "## Files this range takes back toward the target branch",
+    "## Files whose change against the target branch is smaller at this head",
     "This range shrinks the pull request's change to these files. Each line counts the lines the file differs from the target branch (added plus deleted), at this head and at the reviewed head.",
+    ...((input.restoredTotal ?? 0) > input.restoredFiles.length
+      ? [`Showing the ${input.restoredFiles.length} files whose change shrank most, of ${input.restoredTotal}.`]
+      : []),
     // JSON quoting keeps a path that holds a newline on its own line.
     ...input.restoredFiles.map(
       ({ path, now, before }) => `- ${JSON.stringify(path)}: ${now} now, ${before} at the reviewed head`,
