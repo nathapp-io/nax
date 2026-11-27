@@ -47,17 +47,23 @@ export type ChoiceQuestionCardProps = Omit<AskCardProps, "model"> & { readonly m
  * lone escape arrives as `escape` **and** `meta`, so it is taken first; a ctrl or meta chord is
  * never a character the person typed; and a shifted arrow stays the transcript's, as it is on
  * every other card.
+ *
+ * Shift itself is not a chord here. Ink reports a capital letter as `shift: true`, so a blanket
+ * "no shifted keys" guard would silently drop the first letter of every capitalised word typed
+ * into `Other...` — `Deno` arriving as `eno`. Only the shifted keys that mean something else to
+ * the screen are refused: a shifted arrow (transcript scroll) and shift-tab (`cycleMode`).
  */
 export function choiceKey(input: string, key: Key): ChoiceKey | undefined {
   if (key.escape) return { kind: "escape" };
-  if (key.shift) return undefined;
+  if (key.tab) return undefined;
+  if (key.shift && (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow)) return undefined;
   if (key.upArrow) return { kind: "up" };
   if (key.downArrow) return { kind: "down" };
   if (key.leftArrow) return { kind: "left" };
   if (key.rightArrow) return { kind: "right" };
   if (key.return) return { kind: "return" };
   if (key.backspace || key.delete) return { kind: "backspace" };
-  if (key.ctrl || key.meta || key.tab) return undefined;
+  if (key.ctrl || key.meta) return undefined;
   if (input === " ") return { kind: "space" };
   return input === "" ? undefined : { kind: "char", char: input };
 }

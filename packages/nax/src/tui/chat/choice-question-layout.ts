@@ -16,7 +16,13 @@
  * visible and `(n more above)` / `(n more below)` name what the window refused, and those
  * markers count against the budget like any other row. The question line, the hint row and the
  * countdown are never withheld; the prompt and the question are cut to one row each before a
- * single option row is given up.
+ * single option row is given up, and the prompt is fitted only into the room the body's own
+ * floor leaves over. The review step is windowed the same way, a whole question at a time,
+ * around the question its cursor names — so every answer is reachable before submitting.
+ *
+ * Every option label, option description, question header, `Other...` text and review line is
+ * flattened to one row before it is cut to the width: each of those is one row by definition,
+ * and a line break inside one would draw a row the frame never reserved.
  */
 import { type ChoiceAnswer, type ChoiceQuestion, formatChoiceAnswers } from "@nathapp/nax-agent";
 import type { AskBorder, AskCardChoiceQuestion } from "./ask-card";
@@ -46,7 +52,7 @@ const HINT_MULTI = "space toggles · enter continues";
 const HINT_OTHER = "down for Other";
 const HINT_TABS = "left/right for tabs";
 const HINT_EDITING = "type · enter keeps · esc cancels";
-const HINT_REVIEW = "enter submits · left goes back";
+const HINT_REVIEW = "enter submits · up/down scrolls · left goes back";
 const HINT_DECLINE = "esc declines";
 /** The columns between an option's label and the description drawn after it. */
 const DESCRIPTION_GAP = "  ";
@@ -56,6 +62,8 @@ const ONE_QUESTION_ROW = 1;
 const ONE_OPTION_ROW = 1;
 /** A `(n more ...)` row is cut to the width, so a marker is always exactly one row. */
 const ONE_MARKER_ROW = 1;
+/** The rows the body keeps before the prompt may have one: its question and one option. */
+const BODY_FLOOR_ROWS = ONE_QUESTION_ROW + ONE_OPTION_ROW;
 /** "Unlimited": a budget no card can reach, so a measurement sees the whole drawing. */
 export const CHOICE_UNLIMITED_BUDGET = Number.POSITIVE_INFINITY;
 
@@ -99,10 +107,13 @@ export interface ChoiceQuestionMeasurement {
   readonly desired: number;
 }
 
-/** A whole number of rows; an unlimited budget stays unlimited. */
+/**
+ * A whole number of rows; an unlimited budget stays unlimited, and a budget of nought stays
+ * nought — a card given no row at all draws none, rather than drawing one nobody reserved.
+ */
 function rowBudget(budget: number): number {
   if (!Number.isFinite(budget)) return CHOICE_UNLIMITED_BUDGET;
-  return Math.max(1, Math.floor(budget));
+  return Math.max(0, Math.floor(budget));
 }
 
 /** The card's drawing context: the resolved width, the theme, and no expanded detail. */
@@ -166,13 +177,17 @@ function tabStripRows(model: AskCardChoiceQuestion, state: ChoiceState, context:
     const answered = (state.selected[index]?.length ?? 0) > 0 || state.other[index] !== undefined;
     const style: SpanStyle =
       index === state.tab ? { bold: true } : answered ? { color: "success" } : { color: "muted" };
-    spans.push(styled(`[${question.header}]`, style));
+    spans.push(styled(`[${oneLine(question.header)}]`, style));
   }
   spans.push(styled(SPACE), styled("[Submit]", { color: "muted" }));
   return [...wrapSpans(spans, { width: context.width })];
 }
 
-/** One option's row: the pointer, the box its question's kind draws, its number and its label. */
+/**
+ * One option's row: the pointer, the box its question's kind draws, its number and its label.
+ * The label and its description are flattened first: an option is one row by definition, so a
+ * line break inside either of them must not become a row the frame never reserved.
+ */
 function optionRow(question: ChoiceQuestion, index: number, state: ChoiceState, context: LayoutContext): StyledLine {
   const cursor = state.cursor === index;
   const chosen = state.selected[state.tab]?.includes(index) === true;
@@ -183,8 +198,8 @@ function optionRow(question: ChoiceQuestion, index: number, state: ChoiceState, 
     [
       pointer(context, cursor),
       styled(mark),
-      styled(`${index + 1}. ${option?.label ?? ""}`, cursor ? { bold: true } : {}),
-      ...(description === undefined ? [] : [styled(`${DESCRIPTION_GAP}${description}`, { color: "muted" })]),
+      styled(`${index + 1}. ${oneLine(option?.label ?? "")}`, cursor ? { bold: true } : {}),
+      ...(description === undefined ? [] : [styled(`${DESCRIPTION_GAP}${oneLine(description)}`, { color: "muted" })]),
     ],
     context,
   );
@@ -194,7 +209,7 @@ function optionRow(question: ChoiceQuestion, index: number, state: ChoiceState, 
 function otherRow(question: ChoiceQuestion, state: ChoiceState, context: LayoutContext): StyledLine {
   const cursor = state.cursor === question.options.length;
   const stored = state.editing ? state.draft : state.other[state.tab];
-  const text = stored === undefined || stored === "" ? "" : `${SPACE}${stored}`;
+  const text = stored === undefined || stored === "" ? "" : `${SPACE}${oneLine(stored)}`;
   return cutRow(
     [
       pointer(context, cursor),
@@ -211,12 +226,86 @@ function optionListRows(question: ChoiceQuestion, state: ChoiceState, context: L
   return question.allowOther ? [...options, otherRow(question, state, context)] : options;
 }
 
-/** The review step's rows: each question's header, then the line its answer reads as. */
-function reviewRows(model: AskCardChoiceQuestion, state: ChoiceState, context: LayoutContext): StyledLine[] {
-  return model.questions.flatMap((question, tab) => [
-    cutRow([styled(question.header, { bold: true })], context),
-    cutRow([styled(formatChoiceAnswers([question], [answerOf(state, tab)]))], context),
+/**
+ * The review step's rows in groups, one per question: its header and then the line its answer
+ * reads as. The window keeps a group whole, so the review never shows a question's header with
+ * its answer scrolled out of the card — and both rows are flattened, because each is one row by
+ * definition while `formatChoiceAnswers` passes a question's own line breaks through.
+ */
+function reviewGroups(model: AskCardChoiceQuestion, state: ChoiceState, context: LayoutContext): StyledLine[][] {
+  return model.questions.map((question, tab) => [
+    cutRow([styled(oneLine(question.header), { bold: true })], context),
+    cutRow([styled(oneLine(formatChoiceAnswers([question], [answerOf(state, tab)])))], context),
   ]);
+}
+
+/** A run of review groups, with a marker row naming the questions it withholds either side. */
+function reviewRun(groups: readonly StyledLine[][], from: number, to: number, context: LayoutContext): StyledLine[] {
+  return [
+    ...(from > 0 ? [markerRow(from, MORE_ABOVE, context)] : []),
+    ...groups.slice(from, to + 1).flat(),
+    ...(to < groups.length - 1 ? [markerRow(groups.length - 1 - to, MORE_BELOW, context)] : []),
+  ];
+}
+
+/** How many rows a run of review groups draws, its marker rows included. */
+function reviewRunRows(groups: readonly StyledLine[][], from: number, to: number, context: LayoutContext): number {
+  return reviewRun(groups, from, to, context).length;
+}
+
+/** The total rows a list of review groups draws. */
+function groupRows(groups: readonly StyledLine[][]): number {
+  return groups.reduce((sum, group) => sum + group.length, 0);
+}
+
+/**
+ * The widest run of review groups that fits `room`, grown outwards from the question the
+ * pointer names so that question always stays in it.
+ */
+function widenReview(
+  groups: readonly StyledLine[][],
+  room: number,
+  at: number,
+  context: LayoutContext,
+): { readonly from: number; readonly to: number } {
+  let from = at;
+  let to = at;
+  let grew = true;
+  while (grew) {
+    grew = false;
+    if (to + 1 < groups.length && reviewRunRows(groups, from, to + 1, context) <= room) {
+      to += 1;
+      grew = true;
+    } else if (from > 0 && reviewRunRows(groups, from - 1, to, context) <= room) {
+      from -= 1;
+      grew = true;
+    }
+  }
+  return { from, to };
+}
+
+/**
+ * The review list's window: whole questions around the one the pointer names, with a marker row
+ * for the questions it withholds either side. A room too small for that question and both
+ * markers keeps the question whole on its own; one too small for even that falls back to the
+ * row window, which at least keeps the question's own rows on screen.
+ */
+function reviewWindow(
+  groups: readonly StyledLine[][],
+  cursor: number,
+  room: number,
+  context: LayoutContext,
+): RowWindow {
+  const total = groupRows(groups);
+  if (total <= room) return { rows: groups.flat(), elided: 0 };
+  const at = Math.min(Math.max(cursor, 0), Math.max(groups.length - 1, 0));
+  const own = groups[at] ?? [];
+  if (reviewRunRows(groups, at, at, context) > room) {
+    if (own.length <= room) return { rows: [...own], elided: total - own.length };
+    return windowRows(groups.flat(), room, groupRows(groups.slice(0, at)), context);
+  }
+  const { from, to } = widenReview(groups, room, at, context);
+  return { rows: reviewRun(groups, from, to, context), elided: total - groupRows(groups.slice(from, to + 1)) };
 }
 
 /** The hint row's words: what the keys do in the state the card is in. */
@@ -302,16 +391,48 @@ function bodyRows(
   room: number,
 ): BodyRows {
   if (state.review) {
-    const window = windowRows(reviewRows(model, state, context), room, 0, context);
+    const window = reviewWindow(reviewGroups(model, state, context), state.cursor, room, context);
     return { questionRows: [], middle: window.rows, elided: window.elided };
   }
   if (question === undefined) return { questionRows: [], middle: [], elided: 0 };
   const questionAll = textRows(question.question, {}, context);
   const list = optionListRows(question, state, context);
-  const fits = questionAll.length + list.length <= room;
-  const questionRows = fits || questionAll.length <= 1 ? questionAll : [elidedRow(question.question, {}, context)];
+  const questionRows = fitQuestion(question, questionAll, list.length, room, context);
   const window = windowRows(list, Math.max(room - questionRows.length, 0), state.cursor, context);
   return { questionRows, middle: window.rows, elided: window.elided };
+}
+
+/**
+ * The question's rows at the room it has: all of them while they fit beside at least one option
+ * row, one marked row when they do not, and nothing at all when not even that fits. It is the
+ * question half of "the question line is never withheld" — the option row beside it is the
+ * other half, and neither is ever drawn into rows the card was not given.
+ */
+function fitQuestion(
+  question: ChoiceQuestion,
+  questionAll: readonly StyledLine[],
+  options: number,
+  room: number,
+  context: LayoutContext,
+): StyledLine[] {
+  const reserve = options === 0 ? 0 : ONE_OPTION_ROW;
+  if (questionAll.length + reserve <= room) return [...questionAll];
+  return room >= 1 ? [elidedRow(question.question, {}, context)] : [];
+}
+
+/**
+ * The rows the prompt may have: every row while they fit in `room`, one marked row when they
+ * do not, and none at all when there is no room for even that. `room` is what the body's own
+ * floor left over, so a long prompt can never withhold the question and its options.
+ */
+function fitPrompt(
+  promptAll: readonly StyledLine[],
+  prompt: string,
+  room: number,
+  context: LayoutContext,
+): StyledLine[] {
+  if (promptAll.length <= room) return [...promptAll];
+  return room >= 1 ? [elidedRow(prompt, {}, context)] : [];
 }
 
 /**
@@ -319,9 +440,15 @@ function bodyRows(
  * and is cut to one marked row before anything else is given up; the frame, the title, the tab
  * strip, the question line, the hint and the countdown are never withheld.
  *
+ * The prompt is fitted against the room the *body* leaves over, not against every row between
+ * the tab strip and the tail: a prompt that ate the whole gap would measure the card honestly
+ * and then draw no question and no options at all, which is exactly what the minimum reserves
+ * rows for.
+ *
  * The rows returned never outnumber the rows reserved, whatever budget it is handed: a budget
  * below the card's own minimum — which the frame allocator never gives, but a constrained
- * caller can — keeps the top of the card and nothing more (see `clipToBudget`).
+ * caller can — keeps the top of the card and nothing more, and a budget of none draws nothing
+ * at all (see `clipToBudget`).
  */
 export function choiceQuestionLayout(
   model: AskCardChoiceQuestion,
@@ -342,9 +469,10 @@ export function choiceQuestionLayout(
     frameRule(context, model.border),
   ];
   // What the prompt and the body may have: whatever the frame, the title, the strip and the tail left.
-  const room = budget - head.length - tail.length;
+  const room = Math.max(budget - head.length - tail.length, 0);
   const promptAll = model.prompt === "" ? [] : textRows(model.prompt, {}, context);
-  const prompt = promptAll.length <= room ? promptAll : room >= 1 ? [elidedRow(model.prompt, {}, context)] : [];
+  const bodyFloor = state.review || question !== undefined ? BODY_FLOOR_ROWS : 0;
+  const prompt = fitPrompt(promptAll, model.prompt, Math.max(room - bodyFloor, 0), context);
   head.push(...prompt);
   const body = bodyRows(model, state, question, context, Math.max(room - prompt.length, 0));
   head.push(...body.questionRows);

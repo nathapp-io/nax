@@ -26,7 +26,10 @@ export type ChoiceKey =
 export interface ChoiceState {
   /** The question whose tab is shown, 0-based. */
   readonly tab: number;
-  /** The row the pointer is on: an option's index, or the `Other...` row's. */
+  /**
+   * The row the pointer is on: an option's index, or the `Other...` row's. In the review step it
+   * is the question whose answer the review window shows.
+   */
   readonly cursor: number;
   /** Per question, the selected option indexes, ascending and unique; never the `Other...` row. */
   readonly selected: readonly (readonly number[])[];
@@ -212,7 +215,7 @@ function advance(state: ChoiceState, questions: readonly ChoiceQuestion[]): Choi
     return { state: { ...state }, outcome: { kind: "submit", answers: answersOf(state, questions) } };
   }
   if (state.tab < questions.length - 1) return { state: onTab(state, state.tab + 1) };
-  return { state: { ...state, review: true } };
+  return { state: { ...state, review: true, cursor: 0 } };
 }
 
 /** Space chooses the pointer's option, or toggles it on a multi-select question. */
@@ -248,10 +251,23 @@ function reviewReturn(state: ChoiceState, questions: readonly ChoiceQuestion[]):
   return { state: { ...state }, outcome: { kind: "submit", answers: answersOf(state, questions) } };
 }
 
-/** One key in the review step: return submits or reopens, left returns to the questions. */
+/**
+ * The review step's window position: up and down walk the questions it lists, clamped at the
+ * first and the last. The review lists every question, so a window too short for all of them
+ * must still be able to reach each answer before the card is submitted.
+ */
+function moveReviewCursor(state: ChoiceState, questions: readonly ChoiceQuestion[], delta: number): ChoiceState {
+  const last = Math.max(questions.length - 1, 0);
+  return { ...state, cursor: Math.min(Math.max(state.cursor + delta, 0), last) };
+}
+
+/** One key in the review step: return submits or reopens, left returns, up and down scroll. */
 function reduceReviewKey(state: ChoiceState, questions: readonly ChoiceQuestion[], key: ChoiceKey): ChoiceReduction {
   if (key.kind === "return") return reviewReturn(state, questions);
   if (key.kind === "left") return { state: onTab(state, questions.length - 1) };
+  if (key.kind === "up" || key.kind === "down") {
+    return { state: moveReviewCursor(state, questions, key.kind === "up" ? -1 : 1) };
+  }
   return unchanged(state);
 }
 

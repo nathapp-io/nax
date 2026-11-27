@@ -32,6 +32,11 @@ const RETURN = "\r";
 const ESCAPE = "\x1b";
 const DOWN = "\x1b[B";
 const SPACE = " ";
+/** A shifted arrow and shift-tab: the transcript's and `cycleMode`'s, not the card's. */
+const SHIFT_DOWN = "\x1b[1;2B";
+const SHIFT_TAB = "\x1b[Z";
+/** The pointer row's prefix in the plain theme, as a drawn row starts. */
+const POINTER = `${THEME.glyphs.pointer} `;
 
 type ChatQuestion = Extract<ChatPendingAsk, { type: "question" }>;
 
@@ -188,6 +193,39 @@ describe("choice question card submission", () => {
     card.type("neither of those");
     card.type(RETURN);
     const answers = [{ selected: [], other: "neither of those" }];
+    expect(card.answer.mock.calls).toEqual([["q1", { text: formatChoiceAnswers(questions, answers), answers }]]);
+  });
+
+  test("AC-8: capitals typed into Other one character at a time are kept exactly", () => {
+    // Ink reports a capital letter as a shifted keypress, so a blanket shift guard would drop
+    // the `D` of `Deno` and answer `eno` in its place.
+    const questions = [question({ allowOther: true })];
+    const card = mount(askEvent(questions));
+    card.type(DOWN);
+    card.type(DOWN);
+    card.type(RETURN);
+    for (const character of ["D", "e", "n", "o", " ", "1", "!"]) card.type(character);
+    card.type(RETURN);
+    const answers = [{ selected: [], other: "Deno 1!" }];
+    expect(card.answer.mock.calls).toEqual([["q1", { text: formatChoiceAnswers(questions, answers), answers }]]);
+  });
+
+  test("AC-8: shift-tab and a shifted arrow stay off the card", () => {
+    const questions = [question({ allowOther: true })];
+    const card = mount(askEvent(questions));
+    // A shifted arrow is the transcript's: the pointer must not move.
+    card.type(SHIFT_DOWN);
+    expect(card.frame()).toContain(`${POINTER}( ) 1. bun`);
+    // Shift-tab is `cycleMode` in the chat screen: it must not open the Other... box either.
+    card.type(SHIFT_TAB);
+    expect(card.answer).not.toHaveBeenCalled();
+    expect(card.dismiss).not.toHaveBeenCalled();
+    card.type(DOWN);
+    card.type(DOWN);
+    card.type(RETURN);
+    card.type("deno");
+    card.type(RETURN);
+    const answers = [{ selected: [], other: "deno" }];
     expect(card.answer.mock.calls).toEqual([["q1", { text: formatChoiceAnswers(questions, answers), answers }]]);
   });
 });

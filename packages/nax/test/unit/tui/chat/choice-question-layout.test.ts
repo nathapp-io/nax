@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ChoiceQuestion, formatChoiceAnswers } from "@nathapp/nax-agent";
+import { type ChoiceAnswer, type ChoiceQuestion, formatChoiceAnswers } from "@nathapp/nax-agent";
 import type { ChatPendingAsk, HostChoiceAsk } from "@/chat";
 import { askCardLayout, measureAskCard } from "@/tui/chat/AskCard";
 import { type AskCardChoiceQuestion, askCardModel } from "@/tui/chat/ask-card";
@@ -88,6 +88,11 @@ const MANY: readonly ChoiceQuestion[] = [
     options: Array.from({ length: 12 }, (_unused, index) => ({ label: `option ${index + 1}` })),
   }),
 ];
+
+/** One question's answer out of a whole selection, as the review assertions spell it. */
+function answerAt(selected: readonly (readonly number[])[], tab: number): ChoiceAnswer {
+  return { selected: selected[tab] ?? [] };
+}
 
 describe("choiceQuestionLayout tab strip", () => {
   test("AC-3: two questions draw a tab strip naming both headers and Submit", () => {
@@ -237,6 +242,97 @@ describe("choiceQuestionLayout minimum", () => {
     expect(tiny.middle).toEqual([]);
     expect(tiny.tail).toEqual([]);
   });
+
+  test("AC-8: a budget of zero draws nothing at all", () => {
+    const card = model([question({ allowOther: true })]);
+    const starved = draw(card, stateFor(card), 0);
+    expect(starved.rows).toBe(0);
+    expect(starved.head).toEqual([]);
+    expect(starved.middle).toEqual([]);
+    expect(starved.tail).toEqual([]);
+  });
+
+  test("AC-8: a multi-row prompt never withholds the question, an option or the bottom rule", () => {
+    // A prompt wide enough to fill the gap between the title and the tail on its own: it is
+    // collapsed to one marked row, and the body's own floor is reserved before it gets one.
+    for (const repetitions of [15, 20]) {
+      const card = model([question({ allowOther: true })], "context ".repeat(repetitions));
+      const measurement = measure(card, 40);
+      const fitted = draw(card, stateFor(card), measurement.minimum, 40);
+      const drawn = rows(fitted);
+      const frame = drawn.join("\n");
+      expect(fitted.rows).toBeLessThanOrEqual(measurement.minimum);
+      expect(drawn.some((row) => row.startsWith("context ") && row.endsWith(THEME.glyphs.ellipsis))).toBe(true);
+      expect(frame).toContain("Which runner?");
+      expect(frame).toContain("1. bun");
+      expect(frame).toContain("more below");
+      expect(frame).toContain("esc");
+      expect(frame).toContain("expires in");
+      expect(drawn[0]).toBe(THEME.glyphs.rule.repeat(40));
+      expect(drawn.at(-1)).toBe(THEME.glyphs.rule.repeat(40));
+    }
+  });
+
+  test("AC-8: a growing budget adds prompt rows without dropping the question or its options", () => {
+    const card = model([question({ allowOther: false })], "context ".repeat(20));
+    const measurement = measure(card, 40);
+    expect(measurement.desired).toBeGreaterThan(measurement.minimum);
+    const promptRows = (budget: number) =>
+      rows(draw(card, stateFor(card), budget, 40)).filter((row) => row.startsWith("context ")).length;
+    // The question and both options survive every budget from the minimum upwards.
+    for (const budget of [measurement.minimum, measurement.minimum + 1, measurement.minimum + 2]) {
+      const drawn = draw(card, stateFor(card), budget, 40);
+      const frame = rows(drawn).join("\n");
+      expect(drawn.rows).toBeLessThanOrEqual(budget);
+      expect(frame).toContain("Which runner?");
+      expect(frame).toContain("1. bun");
+      expect(rows(drawn).at(-1)).toBe(THEME.glyphs.rule.repeat(40));
+    }
+    // The prompt keeps one marked row at the minimum and gets its whole text by `desired`.
+    expect(promptRows(measurement.minimum)).toBe(1);
+    expect(promptRows(measurement.desired)).toBeGreaterThan(1);
+  });
+});
+
+describe("choiceQuestionLayout single-row text", () => {
+  test("AC-5: a line break in a label, a description, an other or a review line stays on one row", () => {
+    const questions: readonly [ChoiceQuestion, ChoiceQuestion] = [
+      question({
+        header: "Run\nner",
+        allowOther: true,
+        options: [{ label: "bun\nextra row", description: "the fast\nruntime" }, { label: "vi\ntest" }],
+      }),
+      question({ header: "Sco\npe", question: "Which scope?", options: [{ label: "unit" }, { label: "e2e" }] }),
+    ];
+    const card = model(questions);
+    const states = [
+      stateFor(card),
+      stateFor(card, { other: ["nei\nther"] }),
+      stateFor(card, { review: true, selected: [[0], [0]] }),
+    ];
+    for (const state of states) {
+      const drawn = draw(card, state);
+      // Every row is one drawn row: the count the frame reserved is the count ink draws.
+      expect(rows(drawn)).toHaveLength(drawn.rows);
+      expect(rows(drawn).some((row) => row.includes("\n"))).toBe(false);
+    }
+    const options = draw(card, stateFor(card)).middle.map(plainText);
+    expect(options[0]).toBe(`${POINTER}( ) 1. bun extra row  the fast runtime`);
+    expect(options[1]).toBe(`${BLANK_POINTER}( ) 2. vi test`);
+    const other = rows(draw(card, stateFor(card, { other: ["nei\nther"] }))).find((row) => row.includes("Other..."));
+    expect(other).toBe(`${BLANK_POINTER}Other... nei ther`);
+  });
+
+  test("AC-9: a line break in a question header and its answer stays on one row each", () => {
+    const questions = [question({ header: "Run\nner" }), question({ header: "Sco\npe", question: "Scope?" })];
+    const card = model(questions);
+    const drawn = draw(card, stateFor(card, { review: true, selected: [[1], [0]] }));
+    expect(rows(drawn)).toHaveLength(drawn.rows);
+    expect(rows(drawn).some((row) => row.includes("\n"))).toBe(false);
+    const plain = rows(drawn);
+    expect(plain).toContain("Run ner");
+    expect(plain).toContain("Sco pe");
+  });
 });
 
 describe("choiceQuestionLayout review step", () => {
@@ -251,6 +347,34 @@ describe("choiceQuestionLayout review step", () => {
     expect(drawn).toContain(formatChoiceAnswers([questions[0]], [{ selected: [1] }]));
     expect(drawn).toContain("Scope");
     expect(drawn).toContain(formatChoiceAnswers([questions[1]], [{ selected: [0] }]));
+  });
+
+  test("AC-9: every question's review answer is reachable at the measured minimum", () => {
+    const questions = [1, 2, 3, 4].map((n) =>
+      question({ header: `Q${n}`, question: `Question ${n}?`, options: [{ label: "yes" }, { label: "no" }] }),
+    );
+    const selected = [[0], [1], [0], [1]];
+    const card = model(questions);
+    const minimum = measure(card).minimum;
+    for (const [cursor, question] of questions.entries()) {
+      const drawn = draw(card, stateFor(card, { review: true, cursor, selected }), minimum);
+      const frame = rows(drawn);
+      expect(drawn.rows).toBeLessThanOrEqual(minimum);
+      // The question the window is on is drawn whole: its header and its answer.
+      expect(frame).toContain(question.header);
+      expect(frame).toContain(formatChoiceAnswers([question], [answerAt(selected, cursor)]));
+      // Nothing is clipped: the frame's rules still close the card.
+      expect(frame[0]).toBe(THEME.glyphs.rule.repeat(WIDTH));
+      expect(frame.at(-1)).toBe(THEME.glyphs.rule.repeat(WIDTH));
+    }
+    // The window really moved: the last question's answer is only on screen at the bottom.
+    const atTop = rows(draw(card, stateFor(card, { review: true, cursor: 0, selected }), minimum));
+    expect(atTop).not.toContain(formatChoiceAnswers([questions[3]], [answerAt(selected, 3)]));
+    expect(atTop.join("\n")).toContain("more below");
+    const atBottom = rows(draw(card, stateFor(card, { review: true, cursor: 3, selected }), minimum));
+    expect(atBottom).not.toContain(formatChoiceAnswers([questions[0]], [answerAt(selected, 0)]));
+    expect(atBottom.join("\n")).toContain("more above");
+    expect(atBottom.at(-1)).toBe(THEME.glyphs.rule.repeat(WIDTH));
   });
 });
 

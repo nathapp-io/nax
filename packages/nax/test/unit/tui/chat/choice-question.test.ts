@@ -174,6 +174,8 @@ describe("reduceChoiceKey advancing", () => {
     const reviewing = press(initialChoiceState(questions), questions, RIGHT, RETURN);
     expect(reviewing.state.tab).toBe(1);
     expect(reviewing.state.review).toBe(true);
+    // The review opens at its top, not where the last question's pointer happened to be.
+    expect(reviewing.state.cursor).toBe(0);
     expect(reviewing.outcome).toBeUndefined();
   });
 
@@ -340,6 +342,44 @@ describe("reduceChoiceKey in the review step", () => {
     expect(back.state.review).toBe(false);
     expect(back.state.tab).toBe(1);
     expect(back.outcome).toBeUndefined();
+  });
+
+  test("AC-16 up and down scroll the review, clamped at the first and last question", () => {
+    const questions = [question(), question({ header: "Q2" }), question({ header: "Q3" })];
+    const state = press(initialChoiceState(questions), questions, SPACE, RIGHT, SPACE, RIGHT, RETURN).state;
+    expect(state.review).toBe(true);
+    expect(state.cursor).toBe(0);
+    expect(reduceChoiceKey(state, questions, UP).state.cursor).toBe(0);
+    const down = reduceChoiceKey(state, questions, DOWN);
+    expect(down.state.cursor).toBe(1);
+    expect(down.state.review).toBe(true);
+    expect(down.outcome).toBeUndefined();
+    const bottom = press(down.state, questions, DOWN, DOWN);
+    expect(bottom.state.cursor).toBe(2);
+    expect(reduceChoiceKey(bottom.state, questions, UP).state.cursor).toBe(1);
+  });
+
+  test("AC-16 return submits and left leaves from any review position", () => {
+    const { questions, state } = reviewing();
+    const scrolled = reduceChoiceKey(state, questions, DOWN).state;
+    expect(scrolled.cursor).toBe(1);
+    const submitted = reduceChoiceKey(scrolled, questions, RETURN);
+    expect(submitted.outcome).toEqual({ kind: "submit", answers: [{ selected: [0] }, { selected: [1] }] });
+    const back = reduceChoiceKey(scrolled, questions, LEFT);
+    expect(back.state.review).toBe(false);
+    expect(back.state.tab).toBe(1);
+  });
+
+  test("AC-16 return reopens the first unanswered required question from any review position", () => {
+    // Question 0 stays required and unanswered; question 1 is optional, so the review opens.
+    const questions = pair({ required: false });
+    const state = press(initialChoiceState(questions), questions, RIGHT, RETURN).state;
+    expect(state.review).toBe(true);
+    const scrolled = reduceChoiceKey(state, questions, DOWN).state;
+    expect(scrolled.cursor).toBe(1);
+    const reopened = reduceChoiceKey(scrolled, questions, RETURN);
+    expect(reopened.state.review).toBe(false);
+    expect(reopened.state.tab).toBe(0);
   });
 });
 
