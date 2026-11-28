@@ -43,6 +43,7 @@ import {
   saveMemoryNote,
   syncMemory,
 } from "@nathapp/nax-agent";
+import type { MemoryPendingWrite } from "#src/memory/index";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
@@ -206,6 +207,9 @@ const FIRST_WRITE = "replay budget stays 2,048 MiB";
 /** The description of the write staged second: the one the mirror and the queue must end on. */
 const SECOND_WRITE = "replay budget stays 4,096 MiB";
 
+/** The `pending` field an undelivered result carries: the write is queued for the next sync. */
+const QUEUED: MemoryPendingWrite = { clientId: expect.any(String), delivery: "queued" };
+
 describe("saveMemoryNote when the provider does not take the write", () => {
   test("AC-1: an unreachable provider mirrors the note and queues it under the same client id", async () => {
     await withTempDir(async (dir) => {
@@ -213,7 +217,7 @@ describe("saveMemoryNote when the provider does not take the write", () => {
 
       const result = await h.save();
 
-      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
       const stored = await staged(h);
       // The push was never attempted: the probe already answered.
       expect(h.provider.push).not.toHaveBeenCalled();
@@ -238,7 +242,7 @@ describe("saveMemoryNote when the provider does not take the write", () => {
 
       const result = await h.save();
 
-      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
       const stored = await staged(h);
       expect(h.provider.push).not.toHaveBeenCalled();
       expect(await soleEntry(h)).toMatchObject({ clientId: stored.id, state: "queued" });
@@ -256,7 +260,7 @@ describe("saveMemoryNote when the provider does not take the write", () => {
       await h.clock.advance(MEMORY_OP_TIMEOUT_MS);
       const result = await saving;
 
-      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
       const stored = await staged(h);
       expect(await soleEntry(h)).toMatchObject({ clientId: stored.id, kind: "save", state: "queued" });
       // The race cleared the deadline it armed.
@@ -271,7 +275,7 @@ describe("saveMemoryNote when the provider does not take the write", () => {
 
       const result = await h.save();
 
-      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
       // The local write is the newer fact: it stays, and the queue carries it.
       const stored = await staged(h);
       expect(stored.description).not.toBe(OLD_DESCRIPTION);
@@ -295,7 +299,7 @@ describe("saveMemoryNote when the provider does not take the write", () => {
 
       const result = await h.save();
 
-      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+      expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
       // The queue already holds this key: asking the provider would deliver it out of order.
       expect(h.provider.reachable).not.toHaveBeenCalled();
       expect(h.provider.push).not.toHaveBeenCalled();

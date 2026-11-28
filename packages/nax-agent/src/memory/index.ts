@@ -33,6 +33,7 @@ export {
   type MemoryForgetInput,
   type MemoryForgetResult,
   type MemoryOperationInput,
+  type MemoryPendingWrite,
   type MemorySaveInput,
   type MemorySaveResult,
   saveMemoryNote,
@@ -42,6 +43,8 @@ export type {
   MemoryPage,
   MemoryProvider,
   MemoryPushResult,
+  MemoryReplayContract,
+  MemoryWriteKind,
   MemoryWriteRequest,
 } from "./provider-types.ts";
 export { searchMemoryNotes, tokenizeMemoryQuery } from "./search.ts";
@@ -53,7 +56,7 @@ export {
 } from "./store.ts";
 export { raceTimeout } from "./support.ts";
 export { type MemorySyncInput, type MemorySyncResult, syncMemory } from "./sync.ts";
-export type { MemoryParkedEntry } from "./sync-drain.ts";
+export type { MemoryParkedEntry, MemoryUncertainEntry } from "./sync-drain.ts";
 export {
   MEMORY_CLIENT_ID_RE,
   MEMORY_DECISION_STATUSES,

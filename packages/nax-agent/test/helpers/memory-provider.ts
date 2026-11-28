@@ -12,7 +12,13 @@
  * a call that never answers, and no value a provider returns is that string.
  */
 import { type Mock, mock } from "bun:test";
-import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "#src/memory/index";
+import type {
+  MemoryPage,
+  MemoryProvider,
+  MemoryPushResult,
+  MemoryReplayContract,
+  MemoryWriteRequest,
+} from "#src/memory/index";
 
 /** The input each provider method takes. */
 type PushInput = Parameters<MemoryProvider["push"]>[0];
@@ -28,6 +34,11 @@ const SCRIPTED_ID = "scripted";
 export interface MemoryProviderScript {
   /** The provider id; default `"scripted"`. */
   readonly id?: string;
+  /**
+   * Whether the provider's writes may be repeated, as the provider declares it; default
+   * absent, which is the replay-safe contract every provider had before the marker existed.
+   */
+  readonly replay?: MemoryReplayContract;
   /** `reachable()` outcomes, one per call; default `true`. */
   readonly reachable?: ProviderStep<boolean, void> | readonly ProviderStep<boolean, void>[];
   /** `push()` outcomes, one per call; default the built-in provider's shape of answer. */
@@ -98,6 +109,7 @@ export function makeMemoryProvider(script: MemoryProviderScript = {}): MemoryPro
   const pulled = scriptedCalls(stepsOf(script.pull, EMPTY_PAGE));
   return {
     id: script.id ?? SCRIPTED_ID,
+    ...(script.replay === undefined ? {} : { replay: script.replay }),
     reachable: mock<MemoryProvider["reachable"]>(async () => await outcomeOf(reachable.next(), undefined)),
     push: mock<MemoryProvider["push"]>(async (request) => await outcomeOf(pushed.next(), request)),
     pull: mock<MemoryProvider["pull"]>(async (input) => await outcomeOf(pulled.next(), input)),

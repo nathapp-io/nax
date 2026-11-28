@@ -64,11 +64,30 @@ export interface MemorySaveInput extends MemoryOperationInput {
   readonly indexOverflows?: (note: MemoryNote) => Promise<boolean>;
 }
 
+/**
+ * The queue's handle on a write an operation could not deliver, as the caller sees it.
+ *
+ * `queued` is a write that definitely did not reach the provider and will be delivered by the
+ * next sync — the retry the caller can rely on. `unknown` is the other fact: the write was
+ * dispatched and its provider never answered, so it may have been committed, and nothing retries
+ * it automatically. The entry stays in the outbox under this client id, with `reason` saying why,
+ * until an operator requeues or discards it.
+ */
+export interface MemoryPendingWrite {
+  /** The id the outbox holds the write under — the handle a requeue or a discard names. */
+  readonly clientId: string;
+  readonly delivery: "queued" | "unknown";
+  /** Why the delivery is unknown: the failure the attempt met. Absent on a queued write. */
+  readonly reason?: string;
+}
+
 /** What a save came to: the note's slug, the status it ended in, and whether a provider took it. */
 export interface MemorySaveResult {
   readonly slug: string;
   readonly status: MemoryNoteStatus;
   readonly delivered: boolean;
+  /** Where an undelivered write went; absent once a provider has taken it. */
+  readonly pending?: MemoryPendingWrite;
 }
 
 /** One forget: the note to retire, why, and the mode it is retired in. */
@@ -85,6 +104,17 @@ export interface MemoryForgetResult {
   readonly slug: string;
   readonly status: MemoryNoteStatus;
   readonly delivered: boolean;
+  /** Where an undelivered retire went; absent once a provider has answered it. */
+  readonly pending?: MemoryPendingWrite;
+}
+
+/** The `pending` field an undelivered result carries: the queue's handle on the write. */
+export function pendingWrite(
+  clientId: string,
+  delivery: MemoryPendingWrite["delivery"],
+  reason?: string,
+): MemoryPendingWrite {
+  return { clientId, delivery, ...(reason === undefined ? {} : { reason }) };
 }
 
 /** The refusal a rejected write is thrown as: the validator's reason as the message, its field as context. */

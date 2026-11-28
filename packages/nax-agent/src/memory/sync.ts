@@ -37,6 +37,12 @@
  * which proves the fault is the entry's and not the provider's. Writes of the same
  * key never overtake it, so per-key `seq` order still holds.
  *
+ * A write the provider may not repeat (`MemoryReplayContract`) has one more outcome. Its push
+ * was dispatched and never answered, so the provider may have committed it: the entry is held as
+ * `uncertain` and the run reports it (`uncertain`) instead of counting it as pushed. That is an
+ * unanswered failure, so the pull is skipped as it is for any outage, and the next run names the
+ * held writes again rather than silently leaving them out.
+ *
  * Step 4 asks the provider for what changed elsewhere, one page at a time. The cursor
  * each page hands back is checkpointed before the next page is asked for, so the disk
  * always names the last page that arrived: a page that throws, times out or never comes
@@ -61,7 +67,7 @@ import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryPage, MemoryProvider } from "./provider-types.ts";
 import type { MemoryStore, MemorySyncState } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
-import { drainOutbox, type MemoryParkedEntry } from "./sync-drain.ts";
+import { drainOutbox, type MemoryParkedEntry, type MemoryUncertainEntry } from "./sync-drain.ts";
 import { claimSync, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
@@ -109,6 +115,13 @@ export interface MemorySyncResult {
   readonly error?: string;
   /** The entries this run parked; absent when it parked none. They are counted in `rejected`. */
   readonly parked?: readonly MemoryParkedEntry[];
+  /**
+   * The writes the queue holds with an unknown fate — this run's, and any an earlier one left —
+   * absent when the queue holds none. They are not counted as pushed: their provider never
+   * answered, so whether they were committed is exactly what is unknown, and nothing resends
+   * them until an operator requeues or discards the entry.
+   */
+  readonly uncertain?: readonly MemoryUncertainEntry[];
 }
 
 /** What a run holds when it took no lock: releasing nothing is releasing successfully. */
@@ -129,6 +142,11 @@ function noCounts(): MemorySyncCounts {
 /** The `parked` field a result carries: only when the run parked something. */
 function parkedField(parked: readonly MemoryParkedEntry[]): Pick<MemorySyncResult, "parked"> {
   return parked.length === 0 ? {} : { parked };
+}
+
+/** The `uncertain` field a result carries: only when the queue still holds unresolved writes. */
+function uncertainField(uncertain: readonly MemoryUncertainEntry[] | undefined): Pick<MemorySyncResult, "uncertain"> {
+  return uncertain === undefined || uncertain.length === 0 ? {} : { uncertain };
 }
 
 /** A run that stopped before it moved anything. */
@@ -342,14 +360,20 @@ async function pullAll(input: MemorySyncInput): Promise<PullResult> {
  * has to see — a forget left queued renders as `(forget pending)` — and the counters are
  * the work that was done before the step that failed.
  */
+/** What the drain left for the caller: the entries it parked and the writes it could not resolve. */
+interface DrainLeftovers {
+  readonly parked: readonly MemoryParkedEntry[];
+  readonly uncertain?: readonly MemoryUncertainEntry[];
+}
+
 async function failRun(
   input: MemorySyncInput,
   counts: MemorySyncCounts,
-  parked: readonly MemoryParkedEntry[],
+  drain: DrainLeftovers,
   failure: string,
 ): Promise<MemorySyncResult> {
   await recordLastError(input, failure);
-  return await finish(input, counts, parked, failure);
+  return await finish(input, counts, drain, failure);
 }
 
 /**
@@ -361,14 +385,14 @@ async function failRun(
 async function finish(
   input: MemorySyncInput,
   counts: MemorySyncCounts,
-  parked: readonly MemoryParkedEntry[],
+  drain: DrainLeftovers,
   failure?: string,
 ): Promise<MemorySyncResult> {
   const heldForgets = await input.outbox.heldKeys("forget");
   await refreshMemoryIndex(input.store, { heldForgets });
   const outcome =
     failure === undefined ? { outcome: "synced" as const } : { outcome: "failed" as const, error: failure };
-  return { ...outcome, ...counts, ...parkedField(parked) };
+  return { ...outcome, ...counts, ...parkedField(drain.parked), ...uncertainField(drain.uncertain) };
 }
 
 /** The failures a run met, in step order, as one message; `undefined` when it met none. */
@@ -419,14 +443,14 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     // stopped by a bad response was answered, so the pull still runs — the stuck write's key is
     // held, so its note is not overwritten — and the run still ends failed, naming it.
     if (drain.failure !== undefined && drain.answered !== true) {
-      return await failRun(input, counts, drain.parked, drain.failure);
+      return await failRun(input, counts, drain, drain.failure);
     }
     const pull = await pullAll(input);
     counts.pulled = pull.pulled;
     counts.skipped = pull.skipped;
     const failure = joinFailures(drain.failure, pull.failure);
-    if (failure !== undefined) return await failRun(input, counts, drain.parked, failure);
-    return await finish(input, counts, drain.parked);
+    if (failure !== undefined) return await failRun(input, counts, drain, failure);
+    return await finish(input, counts, drain);
   } catch (error) {
     const message = errorMessage(error);
     warnQuietly(input.logger, "memory sync failed", { path: lock, error: message });

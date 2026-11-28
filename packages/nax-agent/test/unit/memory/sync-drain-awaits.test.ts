@@ -27,11 +27,13 @@ import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
+  MEMORY_OP_TIMEOUT_MS,
   MEMORY_PUSH_MAX_BAD_RESPONSES,
   type MemoryNote,
   type MemoryOutbox,
   type MemoryOutboxEntry,
   type MemoryPushResult,
+  type MemoryReplayContract,
   type MemoryStore,
   type MemorySyncResult,
   NaxError,
@@ -44,8 +46,10 @@ import {
   type MemoryProviderMock,
   type MemoryProviderScript,
   type MockLogger,
+  makeFakeClock,
   makeLogger,
   makeMemoryProvider,
+  waitForCondition,
   withTempDir,
 } from "#test/helpers/index";
 
@@ -453,6 +457,49 @@ describe("drainOutbox: an awaiting write never proves a stuck one", () => {
 
       expect(result).toMatchObject({ pushed: 0, rejected: 0, failure: BAD_MESSAGE });
       expect(result.answered).toBe(true);
+    });
+  });
+});
+
+/** A provider whose saves may not be repeated: a lost answer there may hide a commit. */
+const NON_REPLAYABLE_SAVES: MemoryReplayContract = { nonReplayable: ["save"] };
+
+/**
+ * US-001: a replacement whose delivery is unknown.
+ *
+ * An `awaits` dependency has three states, and this is the third: the replacement was dispatched
+ * and never answered, so it may or may not exist on the provider. Refusing this entry along with
+ * it would retire a source on a guess, and delivering it would retire the source before the
+ * replacement it was folded into is known to be there — so it waits, exactly as it does for a
+ * replacement still on the queue, and keeps waiting across a reopened outbox.
+ */
+describe("drainOutbox: a retirement waiting on a replacement whose delivery is unknown", () => {
+  test("AC-3: the retirement is not sent, and still waits after the outbox is reopened", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: "hang" });
+      await h.store.writeNote(note(MERGED_SLUG));
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+      const clock = makeFakeClock();
+      const running = syncMemory(h.input({ timers: clock }));
+      // The probe's timer is cleared before the push: the one left armed is the operation's.
+      await waitForCondition(() => h.provider.push.mock.calls.length === 1 && clock.pending() > 0, 5_000);
+      await clock.advance(MEMORY_OP_TIMEOUT_MS);
+      const first = await running;
+      expect(first.uncertain).toHaveLength(1);
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+
+      const result = await drain(h, { outbox: reopened });
+
+      // The replacement may exist on the provider; that is not permission to retire its source.
+      expect(pushed(h)).toEqual([`save:${MERGED_SLUG}`]);
+      expect(result).toMatchObject({ pushed: 0, rejected: 0, parked: [] });
+      // The run does not touch the held save, and says it is still unresolved.
+      expect(result.uncertain).toMatchObject([{ clientId: SAVE_ID, delivery: "unknown" }]);
+      expect(await entryOf(reopened, SAVE_ID)).toMatchObject({ state: "uncertain" });
+      expect(await entryOf(reopened, FORGET_ID)).toMatchObject({ state: "queued", awaits: SAVE_ID });
+      // Neither entry is destroyed: an operator can still requeue or discard the held save.
+      expect(await reopened.list()).toHaveLength(2);
     });
   });
 });

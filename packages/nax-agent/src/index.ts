@@ -112,6 +112,7 @@ export {
   type MemoryPendingForget,
   type MemoryProvider,
   type MemoryPushResult,
+  type MemoryReplayContract,
   type MemorySaveInput,
   type MemorySaveResult,
   type MemoryScope,

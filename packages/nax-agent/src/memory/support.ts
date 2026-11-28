@@ -11,12 +11,14 @@
  *   them through the `MemoryTimers` contract without any caller casting a timer id.
  * - `raceTimeout` bounds an operation nobody can cancel.
  * - `providerAnswers` turns a probe's three failures into the one fact they share.
+ * - `possiblyCommitted` answers the one question a failed push of a non-replayable write raises:
+ *   may the provider have committed it after the answer was lost?
  * - `warnQuietly` reports a failure without letting the reporting fail its caller.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
-import type { MemoryProvider } from "./provider-types.ts";
+import type { MemoryProvider, MemoryWriteKind } from "./provider-types.ts";
 import { MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
 
 /** The stage every memory-origin log line carries. */
@@ -103,6 +105,43 @@ export function warnQuietly(logger: AgentLogger, message: string, data: Record<s
   } catch {
     // Nothing left to report it to: the outcome the caller is owed still returns.
   }
+}
+
+/** Whether `error` is the operation deadline `raceTimeout` raises, rather than the provider's own. */
+export function isMemoryTimeout(error: unknown): boolean {
+  return error instanceof NaxError && error.code === "MEMORY_TIMEOUT";
+}
+
+/**
+ * Why a dispatch whose answer never came is held: the failure it met, and the promise that
+ * nothing will resend it. It is the whole reason an `uncertain` entry exists, so it is spelled
+ * here rather than once per caller, and it reaches the operator both on the entry and in the
+ * result of the operation that left it.
+ */
+export function unknownDeliveryReason(error: unknown): string {
+  return `delivery unknown: ${errorMessage(error)}; not retried automatically`;
+}
+
+/**
+ * Whether a failed push of a non-replayable write may have been committed — that is, whether the
+ * write's fate is unknown rather than its being a write a later run can safely send again.
+ *
+ * Three facts decide it, in this order. A provider that declares this kind replay-safe answers
+ * `false`: repeating the write is safe by declaration, and the legacy retry stands. A timeout
+ * answers `true` only while the abandoned dispatch can still reach the provider (the default,
+ * `timeoutAftermath: "late"`); a provider that discards the dispatch on the deadline has left a
+ * definite unsent write behind, and `false` lets the next sync deliver it. Any other failure of a
+ * non-replayable write answers `true`: the request left this process and the provider's answer
+ * says nothing about whether it was applied.
+ *
+ * A permanent refusal is not this question's business — it is decided before this is asked — and
+ * neither is a bad response, whose caller keeps the counting that parks such an entry.
+ */
+export function possiblyCommitted(provider: MemoryProvider, kind: MemoryWriteKind, error: unknown): boolean {
+  const contract = provider.replay;
+  if (contract === undefined || !contract.nonReplayable.includes(kind)) return false;
+  if (isMemoryTimeout(error)) return contract.timeoutAftermath !== "none";
+  return true;
 }
 
 /**
