@@ -14,6 +14,17 @@
  * `queue[head++]` read, not an `Array.shift()`. The old implementation
  * copied the whole buffer on every merge (`[...buffer.slice(0, -1), combined]`),
  * which made a high-rate delta stream quadratic.
+ *
+ * Reclamation: a pull clears its slot's reference immediately, and a pass
+ * relocates the undelivered suffix to the front as soon as the consumed prefix
+ * is no longer shorter than it (the whole array is dropped once it is fully
+ * consumed). So the span — consumed slots, pending FIFO slots and the tail —
+ * is `head + pending` with `head === 0` or `head < pending-in-FIFO`, i.e.
+ * strictly below twice the pending backlog. For the two-event sustained-backlog
+ * fixture the span stays at exactly 2, so the stated slack over that backlog is
+ * one spare slot. Work stays amortized O(1): a pass moves at most as many slots
+ * as it drops, so draining N events relocates fewer than N in total (8,178 to
+ * drain 8,192) — never a whole-queue shift per pull.
  */
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { SessionEvent } from "./agent-session-types.ts";
@@ -37,7 +48,29 @@ export interface SessionEventChannel {
   readonly iterator: AsyncIterator<SessionEvent>;
 }
 
+/**
+ * The channel's real backing storage, as the channel itself holds it. Not part
+ * of `SessionEventChannel`, not re-exported from either package entry, and read
+ * only by this module's suite: a test must be able to see which event objects
+ * the FIFO actually retains and how many slots reclamation actually moved,
+ * rather than a derived `length - head` counter that stays small while
+ * delivered references pile up behind it.
+ */
+export interface SessionEventChannelStorage {
+  /** Every event object the backing storage still references: all occupied slots, then the tail. */
+  readonly referenced: readonly SessionEvent[];
+  /** The undelivered events, FIFO order, the mergeable tail last. */
+  readonly pending: readonly SessionEvent[];
+  /** Backing slots in use: the consumed prefix, the pending FIFO slots and the tail slot. */
+  readonly span: number;
+  /** Undelivered slots moved by reclamation passes since creation. */
+  readonly relocatedSlots: number;
+}
+
 const DONE: IteratorReturnResult<undefined> = { done: true, value: undefined };
+
+/** Package-private: maps a channel to its storage reader. Test-only. */
+const storageReaders = new WeakMap<SessionEventChannel, () => SessionEventChannelStorage>();
 
 function isDelta(event: SessionEvent | undefined): event is DeltaEvent {
   return (
@@ -63,7 +96,7 @@ function mergeDeltas(into: DeltaEvent, next: DeltaEvent): DeltaEvent {
 }
 
 export function createSessionEventChannel(options: SessionEventChannelOptions): SessionEventChannel {
-  let queue: SessionEvent[] = [];
+  let queue: (SessionEvent | undefined)[] = [];
   let head = 0;
   let tail: DeltaEvent | undefined;
   let waiter: ((result: IteratorResult<SessionEvent>) => void) | undefined;
@@ -72,6 +105,8 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
   let consumerGone = false;
   let pulled = false;
   let stalled = false;
+  /** Undelivered slots reclamation has moved since creation. */
+  let relocatedSlots = 0;
 
   function deliver(result: IteratorResult<SessionEvent>): boolean {
     if (waiter === undefined) return false;
@@ -81,12 +116,37 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
     return true;
   }
 
-  /** Drop the consumed prefix; O(1) when the buffer is fully drained. */
-  function compact(): void {
-    if (head > 0 && head === queue.length) {
+  /**
+   * Release the consumed prefix. Dropping the array when it is fully consumed
+   * is O(1); otherwise a pass runs only once the consumed prefix is at least as
+   * long as the pending suffix, so it relocates no more slots than it drops.
+   */
+  function reclaim(): void {
+    if (head === 0) return;
+    if (head === queue.length) {
+      // Fully drained: the whole array, consumed slots included, is released.
       queue = [];
       head = 0;
+      return;
     }
+    const pendingCount = queue.length - head;
+    if (head < pendingCount) return;
+    queue = queue.slice(head);
+    relocatedSlots += pendingCount;
+    head = 0;
+  }
+
+  /**
+   * Take the first FIFO event, releasing its reference before it is handed
+   * over: several deliveries can pass before a reclamation pass would.
+   */
+  function takePending(): SessionEvent | undefined {
+    if (head >= queue.length) return undefined;
+    const event = queue[head];
+    queue[head] = undefined;
+    head += 1;
+    reclaim();
+    return event;
   }
 
   function enqueue(event: SessionEvent): void {
@@ -136,11 +196,10 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
       pulled = true;
       options.onFirstPull();
     }
-    if (head < queue.length) {
-      const event = queue[head++];
-      compact();
-      if (!isDelta(event)) undeliveredControl -= 1;
-      return { value: event, done: false };
+    const buffered = takePending();
+    if (buffered !== undefined) {
+      if (!isDelta(buffered)) undeliveredControl -= 1;
+      return { value: buffered, done: false };
     }
     if (tail !== undefined) {
       const event = tail;
@@ -164,5 +223,40 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
     return DONE;
   }
 
-  return { push, end, iterator: { next, return: leave } };
+  /** The real backing storage, for `inspectSessionEventChannel`. */
+  function readStorage(): SessionEventChannelStorage {
+    const referenced: SessionEvent[] = [];
+    for (const event of queue) {
+      if (event !== undefined) referenced.push(event);
+    }
+    // Slots at or after `head` are pending, never released, so this is the
+    // undelivered FIFO; the tail is the last undelivered event.
+    const pending: SessionEvent[] = [];
+    for (let index = head; index < queue.length; index += 1) {
+      const event = queue[index];
+      if (event !== undefined) pending.push(event);
+    }
+    if (tail !== undefined) {
+      referenced.push(tail);
+      pending.push(tail);
+    }
+    return { referenced, pending, span: queue.length + (tail === undefined ? 0 : 1), relocatedSlots };
+  }
+
+  const channel: SessionEventChannel = { push, end, iterator: { next, return: leave } };
+  storageReaders.set(channel, readStorage);
+  return channel;
+}
+
+/**
+ * Read a channel's real backing storage. Package-private and test-only: it is
+ * not part of the channel contract, nothing in `src/` calls it, and no package
+ * entry re-exports it.
+ */
+export function inspectSessionEventChannel(channel: SessionEventChannel): SessionEventChannelStorage {
+  const read = storageReaders.get(channel);
+  if (read === undefined) {
+    throw new AgentSessionError("Channel was not created by createSessionEventChannel", "AGENT_SESSION_INVALID_INPUT");
+  }
+  return read();
 }

@@ -255,19 +255,43 @@ async function rehydrateMessage(path: string, message: StoredMessage): Promise<C
   if ((message.role !== "user" && message.role !== "tool-result") || !message.images?.length) {
     return message as ConversationMessage;
   }
-  if (!Array.isArray(message.images)) throw corruptImageList();
   return hydrateImages(path, message);
+}
+
+/**
+ * Reject a `schemaVersion` this build cannot read. Filesystem-free, so a caller that only
+ * publishes metadata (the turn marker) still refuses a document the loader would refuse.
+ */
+export function assertSupportedSchema(doc: { readonly schemaVersion?: unknown }): void {
+  const version = doc.schemaVersion;
+  if (typeof version === "number" && version > 2) {
+    throw new NaxError(`Unsupported transcript schemaVersion ${version}`, "TRANSCRIPT_SCHEMA_UNSUPPORTED", {
+      stage: "native-session",
+    });
+  }
+}
+
+/**
+ * Reject a schemaVersion 2 document whose stored image list is not a list, before any
+ * sidecar is read. The loader runs this ahead of hydration and so does the turn marker,
+ * which never hydrates: both must answer "unreadable" the same way and at the same code.
+ */
+export function assertStoredImageLists(schemaVersion: unknown, messages: readonly unknown[]): void {
+  if (schemaVersion !== 2) return;
+  for (const message of messages) {
+    const carrier = message as { readonly role?: unknown; readonly images?: { readonly length?: number } } | null;
+    if (carrier?.role !== "user" && carrier?.role !== "tool-result") continue;
+    if (!carrier.images?.length) continue;
+    if (!Array.isArray(carrier.images)) throw corruptImageList();
+  }
 }
 
 /** Decode the private disk format; callers only ever see inline attachments. */
 export async function rehydrateTranscriptImages(path: string, value: object): Promise<TranscriptDoc> {
   const doc = value as StoredDoc;
-  if (typeof doc.schemaVersion === "number" && doc.schemaVersion > 2) {
-    throw new NaxError(`Unsupported transcript schemaVersion ${doc.schemaVersion}`, "TRANSCRIPT_SCHEMA_UNSUPPORTED", {
-      stage: "native-session",
-    });
-  }
+  assertSupportedSchema(doc);
   if (doc.schemaVersion !== 2) return value as TranscriptDoc;
+  assertStoredImageLists(doc.schemaVersion, doc.messages);
   const { schemaVersion: _version, ...rest } = doc;
   const messages: ConversationMessage[] = [];
   // User and tool-result arms go through the same hydrate step (US-003).
