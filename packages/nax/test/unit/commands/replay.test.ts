@@ -35,7 +35,12 @@ import type { LogEntry } from "@/logger/types";
 import type { RunMetrics } from "@/metrics";
 import type { MetaJson } from "@/pipeline/subscribers/registry";
 import type { RunTimeline } from "@/replay";
-import { registerReplayCommand } from "@/replay";
+import { createReplayEventIndex, readReplayEvents, registerReplayCommand, storyInputs } from "@/replay";
+
+/** An empty per-story event index — the streamed loader's "no records" result. */
+function emptyIndex() {
+  return createReplayEventIndex();
+}
 
 function writeRunDir(
   runsDir: string,
@@ -113,7 +118,7 @@ function makeBaseDeps(
 ): ReplayCommandDeps {
   return {
     discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-known", "feat-known")),
-    readJsonl: mock(async () => []),
+    readEvents: mock(async () => emptyIndex()),
     readMetrics: mock(async () => undefined),
     readStatus: mock(async () => undefined),
     reconstructTimeline: mock(() => buildTimeline()) as ReplayCommandDeps["reconstructTimeline"],
@@ -332,28 +337,21 @@ describe("runReplay — AC9: malformed-line tolerance", () => {
 
     writeRunDir(runsDir, "demo-feat-mix-run-mix", { runId: "run-mix", feature: "feat-mix" }, jsonl);
 
+    let streamed: ReturnType<typeof createReplayEventIndex> | undefined;
     const deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites, {
       discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-mix", "feat-mix")),
-      readJsonl: mock(async (path: string) => {
-        const content = await Bun.file(path).text();
-        const lines = content.split("\n");
-        const entries: LogEntry[] = [];
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          try {
-            entries.push(JSON.parse(trimmed) as LogEntry);
-          } catch {
-            // skip malformed
-          }
-        }
-        return entries;
-      }),
+      readEvents: async (path: string) => {
+        streamed = await readReplayEvents(path);
+        return streamed;
+      },
     });
 
     const exit = await runReplay("run-mix", {}, deps);
 
     expect(exit).toBe(0);
+    // Collecting the stream costs the malformed line only: both valid records
+    // were ingested, the malformed one skipped.
+    expect(streamed?.recordsInspected).toBe(2);
     // The default renderReport mock returns "REPORT" — verify it was called
     // (proof the report path was taken, not the JSON path) and that stdout
     // received the rendered output.
@@ -422,21 +420,7 @@ describe("runReplay — AC10: crashed-run end-to-end", () => {
 
     const deps = makeBaseDeps(runsDir, stdoutWrites, stderrWrites, {
       discoverRun: mock(async (query?: string) => buildDiscovered(runsDir, query ?? "run-crash-x", "feat-x")),
-      readJsonl: mock(async (path: string) => {
-        const content = await Bun.file(path).text();
-        const lines = content.split("\n");
-        const entries: LogEntry[] = [];
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          try {
-            entries.push(JSON.parse(trimmed) as LogEntry);
-          } catch {
-            // skip
-          }
-        }
-        return entries;
-      }),
+      readEvents: async (path: string) => readReplayEvents(path),
       readStatus: mock<typeof _replayCmdDeps.readStatus>(async () => ({
         version: 1,
         run: crashStatus.run,
@@ -570,10 +554,10 @@ describe("_replayCmdDeps.readMetrics — outputDir derived from eventsDir", () =
 });
 
 // ---------------------------------------------------------------------------
-// _replayCmdDeps.readJsonl (readJsonlLenient) — real implementation
+// _replayCmdDeps.readEvents (readReplayEvents) — real implementation
 // ---------------------------------------------------------------------------
 
-describe("_replayCmdDeps.readJsonl — real implementation", () => {
+describe("_replayCmdDeps.readEvents — real implementation", () => {
   let dir: string;
 
   beforeEach(() => {
@@ -584,9 +568,11 @@ describe("_replayCmdDeps.readJsonl — real implementation", () => {
     cleanupTempDir(dir);
   });
 
-  test("returns an empty array when the file does not exist", async () => {
-    const result = await _replayCmdDeps.readJsonl(join(dir, "missing.jsonl"));
-    expect(result).toEqual([]);
+  test("returns an empty index when the file does not exist", async () => {
+    const index = await _replayCmdDeps.readEvents(join(dir, "missing.jsonl"));
+
+    expect(index.recordsInspected).toBe(0);
+    expect([...index.storyIds]).toEqual([]);
   });
 
   test("skips blank and malformed lines, keeping only valid JSON entries", async () => {
@@ -595,13 +581,16 @@ describe("_replayCmdDeps.readJsonl — real implementation", () => {
       level: "info",
       stage: "story-orchestrator",
       storyId: "US-001",
-      message: "ok",
+      message: "Phase passed: implementer",
     };
     const path = join(dir, "log.jsonl");
     writeFileSync(path, `\n${JSON.stringify(entry)}\n{not valid json\n  \n`);
 
-    const result = await _replayCmdDeps.readJsonl(path);
-    expect(result).toEqual([entry]);
+    const index = await _replayCmdDeps.readEvents(path);
+
+    expect(index.recordsInspected).toBe(1);
+    expect([...index.storyIds]).toEqual(["US-001"]);
+    expect(storyInputs(index, "US-001").phases).toEqual([{ name: "implementer", status: "pass" }]);
   });
 });
 
@@ -708,7 +697,7 @@ describe("registerReplayCommand — action callback wiring", () => {
         },
         jsonlPath: "/tmp/missing.jsonl",
       })),
-      readJsonl: mock(async () => []),
+      readEvents: mock(async () => emptyIndex()),
       readMetrics: mock(async () => undefined),
       readStatus: mock(async () => undefined),
       reconstructTimeline: mock(() => buildTimeline()),

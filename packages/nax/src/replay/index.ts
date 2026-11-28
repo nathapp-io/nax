@@ -7,8 +7,16 @@
 
 export { registerReplayCommand } from "../commands/replay";
 export { type DiscoveredRun, discoverRun } from "./discovery";
+export { type IngestReplayLogOptions, ingestReplayLog, readReplayEvents } from "./event-stream";
 export { toReplayJson } from "./json";
-export { type InferredStory, inferPhases } from "./phase-infer";
+export { createReplayEventIndex, indexEvent, indexEvents, inferPhases, storyInputs } from "./phase-infer";
 export { reconstructTimeline } from "./reconstruct";
 export { type RenderOptions, renderReport } from "./report";
-export type { PhaseStep, ReplayInputs, RunTimeline, StoryTimeline } from "./types";
+export type {
+  InferredStory,
+  PhaseStep,
+  ReplayEventIndex,
+  ReplayInputs,
+  RunTimeline,
+  StoryTimeline,
+} from "./types";
