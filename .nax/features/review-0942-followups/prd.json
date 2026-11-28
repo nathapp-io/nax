@@ -3,7 +3,7 @@
   "feature": "review-0942-followups",
   "branchName": "feat/review-0942-followups",
   "createdAt": "2026-11-28T04:10:17.466Z",
-  "updatedAt": "2026-11-28T04:55:54.813Z",
+  "updatedAt": "2026-11-28T05:17:18.814Z",
   "userStories": [
     {
       "id": "US-001",
@@ -76,14 +76,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Complex: pool replay gating, provider wiring, id-map failure handling and CLI messaging must agree with the new US-001 contract, proven by an end-to-end fake-server test; lite three-session TDD suffices since no security surface."
+        "reasoning": "Complex: pool replay gating, provider wiring, id-map failure handling and CLI messaging must agree with the new US-001 contract, proven by an end-to-end fake-server test; lite three-session TDD suffices since no security surface.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/mcp/pool.ts",
@@ -109,7 +112,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1aaaf7317435512ff06ab1edea80a905b566b699"
     },
     {
       "id": "US-003",
