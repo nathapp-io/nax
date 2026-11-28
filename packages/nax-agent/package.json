@@ -7,7 +7,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
-    "./mcp": "./src/mcp/index.ts"
+    "./mcp": "./src/mcp/index.ts",
+    "./credentials": "./src/light/credentials.ts",
+    "./runtime": "./src/light/runtime.ts",
+    "./redact": "./src/light/redact.ts"
   },
   "imports": {
     "#src/*": "./src/*.ts",

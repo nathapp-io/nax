@@ -7,16 +7,21 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  capStrings,
   configureCredentials,
   createAgentSession,
   createMemoryTranscriptStore,
   EMPTY_OWNED_PATHS_POLICY,
+  getAgentRuntime,
   globTool,
   NativeSessionAdapter,
   nativeBackend,
+  redactSecrets,
   resetSandboxBackend,
   resumeAgentSession,
+  setAgentRuntime,
 } from "@nathapp/nax-agent";
+import { configureCredentials as lightConfigureCredentials } from "@nathapp/nax-agent/credentials";
 import {
   _agentSessionDeps,
   _clientDeps,
@@ -24,8 +29,18 @@ import {
   resolveSessionSandbox,
 } from "@nathapp/nax-agent/internal";
 import { connectMcp } from "@nathapp/nax-agent/mcp";
+import * as lightRedact from "@nathapp/nax-agent/redact";
+import * as lightRuntime from "@nathapp/nax-agent/runtime";
 
 assert.equal(process.versions.bun, undefined, "the packed smoke must run on native Node");
+
+// The light entries (#3079) resolve from the packed manifest and share the root entry's
+// module instances: a slot installed through one is the slot a session reads.
+assert.equal(lightConfigureCredentials, configureCredentials);
+assert.equal(lightRuntime.getAgentRuntime, getAgentRuntime);
+assert.equal(lightRuntime.setAgentRuntime, setAgentRuntime);
+assert.equal(lightRedact.redactSecrets, redactSecrets);
+assert.equal(lightRedact.capStrings, capStrings);
 
 const workdir = mkdtempSync(join(tmpdir(), "nax-packed-"));
 // This root lives outside the consumer directory owned by pack-smoke.test.ts.

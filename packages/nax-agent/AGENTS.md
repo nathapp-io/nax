@@ -61,7 +61,7 @@ backend needs must be exported from `.`, never `./internal`.
 | `bun run build` | `tsc -p tsconfig.build.json`: Node ESM `dist/`; fails on an extensionless relative import |
 | `bun run stage-publish` | Generate `.publish/` from the built `dist/` and documentation; workspace exports remain source-pointing |
 | `bun run test:node` | Real-Node vitest contracts plus packed-tarball/consumer smoke |
-| `bun run check:api` | Build, read the exports of `.` and `./internal` from the declarations, diff against `api/nax-agent.api.txt`; fails if `.` exports a `_` name |
+| `bun run check:api` | Build, read the exports of every entry in `exports` from the declarations, diff against `api/nax-agent.api.txt`; fails if any entry but `./internal` exports a `_` name |
 | `bun run api:update` | Rewrite `api/nax-agent.api.txt` after an intended surface change (refuses a `_` name on `.`) |
 | `bun run check:all` | Biome plus every repo gate (`lint`) |
 | `bun run lint:fix` | Biome lint fix |
@@ -101,11 +101,12 @@ src/
 ├── internal/           # below-the-line helpers: git, locks, argv exec, redaction, command-spec
 ├── runtime/            # the runtime slot: AgentRuntime contract, Node default, which
 ├── mcp/                # shared MCP connection layer behind `./mcp`; never imported from the root entry; S5-5
+├── light/              # the light entries `./credentials`, `./runtime`, `./redact`: re-exports only (#3079)
 ├── index.ts            # the `.` entry
 └── internal.ts         # the `./internal` entry
 ```
 
-Two entries, and only two:
+Two general entries:
 
 - **`.`** (`src/index.ts`) — the supported contract. Every export is **named** (no `export *`)
   and none starts with `_`. Adding or removing a name changes `api/nax-agent.api.txt`: run
@@ -114,6 +115,13 @@ Two entries, and only two:
   shared helpers, `NaxError`, deep modules and **every `_*Deps` seam and `_reset…` hook**; a new
   seam is exported here, never from `.`. It re-exports the same module instances, so patching a
   seam here patches the object the agent reads.
+
+Plus `./mcp` and three **light entries** for an always-on embedder (#3079): `./credentials`
+(`configureCredentials`), `./runtime` (the runtime slot and `nodeRuntime`) and `./redact`
+(`redactSecrets`, `capStrings`). Each file in `src/light/` only re-exports names `.` already
+exports, from the same module instances, and must not reach session, tool, sandbox or provider
+code. `test/unit/packaging/light-subpaths.test.ts` pins every file each one loads: an import added
+to a pinned file fails that test, and the list is updated only when the extra load is intended.
 
 nax-agent exports no test helpers. Its own helpers live in `test/helpers/` (imported as
 `#test/helpers/index`). The ten generic ones live in `@nathapp/nax-test-kit/bun/*`, which nax
