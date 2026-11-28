@@ -31,6 +31,15 @@ const MIN_CONTENT_WIDTH = 4;
 /** A span's style without its text — carried per glyph while wrapping. */
 export type SpanStyle = Omit<Span, "text">;
 
+/**
+ * The most code units one column may spend before its cluster is treated as too wide to keep
+ * whole. A grapheme is one column or more and, in every script a terminal draws, a handful of
+ * code units — a ZWJ emoji family is about eleven code units for two columns. A base character
+ * followed by thousands of combining marks is one cluster that would otherwise make a bounded
+ * scan unbounded, so past this ratio the cluster is cut instead of kept.
+ */
+export const MAX_CLUSTER_CODE_UNITS = 8;
+
 /** Splits text into user-perceived characters, so an emoji with a skin tone or a ZWJ stays whole. */
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -282,6 +291,87 @@ function fill(glyphs: readonly Glyph[], width: number): Glyph[][] {
 }
 
 /**
+ * At most `columns` columns of `text`, cut between grapheme clusters, and whether any column
+ * was left behind. Only the window of code units handed in is ever segmented.
+ */
+function scanColumns(text: string, columns: number): { readonly text: string; readonly overflow: boolean } {
+  let kept = "";
+  let used = 0;
+  for (const segment of GRAPHEME_SEGMENTER.segment(text)) {
+    const width = displayWidth(segment.segment);
+    if (used + width > columns) return { text: kept, overflow: true };
+    kept += segment.segment;
+    used += width;
+  }
+  return { text: kept, overflow: false };
+}
+
+/**
+ * The first `columns` columns of a cluster too wide to keep whole, cut between code points —
+ * the same fallback `cutWord` and `splitGlyph` take for a cluster wider than its line. Keeping
+ * the line inside the budget wins over keeping the cluster intact.
+ */
+function cutClusterHead(text: string, columns: number): string {
+  let kept = "";
+  let used = 0;
+  for (const point of text) {
+    const width = displayWidth(point);
+    if (used + width > columns) break;
+    kept += point;
+    used += width;
+  }
+  return kept;
+}
+
+/** The first half of a surrogate pair: `slice` can end on one where it counts code units. */
+const HIGH_SURROGATE_MIN = 0xd800;
+const HIGH_SURROGATE_MAX = 0xdbff;
+
+/**
+ * The window's text, closed up when the cut landed between the two halves of a character.
+ *
+ * `slice(0, window)` counts code units, so it can end on the high half of a supplementary code
+ * point. That is not text a terminal draws — it renders as a replacement glyph, or vanishes —
+ * and it measures as nothing, so it slips straight through the column budget and into the head.
+ * `cutClusterHead` below walks code points and would keep it as one, which is how a bounded
+ * scan came back with a malformed string for a grapheme of supplementary combining marks.
+ *
+ * Only a cut *inside* the text is adjusted: a text the caller supplied with an unpaired
+ * surrogate at its end already holds one, and shrinking it there would hide the caller's own
+ * text rather than fix a boundary.
+ */
+function windowOf(text: string, window: number): string {
+  const slice = text.slice(0, window);
+  if (window >= text.length) return slice;
+  const last = slice.charCodeAt(slice.length - 1);
+  return last >= HIGH_SURROGATE_MIN && last <= HIGH_SURROGATE_MAX ? slice.slice(0, -1) : slice;
+}
+
+/**
+ * At most `columns` display columns of `text`, cut between grapheme clusters, and whether any
+ * text was left behind. Each grapheme is at least one code unit, so a window of `columns + 1`
+ * code units either fills the budget or is the whole text; the window doubles only for text of
+ * longer clusters, and it is capped at {@link MAX_CLUSTER_CODE_UNITS} code units per column, so
+ * the scan costs the budget's work and not the text's — a 64 MiB line costs what a short one
+ * does. A cluster past that cap is cut between code points rather than scanned to the line's
+ * end: a base character followed by millions of combining marks is one column and would
+ * otherwise take the whole line with it.
+ */
+export function headColumns(text: string, columns: number): { readonly text: string; readonly more: boolean } {
+  const limit = Math.max(0, columns);
+  const cap = Math.min(text.length, limit * MAX_CLUSTER_CODE_UNITS + 1);
+  let window = Math.min(cap, limit + 1);
+  for (;;) {
+    const slice = windowOf(text, window);
+    const scan = scanColumns(slice, limit);
+    if (scan.overflow) return { text: scan.text, more: true };
+    if (window >= text.length) return { text: scan.text, more: false };
+    if (window >= cap) return { text: cutClusterHead(slice, limit), more: true };
+    window = Math.min(cap, window * 2);
+  }
+}
+
+/**
  * Keep at most `maxWidth` columns of `spans`, dropping from the left: a marker is the
  * meaningful end of a prefix, and the indent before it is what may go.
  */
@@ -338,6 +428,18 @@ function trimEndBlanks(line: StyledLine): StyledLine {
 }
 
 /**
+ * The line cut to `columns` and ended with `marker`, unconditionally: the answer for a line
+ * already known to carry on, where {@link elideSpansEnd}'s "it fits" return would drop the
+ * marker. Whole clusters are dropped from the right, the blank columns a cut leaves behind go
+ * with them, and the marker's own width is reserved before the cut so it always fits.
+ */
+export function markSpansEnd(spans: readonly Span[], columns: number, marker: Span): StyledLine {
+  const markerWidth = spansWidth([marker]);
+  if (markerWidth > columns) return cutSpans([marker], columns);
+  return [...trimEndBlanks(cutSpans(spans, columns - markerWidth)), marker];
+}
+
+/**
  * The line elided at its end to `columns` display columns, marked with `marker`: whole
  * clusters are dropped from the right, the blank columns a cut leaves behind go with them,
  * and the marker's own width is reserved before the cut so it always fits. A marker wider
@@ -345,9 +447,7 @@ function trimEndBlanks(line: StyledLine): StyledLine {
  */
 export function elideSpansEnd(spans: readonly Span[], columns: number, marker: Span): StyledLine {
   if (spansWidth(spans) <= columns) return mergeSpans([...spans]);
-  const markerWidth = spansWidth([marker]);
-  if (markerWidth > columns) return cutSpans([marker], columns);
-  return [...trimEndBlanks(cutSpans(spans, columns - markerWidth)), marker];
+  return markSpansEnd(spans, columns, marker);
 }
 
 /** Keep at most `columns` columns of `spans`, dropping whole clusters from the right. */

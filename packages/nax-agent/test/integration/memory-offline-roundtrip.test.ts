@@ -38,7 +38,7 @@ import {
   saveMemoryNote,
   syncMemory,
 } from "@nathapp/nax-agent";
-import type { MemorySyncInput } from "#src/memory/index";
+import type { MemoryPendingWrite, MemorySyncInput } from "#src/memory/index";
 import {
   assertDefined,
   firstCall,
@@ -151,6 +151,9 @@ async function indexLineFor(h: Harness): Promise<string> {
   return line;
 }
 
+/** The `pending` field an undelivered result carries: the write is queued for the next sync. */
+const QUEUED: MemoryPendingWrite = { clientId: expect.any(String), delivery: "queued" };
+
 describe("an offline save and the sync that delivers it", () => {
   test("AC-4: the save is undelivered and queued, and the sync pushes exactly that request", async () => {
     await withTempDir(async (dir) => {
@@ -159,7 +162,7 @@ describe("an offline save and the sync that delivers it", () => {
       const saved = await h.save();
 
       // The probe answered and the push never happened: the write is durable on the queue only.
-      expect(saved).toEqual({ slug: SLUG, status: "active", delivered: false });
+      expect(saved).toEqual({ slug: SLUG, status: "active", delivered: false, pending: QUEUED });
       expect(h.provider.push).not.toHaveBeenCalled();
       const queued = await soleEntry(h);
       expect(queued).toMatchObject({
@@ -254,7 +257,7 @@ describe("a save made while this process is syncing", () => {
       await waitForCondition(() => syncing.reachable.mock.calls.length === 1, 5_000);
 
       const saved = await h.save({ provider: h.provider, write: { ...WRITE, body: "new body" } });
-      expect(saved).toEqual({ slug: SLUG, status: "active", delivered: false });
+      expect(saved).toEqual({ slug: SLUG, status: "active", delivered: false, pending: QUEUED });
       // Nothing was staged: the mirror still holds the older note while the sync owns it.
       expect(await h.store.readNote("project", SLUG)).toMatchObject({ id: "mem_old", body: "old body" });
       expect(h.provider.push).not.toHaveBeenCalled();
@@ -285,7 +288,7 @@ describe("an offline forget and the sync that acknowledges it", () => {
 
       const forgotten = await h.forget();
 
-      expect(forgotten).toEqual({ slug: SLUG, status: "pending", delivered: false });
+      expect(forgotten).toEqual({ slug: SLUG, status: "pending", delivered: false, pending: QUEUED });
       expect(h.provider.push).not.toHaveBeenCalled();
       // A proposal changes nothing locally: the note is the mirror's, untouched.
       expect(await h.store.readNote("project", SLUG)).toEqual(existing);
@@ -378,7 +381,7 @@ describe("US-004: a queued direct forget the provider holds pending", () => {
 
       const forgotten = await h.forget({ writeMode: "direct" });
       // Direct retires the note at once; the queue is what tells the provider later.
-      expect(forgotten).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(forgotten).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       expect(await h.store.readNote("project", SLUG)).toBeNull();
 
       const result = await h.sync();

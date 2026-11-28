@@ -6,6 +6,21 @@
  * forget tool is configured, deletes the remote copies a save recorded in the
  * id map. It never pulls: an MCP memory tool exposes no change cursor.
  *
+ * The add is a NON-REPLAYABLE write (`replay`, US-001's contract): the server
+ * takes the note's text, not an idempotency key, so an add whose reply was lost
+ * may have been applied, and sending it again makes a second note. Everything
+ * that decides what a failed add means is therefore the caller's, not this
+ * file's — the operations layer and the drain hold such a write as an unknown
+ * outcome, with its client id, instead of dispatching it again. The add is also
+ * dispatched `at-most-once` through the pool, so a lost connection does not buy
+ * a second attempt either. `timeoutAftermath` is `"late"`: the pool's deadline
+ * abandons the wait, not the request, so an add that outlives it may still
+ * arrive.
+ *
+ * A delete names a remote id, so repeating it cannot resurrect or duplicate a
+ * note: `forget` and the search lookup stay replay-safe, and an interrupted one
+ * keeps the pool's bounded retry.
+ *
  * A server with no delete tool cannot delete a copy it still holds. Such a
  * forget hides the copy instead: its id moves to the id map's `hidden` list and
  * the search drops every item whose id is hidden, so nax no longer shows a note
@@ -15,7 +30,8 @@
  * Refusals: a configured tool the connected server does not list is permanent
  * (`MEMORY_PUSH_REJECTED`). A server that lists no tools (not connected) is
  * `MEMORY_MCP_UNAVAILABLE`, and a tool that answers `isError` is
- * `MEMORY_MCP_CALL_FAILED`; both are retryable, so the outbox keeps the write.
+ * `MEMORY_MCP_CALL_FAILED`; both are retryable, so the outbox keeps the write —
+ * unless the write is the non-replayable add, which is held instead (above).
  *
  * A forget whose remote delete failed refuses with `MEMORY_MCP_CALL_FAILED` when
  * the call threw and `MEMORY_MCP_FORGET_BAD_RESPONSE` when the server answered
@@ -24,11 +40,18 @@
  * rather than letting it block the outbox for good.
  */
 
-import type { MemoryHit, MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "@nathapp/nax-agent";
+import {
+  type MemoryHit,
+  type MemoryPage,
+  type MemoryProvider,
+  type MemoryPushResult,
+  type MemoryWriteRequest,
+  markUndispatched,
+} from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
-import type { McpPool } from "@/mcp";
+import type { McpCallResult, McpPool, McpReplaySafety } from "@/mcp";
 import type { McpIdMap } from "./mcp-id-map";
 import { type McpMemoryItem, mcpHitOf, parseMcpMemoryIds, parseMcpMemoryItems } from "./mcp-results";
 import type { MemoryLogger } from "./paths";
@@ -37,6 +60,27 @@ import type { MemoryLogger } from "./paths";
 export const MEMORY_MCP_PROVIDER_PREFIX = "mcp:";
 /** The byte cap on one tool answer read from a memory server. */
 export const MCP_MEMORY_RESULT_MAX_BYTES = 65_536;
+
+/**
+ * What the add is dispatched as: a write nax never sends twice.
+ *
+ * The server's add tool takes the note's text and no idempotency key, so a second dispatch is a
+ * second note. Declared here, at the call, because the pool must not infer it from the tool's
+ * name — a name says nothing about what the server does with a repeat.
+ */
+const ADD_REPLAY_SAFETY: McpReplaySafety = "at-most-once";
+
+/** A delete names its remote id, and a search reads: both may be repeated after an interruption. */
+const REPLAY_SAFE: McpReplaySafety = "replay-safe";
+
+/**
+ * What this provider declares about repeating a write, as US-001's contract takes it.
+ *
+ * Only the save is withheld: a dispatched add that left no answer may have been applied. The
+ * forget is not listed because it cannot duplicate anything — it deletes the ids the id map
+ * records, and an id it already deleted simply answers that it is gone.
+ */
+const MEMORY_MCP_REPLAY = { nonReplayable: ["save"], timeoutAftermath: "late" } as const;
 
 const STAGE = "memory";
 
@@ -123,6 +167,27 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     }
   }
 
+  /**
+   * The discovery the add needs, with its failure marked as one that preceded any dispatch.
+   *
+   * Finding the tool (`requireTool`) comes before the call, so a listing that fails there cannot
+   * have sent an add: the write is a definite unsent one and the next sync may deliver it. A
+   * probe that answers first is no proof of anything — reachability asks the same server a
+   * moment earlier, and the listing this call needs can still fail (B2). The permanent case stays
+   * as it is: a server that lists a different set of tools has refused the write for good, and
+   * `MEMORY_PUSH_REJECTED` is what says so. Anything that is not one of this file's own errors is
+   * rethrown unmarked, which keeps it on the unknown-delivery side rather than claiming it never
+   * left the process.
+   */
+  async function discoverAddTool(tool: string): Promise<void> {
+    try {
+      await requireTool(tool);
+    } catch (error) {
+      if (error instanceof NaxError && error.code !== "MEMORY_PUSH_REJECTED") throw markUndispatched(error);
+      throw error;
+    }
+  }
+
   /** A tool call that failed: the server and the tool named, and the answer's own text. */
   function callFailed(tool: string, content: string, code: ToolFailureCode): NaxError {
     return new NaxError(`[memory] MCP memory server "${serverId}" tool "${tool}" failed: ${content}`, code, {
@@ -137,13 +202,33 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     const note = request.note;
     if (note === undefined) throw pushRejected(`memory save for "${request.slug}" carries no note`);
     const tool = mcp.tools.add;
-    await requireTool(tool);
+    await discoverAddTool(tool);
     const text = `${note.slug}: ${note.description}\n\n${note.body}`;
-    const result = await pool.call(serverId, workdir, tool, { [mcp.args.text]: text }, callOpts);
-    if (result.isError) throw callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
+    const result = await pool.call(
+      serverId,
+      workdir,
+      tool,
+      { [mcp.args.text]: text },
+      {
+        ...callOpts,
+        replaySafety: ADD_REPLAY_SAFETY,
+      },
+    );
+    if (result.isError) throw addFailure(tool, result);
     const ids = parseMcpMemoryIds(result.content);
     if (ids.length > 0) await idMap.add(request.scope, request.slug, ids);
     return { id: note.id, status: "active" };
+  }
+
+  /**
+   * A failed add: the pool's own answer, marked when the pool says no connection could take the
+   * call (`dispatch: "never"`). The add is the one write nax may not repeat, so the difference
+   * between "may have committed" and "was certainly never sent" decides whether the note waits in
+   * the outbox for the next sync or is parked as an unknown delivery nobody can resolve.
+   */
+  function addFailure(tool: string, result: McpCallResult): NaxError {
+    const failed = callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
+    return result.dispatch === "never" ? markUndispatched(failed) : failed;
   }
 
   /**
@@ -155,7 +240,13 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
    */
   async function forgetRemote(tool: string, idArg: string, id: string): Promise<ForgetFailure | undefined> {
     try {
-      const result = await pool.call(serverId, workdir, tool, { [idArg]: id }, callOpts);
+      const result = await pool.call(
+        serverId,
+        workdir,
+        tool,
+        { [idArg]: id },
+        { ...callOpts, replaySafety: REPLAY_SAFE },
+      );
       if (!result.isError) return undefined;
       logger.warn(STAGE, "memory mcp forget failed", { server: serverId, id, error: result.content });
       return { kind: "answered", text: result.content };
@@ -242,6 +333,8 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
 
   return {
     id: `${MEMORY_MCP_PROVIDER_PREFIX}${serverId}`,
+    // The add may already have been applied when its reply was lost; nothing resends it.
+    replay: MEMORY_MCP_REPLAY,
     // An MCP memory tool exposes no change cursor: nothing is pulled and nothing is faked.
     pull: async (): Promise<MemoryPage> => ({ notes: [], done: true }),
     push: (request) => (request.kind === "save" ? save(request) : forget(request)),
@@ -250,7 +343,13 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
       // The hidden ids are read before the server is asked: a copy nax hid must not be
       // shown, and an id map that cannot be read is a refusal, not an empty list.
       const hidden = await hiddenIds();
-      const result = await pool.call(serverId, workdir, tool, { [mcp.args.query]: text }, callOpts);
+      const result = await pool.call(
+        serverId,
+        workdir,
+        tool,
+        { [mcp.args.query]: text },
+        { ...callOpts, replaySafety: REPLAY_SAFE },
+      );
       if (result.isError) throw callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
       return visibleItems(parseMcpMemoryItems(result.content), hidden)
         .map(({ item, index }) => mcpHitOf(item, index, scope))

@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { displayWidth, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
-import { cutSpans, elideSpansEnd, mergeSpans, spansWidth, wrap, wrapSpans } from "@/tui/chat/wrap";
+import {
+  cutSpans,
+  elideSpansEnd,
+  headColumns,
+  MAX_CLUSTER_CODE_UNITS,
+  markSpansEnd,
+  mergeSpans,
+  spansWidth,
+  wrap,
+  wrapSpans,
+} from "@/tui/chat/wrap";
 
 const STAR = "* ";
 const WIDTH = 12;
@@ -67,6 +77,77 @@ describe("cutSpans", () => {
   });
 });
 
+describe("headColumns", () => {
+  test("keeps the columns that fit and reports the text left behind", () => {
+    expect(headColumns("abcdef", 3)).toEqual({ text: "abc", more: true });
+  });
+
+  test("keeps a whole text that fits without reporting more", () => {
+    expect(headColumns("abc", 3)).toEqual({ text: "abc", more: false });
+    expect(headColumns("", 5)).toEqual({ text: "", more: false });
+  });
+
+  test("cuts between clusters rather than inside one", () => {
+    expect(headColumns("a\u0301b\u0301c\u0301", 2)).toEqual({ text: "a\u0301b\u0301", more: true });
+    expect(headColumns("👍👍👍", 2)).toEqual({ text: "👍", more: true });
+  });
+
+  test("widens its window for a cluster wider than one code unit per column", () => {
+    // Two code units hold one cluster here, so a `columns + 1` window underfills and grows.
+    const combining = "a\u0301".repeat(500);
+    const head = headColumns(combining, 40);
+    expect(displayWidth(head.text)).toBe(40);
+    expect(head.more).toBe(true);
+  });
+
+  test("keeps nothing for a budget of no columns, and still reports the text", () => {
+    expect(headColumns("abc", 0)).toEqual({ text: "", more: true });
+  });
+
+  test("US-007 F2: an oversized cluster is cut at a code-unit budget, not scanned to the line's end", () => {
+    // One grapheme of a single column: a base character and 4 MiB of combining marks.
+    const oversized = `a${"\u0301".repeat(4 * 1024 * 1024)}`;
+    const head = headColumns(oversized, 40);
+    expect(head.text.length).toBeLessThanOrEqual(40 * MAX_CLUSTER_CODE_UNITS + 1);
+    expect(head.more).toBe(true);
+    expect(displayWidth(head.text)).toBeLessThanOrEqual(40);
+  });
+
+  test("US-007 F2: a cluster under the code-unit cap survives whole, with the text past it reported", () => {
+    const cluster = `a${"\u0301".repeat(40 * MAX_CLUSTER_CODE_UNITS - 1)}`;
+    const head = headColumns(`${cluster}bc`, 40);
+    expect(head.more).toBe(true);
+    expect(head.text.startsWith(cluster)).toBe(true);
+    expect(head.text.length).toBeLessThanOrEqual(40 * MAX_CLUSTER_CODE_UNITS + 1);
+  });
+
+  test("US-007 B4: a cap that lands between the halves of a surrogate pair keeps no lone surrogate", () => {
+    // One grapheme of zero-width combining marks ending in supplementary ones: the column budget
+    // is never reached, so the code-unit cap decides the cut — and it lands inside a pair.
+    const oversized = `${"\u0301".repeat(32)}${"\u{1D165}".repeat(16)}`;
+
+    const head = headColumns(oversized, 4);
+
+    expect(head.more).toBe(true);
+    // Half a character is not text: a terminal draws it as a replacement glyph, and the row it
+    // is measured in then disagrees with the row drawn.
+    expect(LONE_SURROGATE.test(head.text)).toBe(false);
+    // The half-pair is dropped rather than kept, so what remains is whole characters.
+    expect(head.text).toBe("\u0301".repeat(32));
+  });
+
+  test("US-007 B4: the head of a text that ends on a lone surrogate is left alone", () => {
+    // The guard is for a pair the WINDOW cut in two, never for text that already holds half a
+    // character: an unpaired surrogate the caller supplied still measures as what it is.
+    const malformed = `${"\u0301".repeat(32)}\uD834`;
+
+    expect(LONE_SURROGATE.test(headColumns(malformed, 4).text)).toBe(true);
+  });
+});
+
+/** Any unpaired surrogate: a code unit of a pair whose other half was cut away. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 describe("elideSpansEnd", () => {
   const marker: Span = { text: "…", color: "muted" };
 
@@ -89,6 +170,24 @@ describe("elideSpansEnd", () => {
     const elided = elideSpansEnd([{ text: "abc", bold: true }, { text: "def" }], 5, marker);
     expect(elided[0].bold).toBe(true);
     expect(textOf(elided)).toBe("abcd…");
+  });
+});
+
+describe("markSpansEnd", () => {
+  const marker: Span = { text: "…", color: "muted" };
+
+  test("marks a line that already fits, where elideSpansEnd keeps it plain", () => {
+    expect(textOf(elideSpansEnd([{ text: "abc" }], 5, marker))).toBe("abc");
+    expect(textOf(markSpansEnd([{ text: "abc" }], 5, marker))).toBe("abc…");
+  });
+
+  test("reserves the marker's columns out of a line that fills the width", () => {
+    expect(textOf(markSpansEnd([{ text: "abcde" }], 5, marker))).toBe("abcd…");
+  });
+
+  test("cuts a marker wider than the whole line to the line", () => {
+    const ascii: Span = { text: "..." };
+    expect(textOf(markSpansEnd([{ text: "abcdef" }], 2, ascii))).toBe("..");
   });
 });
 

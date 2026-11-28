@@ -5,6 +5,12 @@
  * retries through `entry()` (so it reconnects, or reads the pinned-unavailable
  * state) with the same tool, input and options, and never retries again.
  *
+ * US-002 scopes that retry to what the caller declared: replay safety is passed
+ * per dispatch, so every case asserting the retry declares `"replay-safe"`
+ * (`MCP_REPLAY_SAFE_CALL_OPTS`). A call that declares `"at-most-once"` — or
+ * declares nothing, because an unknown tool is not assumed read-only — is
+ * dispatched once and answered as an error.
+ *
  * The faked connect seam comes from `test/helpers/mcp-pool-harness.ts` (shared
  * with `pool-reconnect` / `pool-budget`); every case enters through
  * `createMcpPool(...).call`, so the real `connectMcpServer` adapter (and its
@@ -23,13 +29,14 @@ import {
   fakeMcpConnect,
   MCP_CALL_OPTS,
   MCP_EXIT_REASON,
+  MCP_REPLAY_SAFE_CALL_OPTS,
   MCP_TEST_SERVERS,
   type McpConnectHarness,
   makeFakeMcpConnection,
   restoreMcpConnectSeam,
   waitForAsyncCondition,
 } from "@test/helpers";
-import { createMcpPool, MCP_MAX_RECONNECTS, type McpPool } from "@/mcp/pool";
+import { createMcpPool, MCP_MAX_RECONNECTS, type McpPool, type McpPoolCallOptions } from "@/mcp/pool";
 import type { McpCallResult } from "@/mcp/types";
 
 afterEach(restoreMcpConnectSeam);
@@ -61,8 +68,14 @@ function outcome(result: McpCallResult): { content: string; isError: boolean } {
 /**
  * Starts a call that the FIRST connection holds, waits until it is in flight,
  * then exits that connection — the interrupted-call shape every case starts from.
+ *
+ * `callOpts` is what the caller declared: the US-003 cases pass the replay-safe
+ * options, because a re-dispatch is only what a declared lookup gets (US-002).
  */
-async function interruptedFirstCall(input: Record<string, unknown> = { query: "needle" }): Promise<{
+async function interruptedFirstCall(
+  input: Record<string, unknown> = { query: "needle" },
+  callOpts: McpPoolCallOptions = MCP_REPLAY_SAFE_CALL_OPTS,
+): Promise<{
   harness: McpConnectHarness;
   pool: McpPool;
   result: McpCallResult;
@@ -70,11 +83,48 @@ async function interruptedFirstCall(input: Record<string, unknown> = { query: "n
   // Attempt 1 holds calls so the exit can interrupt one; later attempts answer directly.
   const harness = fakeConnect((attempt) => makeFakeMcpConnection({ holdCalls: attempt === 1 }));
   const pool = createMcpPool({ servers: MCP_TEST_SERVERS });
-  const pending = pool.call("memory", "/a", "t", input, MCP_CALL_OPTS);
+  const pending = pool.call("memory", "/a", "t", input, callOpts);
   await waitForDispatches(harness, 1, 1);
   connectionAt(harness, 1).exit(MCP_EXIT_REASON);
   return { harness, pool, result: await pending };
 }
+
+describe("US-002 replay safety is declared at dispatch, never inferred from a tool name", () => {
+  /** What a caller says about a write that may already have committed: never send it twice. */
+  const AT_MOST_ONCE: McpPoolCallOptions = { ...MCP_CALL_OPTS, replaySafety: "at-most-once" };
+
+  test("AC-1: an at-most-once call interrupted by a close is dispatched once, on the original connection only", async () => {
+    // The declaration a non-idempotent tool gets: a write that may already have committed.
+    const { harness, result } = await interruptedFirstCall({}, AT_MOST_ONCE);
+    // One dispatch: the replacement connection is never asked for a second attempt.
+    expect(harness.dispatches.map((calls) => calls.length)).toEqual([1]);
+    expect(harness.configs).toHaveLength(1);
+    expect(result.isError).toBe(true);
+    expect(result.content.startsWith(REJECTED_PREFIX)).toBe(true);
+  });
+
+  test("AC-2: an undeclared call is not assumed read-only, so it is dispatched once too", async () => {
+    // No `replaySafety` at all — the shape every call had before US-002.
+    const { harness, result } = await interruptedFirstCall({}, MCP_CALL_OPTS);
+    expect(harness.dispatches.map((calls) => calls.length)).toEqual([1]);
+    expect(harness.configs).toHaveLength(1);
+    expect(result.isError).toBe(true);
+  });
+
+  test("AC-1: the dead connection is still replaced for the NEXT at-most-once call", async () => {
+    const { harness, pool } = await interruptedFirstCall({}, AT_MOST_ONCE);
+    // The interrupted call bought no reconnect, but the exit still evicted the key.
+    const further = await pool.call("memory", "/a", "t", {}, AT_MOST_ONCE);
+    expect(harness.configs).toHaveLength(2);
+    expect(outcome(further)).toEqual({ content: `ran t (pid ${connectionAt(harness, 2).connectPid})`, isError: false });
+  });
+
+  test("AC-8: a declared replay-safe lookup interrupted by a close keeps the existing bounded retry", async () => {
+    const { harness, result } = await interruptedFirstCall();
+    expect(harness.dispatches.map((calls) => calls.length)).toEqual([1, 1]);
+    expect(outcome(result)).toEqual({ content: `ran t (pid ${connectionAt(harness, 2).connectPid})`, isError: false });
+  });
+});
 
 describe("US-003 the interrupted call is retried once", () => {
   test("AC-1: a call rejected after its connection reported an exit returns the new connection's result", async () => {
@@ -110,7 +160,7 @@ describe("US-003 a retried call whose connection also exits", () => {
     // Every connection holds, so the second exit can interrupt the retry too.
     const harness = fakeConnect(() => makeFakeMcpConnection({ holdCalls: true }));
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS });
-    const pending = pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const pending = pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     await waitForDispatches(harness, 1, 1);
     connectionAt(harness, 1).exit(MCP_EXIT_REASON);
     await waitForDispatches(harness, 2, 1);
@@ -123,7 +173,7 @@ describe("US-003 a retried call whose connection also exits", () => {
   test("AC-5: the double exit costs exactly two connects and no third dispatch", async () => {
     const harness = fakeConnect(() => makeFakeMcpConnection({ holdCalls: true }));
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS });
-    const pending = pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const pending = pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     await waitForDispatches(harness, 1, 1);
     connectionAt(harness, 1).exit(MCP_EXIT_REASON);
     await waitForDispatches(harness, 2, 1);
@@ -142,7 +192,7 @@ describe("US-003 failures the retry must not turn into another dispatch", () => 
     });
     // No backoff: the attempt budget is what this test spends, not wall clock.
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS, retry: { maxAttempts: 3, baseDelayMs: 0 } });
-    const pending = pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const pending = pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     await waitForDispatches(harness, 1, 1);
     connectionAt(harness, 1).exit(MCP_EXIT_REASON);
     const result = await pending;
@@ -174,13 +224,13 @@ describe("US-003 failures the retry must not turn into another dispatch", () => 
       throw new Error("spawn ENOENT");
     });
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS, retry: { maxAttempts: 3, baseDelayMs: 0 } });
-    const pending = pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const pending = pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     await waitForDispatches(harness, 1, 1);
     connectionAt(harness, 1).exit(MCP_EXIT_REASON);
     // Premise: the interrupted call did spend the reconnect budget's 3 attempts.
     expect(outcome(await pending).content).toBe(PINNED);
     expect(harness.configs).toHaveLength(1 + 3);
-    const further = await pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const further = await pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     expect(outcome(further)).toEqual({ content: PINNED, isError: true });
     expect(harness.configs).toHaveLength(4);
   });
@@ -194,8 +244,8 @@ describe("US-003 concurrent callers interrupted by one exit", () => {
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS });
     await pool.listTools("memory", "/a");
     const pending = [
-      pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS),
-      pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS),
+      pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS),
+      pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS),
     ];
     await waitForDispatches(harness, 1, 2);
     connectionAt(harness, 1).exit(MCP_EXIT_REASON);
@@ -225,7 +275,7 @@ describe("US-003 an exit reported from inside onClose", () => {
     const pool = createMcpPool({ servers: MCP_TEST_SERVERS });
     // The exit is reported while `open` registers the listener, i.e. before the
     // entry resolves: the call it interrupted is the first one on the key.
-    const result = await pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const result = await pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     expect(outcome(result)).toEqual({ content: `ran t (pid ${connectionAt(harness, 2).connectPid})`, isError: false });
   });
 });
@@ -240,11 +290,11 @@ describe("US-003 an exit that exhausts the budget while a call is in flight", ()
     await pool.listTools("memory", "/a");
     for (let index = 0; index < MCP_MAX_RECONNECTS; index++) {
       connectionAt(harness, index + 1).exit(MCP_EXIT_REASON);
-      await pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+      await pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     }
     expect(harness.configs).toHaveLength(1 + MCP_MAX_RECONNECTS);
     fourth.holdCalls = true;
-    const pending = pool.call("memory", "/a", "t", {}, MCP_CALL_OPTS);
+    const pending = pool.call("memory", "/a", "t", {}, MCP_REPLAY_SAFE_CALL_OPTS);
     await waitForDispatches(harness, 4, 2);
     // The fourth exit exhausts the budget, so `entry()` hands back the pinned state.
     connectionAt(harness, 4).exit(MCP_EXIT_REASON);

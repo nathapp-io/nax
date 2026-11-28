@@ -205,12 +205,16 @@ interface CollectNeighborsInput {
  *
  * The body is a sequencer over the four phases in
  * `code-neighbor-phases.ts` (forward deps → reverse deps → slot merge →
- * sibling-test hint), run in the original execution order. Two observable
- * quirks are deliberate and pinned (code-neighbor-collect-edges.test.ts):
- * the sibling hint is added AFTER the MAX_NEIGHBORS_PER_FILE-capped merge,
- * so a full neighbor set pushes the hint off at the final slice; and the
- * reverse quick-check (`includes(fileBaseName)`) misses directory imports
- * whose content never spells the base name.
+ * sibling-test hint), run in the original execution order. ONE deliberate
+ * quirk is still observable and pinned (code-neighbor-collect-edges.test.ts):
+ * the sibling hint is added AFTER the MAX_NEIGHBORS_PER_FILE-capped merge, so
+ * a full neighbor set pushes the hint off at the final slice.
+ *
+ * US-005 (review finding 8): both directions resolve a relative specifier
+ * through the same existence-checked resolver (code-neighbor-phases.ts
+ * `resolveImport`), so an edge always names a file that is on disk under this
+ * root — a target that does not exist contributes nothing, and forward and
+ * reverse agree on the path a specifier names.
  */
 async function collectNeighbors(input: CollectNeighborsInput): Promise<{ neighbors: string[]; truncated: boolean }> {
   const { filePath, execRoot, packageDir, neighborScope, scannedDirs, contentCacheState, siblingTestContext } = input;

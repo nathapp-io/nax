@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir } from "@test/helpers";
-import { JOB_PANEL_LOG_LINES, readJobPanelView } from "@/chat/jobs/job-panel-view";
+import { JOB_PANEL_LOG_LINES, JOB_PANEL_TAIL_SCAN_BYTES, readJobPanelView } from "@/chat/jobs/job-panel-view";
 import { _jobRunnerDeps, createJobRunner, JOB_LOG_TAIL_LINES } from "@/chat/jobs/job-runner";
 import { _jobStoreDeps, jobLogPath, writeJobRecord } from "@/chat/jobs/job-store";
 import type { ChatJob } from "@/chat/jobs/job-types";
@@ -144,5 +144,22 @@ describe("readJobPanelView over a real job runner", () => {
     _logTailDeps.readRange = () => Promise.reject(denied());
     const view = await readJobPanelView(job, jobs, new Date(clock.now()));
     expect(view.logTail).toEqual([]);
+  });
+
+  test("US-007 AC-1: a panel refresh of a single 256 KiB record reads only the 64 KiB budget", async () => {
+    const record = "r".repeat(256 * 1024);
+    await Bun.write(job.logPath, record);
+    const readRange = _logTailDeps.readRange;
+    let bytes = 0;
+    _logTailDeps.readRange = async (path, start, end) => {
+      const chunk = await readRange(path, start, end);
+      bytes += chunk.byteLength;
+      return chunk;
+    };
+    const view = await readJobPanelView(job, jobs, new Date(clock.now()));
+    expect(bytes).toBe(JOB_PANEL_TAIL_SCAN_BYTES);
+    expect(view.logTail).toHaveLength(1);
+    expect(view.logTail[0]?.startsWith("…")).toBe(true);
+    expect(view.logTail[0]?.slice(1)).toBe(record.slice(-JOB_PANEL_TAIL_SCAN_BYTES));
   });
 });

@@ -8,7 +8,7 @@
  * `latest.jsonl` alias are never followed.
  */
 
-import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
 import { NaxError } from "../errors";
 
@@ -59,5 +59,64 @@ export function readLogTextNoFollow(path: string, start = 0): string {
     return buf.subarray(start).toString("utf8");
   } finally {
     closeSync(fd);
+  }
+}
+
+/** Bytes per read for incremental log streaming — bounded, so no read materializes the file. */
+export const LOG_READ_CHUNK_BYTES = 64 * 1024;
+
+/** Swappable handle operations for `forEachLogChunk` (`_deps` seam). */
+export interface LogChunkDeps {
+  open: (path: string) => number;
+  read: (fd: number, buffer: Uint8Array, offset: number, length: number) => number;
+  isRegularFile: (fd: number) => boolean;
+  close: (fd: number) => void;
+}
+
+/** Real handle operations — the same no-follow, nonblocking open as `readLogTextNoFollow`. */
+export const _logChunkDeps: LogChunkDeps = {
+  open: (path) => openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK),
+  read: (fd, buffer, offset, length) => readSync(fd, buffer, offset, length, null),
+  isRegularFile: (fd) => fstatSync(fd).isFile(),
+  close: (fd) => closeSync(fd),
+};
+
+export interface ForEachLogChunkOptions {
+  /** Bytes per read. Defaults to `LOG_READ_CHUNK_BYTES`. */
+  chunkBytes?: number;
+  /** Handle operations; defaults to `_logChunkDeps`. */
+  deps?: LogChunkDeps;
+}
+
+/**
+ * Visit a log's decoded text in bounded chunks through ONE handle.
+ *
+ * The handle is opened once — O_NOFOLLOW refuses a symlink swapped in after resolution,
+ * O_NONBLOCK cannot block on a FIFO, and a handle that is not a regular file is refused with
+ * `LOG_NOT_REGULAR_FILE`. It is never reopened by pathname, so the file that was validated is
+ * the file that is read. Multi-byte characters split across reads are decoded intact.
+ */
+export function forEachLogChunk(
+  path: string,
+  onChunk: (chunk: string) => void,
+  options: ForEachLogChunkOptions = {},
+): void {
+  const deps = options.deps ?? _logChunkDeps;
+  const chunkBytes = options.chunkBytes ?? LOG_READ_CHUNK_BYTES;
+  const fd = deps.open(path);
+  try {
+    if (!deps.isRegularFile(fd))
+      throw new NaxError(`[registered-log] not a regular file: ${path}`, "LOG_NOT_REGULAR_FILE", { stage: "logs" });
+    const decoder = new TextDecoder("utf-8");
+    const buffer = new Uint8Array(chunkBytes);
+    for (;;) {
+      const read = deps.read(fd, buffer, 0, chunkBytes);
+      if (read <= 0) break;
+      onChunk(decoder.decode(buffer.subarray(0, read), { stream: true }));
+    }
+    const tail = decoder.decode();
+    if (tail.length > 0) onChunk(tail);
+  } finally {
+    deps.close(fd);
   }
 }

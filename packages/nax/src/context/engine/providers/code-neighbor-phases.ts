@@ -35,13 +35,24 @@ export interface ScannedDir {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Import parsing (moved verbatim from code-neighbor.ts)
+// Import parsing and resolution
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Patterns that match JS/TS import/require statements — used with matchAll() */
 const FROM_PATTERN = /from\s+['"]([^'"]+)['"]/g;
 const REQUIRE_PATTERN = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 const IMPORT_SIDE_EFFECT_PATTERN = /import\s+['"]([^'"]+)['"]/g;
+
+/**
+ * Candidate suffixes tried for a relative import, in resolution order: the
+ * plain module, its `.tsx` sibling, the directory forms, then the specifier
+ * exactly as written (which is how an explicit extension `./x.js` resolves).
+ * Each candidate must exist on disk before it is returned — see resolveImport.
+ */
+const IMPORT_CANDIDATE_SUFFIXES = [".ts", ".tsx", "/index.ts", "/index.tsx", ""] as const;
+
+/** Base name of a directory's entry module; importers reach it as the directory. */
+const INDEX_BASENAME = "index";
 
 /**
  * Parse JS/TS import specifiers from file content.
@@ -64,17 +75,36 @@ function parseImportSpecifiers(content: string): string[] {
 
 /**
  * Resolve a relative import specifier to a workdir-relative path.
- * Extension candidates are checked in order — with-extension first so the
- * returned path always carries the extension (avoids bare "src/utils/helper").
- * Returns null if all candidates fall outside workdir.
+ *
+ * Candidates are tried in resolution order and the FIRST ONE THAT EXISTS WINS
+ * (US-005, review finding 8). Extension-first ordering means the returned path
+ * always carries the extension (a bare "src/utils/helper" is not a file anyone
+ * can open); the directory forms come next; the exact specifier is last, so an
+ * explicit extension (`./x.js`) never loses to a guess (`x.js.ts`).
+ *
+ * Existence checking is the whole point: without it `./Button` resolved to a
+ * `Button.ts` that did not exist beside a real `Button.tsx`, `./lib` produced
+ * `lib.ts` beside `lib/index.ts`, and the reverse direction inverted the same
+ * way (an importer resolved to the phantom path, so the file it really imports
+ * never listed it). A specifier with no existing candidate yields NO edge —
+ * `null` — rather than an edge to a file that is not there.
+ *
+ * Returns null when every candidate is absent or lies outside workdir.
  */
-function resolveImport(specifier: string, fromFile: string, workdir: string): string | null {
+async function resolveImport(
+  specifier: string,
+  fromFile: string,
+  workdir: string,
+  deps: PhaseDeps,
+): Promise<string | null> {
   const base = resolve(workdir, fromFile, "..", specifier);
-  // Extension-first ordering ensures the returned path includes the extension.
-  const candidates = [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base];
-  for (const candidate of candidates) {
+  for (const suffix of IMPORT_CANDIDATE_SUFFIXES) {
+    const candidate = `${base}${suffix}`;
     const rel = relative(workdir, candidate);
-    if (!rel.startsWith("..")) return rel;
+    // "" means the specifier names the workdir itself and ".." that it escapes
+    // it — neither is a file an edge may point at.
+    if (rel === "" || rel.startsWith("..")) continue;
+    if (await deps.fileExists(candidate)) return rel;
   }
   return null;
 }
@@ -129,7 +159,7 @@ export async function collectForwardNeighbors(input: ForwardPhaseInput): Promise
     const ownContent = await readCached(ownAbsPath, contentCacheState, deps);
     if (ownContent !== null && ownContent.length > 0) {
       for (const spec of parseImportSpecifiers(ownContent)) {
-        const resolved = resolveImport(spec, filePath, execRoot);
+        const resolved = await resolveImport(spec, filePath, execRoot, deps);
         if (resolved === null) continue;
         const resolvedAbs = join(execRoot, resolved);
         if (resolvedAbs !== ownAbsPath) forwardNeighbors.add(resolvedAbs);
@@ -181,7 +211,11 @@ async function importsOwnPath(
   input: ReversePhaseInput,
 ): Promise<boolean> {
   for (const spec of parseImportSpecifiers(content)) {
-    const resolved = resolveImport(spec, srcFile, scanWorkdir);
+    // The SAME existence-checked resolver the forward phase uses: reverse and
+    // forward must agree on which file a specifier names, or an importer that
+    // really does import us never appears and a phantom path appears instead
+    // (US-005 AC-2/AC-3).
+    const resolved = await resolveImport(spec, srcFile, scanWorkdir, input.deps);
     if (resolved === null) continue;
     const resolvedAbs = join(scanWorkdir, resolved);
     if (resolvedAbs === input.ownAbsPath || resolvedAbs === input.ownAbsNoExt) return true;
@@ -190,9 +224,26 @@ async function importsOwnPath(
 }
 
 /**
+ * The `includes()` pre-filter: could this content name the touched file at all?
+ *
+ * The base name covers the ordinary forms (`./util`). A file named `index` is
+ * the exception: importers reach it through its DIRECTORY (`./lib`, `.`), so
+ * neither its base name nor anything else obliges them to spell "index".
+ * Requiring it skipped every directory import before parsing (US-005 AC-2), so
+ * an index file lets the pre-filter pass and leaves the decision to the
+ * resolver. The pre-filter is a cost optimisation only — skipping it can never
+ * change the result now that resolution is existence-checked.
+ */
+function mayNameTouchedFile(content: string, fileBaseName: string): boolean {
+  if (fileBaseName === INDEX_BASENAME) return true;
+  return content.includes(fileBaseName);
+}
+
+/**
  * Reverse deps: files that import the touched file, found by scanning the
- * pre-scanned directories. The includes() quick check on the base name keeps
- * most candidates from being parsed at all.
+ * pre-scanned directories. The content pre-filter (`mayNameTouchedFile`) keeps
+ * most candidates from being parsed at all; the resolution that follows is the
+ * same existence-checked one the forward phase uses.
  */
 export async function collectReverseNeighbors(input: ReversePhaseInput): Promise<ReverseOutcome> {
   const { ownAbsPath, fileBaseName, scannedDirs, contentCacheState, deps } = input;
@@ -215,8 +266,14 @@ export async function collectReverseNeighbors(input: ReversePhaseInput): Promise
       if (srcAbs === ownAbsPath) continue;
       const content = await readCached(srcAbs, contentCacheState, deps);
       // Short-circuit order matters for cost only: candidates whose content
-      // lacks the base name are never parsed (the original's nested if).
-      if (content?.includes(fileBaseName) && (await importsOwnPath(srcFile, scanWorkdir, content, input))) {
+      // cannot name the touched file are never parsed (the original's nested
+      // if). `mayNameTouchedFile` is the widened form of the old
+      // `includes(fileBaseName)` check — see its doc for why index files pass.
+      if (
+        content !== null &&
+        mayNameTouchedFile(content, fileBaseName) &&
+        (await importsOwnPath(srcFile, scanWorkdir, content, input))
+      ) {
         reverseNeighbors.add(srcAbs);
       }
     }

@@ -119,23 +119,31 @@ export function createMcpProviders(args: {
         // The hint is server-stated and untrusted: it counts only when the lock
         // also lists the tool as read-only for this server.
         const vouched = lockedReadOnlyTools(resolved, serverId);
-        return selected.map((tool) => ({
-          localName: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-          ...(tool.readOnly === true && vouched.has(tool.name) ? { readOnly: true as const } : {}),
-          run: async (input, ctx) => {
-            const result = await args.pool.call(serverId, workdir, tool.name, input, {
-              timeoutMs: server.timeoutMs,
-              maxBytes: ctx.maxBytes,
-            });
-            return {
-              content: result.content,
-              ...(result.isError ? { isError: true } : {}),
-              resultBytesPreTruncation: result.bytesPreTruncation,
-            };
-          },
-        }));
+        return selected.map((tool) => {
+          // One answer decides two things: whether the tool is advertised read-only, and
+          // whether the pool may re-dispatch it after an interruption. A tool the lock does
+          // not vouch for is neither — an unknown tool is not assumed read-only, and a write
+          // that happened to be lost with its reply must not be sent a second time.
+          const readOnly = tool.readOnly === true && vouched.has(tool.name);
+          return {
+            localName: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            ...(readOnly ? { readOnly: true as const } : {}),
+            run: async (input, ctx) => {
+              const result = await args.pool.call(serverId, workdir, tool.name, input, {
+                timeoutMs: server.timeoutMs,
+                maxBytes: ctx.maxBytes,
+                replaySafety: readOnly ? "replay-safe" : "at-most-once",
+              });
+              return {
+                content: result.content,
+                ...(result.isError ? { isError: true } : {}),
+                resultBytesPreTruncation: result.bytesPreTruncation,
+              };
+            },
+          };
+        });
       },
     };
   });

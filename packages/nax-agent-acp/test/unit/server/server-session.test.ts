@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { RequestError, type SessionUpdate } from "@agentclientprotocol/sdk";
+import { type PromptResponse, RequestError, type SessionUpdate } from "@agentclientprotocol/sdk";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { createServerSession, TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
 import type { OldText } from "#src/server/translate/diff";
-import { FAR_EXPIRY, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
+import {
+  FAR_EXPIRY,
+  type FakeAgentSession,
+  fakeAgentSession,
+  type Script,
+  turnEnd,
+} from "#test/helpers/fake-agent-session";
 import { ALL_FEATURES, type FakePortOptions, fakePort, select } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
@@ -264,10 +270,147 @@ describe("a cancel or a dead client before the turn starts (final review I-1)", 
   });
 });
 
+/**
+ * Finding 7 fixtures: a session whose client holds its writes, so close has to
+ * be bounded, beside an ordinary one whose writes settle.
+ */
+const WAIT_MS = 40;
+
+/** A script that prices one turn, so final accounting is observable. */
+const priced: Script = async function* () {
+  yield { type: "text_delta", round: 1, text: "Hel" };
+  yield { type: "usage", round: 1, inputTokens: 1, outputTokens: 1, costUsd: 0.5 };
+  yield turnEnd("completed", { output: "Hel" });
+};
+
+/** Counts every close() the S3 session receives, whichever caller makes it. */
+function countCloses(fake: FakeAgentSession): () => number {
+  const close = fake.session.close.bind(fake.session);
+  let count = 0;
+  fake.session.close = async () => {
+    count += 1;
+    await close();
+  };
+  return () => count;
+}
+
+function build(script: Script, portOptions: FakePortOptions = {}) {
+  const fake = fakeAgentSession("s1", [script]);
+  const port = fakePort(portOptions);
+  const { logger, lines } = recordingLogger();
+  const turns: string[] = [];
+  const session = createServerSession({
+    session: fake.session,
+    port: port.port,
+    cwd: "/w",
+    readOldText: missing,
+    logger,
+    turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+    closeWaitMs: WAIT_MS,
+    onTurnEnd: async (message) => {
+      turns.push(message);
+    },
+  });
+  return { fake, port, lines, session, turns };
+}
+
+/** A session over an ordinary port, so a normal or rejected write is told from a held one. */
+function plain(script: Script, portOptions: FakePortOptions = {}) {
+  return build(script, portOptions);
+}
+
+/** A session whose client holds every update until the test releases it. */
+function held(script: Script) {
+  const gate = Promise.withResolvers<void>();
+  const s = build(script, { features: ALL_FEATURES, holdUpdates: gate.promise });
+  return { ...s, release: () => gate.resolve() };
+}
+
+/** Starts a turn and waits until its first update is a write the client has not answered. */
+async function writeInFlight(s: ReturnType<typeof held>): Promise<PromptResponse> {
+  const turn = s.session.prompt(text("hi"));
+  await waitForCondition(() => s.port.updates.length > 0);
+  return turn;
+}
+
 describe("close", () => {
   test("closes the S3 session", async () => {
     const s = setup([]);
     await s.session.close();
     expect(s.fake.closed()).toBe(true);
+  });
+
+  test("AC-5: a normal close reports the session disposed", async () => {
+    const s = plain(hello);
+    expect(await s.session.close()).toBe("disposed");
+    expect(s.lines.filter((line) => line.level === "warn")).toEqual([]);
+  });
+
+  test("AC-5: a close after a rejected write reports disposed, not the deadline", async () => {
+    const s = plain(hello, { failUpdates: true });
+    expect((await failure(s.session.prompt(text("hi")))).code).toBe(-32603);
+    expect(await s.session.close()).toBe("disposed");
+    expect(s.lines.some((line) => line.message.includes("deadline"))).toBe(false);
+  });
+
+  test("a failed S3 close still rejects the caller, and disposal stays settled", async () => {
+    const fake = fakeAgentSession("s1", [hello], { closeFails: true });
+    const port = fakePort();
+    const { logger } = recordingLogger();
+    const session = createServerSession({
+      session: fake.session,
+      port: port.port,
+      cwd: "/w",
+      readOldText: missing,
+      logger,
+      turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
+      closeWaitMs: WAIT_MS,
+    });
+    await expect(session.close()).rejects.toThrow("close failed");
+    await expect(session.disposal).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Finding 7: a held output write never settles, so the caller's close must be
+ * bounded while the session keeps its own lifetime until the write is released.
+ */
+describe("close with a pending output write (finding 7)", () => {
+  test("AC-1: close returns by its configured wait while that write is still pending", async () => {
+    const s = held(priced);
+    const turn = writeInFlight(s);
+    expect(await s.session.close()).toBe("timed_out");
+    expect(s.session.isClosed()).toBe(true);
+    // The turn could not finish, so the resource is still alive behind the deadline.
+    expect(s.session.running).toBe(true);
+    s.release();
+    expect((await turn).stopReason).toBe("end_turn");
+  });
+
+  test("AC-1: a closing session admits no new work", async () => {
+    const s = held(priced);
+    const turn = writeInFlight(s);
+    await s.session.close();
+    expect((await failure(s.session.prompt(text("more")))).message).toContain("turn in progress");
+    s.release();
+    await turn;
+    expect((await failure(s.session.prompt(text("after")))).message).toContain("session is closed");
+    expect(s.fake.messages).toEqual(["hi"]);
+  });
+
+  test("AC-3: two closes during the write share one cleanup, which finishes once", async () => {
+    const s = held(priced);
+    const closes = countCloses(s.fake);
+    const turn = writeInFlight(s);
+    const first = s.session.close();
+    expect(s.session.close()).toBe(first);
+    expect(await first).toBe("timed_out");
+    expect(s.turns).toEqual([]);
+    expect(closes()).toBe(1);
+    s.release();
+    await turn;
+    await s.session.disposal;
+    expect(closes()).toBe(1);
+    expect(s.turns).toEqual(["hi"]);
   });
 });

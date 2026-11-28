@@ -195,6 +195,33 @@ describe("formatMemorySyncResult", () => {
   test("a locked mirror says so", () => {
     expect(formatMemorySyncResult({ ...SYNCED, outcome: "locked" })).toBe("memory sync: locked");
   });
+
+  test("a run that held a write with an unknown delivery names it and the commands that take it", () => {
+    const result: MemorySyncResult = {
+      ...SYNCED,
+      uncertain: [
+        {
+          clientId: "c_7",
+          kind: "save",
+          scope: "project",
+          slug: "replay-budget",
+          reason: "delivery unknown: socket closed; not retried automatically",
+          delivery: "unknown",
+        },
+      ],
+    };
+    expect(formatMemorySyncResult(result).split("\n")).toEqual([
+      "memory sync: synced (pushed 1, rejected 0, pulled 0, skipped 0)",
+      "memory sync: held save project/replay-budget (delivery unknown; client c_7 — " +
+        "nax memory requeue --client c_7 --allow-duplicate, or nax memory discard --client c_7)",
+    ]);
+  });
+
+  test("a run with nothing held adds no line for it", () => {
+    expect(formatMemorySyncResult({ ...SYNCED, uncertain: [] })).toBe(
+      "memory sync: synced (pushed 1, rejected 0, pulled 0, skipped 0)",
+    );
+  });
 });
 
 describe("formatMemoryNoteLine", () => {

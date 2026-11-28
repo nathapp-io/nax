@@ -86,6 +86,7 @@ import {
   type MemorySaveInput,
   type MemorySaveResult,
   noteNotFound,
+  pendingWrite,
   refreshIndex,
   writeRefused,
 } from "./operations-support.ts";
@@ -93,7 +94,13 @@ import { createMemoryOutbox, type MemoryOutbox } from "./outbox.ts";
 import type { MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { discardRefused, restoreNote } from "./refusal.ts";
 import type { MemoryStore } from "./store.ts";
-import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout } from "./support.ts";
+import {
+  GLOBAL_MEMORY_TIMERS,
+  possiblyCommitted,
+  providerAnswers,
+  raceTimeout,
+  unknownDeliveryReason,
+} from "./support.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
@@ -123,6 +130,7 @@ export type {
   MemoryForgetInput,
   MemoryForgetResult,
   MemoryOperationInput,
+  MemoryPendingWrite,
   MemorySaveInput,
   MemorySaveResult,
 } from "./operations-support.ts";
@@ -212,7 +220,29 @@ async function recordDelivered(input: MemorySaveInput, note: MemoryNote, pushed:
 
 /** The undelivered answer: the write is on the queue, not delivered. */
 function queued(note: MemoryNote): MemorySaveResult {
-  return { slug: note.slug, status: note.status, delivered: false };
+  return {
+    slug: note.slug,
+    status: note.status,
+    delivered: false,
+    pending: pendingWrite(note.id, "queued"),
+  };
+}
+
+/**
+ * The answer for a write the provider may have committed: the note is the mirror's and the
+ * queue's, and nothing will send it again.
+ *
+ * The reason travels with it because it is the whole of what the caller can report: the write is
+ * not delivered, it is not going to be retried, and the entry under `clientId` is what an
+ * operator has to decide about.
+ */
+function unknownDelivery(note: MemoryNote, reason: string): MemorySaveResult {
+  return {
+    slug: note.slug,
+    status: note.status,
+    delivered: false,
+    pending: pendingWrite(note.id, "unknown", reason),
+  };
 }
 
 /**
@@ -290,6 +320,12 @@ async function deliverLocked(input: MemorySaveInput): Promise<MemorySaveResult> 
  * undelivered; the staged note stays too, because the local write is the newer fact and is
  * exactly what the queue will deliver.
  *
+ * Which undelivered answer it is belongs to the provider's own declaration. A write it may repeat
+ * is a write the next sync will deliver (`queuedEntryResult`). A write it declares
+ * non-replayable — dispatched, and left without an answer — may already have been committed, so
+ * it is held as `uncertain` and the caller is told the delivery is unknown (`undeliveredPush`);
+ * sending it again is the duplicate this rule exists to prevent.
+ *
  * `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write, so queueing it
  * would only repeat the refusal: the entry comes back off, the mirror is put back the way it
  * was, and the provider's error reaches the caller. Only the provider's answer changes the
@@ -302,12 +338,13 @@ async function handOver(
   previous: MemoryNote | null,
 ): Promise<MemorySaveResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
+  const request = saveRequest(note, input.writeMode);
   if (!(await providerAnswers(input.provider, timers))) return await queuedEntryResult(input, note);
   let answer: MemoryPushResult;
   try {
-    answer = await raceTimeout(input.provider.push(saveRequest(note, input.writeMode)), MEMORY_OP_TIMEOUT_MS, timers);
+    answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
-    if (!isMemoryPushRejected(error)) return await queuedEntryResult(input, note);
+    if (!isMemoryPushRejected(error)) return await undeliveredPush(input, note, request, error);
     await discardRefused(input, note.id);
     await restoreNote(input, note.scope, note.slug, previous);
     throw error;
@@ -316,6 +353,28 @@ async function handOver(
   await recordDelivered(input, note, answer);
   await refreshIndex(input);
   return { slug: note.slug, status: answer.status, delivered: true };
+}
+
+/**
+ * The push failed without a refusal: decide, from the provider's declaration, whether the note
+ * is a write a later sync may deliver or one that may already have been committed.
+ *
+ * The entry is the one fact both arms agree on, so nothing is removed either way: a queued entry
+ * stays queued, and an `uncertain` one stops being queued — which is what keeps it from being
+ * sent again. The index is rebuilt in both arms: the mirror keeps the staged note, and the next
+ * session has to see it, whatever the provider's answer was.
+ */
+async function undeliveredPush(
+  input: MemorySaveInput,
+  note: MemoryNote,
+  request: MemoryWriteRequest,
+  error: unknown,
+): Promise<MemorySaveResult> {
+  if (!possiblyCommitted(input.provider, request.kind, error)) return await queuedEntryResult(input, note);
+  const reason = unknownDeliveryReason(error);
+  await input.outbox.markUncertain(request.clientId, reason);
+  await refreshIndex(input);
+  return unknownDelivery(note, reason);
 }
 
 /**

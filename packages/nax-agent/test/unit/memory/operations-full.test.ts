@@ -37,6 +37,7 @@ import {
   type MemoryStore,
   saveMemoryNote,
 } from "@nathapp/nax-agent";
+import type { MemoryPendingWrite } from "#src/memory/index";
 import { acquireMirrorDirLock, storeLockTargets } from "#src/memory/mirror-lock";
 import { claimSync, releaseSync } from "#src/memory/sync-flight";
 import { _lockDeps } from "#src/session-store/session-lock";
@@ -145,6 +146,9 @@ function recordingHook(answer: boolean): {
     },
   };
 }
+
+/** The `pending` field an undelivered result carries: the write is queued for the next sync. */
+const QUEUED: MemoryPendingWrite = { clientId: expect.any(String), delivery: "queued" };
 
 describe("saveMemoryNote and the indexOverflows guard", () => {
   test("AC-1: a new slug whose indexOverflows answers true is refused with MEMORY_FULL", async () => {
@@ -357,7 +361,7 @@ describe("saveMemoryNote and the indexOverflows guard", () => {
         const result = await h.save({ indexOverflows: hook });
 
         // Fenced: queued without staging, so the mirror the sync owns is left alone.
-        expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+        expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false, pending: QUEUED });
         expect(seen).toEqual([]);
         expect(await h.store.readNote("project", "replay-budget")).toBeNull();
         const entries = await h.outbox.list();

@@ -6,8 +6,17 @@
  */
 
 import type { NaxStatusFile } from "../execution/status-file";
-import { inferPhases } from "./phase-infer";
-import type { ReplayInputs, RunTimeline, StoryTimeline } from "./types";
+import { indexEvents, storyInputs } from "./phase-infer";
+import type { InferredStory, ReplayEventIndex, ReplayInputs, RunTimeline, StoryTimeline } from "./types";
+
+/**
+ * Resolve the per-story index to read from: a streamed one wins; in-memory
+ * records are indexed in a single pass. Either way the work is one pass per
+ * record, never one pass per record per story.
+ */
+function resolveEvents(inputs: ReplayInputs): ReplayEventIndex {
+  return inputs.events ?? indexEvents(inputs.entries ?? []);
+}
 
 /**
  * Maps a status.json run status to the degrade-path RunTimeline status when
@@ -28,16 +37,6 @@ function degradedRunStatus(status: NaxStatusFile["run"]["status"] | undefined): 
   }
 }
 
-function extractNaxVersion(entries: ReplayInputs["entries"]): string | undefined {
-  for (const entry of entries) {
-    if (entry.stage === "run.start") {
-      const version = entry.data?.naxVersion;
-      if (typeof version === "string") return version;
-    }
-  }
-  return undefined;
-}
-
 interface StoryMetricsView {
   success: boolean;
   finalTier: string;
@@ -46,11 +45,7 @@ interface StoryMetricsView {
   includeCost: boolean;
 }
 
-function buildStoryFromMetrics(
-  storyId: string,
-  story: ReturnType<typeof inferPhases>,
-  metrics: StoryMetricsView,
-): StoryTimeline {
+function buildStoryFromMetrics(storyId: string, story: InferredStory, metrics: StoryMetricsView): StoryTimeline {
   const { success, finalTier, cost, attempts, includeCost } = metrics;
   const status: StoryTimeline["status"] = includeCost ? (success ? "passed" : "failed") : "crashed";
 
@@ -82,13 +77,18 @@ function buildStoryFromMetrics(
 }
 
 /**
- * Build a `RunTimeline` from parsed log entries + optional metrics and
- * status.json. Pure — does not touch the filesystem or read env vars.
+ * Build a `RunTimeline` from a per-story event index (or in-memory records) plus
+ * optional metrics and status.json. Pure — does not touch the filesystem or
+ * read env vars.
+ *
+ * Each story reads its own accumulated bucket; the record spine is never
+ * re-filtered, so a 100-story run costs the same record passes as a 1-story run.
  */
 export function reconstructTimeline(inputs: ReplayInputs): RunTimeline {
   const runMetrics = inputs.runMetrics;
   const statusFile = inputs.status;
   const meta = inputs.meta;
+  const events = resolveEvents(inputs);
 
   const degradedStatus = runMetrics ? undefined : degradedRunStatus(statusFile?.run.status);
 
@@ -99,7 +99,7 @@ export function reconstructTimeline(inputs: ReplayInputs): RunTimeline {
     runStatus = runMetrics.storiesFailed > 0 ? "failed" : "completed";
 
     for (const sm of runMetrics.stories) {
-      const inferred = inferPhases(inputs.entries, sm.storyId);
+      const inferred = storyInputs(events, sm.storyId);
       stories.push(
         buildStoryFromMetrics(sm.storyId, inferred, {
           success: sm.success,
@@ -112,15 +112,9 @@ export function reconstructTimeline(inputs: ReplayInputs): RunTimeline {
     }
   } else if (degradedStatus !== undefined) {
     runStatus = degradedStatus;
-    const seen = new Set<string>();
-    for (const entry of inputs.entries) {
-      const id = entry.storyId ?? (entry.data?.storyId as string | undefined);
-      if (typeof id !== "string") continue;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const inferred = inferPhases(inputs.entries, id);
+    for (const id of events.storyIds) {
       stories.push(
-        buildStoryFromMetrics(id, inferred, {
+        buildStoryFromMetrics(id, storyInputs(events, id), {
           success: false,
           finalTier: "",
           cost: 0,
@@ -139,9 +133,8 @@ export function reconstructTimeline(inputs: ReplayInputs): RunTimeline {
     stories,
   };
 
-  const naxVersion = extractNaxVersion(inputs.entries);
-  if (naxVersion !== undefined) {
-    timeline.naxVersion = naxVersion;
+  if (events.naxVersion !== undefined) {
+    timeline.naxVersion = events.naxVersion;
   }
 
   return timeline;

@@ -5,9 +5,16 @@
  * report. Before these guards it silently left the below-floor list and
  * `--update-baseline` deleted its entry, so the ratchet read a disappearance as a
  * graduation. The two pure functions below are what stops that.
+ *
+ * The last two blocks cover the quiet (`AGENT=1`) capture path: a child whose leader
+ * exits before its pipes close must not hang the run past its deadline, and the
+ * diagnostics kept for a failure must stay bounded.
  */
 
 import { describe, expect, spyOn, test } from "bun:test";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   _coverageDeps,
   aggregateFailures,
@@ -19,10 +26,16 @@ import {
   findUnreportedFiles,
   gatedSuites,
   hasExecutableCode,
+  main,
   parseLcov,
   parsePerFileLines,
+  RUN_TIMEOUT_MS,
+  type RunCoverageOptions,
+  runCoverage,
+  type SpawnOptions,
   UNMEASURABLE,
 } from "#scripts/check-coverage";
+import { MAX_CAPTURE_BYTES } from "#scripts/quiet-capture";
 
 /** Builds an lcov body for the given files, each as a `covered/found` line pair. */
 function lcov(records: Array<[file: string, hit: number, found: number]>): string {
@@ -376,4 +389,390 @@ describe("coverageTestArgs", () => {
       expect(() => coverageTestArgs(paths, [flag])).toThrow("positive integer");
     },
   );
+});
+
+/** Deadline the test wrapper allows a run, so a hung runner fails in seconds, not in bun's --timeout. */
+const WRAPPER_DEADLINE_MS = 5_000;
+/** How long a run may take to settle after its injected deadline; beyond this it was not the deadline that returned. */
+const SETTLE_BUDGET_MS = 2_500;
+/** Returned by the wrapper when the runner never settles: no AC may return this. */
+const WRAPPER_EXPIRED = "wrapper deadline expired";
+
+/**
+ * Races a runner promise against the test wrapper's own deadline.
+ *
+ * The ACs are about the runner finishing *on its injected deadline*; if the runner hangs
+ * instead, the wrapper hands back a sentinel and the assertion fails loudly rather than
+ * stalling the suite.
+ */
+async function underWrapperDeadline<T>(promise: Promise<T>): Promise<T | typeof WRAPPER_EXPIRED> {
+  const expired = Bun.sleep(WRAPPER_DEADLINE_MS).then((): typeof WRAPPER_EXPIRED => WRAPPER_EXPIRED);
+  return Promise.race<T | typeof WRAPPER_EXPIRED>([promise, expired]);
+}
+
+/** One `_coverageDeps.spawn` call, recorded so a fixture can be cleaned up whatever the outcome. */
+interface SpawnCall {
+  command: string[];
+  options: SpawnOptions;
+  child: Bun.Subprocess;
+}
+
+/** A child command under test, plus everything needed to leave no process behind. */
+interface Fixture {
+  /** What runCoverage is asked to launch. */
+  command: string[];
+  /** Pid file the fixture leader writes its descendant's pid to. */
+  pidFile: string;
+  /** Every spawn the run made; filled while the run is in flight. */
+  spawned: SpawnCall[];
+  /** The descendant the leader left holding the pipes, once it has written its pid. */
+  descendant(): number | undefined;
+  /** Kills whatever this fixture started. Safe after a failed assertion. */
+  clean(): void;
+}
+
+function pidFilePath(): string {
+  return join(tmpdir(), `nax-coverage-fixture-${crypto.randomUUID()}.pid`);
+}
+
+/** Wraps a command in a fixture, giving it a pid file and a cleanup that always runs. */
+function fixtureOf(commandFor: (pidFile: string) => string[]): Fixture {
+  const pidFile = pidFilePath();
+  const spawned: SpawnCall[] = [];
+  const descendant = (): number | undefined => {
+    try {
+      const pid = Number.parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+      return Number.isNaN(pid) ? undefined : pid;
+    } catch {
+      // The leader has not written it (or never will: the run was killed first).
+      return undefined;
+    }
+  };
+  return {
+    command: commandFor(pidFile),
+    pidFile,
+    spawned,
+    descendant,
+    clean(): void {
+      for (const { child } of spawned) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // The leader is already gone; only its descendant was left.
+        }
+      }
+      const pid = descendant();
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already reaped by the runner's own group kill.
+        }
+      }
+      rmSync(pidFile, { force: true });
+    },
+  };
+}
+
+/**
+ * A fixture whose leader exits immediately while a descendant inherits and keeps both
+ * pipes open — the shape that hung the quiet capture. `banner`, when given, is echoed to
+ * stdout first, so a test can tell "output arrived, then the pipe stayed open" from
+ * "nothing was ever written".
+ */
+function holdsPipesOpen(banner?: string): Fixture {
+  const lead = banner === undefined ? "" : `echo ${banner}; `;
+  return fixtureOf((pidFile) => ["sh", "-c", `${lead}sleep 30 & echo $! > ${pidFile}`]);
+}
+
+/** A fixture running an inline script under bun (no shell quoting, no temp source file). */
+function bunScript(script: string): Fixture {
+  return fixtureOf(() => ["bun", "-e", script]);
+}
+
+/** Whether a pid is still running. */
+function isAlive(pid: number | undefined): boolean {
+  if (pid === undefined) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    // ESRCH: the process is gone.
+    return false;
+  }
+}
+
+/** Whether the fixture's descendant is gone within the budget, allowing for reap latency. */
+async function goneWithin(pid: number | undefined, budgetMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await Bun.sleep(20);
+  }
+  return !isAlive(pid);
+}
+
+/** Waits for the fixture leader to publish the pid of the descendant it left behind. */
+async function descendantPid(fixture: Fixture, budgetMs = 2_000): Promise<number | undefined> {
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    const pid = fixture.descendant();
+    if (pid !== undefined) return pid;
+    await Bun.sleep(20);
+  }
+  return undefined;
+}
+
+/**
+ * Runs the fixture through the real `runCoverage` capture path with `AGENT=1` (quiet),
+ * collecting what the run prints through its output seams.
+ */
+async function runCaptured(
+  fixture: Fixture,
+  options: RunCoverageOptions = {},
+): Promise<{ status: number | typeof WRAPPER_EXPIRED; printed: { out: string; err: string } }> {
+  const printed = { out: "", err: "" };
+  const realSpawn = _coverageDeps.spawn;
+  const spy = spyOn(_coverageDeps, "spawn").mockImplementation((command, spawnOptions) => {
+    const child = realSpawn(command, spawnOptions);
+    fixture.spawned.push({ command, options: spawnOptions, child });
+    return child;
+  });
+  try {
+    const status = await underWrapperDeadline(
+      runCoverage({
+        command: fixture.command,
+        quiet: true,
+        timeoutMs: 2_000,
+        out: (text) => {
+          printed.out += text;
+        },
+        err: (text) => {
+          printed.err += text;
+        },
+        ...options,
+      }),
+    );
+    return { status, printed };
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+/** A child that writes far past the capture cap to both streams, then fails with a marker. */
+const OVERFLOW_SCRIPT = [
+  'for (let i = 0; i < 8000; i++) process.stdout.write("stdout-" + String(i).padStart(5, "0") + "\\n");',
+  'for (let i = 0; i < 8000; i++) process.stderr.write("stderr-" + String(i).padStart(5, "0") + "\\n");',
+  'process.stdout.write("STDOUT-TERMINAL\\n");',
+  'process.stderr.write("STDERR-TERMINAL\\n");',
+  "process.exit(3);",
+].join("\n");
+
+/**
+ * A child whose output makes the capture cap land INSIDE a three-byte character.
+ *
+ * Each stream writes `EURO_COUNT` copies of "€" (3 bytes each) and then the terminal marker.
+ * The retained tail starts at `3 * euros + tail.length - MAX_CAPTURE_BYTES`, i.e.
+ * `(tail.length - MAX_CAPTURE_BYTES) mod 3` bytes into the "€" run. `misalignedTail` appends
+ * just enough ASCII for that offset to be 1, so the tail begins one byte inside a "€" and
+ * decoding it splices a U+FFFD (3 bytes) where one partial byte was — a capture that bounds
+ * only the BUFFERED bytes then replays 2 bytes more than the cap allows (finding F1).
+ */
+const MULTIBYTE_MARKERS = { out: "STDOUT-TERMINAL\n", err: "STDERR-TERMINAL\n" } as const;
+const EURO_COUNT = 40_000;
+
+/** The marker plus 0-2 spaces, so the cap boundary cannot land on a "€" boundary. */
+function misalignedTail(marker: string): string {
+  const base = (((Buffer.byteLength(marker) - MAX_CAPTURE_BYTES) % 3) + 3) % 3;
+  // Padding is chosen so `(base + extra) mod 3 === 1`: strictly inside a three-byte character.
+  return `${marker}${" ".repeat((1 - base + 3) % 3)}`;
+}
+
+const MULTIBYTE_SCRIPT = [
+  `const euros = "\\u20ac".repeat(${EURO_COUNT});`,
+  `process.stdout.write(euros + ${JSON.stringify(misalignedTail(MULTIBYTE_MARKERS.out))});`,
+  `process.stderr.write(euros + ${JSON.stringify(misalignedTail(MULTIBYTE_MARKERS.err))});`,
+  "process.exit(3);",
+].join("\n");
+
+/** The `N pass`/`Ran N tests` block bun prints last, behind unrelated noise. */
+const SUMMARY_BLOCK = " 4 pass\n 1 skip\n 0 fail\nRan 5 tests across 2 files. [1.00s]";
+const SUMMARY_SCRIPT = `process.stderr.write(${JSON.stringify(`noise before the summary\n\n${SUMMARY_BLOCK}\n`)});`;
+
+describe("runCoverage quiet capture", () => {
+  test("AC-1: returns 124 on its injected deadline when a descendant holds the pipe open past the leader's exit", async () => {
+    const fixture = holdsPipesOpen("leader-exiting");
+    try {
+      const started = Date.now();
+      const { status, printed } = await runCaptured(fixture, { timeoutMs: 500 });
+      const elapsed = Date.now() - started;
+      const descendant = await descendantPid(fixture);
+
+      expect(status).toBe(124);
+      expect(elapsed).toBeGreaterThanOrEqual(500);
+      expect(elapsed).toBeLessThan(SETTLE_BUDGET_MS);
+      expect(printed.err).toContain("[coverage] unit suite exceeded 0.5s");
+      expect(printed.out).toContain("leader-exiting");
+      expect(descendant).toBeDefined();
+      expect(await goneWithin(descendant)).toBe(true);
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-7: returns 124 instead of waiting for EOF when both streams stay silent past the deadline", async () => {
+    const fixture = holdsPipesOpen();
+    try {
+      const started = Date.now();
+      const { status, printed } = await runCaptured(fixture, { timeoutMs: 300 });
+      const elapsed = Date.now() - started;
+
+      expect(status).toBe(124);
+      expect(elapsed).toBeGreaterThanOrEqual(300);
+      expect(elapsed).toBeLessThan(SETTLE_BUDGET_MS);
+      expect(printed.out).toBe("");
+      expect(printed.err).toContain("[coverage] unit suite exceeded 0.3s");
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-3: keeps at most 64 KiB of diagnostics per stream, including the terminal failure text", async () => {
+    const fixture = bunScript(OVERFLOW_SCRIPT);
+    const cap = 64 * 1024;
+    try {
+      const { status, printed } = await runCaptured(fixture);
+
+      expect(status).toBe(3);
+      expect(Buffer.byteLength(printed.out)).toBeLessThanOrEqual(cap);
+      expect(Buffer.byteLength(printed.err)).toBeLessThanOrEqual(cap);
+      expect(printed.out.length).toBeGreaterThan(cap / 2);
+      expect(printed.err.length).toBeGreaterThan(cap / 2);
+      expect(printed.out).toContain("STDOUT-TERMINAL");
+      expect(printed.err).toContain("STDERR-TERMINAL");
+      expect(printed.out).not.toContain("stdout-00000");
+      expect(printed.err).not.toContain("stderr-00000");
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-3: the replayed text also stays within the cap when the cap boundary splits a multi-byte character", async () => {
+    const fixture = bunScript(MULTIBYTE_SCRIPT);
+    const cap = 64 * 1024;
+    try {
+      const { status, printed } = await runCaptured(fixture);
+
+      expect(status).toBe(3);
+      // Bounding the buffered bytes is not enough: decoding a tail cut inside a "€" splices
+      // in U+FFFD, which is 3 bytes where the 1-3 partial bytes it replaced were fewer.
+      expect(Buffer.byteLength(printed.out)).toBeLessThanOrEqual(cap);
+      expect(Buffer.byteLength(printed.err)).toBeLessThanOrEqual(cap);
+      expect(printed.out).toContain("STDOUT-TERMINAL");
+      expect(printed.err).toContain("STDERR-TERMINAL");
+      // The head of the tail is a whole character: no replacement character was spliced in,
+      // and the tail was not shortened by trimming intact characters.
+      expect(printed.out).not.toContain("\uFFFD");
+      expect(printed.err).not.toContain("\uFFFD");
+      expect(printed.out.startsWith("\u20ac")).toBe(true);
+      expect(printed.err.startsWith("\u20ac")).toBe(true);
+      expect(printed.out.length).toBeGreaterThan(cap / 4);
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-4: a quiet success keeps the test summary and dumps none of the child's output", async () => {
+    const fixture = bunScript(SUMMARY_SCRIPT);
+    try {
+      const { status, printed } = await runCaptured(fixture);
+
+      expect(status).toBe(0);
+      expect(printed.out).toBe(`${SUMMARY_BLOCK}\n`);
+      expect(printed.err).toBe("");
+      expect(printed.out).not.toContain("noise before the summary");
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-5: honors the child's own status when EOF arrives within the deadline", async () => {
+    const fixture = bunScript(
+      'process.stdout.write("partial stdout\\n"); process.stderr.write("partial stderr\\n"); process.exit(7);',
+    );
+    try {
+      const { status, printed } = await runCaptured(fixture);
+
+      expect(status).toBe(7);
+      expect(printed.out).toContain("partial stdout");
+      expect(printed.err).toContain("partial stderr");
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-6: a non-quiet run leaves both streams inherited and captures nothing", async () => {
+    const fixture = fixtureOf(() => ["sh", "-c", "exit 0"]);
+    try {
+      const { status, printed } = await runCaptured(fixture, { quiet: false });
+
+      expect(status).toBe(0);
+      expect(fixture.spawned).toHaveLength(1);
+      expect(fixture.spawned[0]?.options.stdout).toBe("inherit");
+      expect(fixture.spawned[0]?.options.stderr).toBe("inherit");
+      expect(printed).toEqual({ out: "", err: "" });
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("the default deadline stays 480 seconds", () => {
+    expect(RUN_TIMEOUT_MS).toBe(480_000);
+  });
+});
+
+describe("main", () => {
+  test("AC-2: maps a deadline failure to CLI status 1 without waiting for the descendant", async () => {
+    const fixture = holdsPipesOpen();
+    const exits: number[] = [];
+    const errors: string[] = [];
+    const realSpawn = _coverageDeps.spawn;
+    const spy = spyOn(_coverageDeps, "spawn").mockImplementation((command, spawnOptions) => {
+      const child = realSpawn(command, spawnOptions);
+      fixture.spawned.push({ command, options: spawnOptions, child });
+      return child;
+    });
+    try {
+      const started = Date.now();
+      const returned = await underWrapperDeadline(
+        main({
+          runOptions: {
+            command: fixture.command,
+            quiet: true,
+            timeoutMs: 300,
+            out: () => {},
+            err: () => {},
+          },
+          exit: (code) => {
+            exits.push(code);
+          },
+          error: (message) => {
+            errors.push(message);
+          },
+        }),
+      );
+      const elapsed = Date.now() - started;
+      const descendant = await descendantPid(fixture);
+
+      expect(returned).toBeUndefined();
+      expect(elapsed).toBeLessThan(SETTLE_BUDGET_MS);
+      expect(exits).toEqual([1]);
+      expect(errors.join("\n")).toContain("test run failed (exit 124)");
+      expect(descendant).toBeDefined();
+      expect(await goneWithin(descendant)).toBe(true);
+    } finally {
+      spy.mockRestore();
+      fixture.clean();
+    }
+  });
 });

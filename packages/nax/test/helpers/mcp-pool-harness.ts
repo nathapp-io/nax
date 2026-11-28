@@ -35,6 +35,15 @@ export const MCP_CALL_OPTS: { readonly timeoutMs: number; readonly maxBytes: num
   maxBytes: 1000,
 };
 
+/**
+ * Call options for a lookup the caller declares replay-safe (US-002).
+ *
+ * Replay safety is declared per dispatch: an interrupted call is re-dispatched once only when
+ * the caller says repeating it is safe. Every case that asserts the retry uses these options,
+ * so the retry it reads is the one the pool was asked for.
+ */
+export const MCP_REPLAY_SAFE_CALL_OPTS = { ...MCP_CALL_OPTS, replaySafety: "replay-safe" } as const;
+
 /** One call the adapter forwarded to a shared connection. */
 export interface McpDispatch {
   readonly name: string;

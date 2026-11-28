@@ -616,6 +616,80 @@ describe("openRouterRouting (issue #43)", () => {
 });
 
 /**
+ * Effective routing across successive same-id declarations of a BUNDLED
+ * provider (finding 6).
+ *
+ * `applyOverrides` keys by id with last-wins, so a second declaration of one id
+ * replaced the first model wholesale — including the restriction it carried —
+ * and a request the caller had pinned fell back to OpenRouter's routing
+ * lottery. `override-declaration.ts` now compares the two catalogs on the
+ * effective value, so the wire has to resolve it the same way; otherwise the
+ * check would bless a restriction the request never carries.
+ */
+describe("routing across successive same-id declarations (finding 6)", () => {
+  /** A bundled openrouter entry, amended: no routing of its own. */
+  const AMENDED: ResolvedModel = {
+    id: "deepseek/deepseek-chat",
+    provider: "openrouter",
+    protocol: "openai-completions",
+    pricing: { input: 0.25, output: 1, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 163840,
+    supportsTools: true,
+    thinkingLevels: [],
+  };
+
+  it("AC-2 inherits the earlier declaration's restriction when a later one omits it", async () => {
+    const routed: ResolvedModel = { ...AMENDED, openRouterRouting: { data_collection: "deny", only: ["deepinfra"] } };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [routed, { ...AMENDED }] }] });
+    const model = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    // The declaration that wins the id states no routing; the request must
+    // still be the restricted one, serialized as such.
+    const payload = await wirePayload(model, "off");
+    expect(payload).toMatchObject({ provider: { data_collection: "deny", only: ["deepinfra"] } });
+    expect(JSON.stringify(payload)).toContain('"only":["deepinfra"]');
+  });
+
+  it("AC-2/AC-4 lets an explicit replacement win, and a later omission inherit the replacement", async () => {
+    const routed: ResolvedModel = { ...AMENDED, openRouterRouting: { only: ["deepinfra"] } };
+    const replaced: ResolvedModel = { ...AMENDED, openRouterRouting: { only: ["together"] } };
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "openrouter", models: [routed, replaced, { ...AMENDED }] }],
+    });
+    const model = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    const payload = await wirePayload(model, "off");
+    expect(payload).toMatchObject({ provider: { only: ["together"] } });
+    expect(JSON.stringify(payload)).not.toContain("deepinfra");
+  });
+
+  it("does not invent a restriction for a single declaration that states none", async () => {
+    // Control for both cases above: inheritance must not turn into a default.
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [{ ...AMENDED }] }] });
+
+    const payload = await wirePayload(await deps.resolveModel(AMENDED.id, "openrouter"), "off");
+    expect(payload).not.toHaveProperty("provider");
+  });
+
+  it("clears an inherited restriction when a declaration switches protocol, so a switch back cannot resurrect it", async () => {
+    // The middle declaration states no routing AND cannot send one, so the
+    // restriction is gone from the wire at that point (routingFor drops it) —
+    // and the client-side comparison treats the same switch as clearing it.
+    // The later openai-completions declaration must therefore inherit nothing,
+    // or the outgoing model and the comparison would disagree again.
+    const routed: ResolvedModel = { ...AMENDED, openRouterRouting: { only: ["deepinfra"] } };
+    const elsewhere: ResolvedModel = { ...AMENDED, protocol: "anthropic-messages" };
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "openrouter", models: [routed, elsewhere, { ...AMENDED }] }],
+    });
+    const model = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    expect(model.api).toBe("openai-completions");
+    expect(await wirePayload(model, "off")).not.toHaveProperty("provider");
+  });
+});
+
+/**
  * Amending a model the base catalog already carries (issue #43, hardening).
  *
  * `pickTemplate` answers "what does a model of this provider on this api look

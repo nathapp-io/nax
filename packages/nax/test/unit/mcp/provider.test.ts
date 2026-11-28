@@ -179,7 +179,8 @@ describe("createMcpProviders", () => {
     const [tool] = await provider.tools("/w");
     assertDefined(tool, "tool");
     await tool.run({}, { root: "/w", resolvedPaths: [], maxBytes: 999, maxFileBytes: 1 });
-    expect(seen).toEqual([{ timeoutMs: 1234, maxBytes: 999 }]);
+    // US-002: neither tool here is vouched read-only, so the call is declared at-most-once.
+    expect(seen).toEqual([{ timeoutMs: 1234, maxBytes: 999, replaySafety: "at-most-once" }]);
   });
 
   test("an error result comes back as data on ToolResult, never as a throw", async () => {
@@ -315,5 +316,61 @@ describe("createMcpProviders — read-only hint (US-002)", () => {
     const resolved = await resolveProviderTools(providers, "run", "/w");
     expect(resolved.tools.map((t) => t.name).sort()).toEqual(["docs__get", "docs__put"]);
     expect(resolved.askTools).toEqual(["docs__put"]);
+  });
+});
+
+describe("createMcpProviders — the replay each tool is dispatched with (US-002)", () => {
+  /** The declarations the pool received, in dispatch order. */
+  async function declarationsFor(
+    live: readonly McpToolDescriptor[],
+    lockFile: McpLockFile,
+    names: readonly string[],
+  ): Promise<(string | undefined)[]> {
+    const seen: (string | undefined)[] = [];
+    const [provider] = createMcpProviders({
+      config: { servers: { docs: { ...server, stages: ["run"] } } },
+      pool: fakePool({
+        listTools: async () => live,
+        call: async (_id, _w, _t, _i, opts) => {
+          seen.push(opts.replaySafety);
+          return { content: "ok", isError: false, bytesPreTruncation: 2 };
+        },
+      }),
+      projectRoot: "/proj",
+      readLock: async () => lockFile,
+    });
+    assertDefined(provider, "provider");
+    const tools = await provider.tools("/w");
+    for (const name of names) {
+      const tool = tools.find((candidate) => candidate.localName === name);
+      assertDefined(tool, name);
+      await tool.run({}, { root: "/w", resolvedPaths: [], maxBytes: 1000, maxFileBytes: 1 });
+    }
+    return seen;
+  }
+
+  const getSchema = { type: "object", properties: { id: { type: "string" } } };
+  const pinned = { get: schemaHash(getSchema), put: schemaHash(schema) };
+  const hinted: McpToolDescriptor = { name: "get", description: "g", inputSchema: getSchema, readOnly: true };
+  const plain: McpToolDescriptor = { name: "put", description: "p", inputSchema: schema };
+
+  test("AC-8: a tool the lock vouches as read-only is dispatched replay-safe", async () => {
+    const seen = await declarationsFor(
+      [hinted],
+      { version: 1, servers: { docs: pinned }, readOnly: { docs: ["get"] } },
+      ["get"],
+    );
+    expect(seen).toEqual(["replay-safe"]);
+  });
+
+  test("AC-2: an unknown tool is not assumed read-only, so it is dispatched at-most-once", async () => {
+    // No hint, and no lock entry: nothing says repeating this call is safe.
+    const seen = await declarationsFor([plain], { version: 1, servers: { docs: pinned } }, ["put"]);
+    expect(seen).toEqual(["at-most-once"]);
+  });
+
+  test("AC-2: a server's own read-only hint the lock does not vouch for stays at-most-once", async () => {
+    const seen = await declarationsFor([hinted], { version: 1, servers: { docs: pinned } }, ["get"]);
+    expect(seen).toEqual(["at-most-once"]);
   });
 });

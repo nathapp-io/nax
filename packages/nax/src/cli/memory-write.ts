@@ -21,12 +21,15 @@
  * error code rather than on a message.
  *
  * The line a save prints is what became of the note, not what was asked for: the status the store
- * settled on (`active` under `direct`, `pending` under `proposal`) and, when the note is still
- * waiting for a sync to deliver it, that it is queued. A queued save is a success — the note is in
- * the mirror and the next sync sends it — so it exits 0, as the mirror's own design intends. A
- * forget prints the note it retired and the status it settled on; an approval prints what became
- * of the note — the approval it committed, the forget it completed, or the note it found already
- * in force.
+ * settled on (`active` under `direct`, `pending` under `proposal`) and, when no provider took it,
+ * which undelivered answer it is. A queued save is a success — the note is in the mirror and the
+ * next sync sends it — so it exits 0, as the mirror's own design intends, and says so. A save
+ * whose delivery is unknown (an add dispatched whose reply was lost) is a success for the mirror
+ * and an open question for the server: it says that nothing will retry it and names the client id
+ * to requeue or discard, because a resend there is the duplicate this distinction exists to
+ * prevent. A forget prints the note it retired and the status it settled on; an approval prints
+ * what became of the note — the approval it committed, the forget it completed, or the note it
+ * found already in force.
  */
 import {
   MEMORY_FORGET_REASON_MAX_CHARS,
@@ -59,6 +62,17 @@ const DEFAULT_WRITE_SCOPE: MemoryScope = "project";
 
 /** The suffix a note still waiting for a sync is reported with. */
 const QUEUED_SUFFIX = " — queued for sync";
+
+/**
+ * The suffix a save whose delivery is unknown is reported with: the write was dispatched and its
+ * provider never answered, so it may exist on the server and nothing will retry it.
+ *
+ * The client id follows, because it is the handle the operator has: `nax memory requeue --client
+ * <id> --allow-duplicate` or `nax memory discard --client <id>` names it. Saying "queued" here
+ * instead would promise a retry that must not happen — a second dispatch is the duplicate this
+ * wording exists to prevent.
+ */
+const UNKNOWN_DELIVERY_SUFFIX = " — delivery unknown; no automatic retry";
 
 /** What `save` takes on top of the group's flags: the note's fields and its one body input. */
 export interface MemorySaveOptions extends MemoryCliOptions {
@@ -119,10 +133,30 @@ function saveWriteOf(opts: MemorySaveOptions, scope: MemoryScope, body: string):
   };
 }
 
-/** The line one save prints: what was stored, the status it settled on, and any queued wait. */
+/**
+ * The line one save prints: what was stored, the status it settled on, and — when no provider
+ * took it — which of the two undelivered answers it is.
+ *
+ * A queued write is the legacy retry the next sync makes, and it reads as such. An unknown one is
+ * the opposite fact and reads differently (`UNKNOWN_DELIVERY_SUFFIX`), with the client id that is
+ * the operator's handle on the entry: one note must not become two because a terminal promised a
+ * resend that never comes.
+ */
 function formatSaveLine(scope: MemoryScope, result: MemorySaveResult): string {
   const saved = `saved ${scope}/${result.slug} (${result.status})`;
-  return result.delivered ? saved : `${saved}${QUEUED_SUFFIX}`;
+  if (result.delivered) return saved;
+  const pending = result.pending;
+  if (pending?.delivery !== "unknown") return `${saved}${QUEUED_SUFFIX}`;
+  return `${saved}${UNKNOWN_DELIVERY_SUFFIX} (client ${pending.clientId}; ${recoveryHint(pending.clientId)})`;
+}
+
+/**
+ * Where the operator goes next with an unknown delivery, spelled with the client id they were
+ * just given: the two commands that act on an entry nothing will resend, and the flag a requeue
+ * needs because the server may already hold the write.
+ */
+function recoveryHint(clientId: string): string {
+  return `nax memory requeue --client ${clientId} --allow-duplicate, or nax memory discard --client ${clientId}`;
 }
 
 /**

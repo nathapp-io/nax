@@ -11,6 +11,7 @@ export { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
 export {
   buildJobPanelView,
   JOB_PANEL_LOG_LINES,
+  JOB_PANEL_TAIL_SCAN_BYTES,
   type JobPanelDecision,
   type JobPanelSources,
   type JobPanelStory,

@@ -302,11 +302,11 @@ describe("host index, sync and status", () => {
     const requeue = host.requeue;
     assertDefined(requeue, "host.requeue");
 
-    expect(await requeue({ scope: "project", slug: "gone" })).toBe(1);
+    expect(await requeue({ scope: "project", slug: "gone" })).toEqual({ moved: 1, heldBack: [] });
     expect(await host.status()).toMatchObject({ queued: 1, rejected: 1 });
-    expect(await requeue("all")).toBe(1);
+    expect(await requeue("all")).toEqual({ moved: 1, heldBack: [] });
     expect(await host.status()).toMatchObject({ queued: 2, rejected: 0, rejectedEntries: [] });
-    expect(await requeue("all")).toBe(0);
+    expect(await requeue("all")).toEqual({ moved: 0, heldBack: [] });
   });
 
   test("discards only rejected entries: a queued write is never dropped", async () => {
@@ -317,9 +317,9 @@ describe("host index, sync and status", () => {
     const discard = host.discard;
     assertDefined(discard, "host.discard");
 
-    expect(await discard("all")).toBe(1);
+    expect(await discard("all")).toEqual({ moved: 1, heldBack: [] });
     expect(await host.status()).toMatchObject({ queued: 1, rejected: 0 });
-    expect(await discard({ scope: "project", slug: "old-fact" })).toBe(0);
+    expect(await discard({ scope: "project", slug: "old-fact" })).toEqual({ moved: 0, heldBack: [] });
   });
 
   test("discarding rewinds that scope's pull, so the provider's copy of the note comes back", async () => {

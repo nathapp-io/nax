@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { RequestError } from "@agentclientprotocol/sdk";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
-import { createServerSession, TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
+import { type CloseOutcome, createServerSession, TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
 import type { OldText } from "#src/server/translate/diff";
 import { type FakeAgentSession, fakeAgentSession } from "#test/helpers/fake-agent-session";
 import { fakePort } from "#test/helpers/fake-client-port";
@@ -119,7 +119,7 @@ interface CloseDuringOpen {
   readonly a: FakeAgentSession;
   readonly b: FakeAgentSession;
   readonly g: GatedSwitch;
-  readonly raw: Promise<void>;
+  readonly raw: Promise<CloseOutcome>;
   readonly closing: Promise<Outcome>;
 }
 
@@ -164,7 +164,7 @@ describe("close during a switch whose open succeeds", () => {
   test("AC-4: it resolves once the gated open settles with session b", async () => {
     const { g, raw, closing } = await closeDuringGatedOpen();
     g.release();
-    await expect(raw).resolves.toBeUndefined();
+    await expect(raw).resolves.toBe("disposed");
     await Promise.all([closing, g.switching]);
   });
 
@@ -256,7 +256,7 @@ describe("close during a switch whose open and restore both fail", () => {
   interface BothFail {
     readonly s: ReturnType<typeof setup>;
     readonly closes: () => number;
-    readonly raw: Promise<void>;
+    readonly raw: Promise<CloseOutcome>;
     readonly closing: Promise<Outcome>;
     readonly switching: Promise<Outcome>;
   }
@@ -309,8 +309,8 @@ describe("two close() calls during one switch", () => {
   interface TwoCloses {
     readonly g: GatedSwitch;
     readonly replacementCloses: () => number;
-    readonly first: Promise<void>;
-    readonly second: Promise<void>;
+    readonly first: Promise<CloseOutcome>;
+    readonly second: Promise<CloseOutcome>;
   }
 
   function twoCloses(): TwoCloses {
@@ -334,7 +334,7 @@ describe("two close() calls during one switch", () => {
     const { g, first, second } = twoCloses();
     await g.started;
     g.release();
-    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    await expect(Promise.all([first, second])).resolves.toEqual(["disposed", "disposed"]);
     await g.switching;
   });
 
@@ -451,8 +451,8 @@ describe("close() with no switch in flight", () => {
     expect(a.closed()).toBe(true);
   });
 
-  test("AC-23: it resolves", async () => {
+  test("AC-23: it resolves once the session is disposed", async () => {
     const s = setup(fakeAgentSession("s1", []));
-    await expect(s.session.close()).resolves.toBeUndefined();
+    await expect(s.session.close()).resolves.toBe("disposed");
   });
 });

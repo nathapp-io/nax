@@ -6,6 +6,7 @@ import {
   _jobPanelDeps,
   buildJobPanelView,
   JOB_PANEL_LOG_LINES,
+  JOB_PANEL_TAIL_SCAN_BYTES,
   type JobPanelSources,
   readJobPanelView,
 } from "@/chat/jobs/job-panel-view";
@@ -423,6 +424,19 @@ describe("readJobPanelView sources", () => {
       state: "running",
       elapsedMs: 2_520_000,
     });
-    expect(logTail).toHaveBeenCalledWith("run-1a2b3c4d", JOB_PANEL_LOG_LINES, { nonEmpty: true });
+    expect(logTail).toHaveBeenCalledWith("run-1a2b3c4d", JOB_PANEL_LOG_LINES, {
+      nonEmpty: true,
+      maxBytes: JOB_PANEL_TAIL_SCAN_BYTES,
+    });
+  });
+
+  test("US-007 AC-1: a panel refresh bounds the log scan to 64 KiB of nonblank lines", async () => {
+    const logTail = mock(async () => "");
+    await readJobPanelView(jobOf(), { logTail }, NOW);
+    expect(JOB_PANEL_TAIL_SCAN_BYTES).toBe(64 * 1024);
+    expect(logTail).toHaveBeenCalledWith("run-1a2b3c4d", JOB_PANEL_LOG_LINES, {
+      nonEmpty: true,
+      maxBytes: 64 * 1024,
+    });
   });
 });

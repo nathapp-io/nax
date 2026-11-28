@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { readLogTextNoFollow, resolveRegisteredLogPath } from "@/utils/registered-log";
+import { forEachLogChunk, readLogTextNoFollow, resolveRegisteredLogPath } from "@/utils/registered-log";
 
 describe("resolveRegisteredLogPath", () => {
   let dir: string;
@@ -42,5 +42,32 @@ describe("resolveRegisteredLogPath", () => {
     unlinkSync(resolved);
     symlinkSync(join(outside, "secret.jsonl"), resolved);
     expect(() => readLogTextNoFollow(resolved)).toThrow();
+  });
+});
+
+describe("forEachLogChunk", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = makeTempDir("registered-log-chunks-");
+  });
+  afterEach(() => cleanupTempDir(dir));
+
+  test("visits the file in bounded chunks that concatenate to the whole text", () => {
+    const path = join(dir, "log.jsonl");
+    writeFileSync(path, "abcdefghij");
+
+    const chunks: string[] = [];
+    forEachLogChunk(path, (chunk) => chunks.push(chunk), { chunkBytes: 4 });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 4)).toBe(true);
+    expect(chunks.join("")).toBe("abcdefghij");
+  });
+
+  test("refuses a handle that is not a regular file", () => {
+    const sub = join(dir, "events-dir");
+    mkdirSync(sub);
+
+    expect(() => forEachLogChunk(sub, () => {})).toThrow();
   });
 });

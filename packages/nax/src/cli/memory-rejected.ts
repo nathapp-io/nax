@@ -1,21 +1,28 @@
 /**
- * `nax memory requeue` and `nax memory discard` — what an operator does with rejected writes.
+ * `nax memory requeue` and `nax memory discard` — what an operator does with undelivered writes.
  *
- * An outbox entry is `rejected` when the provider refused it, or when a sync parked it after
- * the provider kept answering it badly (#2793). Neither is ever retried on its own, and a
- * relink or a reset refuses while one is held, so these two are the way out:
+ * An outbox entry is undelivered in two ways. `rejected` means the provider refused it, or a
+ * sync parked it after the provider kept answering it badly (#2793). `uncertain` means it was
+ * dispatched by a provider that may not repeat it and never answered, so it may already exist on
+ * the server. Neither is ever retried on its own, and a relink or a reset refuses while one is
+ * held, so these two commands are the way out:
  *
  * - `requeue` restores the write as it was taken; the next `nax memory sync` decides it afresh.
+ *   For an `uncertain` entry that means sending it again, which is why it takes
+ *   `--allow-duplicate`: the operator is the only one who can decide a second copy is acceptable.
  * - `discard` drops it for good. A discarded forget leaves its note active on the provider, so
- *   the next sync brings the note back; the line says so.
+ *   the next sync brings the note back; the line says so. And a discarded write takes the writes
+ *   waiting on it with it: a merge's source retirements are refused rather than sent, because
+ *   nothing proved the replacement they were folded into reached the provider, and the line names
+ *   them — `requeue` is how an operator overrides that.
  *
- * Each takes exactly one of a slug (with `--scope`) or `--all`; both checks run before the host
- * is opened.
+ * Each takes exactly one of a slug (with `--scope`), an entry's client id (`--client`, the handle
+ * a "delivery unknown" answer prints) or `--all`. Every check runs before the host is opened.
  */
 import type { MemoryScope } from "@nathapp/nax-agent";
 import type { Command } from "commander";
 import { NaxError } from "@/errors";
-import type { MemoryRejectedTarget } from "@/memory";
+import type { MemoryHost, MemoryRecoveryResult, MemoryRecoveryTarget } from "@/memory";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -31,44 +38,105 @@ import {
 
 const DEFAULT_REJECTED_SCOPE: MemoryScope = "project";
 
-/** The two things an operator can do with a rejected write. */
+/** The two things an operator can do with an undelivered write. */
 type RejectedOp = "requeue" | "discard";
 
 /** What `requeue` and `discard` take on top of the group's flags. */
 export interface MemoryRejectedOptions extends MemoryCliOptions {
   readonly scope?: string;
+  readonly client?: string;
   readonly all?: boolean;
+  /** Requeue an entry whose dispatch may already have committed, accepting the duplicate risk. */
+  readonly allowDuplicate?: boolean;
 }
 
 function rejectedUsageError(message: string): NaxError {
   return new NaxError(`[memory] ${message}`, "MEMORY_CLI_USAGE", { stage: "memory" });
 }
 
-/** The entries the flags name: one note's, or every rejected one — never both, never neither. */
-function rejectedTargetOf(op: RejectedOp, slug: string | undefined, opts: MemoryRejectedOptions): MemoryRejectedTarget {
+/** The entries the flags name: one note's, one entry's, or every one — never two, never none. */
+function rejectedTargetOf(op: RejectedOp, slug: string | undefined, opts: MemoryRejectedOptions): MemoryRecoveryTarget {
+  const client = opts.client;
   const all = opts.all === true;
-  if (slug === undefined && !all) throw rejectedUsageError(`${op} needs a slug or --all`);
-  if (slug !== undefined && all) throw rejectedUsageError(`${op} takes a slug or --all, not both`);
+  const named = [slug !== undefined, client !== undefined, all].filter(Boolean).length;
+  if (named === 0) throw rejectedUsageError(`${op} needs a slug, --client <id> or --all`);
+  if (named > 1) throw rejectedUsageError(`${op} takes one of a slug, --client <id> or --all`);
   if (all && opts.scope !== undefined)
     throw rejectedUsageError("--scope names one note's scope; --all takes every scope");
+  if (client !== undefined) {
+    if (opts.scope !== undefined) throw rejectedUsageError("--scope names a slug's scope; --client names one entry");
+    return { clientId: client };
+  }
   if (slug === undefined) return "all";
   return { scope: parseNoteScope(opts.scope) ?? DEFAULT_REJECTED_SCOPE, slug };
 }
 
-/** `requeued N rejected write(s)` or `discarded …`: `1` is singular, any other count plural. */
-function countedWrites(verb: string, count: number): string {
-  return count === 1 ? `${verb} 1 rejected write` : `${verb} ${count} rejected writes`;
+/**
+ * One line per recovery: how many writes moved, and — for a requeue the operator has not
+ * acknowledged — which uncertain entries were left behind and the flag that takes them.
+ *
+ * A held-back entry is not a failure: refusing to send a write that may already have committed
+ * is the safe answer, and the client id is what the operator acts on next. A discard names the
+ * writes it refused for waiting on what it dropped for the same reason: they are safe, and they
+ * are waiting on a decision the operator has just made.
+ */
+function formatRejectedLine(op: RejectedOp, result: MemoryRecoveryResult): string {
+  const lines: string[] = [];
+  if (result.moved === 0) lines.push(`no undelivered writes to ${op}`);
+  else if (op === "discard") {
+    const count = result.moved === 1 ? "discarded 1 undelivered write" : `discarded ${result.moved} undelivered writes`;
+    lines.push(`${count}; a discarded forget leaves its note on the provider, and the next sync brings it back`);
+  } else {
+    const count = result.moved === 1 ? "requeued 1 undelivered write" : `requeued ${result.moved} undelivered writes`;
+    const deliver = result.moved === 1 ? "deliver it" : "deliver them";
+    lines.push(`${count}; run nax memory sync to ${deliver}`);
+  }
+  if (result.heldBack.length > 0) lines.push(heldBackLine(result.heldBack));
+  if (result.refused !== undefined && result.refused.length > 0) lines.push(refusedLine(result.refused));
+  return lines.join("\n");
 }
 
-/** The line an operation prints: how many writes it moved, and what follows from it. */
-function formatRejectedLine(op: RejectedOp, count: number): string {
-  if (count === 0) return `no rejected writes to ${op}`;
-  if (op === "discard") {
-    const tail = "a discarded forget leaves its note on the provider, and the next sync brings it back";
-    return `${countedWrites("discarded", count)}; ${tail}`;
-  }
-  const deliver = count === 1 ? "deliver it" : "deliver them";
-  return `${countedWrites("requeued", count)}; run nax memory sync to ${deliver}`;
+/** Why an uncertain entry stayed put, and the one flag that would send it anyway. */
+function heldBackLine(heldBack: readonly string[]): string {
+  const clients = heldBack.map((client) => `--client ${client}`).join(", ");
+  const them =
+    heldBack.length === 1 ? "it may already exist on the provider" : "they may already exist on the provider";
+  return `${heldBack.length} uncertain write(s) left in place (${clients}): ${them}, so nothing resends it automatically; add --allow-duplicate to send ${heldBack.length === 1 ? "it" : "them"} again`;
+}
+
+/**
+ * What a discard took with it: the retirements that waited on the write it dropped.
+ *
+ * They are refused rather than sent, because nothing proved the replacement they were folded into
+ * reached the provider — sending one would retire a source with nothing in its place. Naming them
+ * matters: they are still in the outbox, and `requeue` is how the operator overrides this.
+ */
+function refusedLine(refused: readonly string[]): string {
+  const clients = refused.map((client) => `--client ${client}`).join(", ");
+  return `${refused.length} write(s) that waited on it refused (${clients}): nothing proved the replacement they were folded into was delivered, so their sources stay on the provider; requeue one to send it anyway`;
+}
+
+/** The document `--json` prints: what moved, and what it left for the operator. */
+function rejectedDocument(op: RejectedOp, result: MemoryRecoveryResult): string {
+  const key = op === "requeue" ? "requeued" : "discarded";
+  const refused = result.refused === undefined ? {} : { refused: result.refused };
+  return JSON.stringify({ [key]: result.moved, heldBack: result.heldBack, ...refused });
+}
+
+/** One requeue through the host's optional member; a host without it is a disabled mirror. */
+async function requeueEntries(
+  host: MemoryHost,
+  target: MemoryRecoveryTarget,
+  allowDuplicate: boolean,
+): Promise<MemoryRecoveryResult> {
+  if (host.requeue === undefined) throw memoryDisabledError();
+  return await host.requeue(target, { allowDuplicate });
+}
+
+/** One discard through the host's optional member; a host without it is a disabled mirror. */
+async function discardEntries(host: MemoryHost, target: MemoryRecoveryTarget): Promise<MemoryRecoveryResult> {
+  if (host.discard === undefined) throw memoryDisabledError();
+  return await host.discard(target);
 }
 
 /** Run one operation: check the flags, open the host, act on the entries the flags name. */
@@ -81,17 +149,18 @@ async function memoryRejectedCommand(
   return withMemoryErrors(async () => {
     const target = rejectedTargetOf(op, slug, opts);
     return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
-      const run = host === null ? undefined : host[op];
-      if (run === undefined) throw memoryDisabledError();
-      const count = await run(target);
-      const key = op === "requeue" ? "requeued" : "discarded";
-      deps.log(opts.json === true ? JSON.stringify({ [key]: count }) : formatRejectedLine(op, count));
+      if (host === null) throw memoryDisabledError();
+      const result =
+        op === "requeue"
+          ? await requeueEntries(host, target, opts.allowDuplicate === true)
+          : await discardEntries(host, target);
+      deps.log(opts.json === true ? rejectedDocument(op, result) : formatRejectedLine(op, result));
       return 0;
     });
   }, deps);
 }
 
-/** `nax memory requeue`: put the rejected writes the flags name back in the queue. */
+/** `nax memory requeue`: put the undelivered writes the flags name back in the queue. */
 export async function memoryRequeueCommand(
   slug: string | undefined,
   opts: MemoryRejectedOptions,
@@ -100,7 +169,7 @@ export async function memoryRequeueCommand(
   return memoryRejectedCommand("requeue", slug, opts, deps);
 }
 
-/** `nax memory discard`: drop the rejected writes the flags name. */
+/** `nax memory discard`: drop the undelivered writes the flags name. */
 export async function memoryDiscardCommand(
   slug: string | undefined,
   opts: MemoryRejectedOptions,
@@ -110,9 +179,10 @@ export async function memoryDiscardCommand(
 }
 
 /** One subcommand's shared flags, on whichever of the two it is. */
-function withRejectedFlags(command: Command, allHelp: string): Command {
-  return command
-    .argument("[slug]", "The note whose rejected writes to act on")
+function withRejectedFlags(command: Command, op: RejectedOp, allHelp: string): Command {
+  const flagged = command
+    .argument("[slug]", "The note whose undelivered writes to act on")
+    .option("--client <id>", "The client id of one entry, as a save or sync reports it")
     .option("--all", allHelp, false)
     .option(
       "--scope <scope>",
@@ -120,19 +190,28 @@ function withRejectedFlags(command: Command, allHelp: string): Command {
     )
     .option("-d, --dir <path>", "Project directory", memoryDefaultDir())
     .option("--json", "Emit one machine-readable document", false);
+  if (op !== "requeue") return flagged;
+  // An uncertain entry may already exist on the provider, so sending it again is a decision.
+  return flagged.option(
+    "--allow-duplicate",
+    "Send an uncertain write again even though the provider may already hold it",
+    false,
+  );
 }
 
 /** Register `requeue` and `discard` on the `memory` group, through the group's deps seam. */
 export function registerMemoryRejectedCommands(memory: Command, deps: MemoryCliDeps = _memoryCliDeps): Command {
   withRejectedFlags(
-    memory.command("requeue").description("Put rejected memory writes back in the queue for the next sync"),
-    "Requeue every rejected write",
+    memory.command("requeue").description("Put undelivered memory writes back in the queue for the next sync"),
+    "requeue",
+    "Requeue every undelivered write",
   ).action(async (slug: string | undefined, opts: MemoryRejectedOptions) => {
     deps.exit(await memoryRequeueCommand(slug, opts, deps));
   });
   withRejectedFlags(
-    memory.command("discard").description("Drop rejected memory writes for good"),
-    "Discard every rejected write",
+    memory.command("discard").description("Drop undelivered memory writes for good"),
+    "discard",
+    "Discard every undelivered write",
   ).action(async (slug: string | undefined, opts: MemoryRejectedOptions) => {
     deps.exit(await memoryDiscardCommand(slug, opts, deps));
   });

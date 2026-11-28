@@ -10,7 +10,7 @@ import { isWithinRoot } from "../target-repo";
 import { readRunProgress, resolveJobOutcome } from "./job-outcome";
 import { jobAsksDir, jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
 import { type ChatJob, type ChatJobKind, isRunJobKind } from "./job-types";
-import { readTailLines } from "./log-tail";
+import { type LogTailOptions, readTailLines } from "./log-tail";
 
 export const JOB_POLL_MS = 2_000;
 export const CANCEL_GRACE_MS = 10_000;
@@ -52,7 +52,7 @@ export interface ChatJobs {
   /** Loads this repo's records once; idempotent. */
   attach(): Promise<void>;
   /** The job's last lines; with `nonEmpty` the last lines that are not blank. */
-  logTail(id: string, lines?: number, opts?: { readonly nonEmpty?: boolean }): Promise<string>;
+  logTail(id: string, lines?: number, opts?: LogTailOptions): Promise<string>;
   /** Oldest queued notice, left in the queue. */
   peekNotice(): string | undefined;
   /** Returns and removes the oldest queued notice. */
@@ -531,7 +531,7 @@ class DetachedJobs implements ChatJobs {
     this.records.set(job.id, { ...current, ...metrics });
     this.emit();
   }
-  async logTail(id: string, lines = JOB_LOG_TAIL_LINES, opts: { readonly nonEmpty?: boolean } = {}): Promise<string> {
+  async logTail(id: string, lines = JOB_LOG_TAIL_LINES, opts: LogTailOptions = {}): Promise<string> {
     const job = this.records.get(id);
     if (!job) return "";
     return await readTailLines(job.logPath, lines, opts);

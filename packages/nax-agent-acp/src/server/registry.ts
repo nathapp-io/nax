@@ -23,7 +23,13 @@ import { mcpSecrets, scrubber } from "#src/server/mcp/secrets";
 import type { McpSessionTools } from "#src/server/mcp/session-tools";
 import type { OpenedSession, OpenSession } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
-import { closeEntries, closeRegistryEntry, createEntryServer, titleOf } from "#src/server/registry-lifecycle";
+import {
+  type CloseEntryOptions,
+  closeEntries,
+  closeRegistryEntry,
+  createEntryServer,
+  titleOf,
+} from "#src/server/registry-lifecycle";
 import { createReopen, settingsOf } from "#src/server/registry-open";
 import type { ServerSession, SwitchTarget } from "#src/server/server-session";
 import {
@@ -95,6 +101,8 @@ export interface RegistryDeps {
   readonly logger: AgentLogger;
   readonly turnTimeoutSeconds: number;
   readonly shutdownWaitMs?: number;
+  /** The session's caller wait for an ordinary close (default `CLOSE_WAIT_MS`); shutdown has its own. */
+  readonly closeWaitMs?: number;
   /** S5-4 M-30: refuses (auth_required) when the model's provider has no credential. */
   readonly ensureCredentials?: (model: string) => Promise<void>;
   /** S5-5: connects a session's client-supplied MCP servers. Default: connects nothing (plan M-38). */
@@ -253,7 +261,8 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     }
   }
 
-  const closeEntry = (id: string, entry: Entry): Promise<void> => closeRegistryEntry(entries, id, entry);
+  const closeEntry = (id: string, entry: Entry, options: Omit<CloseEntryOptions, "logger"> = {}): Promise<void> =>
+    closeRegistryEntry(entries, id, entry, { logger: deps.logger, ...options });
 
   const reopen = createReopen({
     entries,
@@ -435,8 +444,11 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     },
     async delete(sessionId) {
       const entry = entries.get(sessionId);
-      if (entry !== undefined) await closeEntry(sessionId, entry);
-      else if (!(await deps.storage.hasMeta(sessionId))) throw unknownSession(sessionId);
+      if (entry !== undefined) {
+        // Delete must not remove storage under a session that is still finishing a
+        // turn, so it waits for the true disposal, not the bounded close (finding 7).
+        await closeEntry(sessionId, entry, { awaitCleanup: true });
+      } else if (!(await deps.storage.hasMeta(sessionId))) throw unknownSession(sessionId);
       const release = await deps.storage.acquireLock(sessionId);
       try {
         await deps.transcripts.delete(sessionId);

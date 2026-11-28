@@ -24,9 +24,11 @@ import {
   type MemoryNote,
   type MemoryOutbox,
   type MemoryPushResult,
+  type MemoryReplayContract,
   type MemoryStore,
   type MemorySyncState,
   type MemoryWriteRequest,
+  markUndispatched,
   NaxError,
   syncMemory,
 } from "@nathapp/nax-agent";
@@ -553,6 +555,231 @@ describe("US-004: a forget the provider holds pending", () => {
       const after = await h.store.readSyncState();
       expect(after.cursor).toEqual(CURSOR_BEFORE.cursor);
       expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+});
+
+/** A provider whose saves may not be repeated: a lost answer there may hide a commit. */
+const NON_REPLAYABLE_SAVES: MemoryReplayContract = { nonReplayable: ["save"] };
+/** The same, with the dispatch abandoned on the deadline: nothing can arrive after it. */
+const NO_LATE_DISPATCH: MemoryReplayContract = { nonReplayable: ["save"], timeoutAftermath: "none" };
+
+/** Advance the fake clock past the operation deadline, once the push has started. */
+async function pushIntoDeadline(h: Harness, clock: ReturnType<typeof makeFakeClock>): Promise<void> {
+  await waitForCondition(() => h.provider.push.mock.calls.length === 1 && clock.pending() > 0, 5_000);
+  await clock.advance(MEMORY_OP_TIMEOUT_MS);
+}
+
+/**
+ * US-001: a non-replayable write the provider never answered.
+ *
+ * A replay-safe provider's failed push is a write a later sync delivers, and that is unchanged
+ * (AC-6). A provider that declares a write non-replayable is the other case: the dispatch left
+ * this process, the answer did not come back, and the server may have committed it. The entry is
+ * then held as `uncertain` — its payload and reason kept, and never dispatched again — and the run
+ * reports its client id and unknown delivery instead of counting it as pushed (AC-1, AC-2).
+ *
+ * A failure that provably dispatched nothing is not that: an unreachable provider (the probe
+ * answers first) and a provider that discards a timed-out dispatch both leave a write that is
+ * definitely unsent, and those are retried as they always were (AC-7, AC-8).
+ */
+describe("US-001: drainOutbox when the provider may have committed the write", () => {
+  test("AC-1: the run reports the held add's client id and unknown delivery, not a delivery", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: "hang" });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-add"));
+      const clock = makeFakeClock();
+
+      const running = syncMemory(h.input({ timers: clock }));
+      await pushIntoDeadline(h, clock);
+      const result = await running;
+
+      expect(result.pushed).toBe(0);
+      expect(result.outcome).toBe("failed");
+      const uncertain = result.uncertain;
+      assertDefined(uncertain, "the run's unresolved writes");
+      expect(uncertain).toHaveLength(1);
+      expect(uncertain[0]).toMatchObject({
+        clientId: queued.clientId,
+        kind: "save",
+        scope: "project",
+        slug: "replay-budget",
+        delivery: "unknown",
+      });
+      expect(uncertain[0]?.reason).toContain("delivery unknown");
+      // Held on disk rather than left queued: nothing will send it again.
+      expect(await h.outbox.held("client-add")).toMatchObject({ state: "uncertain" });
+      expect(clock.pending()).toBe(0);
+    });
+  });
+
+  test("AC-2: a reopened outbox does not dispatch the held add, even after it reached the provider late", async () => {
+    await withTempDir(async (dir) => {
+      let commit = (): void => undefined;
+      const late = new Promise<void>((resolve) => {
+        commit = resolve;
+      });
+      const h = harness(dir, {
+        replay: NON_REPLAYABLE_SAVES,
+        push: async () => {
+          await late;
+          return ANSWER_ACTIVE;
+        },
+      });
+      await h.outbox.enqueue(saveRequest(note(), "client-add"));
+      const clock = makeFakeClock();
+      const running = syncMemory(h.input({ timers: clock }));
+      await pushIntoDeadline(h, clock);
+      await running;
+      // The dispatch outlived its deadline and completed anyway: the server may hold the note.
+      commit();
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+
+      const again = await syncMemory(h.input({ outbox: reopened }));
+
+      expect(h.provider.push.mock.calls).toHaveLength(1);
+      expect(again).toMatchObject({ pushed: 0, rejected: 0 });
+      const held = await reopened.held("client-add");
+      assertDefined(held, "the held add");
+      expect(held.state).toBe("uncertain");
+      // Its payload and its reason are still there to inspect.
+      expect(held.note).toEqual(note());
+      expect(held.reason).toContain("delivery unknown");
+      // And the run that read it says so, rather than reporting the queue delivered.
+      assertDefined(again.uncertain, "the second run's unresolved writes");
+      expect(again.uncertain).toHaveLength(1);
+      expect(again.uncertain[0]).toMatchObject({ clientId: "client-add", delivery: "unknown" });
+    });
+  });
+
+  test("AC-4: an ordinary forget of the same note stays undelivered behind the unresolved add", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: "hang" });
+      await h.store.writeNote(note());
+      await h.outbox.enqueue(saveRequest(note(), "client-add"));
+      const clock = makeFakeClock();
+      const running = syncMemory(h.input({ timers: clock }));
+      await pushIntoDeadline(h, clock);
+      await running;
+      // The agent asks for the note to go while the add's fate is unknown: no `awaits` links them.
+      const forget = await h.outbox.enqueue(forgetRequest("replay-budget", "client-forget"));
+      expect(forget.awaits).toBeUndefined();
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+
+      const result = await syncMemory(h.input({ outbox: reopened }));
+
+      // Nothing was dispatched: the add may have committed, and a missing remote id is not
+      // proof the note is not there to delete.
+      expect(h.provider.push.mock.calls).toHaveLength(1);
+      expect(result).toMatchObject({ pushed: 0, rejected: 0 });
+      expect(await reopened.held("client-add")).toMatchObject({ state: "uncertain" });
+      expect(await reopened.held("client-forget")).toMatchObject({ state: "queued" });
+      // The note the forget names is still the mirror's, and still the operator's.
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(note());
+      assertDefined(result.uncertain, "the run's unresolved writes");
+      expect(result.uncertain).toHaveLength(1);
+      expect(result.uncertain[0]).toMatchObject({ clientId: "client-add", delivery: "unknown" });
+    });
+  });
+
+  test("AC-6: a replay-safe provider still retries a transient failure on the next sync", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: [new Error("connection reset by peer"), ANSWER_ACTIVE] });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-a"));
+
+      const first = await syncMemory(h.input());
+      expect(first).toMatchObject({ outcome: "failed", pushed: 0 });
+      // Repeating this write is safe, so it stays queued — no unresolved entry is claimed.
+      expect(first.uncertain).toBeUndefined();
+      expect(await h.outbox.list()).toEqual([queued]);
+
+      const second = await syncMemory(h.input());
+      expect(second).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(h.provider.push.mock.calls).toHaveLength(2);
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-7: a pre-dispatch outage leaves the note queued, and the next sync delivers it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, reachable: [false, true] });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-a"));
+
+      const first = await syncMemory(h.input());
+      expect(first).toMatchObject({ outcome: "unreachable", pushed: 0 });
+      // The probe answered first, so nothing was dispatched and nothing can have committed.
+      expect(h.provider.push).not.toHaveBeenCalled();
+      expect(first.uncertain).toBeUndefined();
+      expect(await h.outbox.list()).toEqual([queued]);
+
+      const second = await syncMemory(h.input());
+      expect(second).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-7: a settled pre-dispatch failure of a non-replayable write stays queued, not parked", async () => {
+    await withTempDir(async (dir) => {
+      // Discovery failed before the add could be sent: no connection, so nothing was written to
+      // the wire. The provider says so, which is what keeps this off the unknown-delivery path.
+      const undispatched = markUndispatched(
+        new NaxError("server is unavailable: no live connection", "MEMORY_MCP_UNAVAILABLE", {
+          stage: "memory",
+        }),
+      );
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: [undispatched, ANSWER_ACTIVE] });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-a"));
+
+      const first = await syncMemory(h.input());
+
+      // A definite unsent write: queued, and the run claims no unresolved delivery.
+      expect(first).toMatchObject({ outcome: "failed", pushed: 0 });
+      expect(first.uncertain).toBeUndefined();
+      expect(await h.outbox.list()).toEqual([queued]);
+
+      const second = await syncMemory(h.input());
+
+      expect(second).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("an operator requeues a held write, and the next sync sends it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: "hang" });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-add"));
+      const clock = makeFakeClock();
+      const running = syncMemory(h.input({ timers: clock }));
+      await pushIntoDeadline(h, clock);
+      await running;
+      expect(await h.outbox.held("client-add")).toMatchObject({ state: "uncertain" });
+      // The operator takes the duplicate risk the hold was protecting them from.
+      expect(await h.outbox.requeue("client-add", { allowDuplicate: true })).toBe("requeued");
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+      expect(await reopened.held("client-add")).toMatchObject({ state: "queued" });
+
+      const result = await syncMemory(h.input({ outbox: reopened, provider: makeMemoryProvider({}) }));
+
+      expect(result).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(await reopened.list()).toEqual([]);
+      expect(queued.clientId).toBe("client-add");
+    });
+  });
+
+  test("AC-8: a dispatch abandoned on the deadline leaves the timed-out write queued", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { replay: NO_LATE_DISPATCH, push: "hang" });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-a"));
+      const clock = makeFakeClock();
+
+      const running = syncMemory(h.input({ timers: clock }));
+      await pushIntoDeadline(h, clock);
+      const result = await running;
+
+      // Cancelling the dispatch is what makes the timeout a definite unsent write, not unknown.
+      expect(result).toMatchObject({ outcome: "failed", pushed: 0 });
+      expect(result.uncertain).toBeUndefined();
+      expect(await h.outbox.list()).toEqual([queued]);
     });
   });
 });

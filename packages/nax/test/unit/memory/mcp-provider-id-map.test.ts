@@ -22,7 +22,7 @@ import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { McpCallResult, McpPool, McpToolDescriptor } from "@/mcp";
 import { createMcpMemoryProvider } from "@/memory";
-import { _mcpIdMapDeps, createMcpIdMap, type McpIdMap } from "@/memory/mcp-id-map";
+import { _mcpIdMapDeps, createMcpIdMap, MCP_ID_MAP_FILE, type McpIdMap } from "@/memory/mcp-id-map";
 import type { MemoryDirs } from "@/memory/paths";
 
 const WORKDIR = "/repo";
@@ -160,18 +160,28 @@ describe("the MCP provider over the id map", () => {
 
       const error = await rejection(make().push(saveRequest()));
 
-      expect(error).toMatchObject({ code: "MEMORY_MCP_ID_MAP_READ_FAILED", context: { retryable: true } });
+      // The diagnostic is the id map's own: the code, and the file it could not read.
+      expect(error).toMatchObject({ code: "MEMORY_MCP_ID_MAP_READ_FAILED" });
+      expect(error.message).toContain(MCP_ID_MAP_FILE);
     });
 
-    test("the rejection is not a permanent refusal, so the outbox retries (AC-2)", async () => {
+    test("the failure follows a remote add, so nothing sends the add again (AC-11)", async () => {
       _mcpIdMapDeps.readText = async () => {
         throw fsError("EACCES");
       };
       fake.respond = () => answer('{"results":[{"id":"r1","event":"ADD"}]}');
+      const provider = make();
 
-      const error = await rejection(make().push(saveRequest()));
+      const error = await rejection(provider.push(saveRequest()));
 
+      // The server already took this add: the id-map failure is what nax could not record of it.
+      expect(fake.calls.map((call) => call.tool)).toEqual(["add_memories"]);
+      // So the write is one nax may not repeat — the flag the drain's `possiblyCommitted` reads
+      // to hold the entry as an unknown outcome instead of dispatching the add a second time.
+      expect(provider.replay?.nonReplayable).toContain("save");
+      // And it is neither permanent nor a bad response: nothing drops it and nothing parks it.
       expect(isMemoryPushRejected(error)).toBe(false);
+      expect(isMemoryBadResponse(error)).toBe(false);
     });
   });
 

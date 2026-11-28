@@ -1,0 +1,404 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-0942-followups",
+  "branchName": "feat/review-0942-followups",
+  "createdAt": "2026-11-28T04:10:17.466Z",
+  "updatedAt": "2026-11-28T07:12:44.076Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Hold uncertain non-replayable pushes (finding 5, drain)",
+      "description": "**Goal** — Extend the memory provider contract, the immediate save path in operations.ts, and the sync drain so a provider can mark an operation unsafe to repeat, and an uncertain non-replayable add is held in the outbox rather than resent or reported delivered.\n\n**Motivation** — A lost MCP reply can turn one note into two; the drain's independent timeout must not cause a second dispatch of a write that may already have committed.\n\n**Approach** — Extend existing packages in place. For ambiguous remote writes prefer reporting uncertainty to silently reissuing or claiming success. Treat reply loss in the pool and the independent timeout in the outbox as separate failure paths. Use an opt-in provider contract for non-replayable writes; retain legacy retry semantics for providers whose operations are safe to repeat. Use the existing outbox and persist a non-auto-retry outcome with its client ID and reason; do not drop the operator's pending note. Bound scope to observed dispatch failures and timeouts; distinguish definite pre-dispatch failures. Apply the same rules on the initial save and on the drain. Tests exercise `sync` with a fake provider and timer, then reopen the outbox.\n\nVerify from packages/nax-agent: `CI=1 timeout 90 bun test ./test/unit/memory/operations-undelivered.test.ts ./test/unit/memory/sync-drain.test.ts ./test/unit/memory/sync-drain-awaits.test.ts --timeout=60000`.\n\n**Scope** — In: provider-types.ts contract extension, sync-drain.ts, outbox.ts persisted outcome, operations.ts immediate-save result. Out: MCP provider/pool wiring and the CLI message (US-002); crash recovery between dispatch and local persistence and automatic reconciliation of ambiguous notes (feature-level exclusions).\n\n**Interface** — Opt-in non-replayable marker on the provider contract in packages/nax-agent/src/memory/provider-types.ts; persisted outbox outcome carrying client ID, reason and payload with no automatic retry; the immediate save result distinguishes `unknown delivery, no automatic retry` from `definite unsent write queued for sync`.",
+      "acceptanceCriteria": [
+        "With a non-replayable add pending past MEMORY_OP_TIMEOUT_MS, sync exposes its client ID and unknown delivery status rather than reporting it delivered.",
+        "After reopening the outbox, another sync does not dispatch that add, even if the original push completed after timeout; its payload and reason remain inspectable.",
+        "An `awaits` dependent retirement does not execute on the assumption the uncertain replacement was saved.",
+        "An ordinary forget with no `awaits` for the same scope and slug stays undelivered behind an unresolved add, including after reopening the outbox; a missing remote ID is not proof of deletion.",
+        "The immediate save result distinguishes unknown delivery with no automatic retry from a definite unsent write queued for sync, and keeps that distinction observable to callers.",
+        "A retry-safe provider still retries a transient failure on the next sync.",
+        "A definite pre-dispatch outage does not permanently park a note; it is retried as unsent only once the attempt cannot dispatch later.",
+        "A timeout during pending discovery is treated as unknown unless cancellation prevents any late dispatch, applying the same rules on the initial save and on the drain."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "reliability"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Complex: contract, outbox persistence and timing semantics span save and drain paths with subtle unknown-vs-unsent distinctions; lite three-session TDD keeps tests independent of the implementation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/provider-types.ts",
+        "packages/nax-agent/src/memory/sync-drain.ts",
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/src/memory/operations.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cbd187bf818cadc110227243f597d9db29d580e0"
+    },
+    {
+      "id": "US-002",
+      "title": "Do not resend ambiguous MCP writes (finding 5, transport and wiring)",
+      "description": "**Goal** — Wire the MCP memory provider to the US-001 non-replayable contract and make the MCP pool honor explicit replay safety at dispatch, so an ambiguous add is dispatched once.\n\n**Motivation** — A lost MCP reply can turn one note into two; the pool's replay-on-close must not resend a write that may already have committed.\n\n**Approach** — A non-replayable MCP add must not rely on a search hit, matching text, or an unsupported wire idempotency key to prove delivery. Do not infer safety from arbitrary tool names: replay safety is declared explicitly at dispatch and unknown tools are not assumed read-only. Known read-only lookups keep the existing bounded retry. Test the full provider/outbox/pool path with an offline fake server.\n\nVerify from packages/nax: `CI=1 timeout 90 bun test ./test/unit/mcp/pool-retry.test.ts ./test/unit/memory/mcp-provider.test.ts ./test/unit/memory/mcp-provider-id-map.test.ts ./test/integration/memory/mcp-uncertain-save.test.ts --timeout=60000`.\n\n**Scope** — In: pool.ts replay gating, mcp-provider.ts wiring, mcp-id-map.ts failure handling, memory save CLI messages, tests. Out: distributed exactly-once guarantees, server protocol changes, blanket disablement of safe retries; the provider contract, outbox and sync-drain themselves (US-001).\n\n**Seams** — Consumes US-001: start at a real remote memory save, reopen its persistent outbox, and sync twice through the MCP provider against a fake server that commits before losing its reply. Count tool dispatches on both connections and after reopening the outbox, not only calls to a mock of the provider.\n\n**Test changes** — Modify test/unit/mcp/pool-retry.test.ts: scope expectations for replay after an observed close to explicitly retry-safe calls; preserve the disconnect, reconnect budget and success assertions for those calls. Modify test/unit/memory/mcp-provider-id-map.test.ts: replace the retryable-after-id-map-write-failure expectation with no automatic remote resend; preserve the diagnostic. Create test/integration/memory/mcp-uncertain-save.test.ts: first-save and later-drain dispatch counts with fake MCP transport and real persisted outbox.",
+      "acceptanceCriteria": [
+        "A non-idempotent tool that commits and closes before replying receives a single dispatch; the pool does not make a second attempt on the replacement connection.",
+        "Unknown tools are not assumed read-only by the pool.",
+        "Starting from a first save (not a pre-seeded drain), after an ambiguous MCP add, the next memory sync sends no second add for the same outbox entry.",
+        "After an ambiguous MCP add, no invented remote ID or successful mirror delivery is recorded.",
+        "Through the memory save CLI (packages/nax/src/cli/memory-write.ts), the lost-reply result reports “delivery unknown; no automatic retry”, whereas a definitely unsent queued save reports “queued for sync”.",
+        "A slow MCP add that commits after the outer drain timeout is not sent again.",
+        "A dispatched add returning a tool error with uncertain effects is not automatically retried.",
+        "A known read-only lookup interrupted by a connection close can still use the existing bounded retry.",
+        "An acknowledged add that returns a remote ID records it in the ID map, distinct from the local note ID returned by push.",
+        "An acknowledged `ok` with no remote ID remains a success, returns the local ID, creates no mapping and is not resent.",
+        "If idMap.add fails after remote success, the uncertain entry is preserved without repeating the remote add."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "mcp",
+        "reliability"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Complex: pool replay gating, provider wiring, id-map failure handling and CLI messaging must agree with the new US-001 contract, proven by an end-to-end fake-server test; lite three-session TDD suffices since no security surface.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/mcp/pool.ts",
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/src/cli/memory-write.ts",
+        "packages/nax-agent/src/memory/provider-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/memory/mcp-uncertain-save.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/mcp/pool-retry.test.ts",
+          "reason": "scope expectations for replay after an observed close to explicitly retry-safe calls; preserve the disconnect, reconnect budget and success assertions for those calls."
+        },
+        {
+          "path": "packages/nax/test/unit/memory/mcp-provider-id-map.test.ts",
+          "reason": "replace retryable-after-id-map-write-failure expectation with no automatic remote resend; preserve the diagnostic."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1aaaf7317435512ff06ab1edea80a905b566b699"
+    },
+    {
+      "id": "US-003",
+      "title": "Validate custom SDK OpenRouter routing (finding 6)",
+      "description": "**Goal** — Make createClient reject separately declared catalogs with equal model IDs whose effective model-level `openRouterRouting` conflicts, and ensure declared routing reaches the wire.\n\n**Motivation** — Custom SDK routing can silently drop a wire restriction when two declared catalogs disagree about the same model.\n\n**Approach** — Compare effective model-level `openRouterRouting` on the two declared catalogs, including base models; preserve order where wire arrays are ordered. Effective routing is computed across successive overrides for a bundled provider: a later same-ID model omitting routing inherits the previous template restriction; explicit replacement routing takes precedence. No new native CLI routing layer.\n\nVerify from packages/nax-ai: `CI=1 timeout 90 bun x vitest run test/protocols/override-declaration.test.ts test/protocols/pi-client-custom-provider.test.ts`.\n\n**Scope** — In: override-declaration.ts effective-routing comparison, pi-client.ts wire routing. Out: native CLI routing, pricing, catalog wiring.",
+      "acceptanceCriteria": [
+        "createClient rejects separately declared catalogs with equal IDs but conflicting effective `openRouterRouting`, including a missing wire restriction, for both bundled and new model IDs, comparing effective wire routing rather than the last declaration alone.",
+        "Across successive overrides for a bundled provider, a later same-ID model omitting routing inherits the previous template restriction, and explicit replacement routing takes precedence.",
+        "When both final declarations omit routing but only one inherits an earlier restriction, createClient rejects the mismatch before dispatch.",
+        "For matching inherited restrictions, a captured serialized offline request contains the restriction on the wire.",
+        "Independently built equal routing values are accepted, and a captured serialized offline request (onPayload or intercepted fetch, not stubStream model inspection) contains the declared routing on the wire.",
+        "Pricing-only differences between catalogs remain accepted.",
+        "Hand-built entries that never declared overrides keep their existing contract.",
+        "createClient accepts two catalogs that declare equal IDs with identical effective routing, including independently built equal arrays in the same order."
+      ],
+      "tags": [
+        "feature",
+        "sdk",
+        "routing"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Medium: two files in one package with effective-routing inheritance logic and offline wire capture; no cross-package change, so single-session TDD fits.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/protocols/override-declaration.ts",
+        "packages/nax-ai/src/protocols/pi-client.ts"
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d9d79a538d1d27f0359ac54932a6e79ed85caa29"
+    },
+    {
+      "id": "US-004",
+      "title": "Bound ordinary ACP session close (finding 7)",
+      "description": "**Goal** — Make ordinary ACP session close return by a configured wait when a pending output write never settles, while the session resource keeps its true lifetime until cleanup completes.\n\n**Motivation** — A pending ACP write can hold a close caller indefinitely.\n\n**Approach** — For close, distinguish the deadline for the caller from the lifetime of the resource. Reuse shutdown's bounded-wait pattern (default five seconds); retain a distinct cleanup completion, not a timeout that falsely signals disposal. Exercise ordinary session close via the registry with an unresolved output notification.\n\nVerify from packages/nax-agent-acp: `CI=1 timeout 90 bun test ./test/unit/server/server-session.test.ts ./test/unit/server/server-session-close-switch.test.ts ./test/unit/server/registry-hardening.test.ts ./test/unit/server/registry-close-switch.test.ts --timeout=60000`.\n\n**Scope** — In: server-session.ts close path, registry-lifecycle.ts close/delete/shutdown coordination. Out: server protocol changes.",
+      "acceptanceCriteria": [
+        "Ordinary close returns by its configured wait when an output write never settles (controlled clock), and does not admit new work to the closing session.",
+        "Before that write settles, a competing owner cannot acquire the same live session.",
+        "After the write is released, final accounting and ownership cleanup occur once, including after repeated closes.",
+        "The ordinary registry close wait is bounded for pending output delivery only, not for an independently held lock guard.",
+        "Normal and rejected writes close without the delivery timeout.",
+        "Repeated close and shutdown share one true cleanup completion.",
+        "Delete waits for disposal before deleting storage.",
+        "Server-wide shutdown remains bounded."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "lifecycle"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Complex: caller deadline versus resource lifetime, shared cleanup completion and lock ownership across two files need isolated test-writing under a controlled clock.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/server-session.ts",
+        "packages/nax-agent-acp/src/server/registry-lifecycle.ts"
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3921578b38277ab7f67710568beea5e356d576df"
+    },
+    {
+      "id": "US-005",
+      "title": "Resolve existing code neighbors in both directions (finding 8)",
+      "description": "**Goal** — Make the forward and reverse code-neighbor resolvers agree on actual files under the existing workdir/package boundary.\n\n**Motivation** — Relative imports like `./Button`, `./x.js` and `./lib` resolve inconsistently, producing missing neighbors and edges to files that do not exist.\n\n**Approach** — Exercise code-neighbor collection on real temporary source files. No new TypeScript compiler resolver or package alias support. Synthesized sibling test hints need not exist and stay unchanged.\n\nVerify from packages/nax: `CI=1 timeout 90 bun test ./test/unit/context/engine/providers/code-neighbor.test.ts ./test/unit/context/engine/providers/code-neighbor-collect-edges.test.ts --timeout=60000`.\n\n**Test changes** — Modify code-neighbor-collect-edges.test.ts: correct the directory quick-check false negative and omit the reverse edge for absent ghost.ts; retain unrelated hints. Modify code-neighbor.test.ts: supply existing fake-filesystem dep.ts and shared.ts targets for positive scopePaths assertions; preserve missing sibling test hints.\n\n**Scope** — In: code-neighbor-phases.ts resolution. Out: compiler-based resolution, alias support.",
+      "acceptanceCriteria": [
+        "Forward results for `./Button`, `./x.js` and `./lib` point to the existing `Button.tsx`, `x.js` and `lib/index.ts` respectively on a fixture with no shadowing candidates.",
+        "Reverse results for each of those files include its actual importer, including `import './lib'` without the word `index` elsewhere in the importing source.",
+        "No import edge to an absent target or outside the workdir is emitted.",
+        "Synthesized sibling test hints need not exist and stay unchanged.",
+        "An ordinary `.ts` control import still resolves.",
+        "A fixture import whose target is absent (ghost.ts) yields no reverse edge, while unrelated sibling test hints are retained."
+      ],
+      "tags": [
+        "feature",
+        "context-engine"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Medium: one resolver file where forward and reverse paths must agree, tested on real temp files; single-session TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/context/engine/providers/code-neighbor-phases.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/context/engine/providers/code-neighbor-collect-edges.test.ts",
+          "reason": "correct the directory quick-check false negative and omit the reverse edge for absent ghost.ts; retain unrelated hints."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/providers/code-neighbor.test.ts",
+          "reason": "supply existing fake-filesystem dep.ts and shared.ts targets for positive scopePaths assertions; preserve missing sibling test hints."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ee4c4110c4625bddba74d339bbd5844aee6e5b47"
+    },
+    {
+      "id": "US-006",
+      "title": "Stream and index replay events once (finding 11)",
+      "description": "**Goal** — Make replay read JSONL incrementally and index phase inputs by story so ingestion is a constant number of full-record passes regardless of story count.\n\n**Motivation** — Replay re-filters the full event history once per story, repeating work proportional to records times stories.\n\n**Approach** — Read JSONL incrementally from the same no-follow, nonblocking, regular-file-checked handle, never reopen by pathname; accumulate phase inputs by story instead of filtering the full history once per story. Preserve run-level context and report semantics. For performance tests count input visits, not wall-clock. Do not change replay run selection or log identity.\n\nVerify from packages/nax: `CI=1 timeout 90 bun test ./test/unit/replay/reconstruct.test.ts ./test/unit/commands/replay.test.ts --timeout=60000`.\n\n**Test changes** — Modify test/unit/commands/replay.test.ts: if streaming changes the loader return type, collect the stream before asserting empty or single-entry results; retain all missing/malformed-input expectations.\n\n**Scope** — In: replay.ts loader, reconstruct.ts, phase-infer.ts. Out: run selection and log identity (findings 1-4, #3075), global replay cache, log retention policy.",
+      "acceptanceCriteria": [
+        "`replay` produces equivalent filtered and unfiltered report content to the existing reconstruction for interleaved run-level and multi-story events, including phase order and missing-log handling.",
+        "With 10,000 input records, increasing the story set from 1 to 100 does not multiply record inspections: instrumenting the real ingestion/reconstruction path shows a constant number of full-record passes, including `--story`.",
+        "When top-level and nested story IDs differ, phase inference can match either.",
+        "Degraded story discovery still prefers the top-level ID.",
+        "Nonregular files and symlinks are not streamed.",
+        "JSONL records split across read chunks (including a final line without newline) reconstruct as whole records, preserving existing invalid-record handling.",
+        "A replay log path that is a symlink or nonregular file is reported through the existing missing/malformed-input handling instead of being streamed."
+      ],
+      "tags": [
+        "feature",
+        "replay",
+        "performance"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Medium: three files in one package with a clear streaming-plus-index design and pass-count instrumentation; no new abstraction beyond a story index, so single-session TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/commands/replay.ts",
+        "packages/nax/src/replay/reconstruct.ts",
+        "packages/nax/src/replay/phase-infer.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/commands/replay.test.ts",
+          "reason": "if streaming changes the loader return type, collect the stream before asserting empty or single-entry results; retain all missing/malformed-input expectations."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ba351628fac26daf5af7f038a2465d07e555795d"
+    },
+    {
+      "id": "US-007",
+      "title": "Bound job-panel tail reads and wrapping (finding 12)",
+      "description": "**Goal** — Bound the job panel's log tail read and wrapped layout so a huge single-line log cannot cost unbounded bytes or rows per refresh.\n\n**Motivation** — Job-panel refreshes read and wrap unbounded log text.\n\n**Approach** — Pass a panel-only 64 KiB raw tail scan budget from job-panel-view through job-runner per refresh, at most 12 nonblank lines, and at most four wrapped content rows per logical line including a visible truncation indicator. Apply byte limits before wrapping; do not change persisted logs. Non-panel callers without a budget keep current behavior. Verify bounded wrapping work, not slicing after full layout; count bytes and rows rather than wall-clock.\n\nVerify from packages/nax: `CI=1 timeout 90 bun test ./test/unit/chat/jobs/log-tail.test.ts ./test/unit/chat/jobs/job-panel-view.test.ts ./test/unit/tui/chat/layout-job.test.ts --timeout=60000`.\n\n**Test changes** — Modify test/unit/chat/jobs/job-panel-view.test.ts: exact runner call options now include the panel-only byte budget; preserve other fields.\n\n**Scope** — In: log-tail.ts, job-runner.ts, job-panel-view.ts, layout-job.ts. Out: persisted log changes, log retention policy, production latency targets.",
+      "acceptanceCriteria": [
+        "Tailing a single 256 KiB record reads at most 64 KiB of file data per refresh, examines each scanned chunk once and visibly indicates omitted text.",
+        "A tail with 12 short nonblank lines fitting the budget returns them in order without a truncation mark for complete lines.",
+        "If the budget cuts a multibyte character, only that partial line is marked, not later complete lines, and its marker counts toward the four rows.",
+        "UTF-8 characters crossing chunk boundaries within retained text remain intact.",
+        "Non-panel callers without a budget still get long complete lines.",
+        "At width 120 a 256 KiB logical line yields no more than four content rows including the truncation indicator.",
+        "At widths narrower than 120, layout of a 256 KiB logical line still yields at most four content rows, none wider than the width, and instrumented layout work is bounded by the row budget rather than the full line length."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "performance"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Medium: four files in one package threading a budget option through existing seams with bounded scan and wrap; single-session TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/log-tail.ts",
+        "packages/nax/src/tui/chat/layout-job.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-panel-view.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/jobs/job-panel-view.test.ts",
+          "reason": "exact runner call options now include the panel-only byte budget; preserve other fields."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9157bef410aaa19c6238572b8741189b0ecf9d07"
+    },
+    {
+      "id": "US-008",
+      "title": "Keep quiet coverage capture on deadline (finding 14)",
+      "description": "**Goal** — Make the local coverage runner's quiet capture path drain both output streams from launch and honor its deadline even when a descendant holds a pipe open after the child exits.\n\n**Motivation** — A local coverage runner whose child exits before its pipes close can hang past its deadline.\n\n**Approach** — A parent with `AGENT=1` drains both output streams from launch; child exit and stream EOF are separate. Inject a short deadline and fixture child command into the production runCoverage capture path for tests; keep 480 seconds by default. Keep the original deadline through drain, abort or detach pending capture on expiry, retain at most 64 KiB of diagnostics per stream.\n\nVerify from packages/repo-tooling: `CI=1 timeout 90 bun test ./test/unit/scripts/check-coverage.test.ts --timeout=60000`.\n\n**Scope** — In: check-coverage.ts capture path. Out: CI runner migration.",
+      "acceptanceCriteria": [
+        "With `AGENT=1`, a fixture whose leader exits immediately but whose descendant holds a pipe open returns runner status 124 by its injected short deadline (not the test wrapper deadline).",
+        "Main maps that deadline failure to CLI status 1 without waiting for the descendant, and the fixture is cleaned up in all outcomes.",
+        "Output from both streams exceeding the cap yields bounded diagnostic tails of at most 64 KiB per stream, including terminal failure text.",
+        "A normal quiet success retains its existing summary without dumping child output.",
+        "When EOF arrives within budget the original child status is honored.",
+        "Non-quiet inherited-stream execution keeps its current behavior.",
+        "When both streams stay silent past the injected deadline with the descendant still holding the pipe, runCoverage returns status 124 rather than waiting for EOF."
+      ],
+      "tags": [
+        "tooling",
+        "coverage"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Medium: one script with stream draining and deadline semantics plus an injection seam; single-session TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/repo-tooling/scripts/check-coverage.ts"
+      ],
+      "workdir": "packages/repo-tooling",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4fec99044da5a520d0715649b4ae5aeed7ca6050"
+    }
+  ],
+  "analysis": "Maintenance run closing the actionable findings of docs/reviews/nax-v0.94.2-verified-code-review.md (reviewed tag v0.94.2). Story map: finding 5 -> US-001/US-002, 6 -> US-003, 7 -> US-004, 8 -> US-005, 11 -> US-006, 12 -> US-007, 14 -> US-008. Findings 1-4 (#3075) and 9-10 (#3077) shipped; 13 stays deferred. Numbers are report headings, not issue numbers.\n\nCross-cutting design: extend existing packages in place. For ambiguous remote writes prefer reporting uncertainty to silently reissuing or claiming success. Reply loss in the MCP pool and the independent timeout in the outbox drain are separate failure paths. Use an opt-in provider contract for non-replayable writes; legacy retry semantics stay for providers whose operations are safe to repeat. A non-replayable MCP add must not rely on a search hit, matching text, or an unsupported wire idempotency key to prove delivery. Use the existing outbox and persist a non-auto-retry outcome with its client ID and reason; never drop the operator's pending note. For close, distinguish the caller's deadline from the resource lifetime. Performance tests count input visits, bytes and rows, never wall-clock.\n\nUS-001 (packages/nax-agent): provider contract in src/memory/provider-types.ts, drain in src/memory/sync-drain.ts, persistence in src/memory/outbox.ts, immediate save path in src/memory/operations.ts. US-002 (packages/nax) consumes it via src/memory/mcp-provider.ts, src/memory/mcp-id-map.ts and src/mcp/pool.ts; it depends on US-001 and must land after it. Existing tests to adjust: test/unit/mcp/pool-retry.test.ts, test/unit/memory/mcp-provider-id-map.test.ts; new integration test test/integration/memory/mcp-uncertain-save.test.ts. Risk: the nax-agent package is bundled into nax, so contract changes must keep legacy providers compiling and behaving unchanged.\n\nUS-003 (packages/nax-ai, vitest): src/protocols/override-declaration.ts and src/protocols/pi-client.ts. Compare effective wire routing across two declared catalogs, including inheritance from bundled template models. Assert via serialized offline request (onPayload or intercepted fetch), not stubStream model inspection.\n\nUS-004 (packages/nax-agent-acp): src/server/server-session.ts and src/server/registry-lifecycle.ts. Reuse shutdown's bounded-wait pattern (default 5s). Bounded wait applies to pending output delivery only, not to an independently held lock guard; cleanup completion stays a distinct promise from the timeout.\n\nUS-005 (packages/nax): src/context/engine/providers/code-neighbor-phases.ts. Forward and reverse resolvers must agree on real files within the existing workdir/package boundary; no new TS resolver.\n\nUS-006 (packages/nax): src/commands/replay.ts, src/replay/reconstruct.ts, src/replay/phase-infer.ts. Incremental JSONL read from the same no-follow, nonblocking, regular-file-checked handle; index phase inputs by story. Must not change run selection or log identity (finding 1-4 territory).\n\nUS-007 (packages/nax): src/chat/jobs/log-tail.ts, job-runner.ts, job-panel-view.ts, src/tui/chat/layout-job.ts. Panel-only 64 KiB tail budget flows from job-panel-view through job-runner; persisted logs unchanged; non-panel callers unchanged.\n\nUS-008 (packages/repo-tooling): scripts/check-coverage.ts runCoverage capture path. Drain both streams from launch under AGENT=1; separate child exit from stream EOF; injected deadline/command for tests, 480s default.\n\nConventions: Bun workspaces; run package tests from the package dir with the verify commands given per story; never bare `bun test`. Immutability, files under 800 lines, no console.log.",
+  "outOfScope": [
+    "Do not redo findings 1–4 (#3075) or 9–10 (#3077), including changing replay run selection or log identity.",
+    "Finding 13 (mirror listing) stays deferred until field evidence shows material cold I/O or memory pressure. Synthetic warm timings do not justify an inventory rewrite.",
+    "No native CLI privacy incident is asserted for finding 6. No live-provider calls, pricing changes, new provider support, or changes to the default catalog wiring.",
+    "No distributed exactly-once guarantee, crash recovery between dispatch and local persistence, server protocol changes, automatic reconciliation of ambiguous notes, or blanket disablement of safe retries.",
+    "No new TypeScript compiler resolver, package alias support, global replay cache, log retention policy, CI runner migration, or production latency target.",
+    "No merge, release, version bump or redesign of unrelated subsystems."
+  ],
+  "routingProfile": "cc-plan"
+}

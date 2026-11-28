@@ -41,6 +41,7 @@ import {
   syncMemory,
 } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
+import type { MemoryPendingWrite } from "#src/memory/index";
 import { _memoryStoreDeps } from "#src/memory/store";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
@@ -196,6 +197,9 @@ async function lockNonce(h: Harness): Promise<string> {
   return held.nonce;
 }
 
+/** The `pending` field an undelivered result carries: the write is queued for the next sync. */
+const QUEUED: MemoryPendingWrite = { clientId: expect.any(String), delivery: "queued" };
+
 describe("forgetMemoryNote", () => {
   withDepsRestore(_memoryStoreDeps);
 
@@ -292,7 +296,7 @@ describe("forgetMemoryNote", () => {
 
       const result = await h.forget();
 
-      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       // The probe already answered: nothing was pushed.
       expect(h.provider.reachable).toHaveBeenCalledTimes(1);
       expect(h.provider.push).not.toHaveBeenCalled();
@@ -318,7 +322,7 @@ describe("forgetMemoryNote", () => {
 
       const result = await h.forget({ writeMode: "proposal" });
 
-      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false, pending: QUEUED });
       expect(h.provider.push).not.toHaveBeenCalled();
       expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued" });
       // A proposal keeps the note, so the mirror still has it to forget on approval.
@@ -338,7 +342,7 @@ describe("forgetMemoryNote", () => {
       await h.clock.advance(MEMORY_OP_TIMEOUT_MS);
       const result = await forgetting;
 
-      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false, pending: QUEUED });
       expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued" });
       // The race cleared the deadline it armed.
       expect(h.clock.pending()).toBe(0);
@@ -405,7 +409,7 @@ describe("forgetMemoryNote", () => {
       _atomicWriteDeps.open = realOpen;
       const result = await h.forget();
 
-      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       expect(await h.store.readNote("project", SLUG)).toBeNull();
       expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued" });
     });
@@ -442,7 +446,7 @@ describe("forgetMemoryNote", () => {
 
       const result = await h.forget({ writeMode: "proposal" });
 
-      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: false, pending: QUEUED });
       // The queue already holds this key: pushing it now would deliver it out of order.
       expect(h.provider.reachable).not.toHaveBeenCalled();
       expect(h.provider.push).not.toHaveBeenCalled();
@@ -470,7 +474,7 @@ describe("forgetMemoryNote", () => {
 
       const result = await h.forget();
 
-      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       expect(h.provider.push).not.toHaveBeenCalled();
       // Direct is the agent's own decision, so the mirror retires the note before the queue is consulted.
       expect(await h.store.readNote("project", SLUG)).toBeNull();
@@ -495,7 +499,7 @@ describe("forgetMemoryNote", () => {
 
       const result = await h.forget();
 
-      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       // Only a permanent refusal is undone; a transient failure leaves the decision standing.
       expect(await h.store.readNote("project", SLUG)).toBeNull();
       expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued", reason: REASON });
@@ -707,7 +711,7 @@ describe("forgetMemoryNote and the mirror's lock", () => {
 
       const result = await h.forget();
 
-      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false, pending: QUEUED });
       // The sync owns the mirror: this forget neither deletes from it nor renders its index.
       expect(await h.store.readNote("project", SLUG)).toEqual(note());
       expect(existsSync(h.store.paths.index)).toBe(false);

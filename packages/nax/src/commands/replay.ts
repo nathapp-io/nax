@@ -16,17 +16,18 @@ import { dirname } from "node:path";
 import type { Command } from "commander";
 import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
-import type { LogEntry } from "../logger/types";
 import { MAX_RETAINED_RUNS } from "../metrics";
 import type { RunMetrics } from "../metrics/types";
 // Internal paths, not the `../replay` barrel: `../replay/index.ts` re-exports
 // `registerReplayCommand` from this file, so importing the barrel here would
 // be circular.
 import { type DiscoveredRun, discoverRun } from "../replay/discovery";
+import { readReplayEvents } from "../replay/event-stream";
 import { toReplayJson } from "../replay/json";
+import { createReplayEventIndex } from "../replay/phase-infer";
 import { reconstructTimeline } from "../replay/reconstruct";
 import { type RenderOptions, renderReport } from "../replay/report";
-import type { RunTimeline } from "../replay/types";
+import type { ReplayEventIndex, RunTimeline } from "../replay/types";
 
 /** Options accepted by the `nax replay` command. */
 export interface ReplayCommandOptions {
@@ -41,7 +42,11 @@ export interface ReplayCommandOptions {
 /** Swappable dependencies — keeps the orchestrator hermetic for tests. */
 export interface ReplayCommandDeps {
   discoverRun: (query?: string) => Promise<DiscoveredRun>;
-  readJsonl: (path: string) => Promise<LogEntry[]>;
+  /**
+   * Stream the resolved log into the per-story index. A missing log yields an
+   * empty index; a path that cannot safely be streamed is reported, not read.
+   */
+  readEvents: (path: string) => Promise<ReplayEventIndex>;
   readMetrics: (meta: { runId: string; eventsDir: string }) => Promise<RunMetrics | undefined>;
   readStatus: (statusPath: string) => Promise<NaxStatusFile | undefined>;
   reconstructTimeline: typeof reconstructTimeline;
@@ -49,25 +54,6 @@ export interface ReplayCommandDeps {
   toReplayJson: (timeline: RunTimeline) => RunTimeline;
   stdout: (text: string) => void;
   stderr: (text: string) => void;
-}
-
-import { readLogTextNoFollow } from "../utils/registered-log";
-
-async function readJsonlLenient(path: string): Promise<LogEntry[]> {
-  if (!existsSync(path)) return [];
-  const content = readLogTextNoFollow(path);
-  const lines = content.split("\n");
-  const entries: LogEntry[] = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      entries.push(JSON.parse(trimmed) as LogEntry);
-    } catch {
-      // skip malformed JSONL line — see AC-9
-    }
-  }
-  return entries;
 }
 
 async function readJsonOrUndefined<T>(path: string): Promise<T | undefined> {
@@ -94,7 +80,7 @@ async function readMetricsFromProject(meta: { runId: string; eventsDir: string }
  */
 export const _replayCmdDeps: ReplayCommandDeps = {
   discoverRun,
-  readJsonl: readJsonlLenient,
+  readEvents: readReplayEvents,
   readMetrics: readMetricsFromProject,
   readStatus: async (statusPath: string) => readJsonOrUndefined<NaxStatusFile>(statusPath),
   reconstructTimeline,
@@ -128,7 +114,9 @@ export async function runReplay(
     throw err;
   }
 
-  const entries = discovered.jsonlPath === null ? [] : await deps.readJsonl(discovered.jsonlPath);
+  // One streaming pass over the log spine; every story then reads its own
+  // accumulated bucket, so the story count never multiplies record visits.
+  const events = discovered.jsonlPath === null ? createReplayEventIndex() : await deps.readEvents(discovered.jsonlPath);
   const metrics = await deps.readMetrics({
     runId: discovered.meta.runId,
     eventsDir: discovered.meta.eventsDir,
@@ -147,7 +135,7 @@ export async function runReplay(
   }
 
   const timeline = deps.reconstructTimeline({
-    entries,
+    events,
     ...(metrics !== undefined ? { runMetrics: metrics } : {}),
     ...(status !== undefined ? { status } : {}),
     meta: { runId: discovered.meta.runId, feature: discovered.meta.feature },

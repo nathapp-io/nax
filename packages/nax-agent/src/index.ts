@@ -1,9 +1,6 @@
 /**
- * @nathapp/nax-agent public entry (S1 spec section 4.4, S2 spec section 5.3).
- *
- * Every export is named: nothing reaches this entry through `export *`. No "_"
- * name belongs here; test seams and reset hooks live on ./internal. The built
- * surface of both entries is pinned by api/nax-agent.api.txt (`bun run check:api`).
+ * @nathapp/nax-agent public entry (S1 spec 4.4, S2 spec 5.3). Every export is named — no
+ * `export *`, no "_" name (those live on ./internal) — and api/nax-agent.api.txt pins both.
  */
 
 // biome-ignore assist/source/organizeImports: hand-ordered by byte code — `session-adapter` sorts before `session/` because `-` is below `/`
@@ -112,6 +109,7 @@ export {
   type MemoryPendingForget,
   type MemoryProvider,
   type MemoryPushResult,
+  type MemoryReplayContract,
   type MemorySaveInput,
   type MemorySaveResult,
   type MemoryScope,
@@ -133,6 +131,9 @@ export {
   forgetMemoryNote,
   isMemoryBadResponse,
   isMemoryPushRejected,
+  isMemoryUndispatched,
+  markUndispatched,
+  MemoryUndispatchedError,
   parseMemoryNote,
   raceTimeout,
   refreshMemoryIndex,

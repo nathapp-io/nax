@@ -192,6 +192,56 @@ describe("nax memory save", () => {
   });
 });
 
+// ─── what an undelivered save tells the operator ─────────────────────────────
+
+describe("nax memory save — the two undelivered answers read differently", () => {
+  /** The result a save whose provider never answered leaves: the write may have been applied. */
+  const LOST_REPLY: MemorySaveResult = {
+    slug: "replay-budget",
+    status: "active",
+    delivered: false,
+    pending: {
+      clientId: "c_7",
+      delivery: "unknown",
+      reason: "delivery unknown: socket closed; not retried automatically",
+    },
+  };
+
+  test("AC-5: a lost reply reports delivery unknown and that nothing retries it", async () => {
+    const h = harness({}, { result: LOST_REPLY });
+
+    await runMemory(h, [...SAVE_ARGS, "--body", "2048 MiB"]);
+
+    // The distinction the operator acts on: this note may exist on the server, and no
+    // automatic retry will make a second one — the entry is theirs to requeue or discard,
+    // by the client id, which is why both commands are spelled with it.
+    expect(h.out).toEqual([
+      "saved project/replay-budget (active) — delivery unknown; no automatic retry (client c_7; " +
+        "nax memory requeue --client c_7 --allow-duplicate, or nax memory discard --client c_7)",
+    ]);
+    expect(h.codes).toEqual([0]);
+  });
+
+  test("AC-5: a definitely unsent save still reports queued for sync", async () => {
+    const h = harness(
+      {},
+      {
+        result: {
+          slug: "replay-budget",
+          status: "active",
+          delivered: false,
+          pending: { clientId: "c_8", delivery: "queued" },
+        },
+      },
+    );
+
+    await runMemory(h, [...SAVE_ARGS, "--body", "2048 MiB"]);
+
+    expect(h.out).toEqual(["saved project/replay-budget (active) — queued for sync"]);
+    expect(h.codes).toEqual([0]);
+  });
+});
+
 // ─── the exactly-one body input ─────────────────────────────────────────────
 
 describe("nax memory save — the body input", () => {

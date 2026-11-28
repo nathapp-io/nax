@@ -1,7 +1,7 @@
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "../../src/client.ts";
 import { createMemoryCredentialStore } from "../../src/credentials/memory-store.ts";
 import { createPiDeps } from "../../src/protocols/pi-client.ts";
@@ -28,6 +28,7 @@ const STRATA: ProviderOverride = {
 };
 const previousKey = process.env.STRATA_TEST_KEY;
 afterEach(() => {
+  vi.unstubAllGlobals();
   if (previousKey === undefined) delete process.env.STRATA_TEST_KEY;
   else process.env.STRATA_TEST_KEY = previousKey;
 });
@@ -184,5 +185,202 @@ describe("custom native providers", () => {
       /* run payload builder, then intercepted fetch */
     }
     expect(captured).toMatchObject({ reasoning: { effort } });
+  });
+});
+
+/** A restriction that must survive to the wire. */
+const ROUTED: ResolvedModel = {
+  ...MODEL,
+  openRouterRouting: { data_collection: "deny", only: ["host-a"] },
+};
+
+/** The same id again, declaring only a price change: it states no routing. */
+const REPRICED: ResolvedModel = {
+  ...MODEL,
+  pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+};
+
+/**
+ * The serialized request body one `client.complete` puts on the wire.
+ *
+ * Only `fetch` is stubbed, so this covers the whole path — the two separately
+ * declared catalogs, createClient's check on them, the protocol's own catalog
+ * and pi-ai's real request builder. Anything captured earlier (the model
+ * handed to a stubbed stream, say) would prove neither that construction
+ * accepted the pair nor that the restriction was serialized into a request.
+ */
+async function wireRequest(
+  clientSide: readonly ProviderOverride[],
+  protocolSide: readonly ProviderOverride[],
+): Promise<string> {
+  let body: string | undefined;
+  vi.stubGlobal("fetch", async (_input: unknown, init?: { readonly body?: unknown }) => {
+    body = String(init?.body);
+    throw new Error("intercepted: no network");
+  });
+  const client = createClient({
+    providers: [],
+    providerOverrides: clientSide,
+    protocols: defaultProtocols({
+      credentials: createMemoryCredentialStore({ strata: { kind: "api-key", key: "test-key" } }),
+      providerOverrides: protocolSide,
+    }),
+    transportRetries: 0,
+  });
+  const model = await client.model("strata", MODEL.id);
+  await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
+  if (body === undefined) throw new Error("expected the request to reach fetch");
+  return body;
+}
+
+describe("openRouterRouting across successively declared catalogs (finding 6)", () => {
+  it("AC-2/AC-4 inherits an earlier restriction when the later declaration omits it, and sends it", async () => {
+    const body = await wireRequest(
+      [{ ...STRATA, models: [{ ...ROUTED }, { ...REPRICED }] }],
+      [{ ...STRATA, models: [{ ...ROUTED }, { ...REPRICED }] }],
+    );
+
+    // Last declaration wins the id and states no routing, yet the request must
+    // still carry the restriction the first one made.
+    expect(JSON.parse(body)).toMatchObject({ provider: { data_collection: "deny", only: ["host-a"] } });
+    expect(body).toContain("host-a");
+  });
+
+  it("AC-2 lets an explicit replacement win, and a later omission inherit the replacement", async () => {
+    const replaced: ResolvedModel = { ...MODEL, openRouterRouting: { only: ["host-b"] } };
+    const models = [{ ...ROUTED }, { ...replaced }, { ...REPRICED }];
+
+    const body = await wireRequest([{ ...STRATA, models }], [{ ...STRATA, models: models.map((m) => ({ ...m })) }]);
+
+    expect(JSON.parse(body)).toMatchObject({ provider: { only: ["host-b"] } });
+    expect(body).not.toContain("host-a");
+  });
+
+  it("AC-5 accepts independently built equal routing, sends it, and rejects a reordered array", async () => {
+    const clientRouting = { only: ["host-a", "host-b"], quantizations: ["fp8"] };
+    const protocolRouting = { only: ["host-a", "host-b"], quantizations: ["fp8"] };
+    // Content, not identity: equal declarations that are not the same object.
+    expect(protocolRouting).not.toBe(clientRouting);
+
+    const body = await wireRequest(
+      [{ ...STRATA, models: [{ ...MODEL, openRouterRouting: clientRouting }] }],
+      [{ ...STRATA, models: [{ ...MODEL, openRouterRouting: protocolRouting }] }],
+    );
+    expect(JSON.parse(body)).toMatchObject({ provider: { only: ["host-a", "host-b"], quantizations: ["fp8"] } });
+    expect(body).toContain("host-b");
+
+    // An ordered wire array is part of the value: the same slugs in the other
+    // order are a different request, so the two catalogs do not agree.
+    await expect(
+      wireRequest(
+        [{ ...STRATA, models: [{ ...MODEL, openRouterRouting: { only: ["host-a", "host-b"] } }] }],
+        [{ ...STRATA, models: [{ ...MODEL, openRouterRouting: { only: ["host-b", "host-a"] } }] }],
+      ),
+    ).rejects.toThrow(/openRouterRouting/);
+  });
+
+  it("clears an inherited restriction when a declaration switches protocol, so a switch back cannot resurrect it", async () => {
+    // Same rule as the bundled-provider loop: the middle declaration states no
+    // routing and cannot send one, which clears what the first declared. A
+    // later openai-completions declaration therefore inherits nothing — the
+    // wire and createClient's two-catalog comparison must agree, and they only
+    // do if the map is cleared at the switch rather than at the last write.
+    const { thinkingFormat: _format, ...plain } = MODEL;
+    const routed = { ...MODEL, openRouterRouting: { only: ["host-a"] } };
+    const elsewhere = { ...plain, protocol: "anthropic-messages" as const };
+    const models = [routed, elsewhere, { ...MODEL }];
+
+    const body = await wireRequest([{ ...STRATA, models }], [{ ...STRATA, models: models.map((m) => ({ ...m })) }]);
+
+    expect(JSON.parse(body)).not.toHaveProperty("provider");
+    expect(body).not.toContain("host-a");
+  });
+});
+
+/** A real bundled openrouter id: the api that sends routing. */
+const BUNDLED_ID = "deepseek/deepseek-chat";
+
+/**
+ * A real bundled openrouter model as an override declaration.
+ *
+ * Real id and real provider template, because the case below turns on a template an
+ * earlier override of the *same bundled provider* produced: a synthetic provider could not
+ * show whether the restriction a synthesised model carries survives into the next override.
+ */
+async function bundledDeclaration(overrides: Partial<ResolvedModel> = {}): Promise<ResolvedModel> {
+  const providers = await defaultProviders(["openrouter"]);
+  const bundled = providers.flatMap((provider) => provider.models).find((model) => model.id === BUNDLED_ID);
+  if (bundled === undefined) throw new Error(`expected openrouter to bundle ${BUNDLED_ID}`);
+  return {
+    id: bundled.id,
+    provider: "openrouter",
+    protocol: "openai-completions",
+    pricing: bundled.pricing,
+    contextWindow: bundled.contextWindow,
+    supportsTools: bundled.supportsTools,
+    thinkingLevels: bundled.thinkingLevels,
+    ...overrides,
+  };
+}
+
+/**
+ * The serialized request body one `client.complete` puts on the wire for a bundled provider
+ * declared as `overrides`, in order.
+ *
+ * Only `fetch` is stubbed, so this covers the whole path: both catalogs, createClient's
+ * comparison of them, the protocol's override sequence and pi-ai's own request builder.
+ */
+async function bundledWireRequest(overrides: readonly ProviderOverride[]): Promise<string> {
+  let body: string | undefined;
+  vi.stubGlobal("fetch", async (_input: unknown, init?: { readonly body?: unknown }) => {
+    body = String(init?.body);
+    throw new Error("intercepted: no network");
+  });
+  const providers = await defaultProviders(["openrouter"]);
+  const client = createClient({
+    providers,
+    providerOverrides: overrides,
+    protocols: defaultProtocols({
+      credentials: createMemoryCredentialStore({ openrouter: { kind: "api-key", key: "test-key" } }),
+      providerOverrides: overrides,
+    }),
+    transportRetries: 0,
+  });
+  const model = await client.model("openrouter", BUNDLED_ID);
+  await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
+  if (body === undefined) throw new Error("expected the request to reach fetch");
+  return body;
+}
+
+describe("B3 routing across successive overrides of one bundled provider", () => {
+  it("inherits an earlier override's restriction in a later override that states none", async () => {
+    const routed = await bundledDeclaration({ openRouterRouting: { only: ["deepinfra"] } });
+    const repriced = await bundledDeclaration({ pricing: { input: 9, output: 9, cacheRead: 0, cacheWrite: 0 } });
+
+    const body = await bundledWireRequest([
+      { provider: "openrouter", models: [routed] },
+      { provider: "openrouter", models: [repriced] },
+    ]);
+
+    // The restriction was declared in the first override and never replaced, so it is still
+    // the request's — the same effective value the two-catalog comparison computes.
+    expect(JSON.parse(body)).toMatchObject({ provider: { only: ["deepinfra"] } });
+  });
+
+  it("clears a synthesised template's routing when the effective routing is cleared, so nothing reaches the wire", async () => {
+    const routed = await bundledDeclaration({ openRouterRouting: { only: ["deepinfra"] } });
+    const moved = await bundledDeclaration({ protocol: "anthropic-messages" });
+    const plain = await bundledDeclaration();
+
+    const body = await bundledWireRequest([
+      { provider: "openrouter", models: [routed] },
+      // The middle declaration cannot send routing, which clears what the first declared; the
+      // last therefore inherits nothing. The wire must agree, and the model the last one is
+      // templated from is the FIRST override's synthesised model — which still carries it.
+      { provider: "openrouter", models: [moved, plain] },
+    ]);
+
+    expect(JSON.parse(body)).not.toHaveProperty("provider");
+    expect(body).not.toContain("deepinfra");
   });
 });

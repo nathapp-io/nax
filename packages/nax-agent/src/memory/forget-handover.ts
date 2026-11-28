@@ -31,13 +31,20 @@ import {
   type MemoryForgetInput,
   type MemoryForgetResult,
   noteNotFound,
+  pendingWrite,
   refreshIndex,
   writeRefused,
 } from "./operations-support.ts";
 import type { MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { rewindPullCursor } from "./pull-cursor.ts";
 import { discardRefused, restoreForgotten } from "./refusal.ts";
-import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout } from "./support.ts";
+import {
+  GLOBAL_MEMORY_TIMERS,
+  possiblyCommitted,
+  providerAnswers,
+  raceTimeout,
+  unknownDeliveryReason,
+} from "./support.ts";
 import { MEMORY_OP_TIMEOUT_MS, type MemoryNote, type MemoryNoteStatus, memoryNoteKey } from "./types.ts";
 import { forgetReasonRefusal } from "./validate.ts";
 
@@ -54,9 +61,38 @@ function forgetRequest(input: MemoryForgetInput): MemoryWriteRequest {
 }
 
 /** Queue a forget this operation could not deliver, and rebuild the index so its marker shows. */
-async function queuedForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
+async function queuedForget(input: MemoryForgetInput, clientId: string): Promise<MemoryForgetResult> {
   await refreshIndex(input);
-  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
+  return {
+    slug: input.slug,
+    status: FORGET_STATUS_BY_MODE[input.writeMode],
+    delivered: false,
+    pending: pendingWrite(clientId, "queued"),
+  };
+}
+
+/**
+ * The answer for a retire the provider may have carried out: the note is the mirror's, the
+ * entry is the queue's, and nothing sends it again.
+ *
+ * It is the one arm a `direct` forget has to undo locally: the note was deleted when the entry
+ * was queued, and whether the provider retired it is exactly what is unknown — so the copy read
+ * before the delete goes back, as it does for a `pending` answer, rather than being assumed gone.
+ */
+async function unknownForget(
+  input: MemoryForgetInput,
+  previous: MemoryNote,
+  clientId: string,
+  reason: string,
+): Promise<MemoryForgetResult> {
+  if (input.writeMode === "direct") await restoreOrRewind(input, previous);
+  await refreshIndex(input);
+  return {
+    slug: input.slug,
+    status: FORGET_STATUS_BY_MODE[input.writeMode],
+    delivered: false,
+    pending: pendingWrite(clientId, "unknown", reason),
+  };
 }
 
 /** Whether the answer carries the retire out: only `deleted` does. */
@@ -107,7 +143,12 @@ async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResul
 async function queueFencedForget(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
   if ((await input.store.readNote(input.scope, input.slug)) === null) throw noteNotFound(input);
   await input.outbox.enqueue(request);
-  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
+  return {
+    slug: input.slug,
+    status: FORGET_STATUS_BY_MODE[input.writeMode],
+    delivered: false,
+    pending: pendingWrite(request.clientId, "queued"),
+  };
 }
 
 /**
@@ -132,8 +173,30 @@ async function forgetLocked(input: MemoryForgetInput, request: MemoryWriteReques
   const waiting = (await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug));
   await input.outbox.enqueue(request);
   if (input.writeMode === "direct") await input.store.deleteNote(input.scope, input.slug);
-  if (waiting) return await queuedForget(input);
+  if (waiting) return await queuedForget(input, request.clientId);
   return await handOverForget(input, previous, request);
+}
+
+/**
+ * The retire's push failed without a refusal: queue it for a later sync, or hold it as one whose
+ * dispatch may have been carried out.
+ *
+ * A provider whose forgets are replay-safe leaves this what it always was — the entry stays
+ * queued and the next sync sends it. A non-replayable one may have retired the note before its
+ * answer was lost, so sending it again is not this operation's decision to take: the entry is held
+ * (`uncertain`) and the note is put back by `unknownForget`, because whether the provider still
+ * holds it is exactly what nobody knows.
+ */
+async function undeliveredForget(
+  input: MemoryForgetInput,
+  previous: MemoryNote,
+  request: MemoryWriteRequest,
+  error: unknown,
+): Promise<MemoryForgetResult> {
+  if (!possiblyCommitted(input.provider, request.kind, error)) return await queuedForget(input, request.clientId);
+  const reason = unknownDeliveryReason(error);
+  await input.outbox.markUncertain(request.clientId, reason);
+  return await unknownForget(input, previous, request.clientId, reason);
 }
 
 /**
@@ -158,12 +221,13 @@ async function handOverForget(
   request: MemoryWriteRequest,
 ): Promise<MemoryForgetResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  if (!(await providerAnswers(input.provider, timers))) return await queuedForget(input);
+  // Nothing was dispatched, so nothing can have been carried out: the retry is the right answer.
+  if (!(await providerAnswers(input.provider, timers))) return await queuedForget(input, request.clientId);
   let answer: MemoryPushResult;
   try {
     answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
-    if (!isMemoryPushRejected(error)) return await queuedForget(input);
+    if (!isMemoryPushRejected(error)) return await undeliveredForget(input, previous, request, error);
     // The refusal is the caller's answer; the entry and the note are put back regardless of
     // whether removing it works, so a refused forget never leaves the note deleted.
     await discardRefused(input, request.clientId);

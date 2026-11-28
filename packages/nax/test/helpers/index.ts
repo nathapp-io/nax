@@ -152,6 +152,7 @@ export {
   liveConnectionFor,
   MCP_CALL_OPTS,
   MCP_EXIT_REASON,
+  MCP_REPLAY_SAFE_CALL_OPTS,
   MCP_TEST_SERVERS,
   type McpConnectHarness,
   type McpConnectHarnessOptions,
