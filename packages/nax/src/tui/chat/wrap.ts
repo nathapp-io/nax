@@ -282,6 +282,39 @@ function fill(glyphs: readonly Glyph[], width: number): Glyph[][] {
 }
 
 /**
+ * At most `columns` columns of `text` as the clusters they are drawn from, and whether any
+ * column was left behind. Only the window of code units handed in is ever segmented.
+ */
+function scanColumns(text: string, columns: number): { readonly text: string; readonly overflow: boolean } {
+  let kept = "";
+  let used = 0;
+  for (const segment of GRAPHEME_SEGMENTER.segment(text)) {
+    const width = displayWidth(segment.segment);
+    if (used + width > columns) return { text: kept, overflow: true };
+    kept += segment.segment;
+    used += width;
+  }
+  return { text: kept, overflow: false };
+}
+
+/**
+ * At most `columns` display columns of `text`, cut between grapheme clusters, and whether any
+ * text was left behind. Each grapheme is at least one code unit, so a window of `columns + 1`
+ * code units either fills the budget or is the whole text; the window doubles only for text of
+ * longer clusters. The scan therefore costs the budget's work and not the text's — a 64 MiB
+ * line costs the same as a short one, which is the shape a bounded layout needs.
+ */
+export function headColumns(text: string, columns: number): { readonly text: string; readonly more: boolean } {
+  const limit = Math.max(0, columns);
+  let window = Math.min(text.length, limit + 1);
+  for (;;) {
+    const scan = scanColumns(text.slice(0, window), limit);
+    if (scan.overflow || window >= text.length) return { text: scan.text, more: scan.overflow };
+    window = Math.min(text.length, window * 2);
+  }
+}
+
+/**
  * Keep at most `maxWidth` columns of `spans`, dropping from the left: a marker is the
  * meaningful end of a prefix, and the indent before it is what may go.
  */
@@ -338,6 +371,18 @@ function trimEndBlanks(line: StyledLine): StyledLine {
 }
 
 /**
+ * The line cut to `columns` and ended with `marker`, unconditionally: the answer for a line
+ * already known to carry on, where {@link elideSpansEnd}'s "it fits" return would drop the
+ * marker. Whole clusters are dropped from the right, the blank columns a cut leaves behind go
+ * with them, and the marker's own width is reserved before the cut so it always fits.
+ */
+export function markSpansEnd(spans: readonly Span[], columns: number, marker: Span): StyledLine {
+  const markerWidth = spansWidth([marker]);
+  if (markerWidth > columns) return cutSpans([marker], columns);
+  return [...trimEndBlanks(cutSpans(spans, columns - markerWidth)), marker];
+}
+
+/**
  * The line elided at its end to `columns` display columns, marked with `marker`: whole
  * clusters are dropped from the right, the blank columns a cut leaves behind go with them,
  * and the marker's own width is reserved before the cut so it always fits. A marker wider
@@ -345,9 +390,7 @@ function trimEndBlanks(line: StyledLine): StyledLine {
  */
 export function elideSpansEnd(spans: readonly Span[], columns: number, marker: Span): StyledLine {
   if (spansWidth(spans) <= columns) return mergeSpans([...spans]);
-  const markerWidth = spansWidth([marker]);
-  if (markerWidth > columns) return cutSpans([marker], columns);
-  return [...trimEndBlanks(cutSpans(spans, columns - markerWidth)), marker];
+  return markSpansEnd(spans, columns, marker);
 }
 
 /** Keep at most `columns` columns of `spans`, dropping whole clusters from the right. */

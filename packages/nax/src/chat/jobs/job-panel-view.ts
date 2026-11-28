@@ -15,6 +15,12 @@ import { type ChatJob, type ChatJobKind, type ChatJobState, isRunJobKind } from 
 
 /** Log lines the panel keeps. Fixed: the panel is a glance, not a log viewer. */
 export const JOB_PANEL_LOG_LINES = 12;
+/**
+ * The log bytes one panel refresh may scan. The panel is a two-second glance, and an unbounded
+ * scan of a single huge record cost the refresh the whole record; 64 KiB keeps a typical tail
+ * inside one read while a longer line arrives marked as cut.
+ */
+export const JOB_PANEL_TAIL_SCAN_BYTES = 64 * 1024;
 
 export interface JobPanelStory {
   readonly id: string;
@@ -173,7 +179,10 @@ async function decisionsSource(job: ChatJob): Promise<readonly AdviceDecision[]>
 
 async function logTailSource(job: ChatJob, jobs: Pick<ChatJobs, "logTail">): Promise<string> {
   try {
-    return await jobs.logTail(job.id, JOB_PANEL_LOG_LINES, { nonEmpty: true });
+    return await jobs.logTail(job.id, JOB_PANEL_LOG_LINES, {
+      nonEmpty: true,
+      maxBytes: JOB_PANEL_TAIL_SCAN_BYTES,
+    });
   } catch {
     // The log file can be gone with the process; the rest of the panel still renders.
     return "";

@@ -17,6 +17,10 @@
  *
  * A `job` entry's own `open` flag is not read here: the entry owns its expansion through
  * `cachedLines` in `layout.ts`, which passes the effective `expanded` in the context.
+ *
+ * A log line is the one row source that can be arbitrarily long, so it is drawn through a row
+ * budget: only the columns `JOB_LOG_ROWS_PER_LINE` rows can hold are ever wrapped, and a line
+ * with text left over ends in the theme's ellipsis (review-0942 finding 12).
  */
 import type { JobPanelView } from "@/chat";
 import {
@@ -27,18 +31,30 @@ import {
   oneLine,
   prefixedLine,
   SHOW_HINT,
+  SOURCE_LINE_BREAK,
   SPACE,
   type SpanStyle,
   styled,
 } from "./layout-lines";
-import { type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatTheme } from "./theme";
 import type { TranscriptEntry } from "./transcript-model";
+import { headColumns, markSpansEnd, wrapSpans } from "./wrap";
 
 /** The cells the progress bar draws. Fixed: the panel is a glance, not a dashboard. */
 export const JOB_PROGRESS_CELLS = 16;
 /** The decision lines the expanded panel shows before it counts the rest. */
 export const JOB_PANEL_DECISION_ROWS = 10;
+/** The rows one log line may draw, its truncation mark included. */
+export const JOB_LOG_ROWS_PER_LINE = 4;
+
+/** The wrapping the log rows go through, injectable so a test can measure what it is handed. */
+export const _layoutJobDeps: {
+  wrap: (
+    spans: readonly Span[],
+    options: { readonly width: number; readonly prefix?: readonly Span[] },
+  ) => readonly StyledLine[];
+} = { wrap: wrapSpans };
 
 /** The gap between row one's fields, and the single space before its hint. */
 const FIELD_GAP = "  ";
@@ -238,10 +254,35 @@ function decisionRows(entry: JobEntry, context: LayoutContext): readonly StyledL
   return rows;
 }
 
-/** The job log's tail, one muted row per line. */
+/** The mark a log line ends with when its row budget cannot draw the rest of it. */
+function truncationMark(context: LayoutContext): Span {
+  return styled(context.theme.glyphs.ellipsis, MUTED);
+}
+
+/**
+ * One log line's rows, at most `JOB_LOG_ROWS_PER_LINE` of them. Only the columns that budget
+ * can draw are ever wrapped — a 256 KiB line costs the budget's work, not its own — and a line
+ * with text left over ends in the theme's ellipsis.
+ */
+function boundedRows(text: string, indent: string, context: LayoutContext): readonly StyledLine[] {
+  const prefix = styled(indent, MUTED);
+  const columns = Math.max(1, context.width - displayWidth(indent));
+  const head = headColumns(text, JOB_LOG_ROWS_PER_LINE * columns);
+  const rows = _layoutJobDeps.wrap([styled(head.text, MUTED)], { width: context.width, prefix: [prefix] });
+  const kept = rows.slice(0, JOB_LOG_ROWS_PER_LINE);
+  if (!head.more && kept.length === rows.length) return kept;
+  const last = markSpansEnd(kept[kept.length - 1], context.width, truncationMark(context));
+  return [...kept.slice(0, -1), last];
+}
+
+/** The job log's tail: one muted block per line, each bounded to `JOB_LOG_ROWS_PER_LINE` rows. */
 function logRows(entry: JobEntry, context: LayoutContext): readonly StyledLine[] {
   const indent = cardIndent(context.theme);
-  return entry.view.logTail.flatMap((source) => cardRows(source, { head: indent, rest: indent }, MUTED, context));
+  return entry.view.logTail.flatMap((source) =>
+    sanitizeText(source)
+      .split(SOURCE_LINE_BREAK)
+      .flatMap((physical) => boundedRows(physical, indent, context)),
+  );
 }
 
 /** The sections a view actually has something to show for, in the panel's order. */

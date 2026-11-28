@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { displayWidth, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
-import { cutSpans, elideSpansEnd, mergeSpans, spansWidth, wrap, wrapSpans } from "@/tui/chat/wrap";
+import {
+  cutSpans,
+  elideSpansEnd,
+  headColumns,
+  markSpansEnd,
+  mergeSpans,
+  spansWidth,
+  wrap,
+  wrapSpans,
+} from "@/tui/chat/wrap";
 
 const STAR = "* ";
 const WIDTH = 12;
@@ -67,6 +76,34 @@ describe("cutSpans", () => {
   });
 });
 
+describe("headColumns", () => {
+  test("keeps the columns that fit and reports the text left behind", () => {
+    expect(headColumns("abcdef", 3)).toEqual({ text: "abc", more: true });
+  });
+
+  test("keeps a whole text that fits without reporting more", () => {
+    expect(headColumns("abc", 3)).toEqual({ text: "abc", more: false });
+    expect(headColumns("", 5)).toEqual({ text: "", more: false });
+  });
+
+  test("cuts between clusters rather than inside one", () => {
+    expect(headColumns("a\u0301b\u0301c\u0301", 2)).toEqual({ text: "a\u0301b\u0301", more: true });
+    expect(headColumns("👍👍👍", 2)).toEqual({ text: "👍", more: true });
+  });
+
+  test("widens its window for a cluster wider than one code unit per column", () => {
+    // Two code units hold one cluster here, so a `columns + 1` window underfills and grows.
+    const combining = "a\u0301".repeat(500);
+    const head = headColumns(combining, 40);
+    expect(displayWidth(head.text)).toBe(40);
+    expect(head.more).toBe(true);
+  });
+
+  test("keeps nothing for a budget of no columns, and still reports the text", () => {
+    expect(headColumns("abc", 0)).toEqual({ text: "", more: true });
+  });
+});
+
 describe("elideSpansEnd", () => {
   const marker: Span = { text: "…", color: "muted" };
 
@@ -89,6 +126,24 @@ describe("elideSpansEnd", () => {
     const elided = elideSpansEnd([{ text: "abc", bold: true }, { text: "def" }], 5, marker);
     expect(elided[0].bold).toBe(true);
     expect(textOf(elided)).toBe("abcd…");
+  });
+});
+
+describe("markSpansEnd", () => {
+  const marker: Span = { text: "…", color: "muted" };
+
+  test("marks a line that already fits, where elideSpansEnd keeps it plain", () => {
+    expect(textOf(elideSpansEnd([{ text: "abc" }], 5, marker))).toBe("abc");
+    expect(textOf(markSpansEnd([{ text: "abc" }], 5, marker))).toBe("abc…");
+  });
+
+  test("reserves the marker's columns out of a line that fills the width", () => {
+    expect(textOf(markSpansEnd([{ text: "abcde" }], 5, marker))).toBe("abcd…");
+  });
+
+  test("cuts a marker wider than the whole line to the line", () => {
+    const ascii: Span = { text: "..." };
+    expect(textOf(markSpansEnd([{ text: "abcdef" }], 2, ascii))).toBe("..");
   });
 });
 

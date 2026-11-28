@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { withDepsRestore } from "@test/helpers";
 import type { JobPanelDecision, JobPanelStory, JobPanelView } from "@/chat";
 import { layoutTranscript } from "@/tui/chat/layout";
-import { formatElapsed, JOB_PANEL_DECISION_ROWS, JOB_PROGRESS_CELLS, jobPanelLines } from "@/tui/chat/layout-job";
+import {
+  _layoutJobDeps,
+  formatElapsed,
+  JOB_LOG_ROWS_PER_LINE,
+  JOB_PANEL_DECISION_ROWS,
+  JOB_PROGRESS_CELLS,
+  jobPanelLines,
+} from "@/tui/chat/layout-job";
 import { type LayoutContext, resolveWidth, SHOW_HINT } from "@/tui/chat/layout-lines";
 import { plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
 import type { TranscriptEntry } from "@/tui/chat/transcript-model";
+import { spansWidth } from "@/tui/chat/wrap";
 
 /** Colour on, so a case can assert which tone a row was drawn in. */
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
@@ -271,6 +280,66 @@ describe("jobPanelLines: colour and width", () => {
       context(true, theme, 30),
     );
     for (const row of lines) expect(plainText(row).length).toBeLessThanOrEqual(30);
+  });
+});
+
+describe("jobPanelLines: the log row budget", () => {
+  withDepsRestore(_layoutJobDeps);
+
+  /** The rows of an expanded panel holding one 256 KiB log line, at `width`. */
+  function rowsAt(width: number): readonly string[] {
+    return jobPanelLines(entry({ logTail: ["x".repeat(256 * 1024)] }), context(true, theme, width)).map(plainText);
+  }
+
+  /** The rows under the log heading: what one logical line drew. */
+  function contentOf(rows: readonly string[]): readonly string[] {
+    return rows.slice(rows.findIndex((row) => row.trim() === "log") + 1);
+  }
+
+  test("US-007 AC-6: a 256 KiB line draws four content rows at width 120 and marks the rest", () => {
+    const rows = rowsAt(WIDTH);
+    const content = contentOf(rows);
+    expect(content).toHaveLength(JOB_LOG_ROWS_PER_LINE);
+    expect(rows).toHaveLength(2 + JOB_LOG_ROWS_PER_LINE);
+    expect(content.at(-1)?.endsWith(theme.glyphs.ellipsis)).toBe(true);
+    for (const row of rows) expect(row.length).toBeLessThanOrEqual(WIDTH);
+  });
+
+  test("US-007 AC-7: at widths narrower than 120 the line still draws at most four rows inside the width", () => {
+    for (const width of [40, 60, 100]) {
+      const rows = rowsAt(width);
+      expect(contentOf(rows)).toHaveLength(JOB_LOG_ROWS_PER_LINE);
+      for (const row of rows) expect(row.length).toBeLessThanOrEqual(width);
+    }
+  });
+
+  test("US-007 AC-7: the layout wraps only the columns its row budget can draw", () => {
+    const wrap = _layoutJobDeps.wrap;
+    let widest = 0;
+    _layoutJobDeps.wrap = (spans, options) => {
+      widest = Math.max(widest, spansWidth(spans));
+      return wrap(spans, options);
+    };
+    expect(contentOf(rowsAt(WIDTH))).toHaveLength(JOB_LOG_ROWS_PER_LINE);
+    expect(widest).toBeGreaterThan(0);
+    // The four rows' columns, not the 256 KiB line's: 4 rows of at most 120 columns.
+    expect(widest).toBeLessThanOrEqual(JOB_LOG_ROWS_PER_LINE * WIDTH);
+  });
+
+  test("US-007 AC-3: a line the tail reader marked draws its mark inside the four rows", () => {
+    const rows = jobPanelLines(entry({ logTail: [`…${"é".repeat(40_000)}`] }), context(true, theme, WIDTH)).map(
+      plainText,
+    );
+    const content = contentOf(rows);
+    expect(content).toHaveLength(JOB_LOG_ROWS_PER_LINE);
+    expect(content[0]?.trimStart().startsWith("…")).toBe(true);
+  });
+
+  test("draws a short log line as one unmarked row", () => {
+    const rows = jobPanelLines(entry({ logTail: ["[nax-jobs] one short line"] }), context(true, theme, WIDTH)).map(
+      plainText,
+    );
+    expect(contentOf(rows)).toEqual([`${" ".repeat(5)}[nax-jobs] one short line`]);
   });
 });
 
