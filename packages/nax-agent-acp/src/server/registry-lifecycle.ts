@@ -6,7 +6,7 @@ import { messageOf } from "#src/server/errors";
 import type { McpSessionTools } from "#src/server/mcp/session-tools";
 import type { OpenedSession } from "#src/server/open-session";
 import type { Entry, RegistryDeps } from "#src/server/registry";
-import { createServerSession, type ServerSession } from "#src/server/server-session";
+import { type CloseOutcome, createServerSession, type ServerSession } from "#src/server/server-session";
 
 function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -14,6 +14,27 @@ function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): 
     timer = setTimeout(() => resolve("timeout"), ms);
   });
   return { done, cancel: () => clearTimeout(timer) };
+}
+
+/**
+ * An entry's ownership given up once, however many close paths ask (§Design 1,
+ * finding 7): an ordinary close, shutdown and delete share this one completion,
+ * so the MCP tools close and the lock is released exactly once.
+ */
+const ownership = new WeakMap<Entry, Promise<void>>();
+
+function giveUpOwnership(entry: Entry): Promise<void> {
+  const known = ownership.get(entry);
+  if (known !== undefined) return known;
+  const givenUp = (async () => {
+    try {
+      await entry.mcp.closeAll();
+    } finally {
+      await entry.release();
+    }
+  })();
+  ownership.set(entry, givenUp);
+  return givenUp;
 }
 
 export async function closeEntries({
@@ -31,32 +52,29 @@ export async function closeEntries({
     open.map(async ([sessionId, entry]) => {
       entry.server.cancel();
       const limit = waitAtMost(wait);
-      const closed = entry.server.close().then(
-        () => "closed" as const,
-        (error: unknown) => {
-          logger.warn("session", "session close failed", { sessionId, error: messageOf(error) });
-          return "closed" as const;
-        },
-      );
+      const closed: Promise<CloseOutcome> = entry.server.close().catch((error: unknown) => {
+        logger.warn("session", "session close failed", { sessionId, error: messageOf(error) });
+        return "disposed" as const;
+      });
       const outcome = await Promise.race([closed, limit.done]);
       limit.cancel();
-      if (outcome === "timeout") logger.warn("session", "session did not close in time", { sessionId, waitMs: wait });
       const cleanup = async () => {
         entries.delete(sessionId);
-        try {
-          await entry.mcp.closeAll();
-        } finally {
-          await entry.release();
-        }
+        await giveUpOwnership(entry);
       };
       const deferred = (error: unknown) => {
         logger.warn("session", "deferred session cleanup failed", { sessionId, error: messageOf(error) });
       };
-      if (outcome === "timeout" && entry.server.running) {
-        // Bound shutdown, not ownership: a slow cancelled turn must still be
-        // able to persist its cost before another process can resume it.
-        void closed.then(cleanup).catch(deferred);
-        return;
+      if (outcome !== "disposed") {
+        logger.warn("session", "session did not close in time", { sessionId, waitMs: wait });
+        // Bound shutdown, not ownership: a slow cancelled turn or a held output
+        // write must still persist its cost before another process can resume it.
+        if (entry.server.running) {
+          void entry.server.disposal.then(cleanup).catch(deferred);
+          return;
+        }
+        // Nothing can be lost, so the cap releases ownership even when the S3
+        // session's own close has not settled.
       }
       // Cleanup is bounded too: a release waiting on a live lock guard keeps
       // ownership in the background instead of hanging shutdown.
@@ -101,26 +119,63 @@ export function createEntryServer({
     readOldText: deps.readOldText,
     logger: deps.logger,
     turnTimeoutSeconds: deps.turnTimeoutSeconds,
+    ...(deps.closeWaitMs !== undefined ? { closeWaitMs: deps.closeWaitMs } : {}),
     priorCostUsd: meta.costUsd ?? 0,
     onTurnEnd: (prompt, costUsd) => recordTurn(meta.sessionId, prompt, costUsd),
     titleFor: (name) => mcp.titleFor(name),
   });
 }
 
-export async function closeRegistryEntry(entries: Map<string, Entry>, sessionId: string, entry: Entry): Promise<void> {
-  try {
-    await entry.server.close();
-  } finally {
+/** What a close caller may ask for (§Design 1, finding 7). */
+export interface CloseEntryOptions {
+  readonly logger: AgentLogger;
+  /**
+   * Wait for the session's true disposal before giving up ownership: delete must
+   * not remove storage under a session that is still finishing its turn.
+   */
+  readonly awaitCleanup?: boolean;
+}
+
+/**
+ * Closes an entry and gives up its ownership. The caller's wait is the session's
+ * own bounded close; when a held output write keeps the session alive past it,
+ * ownership follows the session instead, so the lock is never released while a
+ * competing owner could resume a half-closed session.
+ */
+export async function closeRegistryEntry(
+  entries: Map<string, Entry>,
+  sessionId: string,
+  entry: Entry,
+  { logger, awaitCleanup = false }: CloseEntryOptions,
+): Promise<void> {
+  const giveUp = async (): Promise<void> => {
     try {
-      try {
-        await entry.mcp.closeAll();
-      } finally {
-        await entry.release();
-      }
+      await giveUpOwnership(entry);
     } finally {
       entries.delete(sessionId);
     }
+  };
+  let outcome: CloseOutcome;
+  try {
+    outcome = await entry.server.close();
+  } catch (error) {
+    // A close that failed is not a live session any more: ownership goes now, and
+    // the failure still reaches the caller (as the unconditional finally did).
+    await giveUp();
+    throw error;
   }
+  if (awaitCleanup) {
+    await entry.server.disposal;
+    await giveUp();
+    return;
+  }
+  if (outcome === "timed_out") {
+    void entry.server.disposal.then(giveUp).catch((error: unknown) => {
+      logger.warn("session", "deferred session cleanup failed", { sessionId, error: messageOf(error) });
+    });
+    return;
+  }
+  await giveUp();
 }
 
 export const TITLE_MAX = 80;

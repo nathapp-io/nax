@@ -52,6 +52,15 @@ export interface RegistrySetupExtra {
   readonly failUpdates?: boolean;
   /** Scripts for each opened session's turns; default: two short replies. */
   readonly scripts?: readonly Script[];
+  /**
+   * Every client write waits for this first: a held output notification, which a
+   * close must not wait for (finding 7).
+   */
+  readonly holdUpdates?: Promise<void>;
+  /** The session's caller wait for close(); a test sets it small to control the clock. */
+  readonly closeWaitMs?: number;
+  /** Every opened fake session's close throws (a failed S3 close). */
+  readonly closeFails?: boolean;
   /** Re-resolves the options when session/new finds no model (onboarding). */
   readonly reloadOptions?: () => Promise<ReloadedOptions>;
   readonly ensureCredentials?: (model: string) => Promise<void>;
@@ -61,7 +70,11 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
   const opened: OpenSessionRequest[] = [];
   const fakes: FakeAgentSession[] = [];
   const transcripts = extra.transcripts ?? createMemoryTranscriptStore();
-  const port = fakePort({ features: ALL_FEATURES, ...(extra.failUpdates === true ? { failUpdates: true } : {}) });
+  const port = fakePort({
+    features: ALL_FEATURES,
+    ...(extra.failUpdates === true ? { failUpdates: true } : {}),
+    ...(extra.holdUpdates !== undefined ? { holdUpdates: extra.holdUpdates } : {}),
+  });
   const { logger, lines } = recordingLogger();
   let next = 0;
   let releaseCalls = 0;
@@ -100,6 +113,7 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
       if (extra.failOpens?.includes(opened.length) === true) throw new Error(`open ${opened.length} failed`);
       const fake = fakeAgentSession(request.sessionId, extra.scripts ?? [said("hi"), said("again")], {
         ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
+        ...(extra.closeFails === true ? { closeFails: true } : {}),
       });
       fakes.push(fake);
       return { session: fake.session, doc: await transcripts.load(request.sessionId) };
@@ -115,6 +129,7 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
     logger,
     turnTimeoutSeconds: TURN_TIMEOUT_SECONDS,
     shutdownWaitMs: 50,
+    ...(extra.closeWaitMs !== undefined ? { closeWaitMs: extra.closeWaitMs } : {}),
     ...(extra.connectMcp !== undefined ? { connectMcp: extra.connectMcp } : {}),
     ...(extra.reloadOptions !== undefined ? { reloadOptions: extra.reloadOptions } : {}),
     ...(extra.ensureCredentials !== undefined ? { ensureCredentials: extra.ensureCredentials } : {}),

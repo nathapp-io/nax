@@ -26,6 +26,8 @@ export interface FakePortOptions {
   readonly permission?: (ask: PermissionAsk) => Promise<RequestPermissionResponse>;
   readonly elicit?: (form: ElicitationForm) => Promise<CreateElicitationResponse>;
   readonly failUpdates?: boolean;
+  /** Every write waits for this first: a pending output write (finding 7). */
+  readonly holdUpdates?: Promise<void>;
 }
 
 export interface FakePort {
@@ -45,7 +47,9 @@ export function fakePort(options: FakePortOptions = {}): FakePort {
     features: options.features ?? NO_CLIENT_FEATURES,
     update: async (update) => {
       if (options.failUpdates === true) throw new Error("client connection closed");
+      // Recorded as sent, then held: a test can see the write start before it releases it.
       updates.push(update);
+      if (options.holdUpdates !== undefined) await options.holdUpdates;
     },
     requestPermission: (ask, signal) => {
       asks.push(ask);

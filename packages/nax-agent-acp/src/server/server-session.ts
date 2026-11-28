@@ -8,6 +8,7 @@
  */
 import { type ContentBlock, type PromptResponse, RequestError, type SessionUpdate } from "@agentclientprotocol/sdk";
 import type { AgentLogger, AgentSession, SessionEvent } from "@nathapp/nax-agent";
+import { race } from "#src/client/race";
 import type { ClientPort } from "#src/server/client-port";
 import { messageOf, turnInProgress } from "#src/server/errors";
 import { createPermissionBroker, type Decision, type PermissionBroker } from "#src/server/permissions";
@@ -20,6 +21,16 @@ import { type PromptOutcome, promptOutcome } from "#src/server/translate/stop";
 /** S3's default turn limit, passed explicitly so the timeout notice names it (M-15). */
 export const TURN_TIMEOUT_SECONDS = 3600;
 
+/**
+ * How long close() waits for the session's disposal before it returns to its
+ * caller (§Design 1, finding 7). A held output write can keep delivery pending
+ * indefinitely; the deadline ends the caller's wait, never the resource's life.
+ */
+export const CLOSE_WAIT_MS = 5000;
+
+/** How a close ended: the session was disposed inside the wait, or the wait ran out first. */
+export type CloseOutcome = "disposed" | "timed_out";
+
 export interface ServerSessionDeps {
   readonly session: AgentSession;
   readonly port: ClientPort;
@@ -29,6 +40,8 @@ export interface ServerSessionDeps {
   readonly logger: AgentLogger;
   readonly turnTimeoutSeconds: number;
   readonly now?: () => number;
+  /** The caller's close wait (default `CLOSE_WAIT_MS`); a test sets it small to control the clock. */
+  readonly closeWaitMs?: number;
   readonly priorCostUsd?: number;
   /** After each turn: title, timestamp and cumulative cost. A rejection is logged, never thrown. */
   readonly onTurnEnd?: (message: string, costUsd: number) => Promise<void>;
@@ -54,7 +67,17 @@ export interface ServerSession {
   /** A terminal close() was requested, whether or not it has finished (spec §Design 1). */
   isClosing(): boolean;
   cancel(): void;
-  close(): Promise<void>;
+  /**
+   * The caller's close (finding 7): resolves once the session is disposed, or at
+   * `closeWaitMs` when a held output write keeps delivery unsettled.
+   */
+  close(): Promise<CloseOutcome>;
+  /**
+   * The session's true cleanup completion, however long the caller's wait was:
+   * the S3 close plus every delivery it had begun. Settles, never rejects, and is
+   * only meaningful once close() has been called.
+   */
+  readonly disposal: Promise<void>;
 }
 
 /** The answer when a cancel arrived before the S3 turn started: nothing ran. */
@@ -155,11 +178,37 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   let agent: AgentSession = deps.session;
   let contextWindow = deps.contextWindow;
   let drained = Promise.resolve();
-  let closing: Promise<void> | undefined;
+  let closing: Promise<CloseOutcome> | undefined;
+  /** The session's true cleanup. `disposal` is its settled, never-rejecting view. */
+  let disposing: Promise<void> | undefined;
+  const closeWaitMs = deps.closeWaitMs ?? CLOSE_WAIT_MS;
 
   function stopWaiting(): void {
     turn?.permissions.abortAll();
     turn?.questions.abortAll();
+  }
+
+  /**
+   * The caller's wait for `work` (finding 7): at the deadline the caller is told
+   * the session did not reach disposal, while `work` keeps running, so a later
+   * failure is logged rather than thrown into a call that already returned.
+   */
+  function waitForDisposal(work: Promise<void>): Promise<CloseOutcome> {
+    return race(work, { timeoutMs: closeWaitMs }).then((outcome) => {
+      if (outcome.kind === "failed") throw outcome.error;
+      if (outcome.kind !== "timeout") return "disposed" as const;
+      deps.logger.warn("session", "session close deadline reached; the session is still disposing", {
+        sessionId: deps.session.id,
+        waitMs: closeWaitMs,
+      });
+      void work.catch((error: unknown) =>
+        deps.logger.warn("session", "session cleanup failed after its close deadline", {
+          sessionId: deps.session.id,
+          error: messageOf(error),
+        }),
+      );
+      return "timed_out" as const;
+    });
   }
 
   async function reportTurnEnd(message: string): Promise<void> {
@@ -349,7 +398,8 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       // A switch whose open and restore both failed leaves a dead session that
       // the registry's dead-entry cleanup closes: nothing here to close.
       if (closed && switching === undefined) {
-        closing = Promise.resolve();
+        disposing = Promise.resolve();
+        closing = Promise.resolve("disposed" as const);
         return closing;
       }
       const inFlight = switching;
@@ -357,7 +407,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       cancelBeforeSend = true;
       agent.cancel("session is closing");
       stopWaiting();
-      closing = (async () => {
+      const work = (async () => {
         // The switch owns `agent` until it settles; then close only what it
         // left live, so a switch that left nothing is not closed twice.
         if (inFlight !== undefined) await inFlight.catch(() => undefined);
@@ -369,7 +419,17 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
           await drained;
         }
       })();
+      // Two promises, one lifetime (finding 7): the resource's, which settles
+      // whenever the held write does, and the caller's, which is bounded.
+      disposing = work.then(
+        () => undefined,
+        () => undefined,
+      );
+      closing = waitForDisposal(work);
       return closing;
+    },
+    get disposal(): Promise<void> {
+      return disposing ?? Promise.resolve();
     },
   };
 }
