@@ -3,7 +3,7 @@
   "feature": "review-0942-followups",
   "branchName": "feat/review-0942-followups",
   "createdAt": "2026-11-28T04:10:17.466Z",
-  "updatedAt": "2026-11-28T05:17:18.814Z",
+  "updatedAt": "2026-11-28T05:29:42.384Z",
   "userStories": [
     {
       "id": "US-001",
@@ -135,14 +135,17 @@
         "routing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Medium: two files in one package with effective-routing inheritance logic and offline wire capture; no cross-package change, so single-session TDD fits."
+        "reasoning": "Medium: two files in one package with effective-routing inheritance logic and offline wire capture; no cross-package change, so single-session TDD fits.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/override-declaration.ts",
@@ -152,7 +155,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d9d79a538d1d27f0359ac54932a6e79ed85caa29"
     },
     {
       "id": "US-004",
