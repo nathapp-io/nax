@@ -19,7 +19,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { MemoryNoteWrite, MemoryOutbox, MemorySaveInput } from "@nathapp/nax-agent";
+import type { MemoryNoteWrite, MemoryOutbox, MemorySaveInput, MemoryStore } from "@nathapp/nax-agent";
+import { _atomicWriteDeps } from "@nathapp/nax-agent/internal";
 import {
   assertDefined,
   assertNaxError,
@@ -528,6 +529,58 @@ describe("host writes", () => {
 
       expect(result).toEqual({ moved: 0, heldBack: [UNCERTAIN_CLIENT] });
       expect(await outbox.held(UNCERTAIN_CLIENT)).toMatchObject({ state: "uncertain" });
+    });
+
+    test("a retried partial discard reports prior refusals and rewinds both scopes", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      const save = _memoryHostDeps.saveMemoryNote;
+      let store: MemoryStore | undefined;
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        store = input.store;
+        return save(input);
+      };
+      await host.save(REPLAY_BUDGET);
+      assertDefined(store, "the host store");
+      const outbox = hostOutbox();
+      await outbox.enqueue({
+        kind: "forget",
+        clientId: RETIRED_CLIENT,
+        scope: "user",
+        slug: FOLDED_SLUG,
+        writeMode: "direct",
+        awaits: UNCERTAIN_CLIENT,
+      });
+      const last = "client-last";
+      await outbox.enqueue({
+        kind: "forget",
+        clientId: last,
+        scope: "project",
+        slug: "last-source",
+        writeMode: "direct",
+        awaits: RETIRED_CLIENT,
+      });
+      const state = await store.readSyncState();
+      await store.writeSyncState({ ...state, cursor: { user: "user-checkpoint", project: "project-checkpoint" } });
+      const rename = _atomicWriteDeps.rename;
+      const fault = new Error("second refusal write failed");
+      _atomicWriteDeps.rename = async (from, to) => {
+        if (String(to).endsWith(`-${last}.json`)) throw fault;
+        return rename(from, to);
+      };
+      try {
+        await expect(discardOf()({ clientId: UNCERTAIN_CLIENT })).rejects.toBe(fault);
+      } finally {
+        _atomicWriteDeps.rename = rename;
+      }
+      const priorRefusal = await outbox.held(RETIRED_CLIENT);
+      expect(await discardOf()({ clientId: UNCERTAIN_CLIENT })).toEqual({
+        moved: 1,
+        heldBack: [],
+        refused: [RETIRED_CLIENT, last],
+      });
+      expect((await store.readSyncState()).cursor).toEqual({ user: null, project: null });
+      expect(await outbox.held(RETIRED_CLIENT)).toEqual(priorRefusal);
     });
 
     test("[B5] refuses the source retirements a discarded replacement was folded into", async () => {

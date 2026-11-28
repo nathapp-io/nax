@@ -132,12 +132,14 @@ export interface MemoryOutbox {
    * `awaits`.
    */
   enqueue(request: OutboxRequest): Promise<MemoryOutboxEntry>;
-  list(): Promise<MemoryOutboxEntry[]>;
+  /** Dispatch snapshots recover claims and scan under the writer lock; display reads stay nonblocking. */
+  list(options?: { readonly dispatch?: boolean }): Promise<MemoryOutboxEntry[]>;
   listInvalid(): Promise<string[]>;
   remove(clientId: string): Promise<void>;
   /**
    * The entry the outbox holds under `clientId` right now, read from its file; `undefined` when
-   * it holds none. A caller's `list` is a snapshot — this is the entry as it is at the call.
+   * it holds no matching filename. A matching but unreadable or malformed entry throws rather
+   * than authorizing dispatch by pretending it was delivered. A caller's `list` is a snapshot.
    */
   held(clientId: string): Promise<MemoryOutboxEntry | undefined>;
   /**
@@ -442,8 +444,14 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
 
   async function held(clientId: string): Promise<MemoryOutboxEntry | undefined> {
     for (const file of await filesFor(clientId)) {
-      const entry = await readEntry(file);
-      if (entry !== null) return entry;
+      const entry = await readEntryStrict(join(dir, file.name));
+      if (entry === null) {
+        throw new NaxError("memory outbox dependency is unreadable", "MEMORY_OUTBOX_INVALID", {
+          stage: ERROR_STAGE,
+          clientId,
+        });
+      }
+      return entry;
     }
     return undefined;
   }
@@ -559,7 +567,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
 
   return {
     enqueue,
-    list: () => reading(list, []),
+    list: (options) => (options?.dispatch ? locked(list, []) : reading(list, [])),
     listInvalid: () => reading(listInvalid, []),
     remove: (clientId) => locked(() => remove(clientId), undefined),
     // Absence can authorize a push. Never observe the gap while a claim is in progress.

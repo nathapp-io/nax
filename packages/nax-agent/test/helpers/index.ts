@@ -51,6 +51,7 @@ export {
   makeCompactionHarness,
 } from "./compaction";
 export { CONFINED_TEST_ENV, isConfinedTestRun, SANDBOXED_ENV } from "./confined";
+export * from "./memory-drain";
 export {
   type MemoryProviderMock,
   type MemoryProviderScript,

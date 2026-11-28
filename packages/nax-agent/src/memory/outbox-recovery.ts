@@ -125,6 +125,10 @@ async function refuseWaiters(access: OutboxEntryAccess, target: MemoryOutboxEntr
         const refusal = undelivered(entry, "rejected", waitsOnDiscarded(dependency.slug));
         await access.write(file, refusal);
         refused.push(refusal);
+      } else if (entry.reason === waitsOnDiscarded(dependency.slug)) {
+        // A failed attempt returned no outcome. Report its durable refusals on retry too,
+        // without rewriting them, so callers rewind every affected scope.
+        refused.push(entry);
       }
       pending.push(entry);
     }

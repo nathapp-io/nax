@@ -234,6 +234,8 @@ interface DrainRun {
   readonly timers: MemoryTimers;
   /** The keys an unresolved write holds: no write of the same note may be dispatched behind it. */
   readonly blocked: ReadonlySet<string>;
+  /** Only successful, mirrored and removed deliveries establish this proof. */
+  readonly delivered: Set<string>;
 }
 
 /** Whether `entry` waits on an id the outbox still holds: such an entry is never a proof. */
@@ -268,7 +270,7 @@ type AwaitsOutcome =
  */
 async function awaitsOutcome(run: DrainRun, entry: MemoryOutboxEntry): Promise<AwaitsOutcome> {
   const awaitedId = entry.awaits;
-  if (awaitedId === undefined) return { kind: "free" };
+  if (awaitedId === undefined || run.delivered.has(awaitedId)) return { kind: "free" };
   const seen = run.outbox.held(awaitedId);
   const awaited = seen === undefined || seen.state === "rejected" ? await run.outbox.refresh(awaitedId) : seen;
   if (awaited === undefined) {
@@ -332,6 +334,7 @@ async function settle(
   await applyPushed(run.input, entry, outcome.result);
   await outbox.remove(entry.clientId);
   run.outbox.removed(entry.clientId);
+  run.delivered.add(entry.clientId);
   await dropSuperseded(run, entry);
   return { ...tally, pushed: tally.pushed + 1 };
 }
@@ -373,13 +376,14 @@ export { rewindPullCursor };
  * to answer within the deadline, and turning one ambiguity into several is not progress.
  */
 export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult> {
-  const all = await input.outbox.list();
+  const all = await input.outbox.list({ dispatch: true });
   const held = all.filter((entry) => entry.state === "uncertain");
   const run: DrainRun = {
     input,
     outbox: outboxView(all, input.outbox),
     timers: input.timers ?? GLOBAL_MEMORY_TIMERS,
     blocked: new Set(held.map(entryKey)),
+    delivered: new Set(),
   };
   const queue = all.filter((entry) => entry.state === "queued");
   const proven = new Set<string>();
