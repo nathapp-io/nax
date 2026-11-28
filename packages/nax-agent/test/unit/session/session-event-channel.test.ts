@@ -394,7 +394,7 @@ describe("createSessionEventChannel storage reclamation (US-001)", () => {
     const { ch, calls } = channel({ controlCap: 30 });
     for (let i = 0; i < 20; i += 1) ch.push(result(`a${i}`));
     expect(calls.stalled).toBe(0);
-    // The 11th pull crosses a reclaim pass; those 11 must stop counting.
+    // The pulls cross a reclaim pass at the 10th; those 11 must stop counting.
     for (let i = 0; i < 11; i += 1) await ch.iterator.next();
     expect(inspectSessionEventChannel(ch).relocatedSlots).toBeGreaterThan(0);
     for (let i = 0; i < 20; i += 1) ch.push(result(`b${i}`));
