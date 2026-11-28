@@ -1061,11 +1061,12 @@ function introduceProvider(override: ProviderOverride): PiProvider {
   }
   const byId = new Map<string, Model<Api>>();
   // Same inheritance rule as a bundled provider's: a later declaration of an id
-  // that states no routing keeps the restriction already declared for it.
+  // that states no routing keeps the restriction already declared for it, and a
+  // declaration that moves the id off openai-completions clears it.
   const routingById = new Map<string, OpenRouterRouting>();
   for (const model of override.models) {
     byId.set(model.id, synthesiseIntroducedModel(override, model, override.baseUrl, routingById.get(model.id)));
-    if (model.openRouterRouting !== undefined) routingById.set(model.id, model.openRouterRouting);
+    recordRouting(routingById, model);
   }
   const entries = [...byId.values()];
   return createProvider({
@@ -1177,7 +1178,7 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       assertOverrideModelThinkingFormat(model);
       assertOverrideModelThinkingBudget(model);
       byId.set(model.id, synthesiseModel(base, model, routingById.get(model.id)));
-      if (model.openRouterRouting !== undefined) routingById.set(model.id, model.openRouterRouting);
+      recordRouting(routingById, model);
     }
     const synthesised = [...byId.values()];
     const overriddenIds = new Set(byId.keys());
@@ -1203,6 +1204,23 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       getModels: () => merged,
     });
   }
+}
+
+/**
+ * Records what one declaration leaves as the effective routing for its id.
+ *
+ * A declaration that states routing replaces what came before. One that omits
+ * it inherits — unless it also moves the id to a protocol that cannot send
+ * routing, in which case the effective value is cleared: `routingFor` drops the
+ * inherited restriction for such a declaration, so keeping it here would let a
+ * later openai-completions declaration resurrect a restriction the wire had
+ * already dropped, and `override-declaration.ts`'s effectiveRouting (which
+ * clears on the same protocol switch) would then disagree with the outgoing
+ * model.
+ */
+function recordRouting(routingById: Map<string, OpenRouterRouting>, model: ResolvedModel): void {
+  if (model.openRouterRouting !== undefined) routingById.set(model.id, model.openRouterRouting);
+  else if (model.protocol !== "openai-completions") routingById.delete(model.id);
 }
 
 /**

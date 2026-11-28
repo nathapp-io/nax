@@ -278,4 +278,21 @@ describe("openRouterRouting across successively declared catalogs (finding 6)", 
       ),
     ).rejects.toThrow(/openRouterRouting/);
   });
+
+  it("clears an inherited restriction when a declaration switches protocol, so a switch back cannot resurrect it", async () => {
+    // Same rule as the bundled-provider loop: the middle declaration states no
+    // routing and cannot send one, which clears what the first declared. A
+    // later openai-completions declaration therefore inherits nothing — the
+    // wire and createClient's two-catalog comparison must agree, and they only
+    // do if the map is cleared at the switch rather than at the last write.
+    const { thinkingFormat: _format, ...plain } = MODEL;
+    const routed = { ...MODEL, openRouterRouting: { only: ["host-a"] } };
+    const elsewhere = { ...plain, protocol: "anthropic-messages" as const };
+    const models = [routed, elsewhere, { ...MODEL }];
+
+    const body = await wireRequest([{ ...STRATA, models }], [{ ...STRATA, models: models.map((m) => ({ ...m })) }]);
+
+    expect(JSON.parse(body)).not.toHaveProperty("provider");
+    expect(body).not.toContain("host-a");
+  });
 });

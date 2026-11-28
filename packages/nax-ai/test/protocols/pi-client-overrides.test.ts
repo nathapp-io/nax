@@ -670,6 +670,23 @@ describe("routing across successive same-id declarations (finding 6)", () => {
     const payload = await wirePayload(await deps.resolveModel(AMENDED.id, "openrouter"), "off");
     expect(payload).not.toHaveProperty("provider");
   });
+
+  it("clears an inherited restriction when a declaration switches protocol, so a switch back cannot resurrect it", async () => {
+    // The middle declaration states no routing AND cannot send one, so the
+    // restriction is gone from the wire at that point (routingFor drops it) —
+    // and the client-side comparison treats the same switch as clearing it.
+    // The later openai-completions declaration must therefore inherit nothing,
+    // or the outgoing model and the comparison would disagree again.
+    const routed: ResolvedModel = { ...AMENDED, openRouterRouting: { only: ["deepinfra"] } };
+    const elsewhere: ResolvedModel = { ...AMENDED, protocol: "anthropic-messages" };
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "openrouter", models: [routed, elsewhere, { ...AMENDED }] }],
+    });
+    const model = await deps.resolveModel(AMENDED.id, "openrouter");
+
+    expect(model.api).toBe("openai-completions");
+    expect(await wirePayload(model, "off")).not.toHaveProperty("provider");
+  });
 });
 
 /**
