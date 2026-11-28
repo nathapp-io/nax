@@ -194,15 +194,25 @@ describe("turn markers on real transcript files (US-002)", () => {
 
   test("AC-2: ended is based on the intervening save, not a snapshot from the turn's start", async () => {
     const store = createFileTranscriptStore(dir);
+    // One real turn: `running` opens it, a save carries the history forward, `ended`
+    // closes it. A marker that cached the document at `running` would republish the
+    // pre-turn history on `ended` and silently drop the message saved in between.
+    const turnId = "t1";
     await store.save("s", imageDoc);
+    const running = countImageSeam();
+    await store.markTurn("s", { turnId, state: "running" });
+    expect(running.stop()).toEqual([]);
     await store.save("s", {
       ...imageDoc,
       messages: [...imageDoc.messages, { role: "assistant", content: "changed" }],
     });
     const before = await storedDocument("s");
-    await store.markTurn("s", { turnId: "t2", state: "ended" });
+    expect(before.messages).toHaveLength(4);
+    const ended = countImageSeam();
+    await store.markTurn("s", { turnId, state: "ended" });
+    expect(ended.stop()).toEqual([]);
     const after = await storedDocument("s");
-    expect(after).toEqual({ ...before, turn: { turnId: "t2", state: "ended" } });
+    expect(after).toEqual({ ...before, turn: { turnId, state: "ended" } });
     expect(after.messages).toHaveLength(4);
     expect(after.messages[3]).toMatchObject({ role: "assistant", content: "changed" });
   });
