@@ -29,6 +29,14 @@
  * Not recovered (documented limits): ids lost between the add call and the
  * write, and two processes writing one user-scope file at the same time.
  *
+ * Those lost ids are why a failed `add` after a successful save must not be
+ * retried: the copy exists on the server and nax has no record of it, so a
+ * second add would make a second copy. Nothing in this module decides that — it
+ * reports the read or write it could not complete and keeps the file it could
+ * not change — but the MCP provider declares its save non-replayable
+ * (`MemoryReplayContract`), and the outbox holds the entry as an unknown
+ * outcome instead of dispatching the add again.
+ *
  * Internal to `src/memory/`: not exported from the barrel.
  */
 

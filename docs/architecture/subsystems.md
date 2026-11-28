@@ -1756,7 +1756,14 @@ External MCP servers whose tools the native agent may call, surfaced as
   (`src/cli/mcp.ts`), like `bun.lock`.
 - `pool.ts` — run-scoped connections keyed by `(serverId, workdir)` so parallel
   worktrees never query another checkout; owned by `NaxRuntime.mcpPool` and closed
-  in `runtime.close()` (§36).
+  in `runtime.close()` (§36). An exit is per connection: the key reconnects on its
+  next use, bounded by `MCP_MAX_RECONNECTS`. A call interrupted by that exit is
+  re-dispatched **once**, and only when the caller declared it replay-safe
+  (`McpReplaySafety`, per call); a call that declares nothing is at-most-once, so a
+  non-idempotent tool whose reply was lost is not sent again. The memory provider
+  declares only its `search` and its delete-by-id replay-safe and its `add`
+  at-most-once, and the generic tool provider declares it for the tools the lock
+  vouches as read-only, never for an unknown tool.
 - `client.ts` — the only SDK wrapper (stdio transport, explicit env).
 - `rollup.ts` — per-run server lifecycle rollup at
   `<outputDir>/mcp/<runId>-servers.json`, including withheld tools.

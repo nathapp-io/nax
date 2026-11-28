@@ -10,7 +10,7 @@ import { isMemoryPushRejected, type MemoryNote, type MemoryWriteRequest } from "
 import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
-import type { McpCallResult, McpPool, McpToolDescriptor } from "@/mcp";
+import type { McpCallResult, McpPool, McpReplaySafety, McpToolDescriptor } from "@/mcp";
 import { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "@/memory";
 import { createMcpIdMap, type McpIdMap } from "@/memory/mcp-id-map";
 import { MCP_MEMORY_RESULT_MAX_BYTES } from "@/memory/mcp-provider";
@@ -35,7 +35,8 @@ function answer(content: string, isError = false): McpCallResult {
 interface PoolCall {
   readonly tool: string;
   readonly input: Record<string, unknown>;
-  readonly opts: { timeoutMs: number; maxBytes: number };
+  /** What the provider declared about repeating the call, as the pool receives it. */
+  readonly opts: { timeoutMs: number; maxBytes: number; replaySafety?: McpReplaySafety };
   readonly serverId: string;
   readonly workdir: string;
 }
@@ -188,7 +189,8 @@ describe("createMcpMemoryProvider", () => {
           workdir: WORKDIR,
           tool: "add_memories",
           input: { text: "s1: d\n\nb" },
-          opts: { timeoutMs: TIMEOUT_MS, maxBytes: MCP_MEMORY_RESULT_MAX_BYTES },
+          // US-002: the add is the one call declared at-most-once, so the pool never re-sends it.
+          opts: { timeoutMs: TIMEOUT_MS, maxBytes: MCP_MEMORY_RESULT_MAX_BYTES, replaySafety: "at-most-once" },
         },
       ]);
       expect(MCP_MEMORY_RESULT_MAX_BYTES).toBe(65_536);
@@ -284,6 +286,58 @@ describe("createMcpMemoryProvider", () => {
     });
   });
 
+  describe("US-002 the add is a non-replayable write", () => {
+    test("AC-7: the add is dispatched at-most-once, so an interrupted add is never re-sent", async () => {
+      await make().push(saveRequest());
+
+      // The one declaration that keeps a lost reply from becoming a second note: the pool
+      // re-dispatches only a call it was told is replay-safe, and this one is not.
+      expect(fake.calls.map((c) => c.opts.replaySafety)).toEqual(["at-most-once"]);
+    });
+
+    test("AC-7: the provider declares the save non-replayable and its dispatch late on the deadline", async () => {
+      // `timeoutAftermath: "late"` is the honest answer here: the pool's deadline abandons the
+      // wait, not the request, so an add that outlives it may still reach the server.
+      expect(make().replay).toEqual({ nonReplayable: ["save"], timeoutAftermath: "late" });
+    });
+
+    test("AC-9: the remote id goes into the id map while push answers the local note id", async () => {
+      const result = await make().push(saveRequest());
+
+      expect(result).toEqual({ id: "note-id-1", status: "active" });
+      expect(await idMap.ids("project", "s1")).toEqual(["r1"]);
+      // Two identities: push answers the note's own id, and the server's copy is filed apart.
+      expect(result.id).not.toBe("r1");
+    });
+
+    test("AC-10: an ok answer with no remote id is a success that maps nothing and answers the local id", async () => {
+      fake.respond = () => answer("ok");
+
+      const result = await make().push(saveRequest());
+
+      expect(result).toEqual({ id: "note-id-1", status: "active" });
+      expect(await idMap.ids("project", "s1")).toEqual([]);
+    });
+  });
+
+  describe("US-002 lookups and deletes keep the replay-safe declaration", () => {
+    test("AC-8: the search tool is dispatched replay-safe, so an interrupted lookup keeps the retry", async () => {
+      fake.respond = () => answer("[]");
+
+      await make().search?.({ scope: "project", text: "bun", limit: 5 });
+
+      expect(fake.calls.map((c) => [c.tool, c.opts.replaySafety])).toEqual([["search_memory", "replay-safe"]]);
+    });
+
+    test("AC-8: a delete names its remote id, so it is dispatched replay-safe too", async () => {
+      await idMap.add("project", "s1", ["r1"]);
+
+      await make(FORGET_MCP).push(forgetRequest());
+
+      expect(fake.calls.map((c) => [c.tool, c.opts.replaySafety])).toEqual([["delete_memory", "replay-safe"]]);
+    });
+  });
+
   describe("push forget without tools.forget", () => {
     beforeEach(async () => {
       await idMap.add("project", "s1", ["r1"]);
@@ -314,7 +368,12 @@ describe("createMcpMemoryProvider", () => {
         ["delete_memory", { memory_id: "r1" }],
         ["delete_memory", { memory_id: "r2" }],
       ]);
-      expect(fake.calls[0]?.opts).toEqual({ timeoutMs: TIMEOUT_MS, maxBytes: MCP_MEMORY_RESULT_MAX_BYTES });
+      expect(fake.calls[0]?.opts).toEqual({
+        timeoutMs: TIMEOUT_MS,
+        maxBytes: MCP_MEMORY_RESULT_MAX_BYTES,
+        // US-002: a delete names its remote id, so repeating it is safe.
+        replaySafety: "replay-safe",
+      });
     });
 
     test("resolves deleted and drops the id-map entry (AC-24)", async () => {

@@ -12,10 +12,13 @@
  * the next, but concurrency on one key is still possible: several hops and chat
  * share the run-scoped connection, so two callers can have calls in flight
  * against one server at once. Nothing here serializes them, so an exit can cut
- * off more than one call. Each such call is retried once through `entry()`,
- * whose memoized open promise hands every caller the same single replacement
- * connection — the exit is counted once, because the shared layer reports it
- * once.
+ * off more than one call. A call the caller declared replay-safe is retried once
+ * through `entry()`, whose memoized open promise hands every caller the same
+ * single replacement connection — the exit is counted once, because the shared
+ * layer reports it once. A call that declares nothing is not retried at all:
+ * replay safety is declared per dispatch (`McpReplaySafety`), never inferred from
+ * a tool's name, so a write whose reply was lost answers an error the caller can
+ * record as an unknown outcome rather than becoming a second write.
  */
 
 import type { McpServerConfig } from "@/config";
@@ -54,10 +57,39 @@ export interface McpPool {
     workdir: string,
     tool: string,
     input: Record<string, unknown>,
-    opts: { timeoutMs: number; maxBytes: number },
+    opts: McpPoolCallOptions,
   ): Promise<McpCallResult>;
   events(): readonly McpServerEvent[];
   close(): Promise<void>;
+}
+
+/**
+ * Whether the pool may dispatch a call a second time, when the connection it was sent on
+ * reported its exit before answering.
+ *
+ * Declared at the dispatch because only the caller knows what the tool does with a repeat.
+ * `"replay-safe"` is a lookup — a call that changes nothing, so sending it again after an
+ * interruption reads the same server state. `"at-most-once"` is a write that may already have
+ * committed: it is dispatched once, and an interruption is answered as an error rather than
+ * re-sent, because a second add makes a second note.
+ */
+export type McpReplaySafety = "replay-safe" | "at-most-once";
+
+/**
+ * The replay declaration a call gets when it makes none: at most once.
+ *
+ * Unknown tools are not assumed read-only. A tool name says nothing about what the server does
+ * with it, and inferring safety from a name (`search`, `get`, `list`) is how a write that
+ * happened to be named `get_or_create` gets re-sent after its reply was lost.
+ */
+export const MCP_DEFAULT_REPLAY_SAFETY: McpReplaySafety = "at-most-once";
+
+/** One call's budget, and what the caller declares about repeating it. */
+export interface McpPoolCallOptions {
+  readonly timeoutMs: number;
+  readonly maxBytes: number;
+  /** Absent takes {@link MCP_DEFAULT_REPLAY_SAFETY}: an undeclared call is never re-dispatched. */
+  readonly replaySafety?: McpReplaySafety;
 }
 
 /** Shortest header-value token redacted on its own (shorter ones would mangle ordinary words). */
@@ -451,11 +483,14 @@ export function createMcpPool(opts: {
     },
 
     async call(serverId, workdir, tool, input, callOpts) {
+      // The replay declaration is the caller's, not the transport's: it decides a
+      // re-dispatch here and is not something a connection should ever read.
+      const { replaySafety = MCP_DEFAULT_REPLAY_SAFETY, ...budget } = callOpts;
       const request = (connection: McpConnection): AttemptRequest => ({
         serverId,
         tool,
         input,
-        callOpts,
+        callOpts: budget,
         connection,
       });
       // Error AS DATA, never a throw into the turn loop, which would end the hop.
@@ -463,10 +498,23 @@ export function createMcpPool(opts: {
       if (resolved === undefined) return unavailableForHop(serverId);
       const first = await attemptOf(request(resolved.connection));
       if (first.ok) return first.result;
-      // Only a rejection on a connection that REPORTED a close is retryable: a
-      // deadline is a result, and a transport error on an open connection keeps
-      // today's answer with no eviction and no retry.
+      // A rejection on a connection that REPORTED a close is the only retryable
+      // kind: a deadline is a result, and a transport error on an open connection
+      // keeps today's answer with no eviction and no retry.
       if (!reportedClose.has(resolved.connection)) {
+        return rejectionResult(serverId, first.error, opts.servers[serverId]);
+      }
+      // And only a call DECLARED replay-safe is sent again. An undeclared tool is
+      // not assumed read-only, so an at-most-once call answers the interruption as
+      // an error: the caller records an unknown outcome instead of the pool making
+      // a second note with a second dispatch.
+      if (replaySafety !== "replay-safe") {
+        getSafeLogger()?.debug("mcp", `[pool] ${serverId} not re-sending an interrupted at-most-once call`, {
+          storyId: opts.storyId,
+          serverId,
+          workdir,
+          tool,
+        });
         return rejectionResult(serverId, first.error, opts.servers[serverId]);
       }
       getSafeLogger()?.debug("mcp", `[pool] ${serverId} retrying an interrupted call`, {
