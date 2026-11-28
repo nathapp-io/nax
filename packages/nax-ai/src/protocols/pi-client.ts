@@ -838,7 +838,7 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  *    the override's own `thinkingLevels` rather than a size-picked stranger's
  *    — see `deriveThinkingLevelMap`.
  */
-function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
+function synthesiseModel(base: PiProvider, model: ResolvedModel, inheritedRouting?: OpenRouterRouting): Model<Api> {
   // An override may amend a model the base catalog already carries — correcting
   // stale pricing is the usual reason, pinning routing (issue #43) the new one.
   // For that id the honest template is that model itself: `pickTemplate` answers
@@ -874,6 +874,8 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
         ? undefined
         : deriveThinkingLevelMap(model, template.thinkingLevelMap));
 
+  const routing = routingFor(model, inheritedRouting);
+
   return {
     ...template,
     input: model.input !== undefined ? [...model.input] : template.input,
@@ -899,22 +901,41 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // Merged onto the template's compat, never replacing it: `thinkingFormat`
     // and the rest of the provider's detected settings live in the same object
     // and are what translate a thinking level on the wire.
-    ...(model.openRouterRouting !== undefined ||
-    model.thinkingFormat !== undefined ||
-    model.thinkingBudgetField !== undefined
+    ...(routing !== undefined || model.thinkingFormat !== undefined || model.thinkingBudgetField !== undefined
       ? {
           compat: {
             ...template.compat,
             ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
             ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
-            ...(model.openRouterRouting !== undefined
-              ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
-              : {}),
+            ...(routing !== undefined ? { openRouterRouting: toPiOpenRouterRouting(routing) } : {}),
           },
         }
       : {}),
     ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
   };
+}
+
+/**
+ * The routing one declaration puts on the wire: its own, or the restriction an
+ * earlier declaration of the same id already stated (finding 6).
+ *
+ * `applyOverrides` keeps the last of a repeated id, so without this a second
+ * declaration that only repriced a model silently dropped the restriction the
+ * first had pinned, and a request the consumer believed was filtered to
+ * zero-data-retention endpoints fell back to OpenRouter's routing lottery.
+ * `override-declaration.ts` compares the two catalogs on this same effective
+ * value, so the two must resolve inheritance identically or that check would
+ * bless a restriction the request never carries.
+ *
+ * The inherited value is dropped when the declaration's protocol cannot send
+ * it: pi reads `compat.openRouterRouting` from its openai-completions adapter
+ * and from no other, so chaining an id onto another api would otherwise carry
+ * a value the wire never reads — the state `assertOverrideModelRouting`
+ * rejects when it is declared outright.
+ */
+function routingFor(model: ResolvedModel, inherited: OpenRouterRouting | undefined): OpenRouterRouting | undefined {
+  if (model.openRouterRouting !== undefined) return model.openRouterRouting;
+  return model.protocol === "openai-completions" ? inherited : undefined;
 }
 
 /** Bridge the upstream literal-only type to validated endpoint-owned field names. */
@@ -1039,8 +1060,12 @@ function introduceProvider(override: ProviderOverride): PiProvider {
     throw new Error(`Provider "${override.provider}" requires a non-empty models list.`);
   }
   const byId = new Map<string, Model<Api>>();
+  // Same inheritance rule as a bundled provider's: a later declaration of an id
+  // that states no routing keeps the restriction already declared for it.
+  const routingById = new Map<string, OpenRouterRouting>();
   for (const model of override.models) {
-    byId.set(model.id, synthesiseIntroducedModel(override, model, override.baseUrl));
+    byId.set(model.id, synthesiseIntroducedModel(override, model, override.baseUrl, routingById.get(model.id)));
+    if (model.openRouterRouting !== undefined) routingById.set(model.id, model.openRouterRouting);
   }
   const entries = [...byId.values()];
   return createProvider({
@@ -1062,7 +1087,12 @@ function introduceProvider(override: ProviderOverride): PiProvider {
 }
 
 /** No template exists for an introduced provider: all wire metadata is declared. */
-function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedModel, baseUrl: string): Model<Api> {
+function synthesiseIntroducedModel(
+  override: ProviderOverride,
+  model: ResolvedModel,
+  baseUrl: string,
+  inheritedRouting?: OpenRouterRouting,
+): Model<Api> {
   assertOverrideModelProvider(override.provider, model);
   assertOverrideModelRouting(model);
   assertOverrideModelThinkingFormat(model);
@@ -1075,6 +1105,7 @@ function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedMo
   if (model.maxTokens === undefined) {
     throw new Error(`Provider "${override.provider}" model "${model.id}" requires maxTokens.`);
   }
+  const routing = routingFor(model, inheritedRouting);
   return {
     id: model.id,
     name: model.id,
@@ -1091,9 +1122,7 @@ function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedMo
     compat: {
       ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
       ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
-      ...(model.openRouterRouting !== undefined
-        ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
-        : {}),
+      ...(routing !== undefined ? { openRouterRouting: toPiOpenRouterRouting(routing) } : {}),
     },
     thinkingLevelMap: model.thinkingLevelMap ?? deriveThinkingLevelMap(model, undefined),
     ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
@@ -1133,6 +1162,12 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
     // disagree about which model an id names, which is the whole class of bug
     // this seam exists to close.
     const byId = new Map<string, Model<Api>>();
+    // The routing each id has already been declared with, so a later
+    // declaration of the same id that states none keeps the restriction
+    // instead of dropping it (finding 6). Kept beside byId rather than read
+    // back off it: the earlier model is gone from byId the moment it is
+    // replaced, which is exactly the loss this map prevents.
+    const routingById = new Map<string, OpenRouterRouting>();
     for (const model of override.models ?? []) {
       // Rejected before synthesis, so the two catalogs refuse the same config
       // with the same message rather than one of them building a model whose
@@ -1141,7 +1176,8 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       assertOverrideModelRouting(model);
       assertOverrideModelThinkingFormat(model);
       assertOverrideModelThinkingBudget(model);
-      byId.set(model.id, synthesiseModel(base, model));
+      byId.set(model.id, synthesiseModel(base, model, routingById.get(model.id)));
+      if (model.openRouterRouting !== undefined) routingById.set(model.id, model.openRouterRouting);
     }
     const synthesised = [...byId.values()];
     const overriddenIds = new Set(byId.keys());

@@ -18,7 +18,7 @@ import { createPiDeps, createPiProtocol } from "../../src/protocols/pi-client.ts
 import { defaultProtocols } from "../../src/protocols/pi-protocols.ts";
 import type { ProtocolEntries } from "../../src/protocols/registry.ts";
 import { defaultProviders } from "../../src/providers/pi-catalog.ts";
-import type { ProviderOverride, ResolvedModel } from "../../src/providers/types.ts";
+import type { OpenRouterRouting, ProviderOverride, ResolvedModel } from "../../src/providers/types.ts";
 
 const PHANTOM = "gpt-5.9-not-in-snapshot";
 
@@ -238,5 +238,266 @@ describe("the protocols factory declares overrides exactly once (#36)", () => {
       },
     });
     expect(seen).toEqual([[]]);
+  });
+});
+
+/** A real bundled openrouter id: the wire sends routing for this api only. */
+const ROUTED_ID = "deepseek/deepseek-chat";
+
+/** A declaration that must reach the wire. */
+const PIN: OpenRouterRouting = { only: ["deepinfra"], quantizations: ["fp8"] };
+
+/** A different declaration for the same id: one of the two would be lost. */
+const OTHER: OpenRouterRouting = { only: ["together"] };
+
+/** A model of a provider the base catalog does not carry at all. */
+const NEW_PROVIDER_MODEL: ResolvedModel = {
+  id: "qwen3.8-flash",
+  provider: "strata",
+  protocol: "openai-completions",
+  pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 262144,
+  maxTokens: 32768,
+  supportsTools: true,
+  thinkingLevels: ["off", "low", "high"],
+};
+
+const NEW_PROVIDER: ProviderOverride = {
+  provider: "strata",
+  baseUrl: "http://192.168.1.175:8080/v1",
+  models: [NEW_PROVIDER_MODEL],
+};
+
+/** The message a rejected construction threw, or "" when it did not reject. */
+function rejectionMessage(build: () => unknown): string {
+  try {
+    build();
+    return "";
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/**
+ * A real bundled openrouter model, amended, optionally with a routing
+ * declaration.
+ *
+ * Real ids and the real bundled protocol, because the check this covers turns
+ * on which catalog a restriction reaches: a synthetic provider would not show
+ * whether a model the base catalog already carries is still held to what the
+ * wire will send.
+ */
+async function bundledRouted(openRouterRouting?: OpenRouterRouting): Promise<{
+  providers: Awaited<ReturnType<typeof defaultProviders>>;
+  model: ResolvedModel;
+}> {
+  const providers = await defaultProviders(["openrouter"]);
+  const bundled = providers.flatMap((provider) => provider.models).find((model) => model.id === ROUTED_ID);
+  if (bundled === undefined) throw new Error(`expected openrouter to bundle ${ROUTED_ID}`);
+  return {
+    providers,
+    model: {
+      id: bundled.id,
+      provider: "openrouter",
+      protocol: "openai-completions",
+      pricing: bundled.pricing,
+      contextWindow: bundled.contextWindow,
+      supportsTools: bundled.supportsTools,
+      thinkingLevels: bundled.thinkingLevels,
+      ...(openRouterRouting !== undefined ? { openRouterRouting } : {}),
+    },
+  };
+}
+
+describe("effective openRouterRouting must agree across the two catalogs (finding 6)", () => {
+  it("AC-1 rejects a bundled model id whose routing the protocol entries never declare", async () => {
+    const { providers, model } = await bundledRouted(PIN);
+
+    const message = rejectionMessage(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [model] }],
+        // The same overrides, but nothing about routing: this is the silent
+        // drop, because the wire resolves a bundled id from its own template.
+        protocols: defaultProtocols(),
+      }),
+    );
+
+    expect(message).toMatch(new RegExp(`${ROUTED_ID.replace("/", "\\/")}[\\s\\S]*openRouterRouting`));
+    // The restriction that would have been dropped, and the fix to apply.
+    expect(message).toContain("deepinfra");
+    expect(message).toContain("providerOverrides");
+  });
+
+  it("AC-1 rejects conflicting routing for a bundled model id and names both declarations", async () => {
+    const { providers, model } = await bundledRouted(PIN);
+
+    const message = rejectionMessage(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [model] }],
+        protocols: defaultProtocols({
+          providerOverrides: [{ provider: "openrouter", models: [{ ...model, openRouterRouting: OTHER }] }],
+        }),
+      }),
+    );
+
+    expect(message).toMatch(/openRouterRouting/);
+    expect(message).toContain("deepinfra");
+    expect(message).toContain("together");
+  });
+
+  it("AC-1 rejects a model id the base catalog does not carry whose routing only the client declares", () => {
+    const message = rejectionMessage(() =>
+      createClient({
+        providers: [],
+        providerOverrides: [{ ...NEW_PROVIDER, models: [{ ...NEW_PROVIDER_MODEL, openRouterRouting: PIN }] }],
+        protocols: defaultProtocols({ providerOverrides: [NEW_PROVIDER] }),
+      }),
+    );
+
+    expect(message).toMatch(new RegExp(`${NEW_PROVIDER_MODEL.id}[\\s\\S]*openRouterRouting`));
+  });
+
+  it("AC-1 rejects conflicting routing for a model id the base catalog does not carry", () => {
+    expect(
+      rejectionMessage(() =>
+        createClient({
+          providers: [],
+          providerOverrides: [{ ...NEW_PROVIDER, models: [{ ...NEW_PROVIDER_MODEL, openRouterRouting: PIN }] }],
+          protocols: defaultProtocols({
+            providerOverrides: [{ ...NEW_PROVIDER, models: [{ ...NEW_PROVIDER_MODEL, openRouterRouting: OTHER }] }],
+          }),
+        }),
+      ),
+    ).toContain("together");
+  });
+
+  it("AC-3 rejects when only one side's declarations inherit an earlier restriction", async () => {
+    const { providers, model } = await bundledRouted();
+    // Both FINAL declarations omit routing, so comparing the last declaration
+    // alone sees "no routing" twice. Only inheritance tells them apart: the
+    // client's second declaration keeps the first one's restriction, the
+    // protocol side never declared any.
+    const repriced: ResolvedModel = { ...model, pricing: { input: 99, output: 99, cacheRead: 0, cacheWrite: 0 } };
+
+    const message = rejectionMessage(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [{ ...model, openRouterRouting: PIN }, repriced] }],
+        protocols: defaultProtocols({ providerOverrides: [{ provider: "openrouter", models: [repriced] }] }),
+      }),
+    );
+
+    expect(message).toMatch(new RegExp(`${ROUTED_ID.replace("/", "\\/")}[\\s\\S]*openRouterRouting`));
+    expect(message).toContain("deepinfra");
+  });
+
+  it("AC-3 accepts when both sides' declarations inherit the same restriction", async () => {
+    const { providers, model } = await bundledRouted();
+    const repriced: ResolvedModel = { ...model, pricing: { input: 99, output: 99, cacheRead: 0, cacheWrite: 0 } };
+
+    expect(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [{ ...model, openRouterRouting: PIN }, repriced] }],
+        protocols: defaultProtocols({
+          providerOverrides: [
+            { provider: "openrouter", models: [{ ...model, openRouterRouting: { ...PIN } }, { ...repriced }] },
+          ],
+        }),
+      }),
+    ).not.toThrow();
+  });
+
+  it("AC-6 keeps pricing-only differences between the two catalogs accepted", async () => {
+    const { providers, model } = await bundledRouted();
+    const clientPricing = { ...model, pricing: { input: 99, output: 99, cacheRead: 0, cacheWrite: 0 } };
+    const protocolPricing = { ...model, pricing: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } };
+
+    expect(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [clientPricing] }],
+        protocols: defaultProtocols({ providerOverrides: [{ provider: "openrouter", models: [protocolPricing] }] }),
+      }),
+    ).not.toThrow();
+
+    // Control: the same repriced pair plus a client-only restriction is the
+    // case that must fail, so the acceptance above is not vacuous.
+    expect(
+      rejectionMessage(() =>
+        createClient({
+          providers,
+          providerOverrides: [{ provider: "openrouter", models: [{ ...clientPricing, openRouterRouting: PIN }] }],
+          protocols: defaultProtocols({ providerOverrides: [{ provider: "openrouter", models: [protocolPricing] }] }),
+        }),
+      ),
+    ).toMatch(/openRouterRouting/);
+  });
+
+  it("AC-8 accepts equal effective routing, including independently built values in the same order", async () => {
+    const { providers, model } = await bundledRouted();
+    // Two separately built objects, equal in content only.
+    const clientSide: ResolvedModel = { ...model, openRouterRouting: { only: ["deepinfra", "together"], zdr: true } };
+    const protocolSide: ResolvedModel = { ...model, openRouterRouting: { only: ["deepinfra", "together"], zdr: true } };
+
+    expect(() =>
+      createClient({
+        providers,
+        providerOverrides: [{ provider: "openrouter", models: [clientSide] }],
+        protocols: defaultProtocols({ providerOverrides: [{ provider: "openrouter", models: [protocolSide] }] }),
+      }),
+    ).not.toThrow();
+
+    // Control: `only` is an ordered wire array, so the same slugs in the other
+    // order are a different request and the two catalogs disagree.
+    expect(
+      rejectionMessage(() =>
+        createClient({
+          providers,
+          providerOverrides: [
+            { provider: "openrouter", models: [{ ...model, openRouterRouting: { only: ["deepinfra", "together"] } }] },
+          ],
+          protocols: defaultProtocols({
+            providerOverrides: [
+              {
+                provider: "openrouter",
+                models: [{ ...model, openRouterRouting: { only: ["together", "deepinfra"] } }],
+              },
+            ],
+          }),
+        }),
+      ),
+    ).toMatch(/openRouterRouting/);
+  });
+
+  it("AC-7 leaves hand-built entries that never declared overrides on their existing contract", () => {
+    const stub = stubStream();
+    const routedOverride: ProviderOverride = {
+      ...NEW_PROVIDER,
+      models: [{ ...NEW_PROVIDER_MODEL, openRouterRouting: PIN }],
+    };
+
+    // Hand-built entries own their wiring: nothing was declared to hold them to.
+    expect(() =>
+      createClient({
+        providers: [],
+        providerOverrides: [routedOverride],
+        protocols: stubbedEntries({ providerOverrides: [routedOverride] }, stub.streamSimple),
+      }),
+    ).not.toThrow();
+
+    // Control: entries that DID declare overrides are held to what they said —
+    // this declares the model but not the routing the client states.
+    expect(
+      rejectionMessage(() =>
+        createClient({
+          providers: [],
+          providerOverrides: [routedOverride],
+          protocols: defaultProtocols({ providerOverrides: [NEW_PROVIDER] }),
+        }),
+      ),
+    ).toMatch(/openRouterRouting/);
   });
 });
