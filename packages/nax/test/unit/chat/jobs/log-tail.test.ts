@@ -181,14 +181,24 @@ describe("readTailLines", () => {
   });
 
   test("US-007 AC-4: a character on a chunk boundary inside retained text stays intact", async () => {
-    const accents = "é".repeat(33_000);
+    const accents = "é".repeat(70_000);
     // The record before the accents is one line, so the budget — not the line count — stops the scan.
-    await writeLog(`${"x".repeat(200_000)}\n${accents}\nlast one\nlast two\n`);
+    const head = "x".repeat(200_000);
+    await writeLog(`${head}\n${accents}\nlast one\nlast two\n`);
+    // Both chunk boundaries fall an odd code unit into the accents, i.e. inside a two-byte
+    // character, and the accents line is retained whole — so the carry is what keeps them intact.
+    const size = Bun.file(logPath).size;
+    const regionStart = head.length + 1;
+    for (const boundary of [size - LOG_TAIL_CHUNK_BYTES, size - 2 * LOG_TAIL_CHUNK_BYTES]) {
+      const offset = boundary - regionStart;
+      expect(offset).toBeGreaterThan(0);
+      expect(offset).toBeLessThan(accents.length * 2);
+      expect(offset % 2).toBe(1);
+    }
     const meter = meterReads();
-    const read = await readTailLines(logPath, 12, { maxBytes: 2 * LOG_TAIL_CHUNK_BYTES });
-    expect(meter.bytes()).toBeLessThanOrEqual(2 * LOG_TAIL_CHUNK_BYTES);
+    const read = await readTailLines(logPath, 12, { maxBytes: 3 * LOG_TAIL_CHUNK_BYTES });
+    expect(meter.bytes()).toBeLessThanOrEqual(3 * LOG_TAIL_CHUNK_BYTES);
     const lines = read.split("\n");
-    // The boundary at the second chunk falls inside an é: the carry keeps it whole.
     expect(lines[1]).toBe(accents);
     expect(read).not.toContain("\uFFFD");
   });

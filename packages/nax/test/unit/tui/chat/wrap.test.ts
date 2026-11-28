@@ -4,6 +4,7 @@ import {
   cutSpans,
   elideSpansEnd,
   headColumns,
+  MAX_CLUSTER_CODE_UNITS,
   markSpansEnd,
   mergeSpans,
   spansWidth,
@@ -101,6 +102,23 @@ describe("headColumns", () => {
 
   test("keeps nothing for a budget of no columns, and still reports the text", () => {
     expect(headColumns("abc", 0)).toEqual({ text: "", more: true });
+  });
+
+  test("US-007 F2: an oversized cluster is cut at a code-unit budget, not scanned to the line's end", () => {
+    // One grapheme of a single column: a base character and 4 MiB of combining marks.
+    const oversized = `a${"\u0301".repeat(4 * 1024 * 1024)}`;
+    const head = headColumns(oversized, 40);
+    expect(head.text.length).toBeLessThanOrEqual(40 * MAX_CLUSTER_CODE_UNITS + 1);
+    expect(head.more).toBe(true);
+    expect(displayWidth(head.text)).toBeLessThanOrEqual(40);
+  });
+
+  test("US-007 F2: a cluster under the code-unit cap survives whole, with the text past it reported", () => {
+    const cluster = `a${"\u0301".repeat(40 * MAX_CLUSTER_CODE_UNITS - 1)}`;
+    const head = headColumns(`${cluster}bc`, 40);
+    expect(head.more).toBe(true);
+    expect(head.text.startsWith(cluster)).toBe(true);
+    expect(head.text.length).toBeLessThanOrEqual(40 * MAX_CLUSTER_CODE_UNITS + 1);
   });
 });
 

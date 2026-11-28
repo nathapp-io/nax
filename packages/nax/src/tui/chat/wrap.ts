@@ -31,6 +31,15 @@ const MIN_CONTENT_WIDTH = 4;
 /** A span's style without its text — carried per glyph while wrapping. */
 export type SpanStyle = Omit<Span, "text">;
 
+/**
+ * The most code units one column may spend before its cluster is treated as too wide to keep
+ * whole. A grapheme is one column or more and, in every script a terminal draws, a handful of
+ * code units — a ZWJ emoji family is about eleven code units for two columns. A base character
+ * followed by thousands of combining marks is one cluster that would otherwise make a bounded
+ * scan unbounded, so past this ratio the cluster is cut instead of kept.
+ */
+export const MAX_CLUSTER_CODE_UNITS = 8;
+
 /** Splits text into user-perceived characters, so an emoji with a skin tone or a ZWJ stays whole. */
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -282,8 +291,8 @@ function fill(glyphs: readonly Glyph[], width: number): Glyph[][] {
 }
 
 /**
- * At most `columns` columns of `text` as the clusters they are drawn from, and whether any
- * column was left behind. Only the window of code units handed in is ever segmented.
+ * At most `columns` columns of `text`, cut between grapheme clusters, and whether any column
+ * was left behind. Only the window of code units handed in is ever segmented.
  */
 function scanColumns(text: string, columns: number): { readonly text: string; readonly overflow: boolean } {
   let kept = "";
@@ -298,19 +307,43 @@ function scanColumns(text: string, columns: number): { readonly text: string; re
 }
 
 /**
+ * The first `columns` columns of a cluster too wide to keep whole, cut between code points —
+ * the same fallback `cutWord` and `splitGlyph` take for a cluster wider than its line. Keeping
+ * the line inside the budget wins over keeping the cluster intact.
+ */
+function cutClusterHead(text: string, columns: number): string {
+  let kept = "";
+  let used = 0;
+  for (const point of text) {
+    const width = displayWidth(point);
+    if (used + width > columns) break;
+    kept += point;
+    used += width;
+  }
+  return kept;
+}
+
+/**
  * At most `columns` display columns of `text`, cut between grapheme clusters, and whether any
  * text was left behind. Each grapheme is at least one code unit, so a window of `columns + 1`
  * code units either fills the budget or is the whole text; the window doubles only for text of
- * longer clusters. The scan therefore costs the budget's work and not the text's — a 64 MiB
- * line costs the same as a short one, which is the shape a bounded layout needs.
+ * longer clusters, and it is capped at {@link MAX_CLUSTER_CODE_UNITS} code units per column, so
+ * the scan costs the budget's work and not the text's — a 64 MiB line costs what a short one
+ * does. A cluster past that cap is cut between code points rather than scanned to the line's
+ * end: a base character followed by millions of combining marks is one column and would
+ * otherwise take the whole line with it.
  */
 export function headColumns(text: string, columns: number): { readonly text: string; readonly more: boolean } {
   const limit = Math.max(0, columns);
-  let window = Math.min(text.length, limit + 1);
+  const cap = Math.min(text.length, limit * MAX_CLUSTER_CODE_UNITS + 1);
+  let window = Math.min(cap, limit + 1);
   for (;;) {
-    const scan = scanColumns(text.slice(0, window), limit);
-    if (scan.overflow || window >= text.length) return { text: scan.text, more: scan.overflow };
-    window = Math.min(text.length, window * 2);
+    const slice = text.slice(0, window);
+    const scan = scanColumns(slice, limit);
+    if (scan.overflow) return { text: scan.text, more: true };
+    if (window >= text.length) return { text: scan.text, more: false };
+    if (window >= cap) return { text: cutClusterHead(slice, limit), more: true };
+    window = Math.min(cap, window * 2);
   }
 }
 
