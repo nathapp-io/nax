@@ -60,6 +60,7 @@ import { dirname, join } from "node:path";
 import { type CoverageEnvironment, finishCoverage } from "#scripts/coverage-gate-mode";
 import { coverageTestPaths } from "#scripts/coverage-test-selection";
 import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
+import { type CapturedTail, captureStream, type StreamCapture } from "#scripts/quiet-capture";
 
 const ROOT = gatePackageRoot();
 const LCOV_PATH = join(ROOT, "coverage", "lcov.info");
@@ -119,7 +120,34 @@ export function gatedSuites(root: string, exists: (path: string) => boolean = ex
  * Wall-clock cap for the coverage run, in ms. nax's merged run took ~224s in CI on
  * 2026-11-09 (about 55s when the old 300s cap was set), so the cap was raised to 480s.
  */
-const RUN_TIMEOUT_MS = 480_000;
+export const RUN_TIMEOUT_MS = 480_000;
+
+/** The child-process options the coverage run needs; narrowed so tests can read them back. */
+export interface SpawnOptions {
+  cwd: string;
+  env: Record<string, string | undefined>;
+  stdout: "pipe" | "inherit";
+  stderr: "pipe" | "inherit";
+  detached: boolean;
+}
+
+/**
+ * How the child run is launched. Every field is a test seam: production passes nothing and
+ * gets the 480s deadline and the gated suites, while the capture tests inject a short
+ * deadline, a fixture command and sinks instead of this process's own stdout/stderr.
+ */
+export interface RunCoverageOptions {
+  /** Wall-clock deadline for the child run, in ms. Defaults to RUN_TIMEOUT_MS. */
+  timeoutMs?: number;
+  /** The child command. Defaults to `bun test <gated suites> --coverage`. */
+  command?: readonly string[];
+  /** Quiet capture. Defaults to the parent's `AGENT === "1"`. */
+  quiet?: boolean;
+  /** Where replayed stdout goes. Defaults to this process's stdout. */
+  out?: (text: string) => void;
+  /** Where replayed stderr goes. Defaults to this process's stderr. */
+  err?: (text: string) => void;
+}
 
 export interface Totals {
   linesFound: number;
@@ -140,8 +168,91 @@ export function extractTestSummary(output: string): string {
   return end === -1 ? "" : `${lines.slice(start, end + 1).join("\n")}\n`;
 }
 
-async function readStream(stream: ReadableStream<Uint8Array> | number | undefined): Promise<string> {
-  return stream instanceof ReadableStream ? new Response(stream).text() : "";
+/** The live captures of a quiet run's two streams. */
+interface Captures {
+  stdout: StreamCapture;
+  stderr: StreamCapture;
+}
+
+/** The captured tail of each stream of a quiet run. */
+interface Tails {
+  stdout: CapturedTail;
+  stderr: CapturedTail;
+}
+
+/** Where a replayed run writes: this process's own streams in production, a sink in tests. */
+type Write = (text: string) => void;
+
+/** What a run settled as: its own exit status plus both tails, or the deadline. */
+type Outcome = { kind: "settled"; exitCode: number; tails: Tails | null } | { kind: "deadline" };
+
+/** Kills the child's whole process group, so a descendant cannot keep the pipes — or the run — alive. */
+function killGroup(child: Bun.Subprocess): void {
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // The group is already empty; fall back to the leader, which may be a zombie.
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // Nothing left to kill: the run finished while the deadline callback was firing.
+    }
+  }
+}
+
+/**
+ * Waits for the child's EXIT and both streams' EOF under ONE deadline.
+ *
+ * Keeping the original deadline across the drain is the point of this function: the timer
+ * is not cleared when the child exits, because exit and EOF are separate events and a
+ * descendant can hold a pipe open indefinitely. Whichever completes first decides the
+ * outcome. On expiry the process group is killed and the still-pending capture is
+ * detached rather than awaited, so `runCoverage` cannot block past its deadline.
+ */
+async function settleUnderDeadline(
+  child: Bun.Subprocess,
+  captures: Captures | null,
+  timeoutMs: number,
+): Promise<Outcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<Outcome>((resolve) => {
+    timer = setTimeout(() => {
+      killGroup(child);
+      resolve({ kind: "deadline" });
+    }, timeoutMs);
+  });
+  const settled = (async (): Promise<Outcome> => {
+    const exitCode = await child.exited;
+    if (captures === null) return { kind: "settled", exitCode, tails: null };
+    const tails = { stdout: await captures.stdout.done, stderr: await captures.stderr.done };
+    return { kind: "settled", exitCode, tails };
+  })();
+
+  const outcome = await Promise.race([settled, deadline]);
+  clearTimeout(timer);
+  if (outcome.kind === "deadline") {
+    // The losing promise may never settle now: attach the catch so a stream error on the
+    // way out is not reported as an unhandled rejection.
+    void settled.catch(() => {});
+    captures?.stdout.detach();
+    captures?.stderr.detach();
+  }
+  return outcome;
+}
+
+/**
+ * Replays a quiet run. A green run prints only bun's pass/fail block; a failed or
+ * timed-out run prints both bounded tails, never any other child output.
+ */
+function replay(tails: Tails | null, run: { failed: boolean; out: Write; err: Write }): void {
+  if (tails === null) return;
+  if (!run.failed) {
+    const summary = extractTestSummary(tails.stderr.text) || extractTestSummary(tails.stdout.text);
+    if (summary !== "") run.out(summary);
+    return;
+  }
+  if (tails.stdout.text !== "") run.out(tails.stdout.text);
+  if (tails.stderr.text !== "") run.err(tails.stderr.text);
 }
 
 /**
@@ -183,6 +294,27 @@ export function coverageTestArgs(paths: readonly string[], argv: readonly string
 }
 
 /**
+ * The `bun test … --coverage` command for this package's gated suites, or null (after
+ * explaining) when the package has none.
+ */
+function gatedCommand(argv: readonly string[]): string[] | null {
+  const suites = gatedSuites(ROOT);
+  if (suites.length === 0) {
+    console.error(`[coverage] no test/unit, test/integration or test/ui directory under ${ROOT}`);
+    return null;
+  }
+  // Opt-in (nax): drop unit/integration files that never reference src/ (coverage-test-selection.ts).
+  const selection = argv.includes("--skip-source-free-tests")
+    ? coverageTestPaths(ROOT, suites)
+    : { paths: suites, skipped: [] };
+  if (selection.skipped.length > 0)
+    console.log(
+      `[coverage] skipping ${selection.skipped.length} test file(s) that never reference src/ (they record no coverage; CI's confined step still runs them)`,
+    );
+  return ["bun", ...coverageTestArgs(selection.paths, argv)];
+}
+
+/**
  * Run the gated suites with coverage in a detached process group so a hang or
  * SIGABRT is reaped along with any descendants (mirrors scripts/run-tests.ts).
  *
@@ -199,66 +331,43 @@ export function coverageTestArgs(paths: readonly string[], argv: readonly string
  * floors are evaluated by parsing coverage/lcov.info and the summary below prints
  * the numbers that matter.
  *
- * Note the flag below is belt-and-braces only: bunfig.toml's `coverageReporter`
- * wins over `--coverage-reporter` on the command line, so this argument does not
- * actually select the reporter.
+ * Note the flag in coverageTestArgs is belt-and-braces only: bunfig.toml's
+ * `coverageReporter` wins over `--coverage-reporter` on the command line, so this
+ * argument does not actually select the reporter.
  */
-async function runCoverage(): Promise<number> {
+export async function runCoverage(options: RunCoverageOptions = {}): Promise<number> {
   // Mirrors scripts/run-tests.ts: under AGENT=1 a green run stays quiet (just bun's
   // summary block) and the captured output is replayed only when the run fails.
-  const quiet = process.env.AGENT === "1";
-  const suites = gatedSuites(ROOT);
-  if (suites.length === 0) {
-    console.error(`[coverage] no test/unit, test/integration or test/ui directory under ${ROOT}`);
-    return 1;
-  }
-  // Opt-in (nax): drop unit/integration files that never reference src/ (coverage-test-selection.ts).
-  const selection = process.argv.includes("--skip-source-free-tests")
-    ? coverageTestPaths(ROOT, suites)
-    : { paths: suites, skipped: [] };
-  if (selection.skipped.length > 0)
-    console.log(
-      `[coverage] skipping ${selection.skipped.length} test file(s) that never reference src/ (they record no coverage; CI's confined step still runs them)`,
-    );
-  const child = Bun.spawn(["bun", ...coverageTestArgs(selection.paths, process.argv)], {
+  const quiet = options.quiet ?? process.env.AGENT === "1";
+  const timeoutMs = options.timeoutMs ?? RUN_TIMEOUT_MS;
+  const out = options.out ?? ((text: string) => process.stdout.write(text));
+  const err = options.err ?? ((text: string) => process.stderr.write(text));
+  const command = options.command ?? gatedCommand(process.argv);
+  if (command === null) return 1;
+  const child = _coverageDeps.spawn([...command], {
     cwd: ROOT,
     env: { ...process.env, AGENT: "1" },
     stdout: quiet ? "pipe" : "inherit",
     stderr: quiet ? "pipe" : "inherit",
-    // Leader of its own process group so the timeout kill reaches descendants.
+    // Leader of its own process group so the deadline kill reaches descendants.
     detached: true,
   });
 
-  const pgid = child.pid;
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    try {
-      process.kill(-pgid, "SIGKILL");
-    } catch {
-      child.kill("SIGKILL");
-    }
-  }, RUN_TIMEOUT_MS);
+  // Drain BOTH pipes from launch, not from exit: a child that fills a pipe blocks until
+  // something reads it, so starting the drain after `exited` deadlocks at the pipe buffer.
+  const captures = quiet ? { stdout: captureStream(child.stdout), stderr: captureStream(child.stderr) } : null;
 
-  const captured = Promise.all([readStream(child.stdout), readStream(child.stderr)]);
-  const exitCode = await child.exited;
-  clearTimeout(timer);
-
-  if (quiet) {
-    const [stdout, stderr] = await captured;
-    if (timedOut || exitCode !== 0) {
-      process.stdout.write(stdout);
-      process.stderr.write(stderr);
-    } else {
-      process.stdout.write(extractTestSummary(stderr) || extractTestSummary(stdout));
-    }
-  }
-
-  if (timedOut) {
-    console.error(`\n[coverage] unit suite exceeded ${RUN_TIMEOUT_MS / 1000}s — killed.`);
+  const outcome = await settleUnderDeadline(child, captures, timeoutMs);
+  if (outcome.kind === "deadline") {
+    // The exit status is unknown and EOF may never arrive, so the deadline decides: replay
+    // what the bounded captures hold and abandon the rest rather than block past the budget.
+    const tails = captures === null ? null : { stdout: captures.stdout.snapshot(), stderr: captures.stderr.snapshot() };
+    replay(tails, { failed: true, out, err });
+    err(`\n[coverage] unit suite exceeded ${timeoutMs / 1000}s — killed.`);
     return 124;
   }
-  return exitCode;
+  if (captures !== null) replay(outcome.tails, { failed: outcome.exitCode !== 0, out, err });
+  return outcome.exitCode;
 }
 
 /**
@@ -478,8 +587,16 @@ function savePerFileBaseline(byFile: Record<string, number>) {
   );
 }
 
-/** Baseline I/O seam so evaluation tests exercise the ratchet without editing package baselines. */
-export const _coverageDeps = { loadPerFileBaseline };
+/**
+ * Process and baseline I/O seams, so evaluation tests exercise the ratchet and the
+ * capture path without editing package baselines or launching the real suite.
+ */
+export const _coverageDeps = {
+  loadPerFileBaseline,
+  spawn(command: string[], options: SpawnOptions): Bun.Subprocess {
+    return Bun.spawn(command, options);
+  },
+};
 
 /** Evaluates the per-file ratchet. Returns false and prints details if it should fail the run. */
 function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): boolean {
@@ -593,22 +710,41 @@ export function evaluateCoverageGate({
   return finishCoverage({ aggregateFailures: failures, perFileOk, allFilesOk, env, log, error });
 }
 
-async function main() {
+/**
+ * Seams for `main`: the runner (so a test can inject a short deadline and a fixture
+ * command) and the two process-level side effects (exit status, diagnostics).
+ */
+export interface MainDeps {
+  /** Coverage runner. Defaults to runCoverage. */
+  run?: (options?: RunCoverageOptions) => Promise<number>;
+  /** Options handed to the runner. Tests set the deadline and the fixture command here. */
+  runOptions?: RunCoverageOptions;
+  /** Exit seam. Defaults to process.exit, which a test must never reach. */
+  exit?: (code: number) => void;
+  /** Diagnostics seam. Defaults to console.error. */
+  error?: (message: string) => void;
+}
+
+export async function main(deps: MainDeps = {}): Promise<void> {
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
+  const error = deps.error ?? ((message: string) => console.error(message));
   const requireAllFiles = process.argv.includes("--require-all-files");
   const reportOnly = process.argv.includes("--report");
   const updateBaseline = process.argv.includes("--update-baseline");
   const list = process.argv.includes("--list");
 
-  const runExit = await runCoverage();
+  const runExit = await (deps.run ?? runCoverage)(deps.runOptions);
   if (runExit !== 0) {
-    console.error(`\n[coverage] test run failed (exit ${runExit}) — not evaluating coverage.`);
-    process.exit(1);
+    error(`\n[coverage] test run failed (exit ${runExit}) — not evaluating coverage.`);
+    exit(1);
+    return;
   }
 
   const lcovFile = Bun.file(LCOV_PATH);
   if (!(await lcovFile.exists())) {
-    console.error(`\n[coverage] expected lcov report at ${LCOV_PATH} but none was produced.`);
-    process.exit(1);
+    error(`\n[coverage] expected lcov report at ${LCOV_PATH} but none was produced.`);
+    exit(1);
+    return;
   }
 
   const lcovText = await lcovFile.text();
@@ -654,9 +790,7 @@ async function main() {
     return;
   }
 
-  process.exit(
-    evaluateCoverageGate({ totals, perFile, unreported, env: process.env, log: console.log, error: console.error }),
-  );
+  exit(evaluateCoverageGate({ totals, perFile, unreported, env: process.env, log: console.log, error }));
 }
 
 if (import.meta.main) await main();
