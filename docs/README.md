@@ -35,6 +35,7 @@ description: User guides, architecture references, and specs for nax
 | [Loop Handlers](guides/loop-handlers.md) | Plugin-contributed handlers inside the native agent's turn loop — events, patches, ordering, failure semantics and timeout |
 | [Interaction Triggers](guides/triggers.md) | Interactive pause-and-prompt configuration |
 | [Troubleshooting](guides/troubleshooting.md) | Common issues and resolutions |
+| [Chat](guides/chat.md) | `nax chat`: the interactive coding agent — modes, models, jobs, web tools, config |
 | [Chat Shell Output](guides/chat-shells.md) | Live Bash output and the chat shell view |
 
 ### Context
