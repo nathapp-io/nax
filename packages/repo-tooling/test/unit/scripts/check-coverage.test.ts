@@ -35,6 +35,7 @@ import {
   type SpawnOptions,
   UNMEASURABLE,
 } from "#scripts/check-coverage";
+import { MAX_CAPTURE_BYTES } from "#scripts/quiet-capture";
 
 /** Builds an lcov body for the given files, each as a `covered/found` line pair. */
 function lcov(records: Array<[file: string, hit: number, found: number]>): string {
@@ -567,6 +568,33 @@ const OVERFLOW_SCRIPT = [
   "process.exit(3);",
 ].join("\n");
 
+/**
+ * A child whose output makes the capture cap land INSIDE a three-byte character.
+ *
+ * Each stream writes `EURO_COUNT` copies of "€" (3 bytes each) and then the terminal marker.
+ * The retained tail starts at `3 * euros + tail.length - MAX_CAPTURE_BYTES`, i.e.
+ * `(tail.length - MAX_CAPTURE_BYTES) mod 3` bytes into the "€" run. `misalignedTail` appends
+ * just enough ASCII for that offset to be 1, so the tail begins one byte inside a "€" and
+ * decoding it splices a U+FFFD (3 bytes) where one partial byte was — a capture that bounds
+ * only the BUFFERED bytes then replays 2 bytes more than the cap allows (finding F1).
+ */
+const MULTIBYTE_MARKERS = { out: "STDOUT-TERMINAL\n", err: "STDERR-TERMINAL\n" } as const;
+const EURO_COUNT = 40_000;
+
+/** The marker plus 0-2 spaces, so the cap boundary cannot land on a "€" boundary. */
+function misalignedTail(marker: string): string {
+  const base = (((Buffer.byteLength(marker) - MAX_CAPTURE_BYTES) % 3) + 3) % 3;
+  // Padding is chosen so `(base + extra) mod 3 === 1`: strictly inside a three-byte character.
+  return `${marker}${" ".repeat((1 - base + 3) % 3)}`;
+}
+
+const MULTIBYTE_SCRIPT = [
+  `const euros = "\\u20ac".repeat(${EURO_COUNT});`,
+  `process.stdout.write(euros + ${JSON.stringify(misalignedTail(MULTIBYTE_MARKERS.out))});`,
+  `process.stderr.write(euros + ${JSON.stringify(misalignedTail(MULTIBYTE_MARKERS.err))});`,
+  "process.exit(3);",
+].join("\n");
+
 /** The `N pass`/`Ran N tests` block bun prints last, behind unrelated noise. */
 const SUMMARY_BLOCK = " 4 pass\n 1 skip\n 0 fail\nRan 5 tests across 2 files. [1.00s]";
 const SUMMARY_SCRIPT = `process.stderr.write(${JSON.stringify(`noise before the summary\n\n${SUMMARY_BLOCK}\n`)});`;
@@ -624,6 +652,31 @@ describe("runCoverage quiet capture", () => {
       expect(printed.err).toContain("STDERR-TERMINAL");
       expect(printed.out).not.toContain("stdout-00000");
       expect(printed.err).not.toContain("stderr-00000");
+    } finally {
+      fixture.clean();
+    }
+  });
+
+  test("AC-3: the replayed text also stays within the cap when the cap boundary splits a multi-byte character", async () => {
+    const fixture = bunScript(MULTIBYTE_SCRIPT);
+    const cap = 64 * 1024;
+    try {
+      const { status, printed } = await runCaptured(fixture);
+
+      expect(status).toBe(3);
+      // Bounding the buffered bytes is not enough: decoding a tail cut inside a "€" splices
+      // in U+FFFD, which is 3 bytes where the 1-3 partial bytes it replaced were fewer.
+      expect(Buffer.byteLength(printed.out)).toBeLessThanOrEqual(cap);
+      expect(Buffer.byteLength(printed.err)).toBeLessThanOrEqual(cap);
+      expect(printed.out).toContain("STDOUT-TERMINAL");
+      expect(printed.err).toContain("STDERR-TERMINAL");
+      // The head of the tail is a whole character: no replacement character was spliced in,
+      // and the tail was not shortened by trimming intact characters.
+      expect(printed.out).not.toContain("\uFFFD");
+      expect(printed.err).not.toContain("\uFFFD");
+      expect(printed.out.startsWith("\u20ac")).toBe(true);
+      expect(printed.err.startsWith("\u20ac")).toBe(true);
+      expect(printed.out.length).toBeGreaterThan(cap / 4);
     } finally {
       fixture.clean();
     }

@@ -16,17 +16,19 @@
  * each stream are kept — the tail is where bun's pass/fail block and the failure text
  * live. Bytes dropped from the head are counted, never kept, so a run that prints
  * hundreds of megabytes cannot grow this process: it costs one bounded buffer per stream.
+ * The bound holds on the text that is REPLAYED, not just on the bytes buffered — see
+ * `fitToByteCap` for why decoding a tail can grow it.
  */
 
 /** Output retained per stream. Anything older is dropped: diagnostics are read from the tail. */
 export const MAX_CAPTURE_BYTES = 64 * 1024;
 
 export interface CapturedTail {
-  /** The retained bytes, decoded as UTF-8. */
+  /** The retained bytes, decoded as UTF-8 and trimmed so they re-encode within the cap. */
   text: string;
   /** Bytes read from the stream in total, including any dropped from the head. */
   bytes: number;
-  /** Whether earlier bytes were dropped to stay within the cap. */
+  /** Whether anything was dropped: bytes from the buffer, or characters from the text. */
   truncated: boolean;
 }
 
@@ -51,6 +53,40 @@ function concat(chunks: readonly Uint8Array[]): Uint8Array {
   return joined;
 }
 
+/** UTF-8 byte length of one code point, as `String.prototype.codePointAt` reports it. */
+function utf8Size(codePoint: number): number {
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  if (codePoint < 0x1_0000) return 3;
+  return 4;
+}
+
+/**
+ * Drops leading characters until `text` re-encodes within `capBytes`, keeping the tail.
+ *
+ * Bounding the BUFFERED bytes is not enough. A tail that starts inside a multi-byte
+ * character decodes with U+FFFD where the partial bytes were, and one replacement character
+ * is three bytes in place of one to three — so the replayed text can be LARGER than the
+ * bytes retained, and the diagnostic the user sees can exceed the cap it is supposed to
+ * honour. Trimming from the head keeps the tail (bun's pass/fail block and the failure
+ * text) and makes the bound hold on what is replayed, not on what was buffered. It also
+ * removes those replacement characters whenever they are the cheapest thing to drop, so the
+ * head of the tail is normally a whole character.
+ */
+function fitToByteCap(text: string, capBytes: number): string {
+  let bytes = Buffer.byteLength(text);
+  if (bytes <= capBytes) return text;
+  let cut = 0;
+  while (bytes > capBytes && cut < text.length) {
+    const codePoint = text.codePointAt(cut);
+    if (codePoint === undefined) break;
+    bytes -= utf8Size(codePoint);
+    // A surrogate pair is two UTF-16 units; never cut between its halves.
+    cut += codePoint > 0xffff ? 2 : 1;
+  }
+  return text.slice(cut);
+}
+
 /**
  * Starts draining `stream` immediately, keeping at most `capBytes` of its tail.
  *
@@ -70,13 +106,11 @@ export function captureStream(
   let keptBytes = 0;
   let seenBytes = 0;
 
-  const snapshot = (): CapturedTail => ({
-    text: new TextDecoder().decode(concat(kept)),
-    bytes: seenBytes,
-    // A cut at the cap can split a multi-byte character, which decodes as U+FFFD at the
-    // head of the tail. That is cosmetic; the tail's end, where failure text lives, is intact.
-    truncated: seenBytes > keptBytes,
-  });
+  const snapshot = (): CapturedTail => {
+    const decoded = new TextDecoder().decode(concat(kept));
+    const text = fitToByteCap(decoded, capBytes);
+    return { text, bytes: seenBytes, truncated: seenBytes > keptBytes || text !== decoded };
+  };
 
   const done = (async (): Promise<CapturedTail> => {
     for (;;) {
