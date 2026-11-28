@@ -296,9 +296,11 @@ describe("handleQueryNeighbor", () => {
   });
 
   test("truncates output to maxTokensPerCall * 4 characters", async () => {
-    // Force many neighbors so content would exceed the cap
+    // Force many neighbors so content would exceed the cap. The queried file
+    // must EXIST for its importers' `./a` specifier to resolve at all —
+    // neighbour resolution is existence-checked (US-005).
     const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
-    _codeNeighborDeps.fileExists = async () => false;
+    _codeNeighborDeps.fileExists = async (p) => p.endsWith("/src/a.ts");
     _codeNeighborDeps.glob = () => ({ files: manyNeighbors, truncated: false });
     _codeNeighborDeps.readFile = async (p) => {
       // Each file imports the query target
@@ -309,6 +311,8 @@ describe("handleQueryNeighbor", () => {
     const maxTokensPerCall = 50; // tiny cap to force truncation
     const result = await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget(), maxTokensPerCall);
     expect(result.length).toBeLessThanOrEqual(maxTokensPerCall * 4);
+    // Guards the setup: with no neighbours the assertion above passes vacuously.
+    expect(result.length).toBeGreaterThan(0);
   });
 
   test("emits logger.info with tool/resultCount/truncated fields", async () => {
@@ -328,7 +332,8 @@ describe("handleQueryNeighbor", () => {
     const mockLogger2 = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger2;
     const manyNeighbors = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`);
-    _codeNeighborDeps.fileExists = async () => false;
+    // The queried file must exist for the importers' `./a` to resolve (US-005).
+    _codeNeighborDeps.fileExists = async (p) => p.endsWith("/src/a.ts");
     _codeNeighborDeps.glob = () => ({ files: manyNeighbors, truncated: false });
     _codeNeighborDeps.readFile = async (p) => {
       if (manyNeighbors.some((f) => p.includes(f))) return 'import { x } from "./a"';
@@ -341,7 +346,8 @@ describe("handleQueryNeighbor", () => {
     // Sub-scenario 3: resultCount>0 when neighbors found
     const mockLogger3 = makeLogger();
     _pullToolsDeps.getLogger = () => mockLogger3;
-    _codeNeighborDeps.fileExists = async (p) => p.includes("test/");
+    // Sibling-test candidates (test/) AND the real reverse-dep target exist.
+    _codeNeighborDeps.fileExists = async (p) => p.includes("test/") || p.endsWith("/src/a.ts");
     _codeNeighborDeps.glob = () => ({ files: ["src/imported.ts"], truncated: false });
     _codeNeighborDeps.readFile = async () => 'import { x } from "./a"';
     await handleQueryNeighbor({ filePath: "src/a.ts" }, "/repo", makeBudget());

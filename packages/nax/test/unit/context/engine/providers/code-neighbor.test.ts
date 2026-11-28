@@ -195,7 +195,12 @@ describe("CodeNeighborProvider", () => {
 
     test("a repo-rooted touchedFile from a canonicalized PRD yields neighbors", async () => {
       setupDeps({
-        files: { "packages/app/src/service.ts": 'import { helper } from "./utils/helper"' },
+        // The forward target must exist for the edge to be emitted at all
+        // (resolution is existence-checked, US-005).
+        files: {
+          "packages/app/src/service.ts": 'import { helper } from "./utils/helper"',
+          "packages/app/src/utils/helper.ts": "",
+        },
         globFiles: ["packages/app/src/utils/helper.ts"],
       });
       const result = await provider.fetch({
@@ -588,9 +593,11 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
   test("[AC2] scopePaths contains each neighbor path rendered in the chunk body", async () => {
     // Forward dep to src/foo/dep.ts, plus the mirrored sibling test hint
     // test/unit/foo.test.ts. The sibling-test hint lands in neighbors via
-    // the resolver, so both are included.
+    // the resolver, so both are included. dep.ts is present in the fake
+    // filesystem because neighbour resolution is existence-checked (US-005):
+    // a specifier whose target is absent contributes no neighbour at all.
     setupDeps({
-      files: { "src/foo.ts": 'import { dep } from "./foo/dep"' },
+      files: { "src/foo.ts": 'import { dep } from "./foo/dep"', "src/foo/dep.ts": "" },
       globFiles: [],
     });
     const result = await provider.fetch(makeRequest({ touchedFiles: ["src/foo.ts"] }));
@@ -628,10 +635,12 @@ describe("CodeNeighborProvider — US-002 scope attribution", () => {
   test("[AC4] shared neighbor across two touched files appears exactly once in scopePaths", async () => {
     // src/foo.ts and src/bar.ts both import the same dep — the chunk
     // renders two sections but scopePaths must dedupe the shared neighbor.
+    // src/shared.ts exists because resolution is existence-checked (US-005).
     setupDeps({
       files: {
         "src/foo.ts": 'import { shared } from "./shared"',
         "src/bar.ts": 'import { shared } from "./shared"',
+        "src/shared.ts": "",
       },
       globFiles: [],
     });
