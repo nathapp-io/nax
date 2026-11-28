@@ -6,7 +6,13 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { isMemoryPushRejected, type MemoryNote, type MemoryWriteRequest } from "@nathapp/nax-agent";
+import {
+  isMemoryPushRejected,
+  isMemoryUndispatched,
+  type MemoryNote,
+  MemoryUndispatchedError,
+  type MemoryWriteRequest,
+} from "@nathapp/nax-agent";
 import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -283,6 +289,53 @@ describe("createMcpMemoryProvider", () => {
       const error = await rejection(make().push(bare));
       expect(isMemoryPushRejected(error)).toBe(true);
       expect(fake.calls).toEqual([]);
+    });
+  });
+
+  describe("B2 the failures that certainly dispatched nothing", () => {
+    test("a discovery failure on the save path keeps its code and is marked as undispatched", async () => {
+      // The probe answered a moment earlier, and the listing this call needs still failed: no
+      // add left this process, so the write must stay queued rather than be held as unknown.
+      fake.tools = async () => {
+        throw new Error("connection reset");
+      };
+
+      const error = await rejection(make().push(saveRequest()));
+
+      expect(error.code).toBe("MEMORY_MCP_UNAVAILABLE");
+      expect(error).toBeInstanceOf(MemoryUndispatchedError);
+      expect(isMemoryUndispatched(error)).toBe(true);
+      expect(fake.calls).toEqual([]);
+    });
+
+    test("a permanent tool refusal stays a push rejection, not an undispatched failure", async () => {
+      fake.tools = async () => [tool("search_memory")];
+
+      const error = await rejection(make().push(saveRequest()));
+
+      // A server that lists other tools has refused this write for good; it is not retryable.
+      expect(isMemoryPushRejected(error)).toBe(true);
+      expect(isMemoryUndispatched(error)).toBe(false);
+    });
+
+    test("an add the pool never dispatched is marked undispatched, keeping its call-failed code", async () => {
+      fake.respond = () => ({ ...answer("no live connection for this hop", true), dispatch: "never" });
+
+      const error = await rejection(make().push(saveRequest()));
+
+      expect(error.code).toBe("MEMORY_MCP_CALL_FAILED");
+      expect(isMemoryUndispatched(error)).toBe(true);
+    });
+
+    test("an add the pool did dispatch keeps the unknown-delivery reading", async () => {
+      // No `dispatch` marker: the call may have reached the server, so the answer is not proof
+      // that a retry is safe.
+      fake.respond = () => answer("boom", true);
+
+      const error = await rejection(make().push(saveRequest()));
+
+      expect(error.code).toBe("MEMORY_MCP_CALL_FAILED");
+      expect(isMemoryUndispatched(error)).toBe(false);
     });
   });
 

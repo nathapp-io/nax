@@ -120,7 +120,33 @@ describe("headColumns", () => {
     expect(head.text.startsWith(cluster)).toBe(true);
     expect(head.text.length).toBeLessThanOrEqual(40 * MAX_CLUSTER_CODE_UNITS + 1);
   });
+
+  test("US-007 B4: a cap that lands between the halves of a surrogate pair keeps no lone surrogate", () => {
+    // One grapheme of zero-width combining marks ending in supplementary ones: the column budget
+    // is never reached, so the code-unit cap decides the cut — and it lands inside a pair.
+    const oversized = `${"\u0301".repeat(32)}${"\u{1D165}".repeat(16)}`;
+
+    const head = headColumns(oversized, 4);
+
+    expect(head.more).toBe(true);
+    // Half a character is not text: a terminal draws it as a replacement glyph, and the row it
+    // is measured in then disagrees with the row drawn.
+    expect(LONE_SURROGATE.test(head.text)).toBe(false);
+    // The half-pair is dropped rather than kept, so what remains is whole characters.
+    expect(head.text).toBe("\u0301".repeat(32));
+  });
+
+  test("US-007 B4: the head of a text that ends on a lone surrogate is left alone", () => {
+    // The guard is for a pair the WINDOW cut in two, never for text that already holds half a
+    // character: an unpaired surrogate the caller supplied still measures as what it is.
+    const malformed = `${"\u0301".repeat(32)}\uD834`;
+
+    expect(LONE_SURROGATE.test(headColumns(malformed, 4).text)).toBe(true);
+  });
 });
+
+/** Any unpaired surrogate: a code unit of a pair whose other half was cut away. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 describe("elideSpansEnd", () => {
   const marker: Span = { text: "…", color: "muted" };

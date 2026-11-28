@@ -229,6 +229,7 @@ type MemorySyncResult
 type MemorySyncState
 type MemoryTimers
 type MemoryTranscriptStore
+MemoryUndispatchedError
 type MemoryWriteRefusal
 type MemoryWriteRequest
 type ModelAnswers
@@ -459,6 +460,7 @@ isForgeCapable
 isKnownManager
 isMemoryBadResponse
 isMemoryPushRejected
+isMemoryUndispatched
 isProcessAlive
 isTempOnly
 killProcessGroup
@@ -470,6 +472,7 @@ listNaxEntries
 listProviderModels
 listStoredProviders
 loginProviderIds
+markUndispatched
 maskForPrompt
 matchesArgvPattern
 mcpRuleAdmits

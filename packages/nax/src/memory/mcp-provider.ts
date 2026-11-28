@@ -40,11 +40,18 @@
  * rather than letting it block the outbox for good.
  */
 
-import type { MemoryHit, MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "@nathapp/nax-agent";
+import {
+  type MemoryHit,
+  type MemoryPage,
+  type MemoryProvider,
+  type MemoryPushResult,
+  type MemoryWriteRequest,
+  markUndispatched,
+} from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
-import type { McpPool, McpReplaySafety } from "@/mcp";
+import type { McpCallResult, McpPool, McpReplaySafety } from "@/mcp";
 import type { McpIdMap } from "./mcp-id-map";
 import { type McpMemoryItem, mcpHitOf, parseMcpMemoryIds, parseMcpMemoryItems } from "./mcp-results";
 import type { MemoryLogger } from "./paths";
@@ -160,6 +167,27 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     }
   }
 
+  /**
+   * The discovery the add needs, with its failure marked as one that preceded any dispatch.
+   *
+   * Finding the tool (`requireTool`) comes before the call, so a listing that fails there cannot
+   * have sent an add: the write is a definite unsent one and the next sync may deliver it. A
+   * probe that answers first is no proof of anything — reachability asks the same server a
+   * moment earlier, and the listing this call needs can still fail (B2). The permanent case stays
+   * as it is: a server that lists a different set of tools has refused the write for good, and
+   * `MEMORY_PUSH_REJECTED` is what says so. Anything that is not one of this file's own errors is
+   * rethrown unmarked, which keeps it on the unknown-delivery side rather than claiming it never
+   * left the process.
+   */
+  async function discoverAddTool(tool: string): Promise<void> {
+    try {
+      await requireTool(tool);
+    } catch (error) {
+      if (error instanceof NaxError && error.code !== "MEMORY_PUSH_REJECTED") throw markUndispatched(error);
+      throw error;
+    }
+  }
+
   /** A tool call that failed: the server and the tool named, and the answer's own text. */
   function callFailed(tool: string, content: string, code: ToolFailureCode): NaxError {
     return new NaxError(`[memory] MCP memory server "${serverId}" tool "${tool}" failed: ${content}`, code, {
@@ -174,7 +202,7 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     const note = request.note;
     if (note === undefined) throw pushRejected(`memory save for "${request.slug}" carries no note`);
     const tool = mcp.tools.add;
-    await requireTool(tool);
+    await discoverAddTool(tool);
     const text = `${note.slug}: ${note.description}\n\n${note.body}`;
     const result = await pool.call(
       serverId,
@@ -186,10 +214,21 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
         replaySafety: ADD_REPLAY_SAFETY,
       },
     );
-    if (result.isError) throw callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
+    if (result.isError) throw addFailure(tool, result);
     const ids = parseMcpMemoryIds(result.content);
     if (ids.length > 0) await idMap.add(request.scope, request.slug, ids);
     return { id: note.id, status: "active" };
+  }
+
+  /**
+   * A failed add: the pool's own answer, marked when the pool says no connection could take the
+   * call (`dispatch: "never"`). The add is the one write nax may not repeat, so the difference
+   * between "may have committed" and "was certainly never sent" decides whether the note waits in
+   * the outbox for the next sync or is parked as an unknown delivery nobody can resolve.
+   */
+  function addFailure(tool: string, result: McpCallResult): NaxError {
+    const failed = callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
+    return result.dispatch === "never" ? markUndispatched(failed) : failed;
   }
 
   /**

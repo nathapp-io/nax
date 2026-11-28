@@ -323,6 +323,30 @@ function cutClusterHead(text: string, columns: number): string {
   return kept;
 }
 
+/** The first half of a surrogate pair: `slice` can end on one where it counts code units. */
+const HIGH_SURROGATE_MIN = 0xd800;
+const HIGH_SURROGATE_MAX = 0xdbff;
+
+/**
+ * The window's text, closed up when the cut landed between the two halves of a character.
+ *
+ * `slice(0, window)` counts code units, so it can end on the high half of a supplementary code
+ * point. That is not text a terminal draws — it renders as a replacement glyph, or vanishes —
+ * and it measures as nothing, so it slips straight through the column budget and into the head.
+ * `cutClusterHead` below walks code points and would keep it as one, which is how a bounded
+ * scan came back with a malformed string for a grapheme of supplementary combining marks.
+ *
+ * Only a cut *inside* the text is adjusted: a text the caller supplied with an unpaired
+ * surrogate at its end already holds one, and shrinking it there would hide the caller's own
+ * text rather than fix a boundary.
+ */
+function windowOf(text: string, window: number): string {
+  const slice = text.slice(0, window);
+  if (window >= text.length) return slice;
+  const last = slice.charCodeAt(slice.length - 1);
+  return last >= HIGH_SURROGATE_MIN && last <= HIGH_SURROGATE_MAX ? slice.slice(0, -1) : slice;
+}
+
 /**
  * At most `columns` display columns of `text`, cut between grapheme clusters, and whether any
  * text was left behind. Each grapheme is at least one code unit, so a window of `columns + 1`
@@ -338,7 +362,7 @@ export function headColumns(text: string, columns: number): { readonly text: str
   const cap = Math.min(text.length, limit * MAX_CLUSTER_CODE_UNITS + 1);
   let window = Math.min(cap, limit + 1);
   for (;;) {
-    const slice = text.slice(0, window);
+    const slice = windowOf(text, window);
     const scan = scanColumns(slice, limit);
     if (scan.overflow) return { text: scan.text, more: true };
     if (window >= text.length) return { text: scan.text, more: false };

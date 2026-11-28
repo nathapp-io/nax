@@ -875,6 +875,7 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel, inheritedRoutin
         : deriveThinkingLevelMap(model, template.thinkingLevelMap));
 
   const routing = routingFor(model, inheritedRouting);
+  const compat = compatFor(template, model, routing);
 
   return {
     ...template,
@@ -898,21 +899,45 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel, inheritedRoutin
     reasoning:
       model.thinkingLevels.some((level) => level !== "off") ||
       (model.thinkingFormat !== undefined && model.thinkingLevels.includes("off")),
-    // Merged onto the template's compat, never replacing it: `thinkingFormat`
-    // and the rest of the provider's detected settings live in the same object
-    // and are what translate a thinking level on the wire.
-    ...(routing !== undefined || model.thinkingFormat !== undefined || model.thinkingBudgetField !== undefined
-      ? {
-          compat: {
-            ...template.compat,
-            ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
-            ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
-            ...(routing !== undefined ? { openRouterRouting: toPiOpenRouterRouting(routing) } : {}),
-          },
-        }
-      : {}),
+    ...(compat !== undefined ? { compat } : {}),
     ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
   };
+}
+
+/**
+ * The `compat` an override model carries: the template's own settings, with this declaration's
+ * resolved routing in place of whatever the template happened to hold.
+ *
+ * Merged onto the template's compat, never replacing it: `thinkingFormat` and the rest of the
+ * provider's detected settings live in the same object and are what translate a thinking level
+ * on the wire. Routing is the exception, and it is why this is not a spread at the call site.
+ * The template may be a model an *earlier override in the same sequence* synthesised, so its
+ * `compat.openRouterRouting` is that earlier declaration's, not this one's; copying it while the
+ * resolved routing is `undefined` sends a restriction whose effective value is none — the state
+ * `recordRouting` cleared and `override-declaration.ts`'s `effectiveRouting` reports as no
+ * routing, so the wire and the two-catalog check would disagree. The key is therefore always
+ * rebuilt: present when there is routing to send, absent when there is not.
+ *
+ * `undefined` only when the template has no compat at all and the declaration adds nothing to
+ * it — the shape an override with no thinking declaration and no routing leaves behind.
+ */
+function compatFor(
+  template: Model<Api>,
+  model: ResolvedModel,
+  routing: OpenRouterRouting | undefined,
+): Model<Api>["compat"] | undefined {
+  const templateCompat = template.compat as Record<string, unknown> | undefined;
+  // Destructured rather than spread so the key is gone rather than re-specified: the model must
+  // carry no `openRouterRouting` when there is none, and a spread of `template` already put one
+  // there — an empty compat is what removes it.
+  const { openRouterRouting: _templateRouting, ...inherited } = templateCompat ?? {};
+  const declared = {
+    ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
+    ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
+    ...(routing !== undefined ? { openRouterRouting: toPiOpenRouterRouting(routing) } : {}),
+  };
+  if (templateCompat === undefined && Object.keys(declared).length === 0) return undefined;
+  return { ...inherited, ...declared } as Model<Api>["compat"];
 }
 
 /**
@@ -1051,8 +1076,15 @@ function deriveThinkingLevelMap(
   return map;
 }
 
-/** Builds a custom provider with only explicitly supported lazy wire backends. */
-function introduceProvider(override: ProviderOverride): PiProvider {
+/**
+ * Builds a custom provider with only explicitly supported lazy wire backends.
+ *
+ * `routingById` is the sequence's map for this provider, handed in rather than made here: a
+ * declaration of an id that states no routing keeps the restriction already declared for it, and
+ * a declaration that moves the id off openai-completions clears it — the same walk the bundled
+ * branch and `effectiveRouting` take.
+ */
+function introduceProvider(override: ProviderOverride, routingById: Map<string, OpenRouterRouting>): PiProvider {
   if (override.baseUrl === undefined) {
     throw new Error(`Provider "${override.provider}" requires baseUrl to be introduced.`);
   }
@@ -1060,10 +1092,6 @@ function introduceProvider(override: ProviderOverride): PiProvider {
     throw new Error(`Provider "${override.provider}" requires a non-empty models list.`);
   }
   const byId = new Map<string, Model<Api>>();
-  // Same inheritance rule as a bundled provider's: a later declaration of an id
-  // that states no routing keeps the restriction already declared for it, and a
-  // declaration that moves the id off openai-completions clears it.
-  const routingById = new Map<string, OpenRouterRouting>();
   for (const model of override.models) {
     byId.set(model.id, synthesiseIntroducedModel(override, model, override.baseUrl, routingById.get(model.id)));
     recordRouting(routingById, model);
@@ -1142,13 +1170,33 @@ function synthesiseIntroducedModel(
  */
 function applyOverrides(models: MutableModels, overrides: readonly ProviderOverride[]): void {
   const introduced = new Set<string>();
+  // The routing each model id has already been declared with, per provider, across the WHOLE
+  // sequence — not per override.
+  //
+  // `override-declaration.ts`'s `effectiveRouting` resolves the same way: it walks every
+  // override in order, so a later override of a bundled provider that states no routing inherits
+  // what an earlier one declared. Requiring the two to agree is the point of that check, so this
+  // has to be the same walk. Read back off the provider's own models instead and the answer
+  // depends on the template an override happened to be synthesised from, which is how a cleared
+  // restriction survived to the wire.
+  const routingByProvider = new Map<string, Map<string, OpenRouterRouting>>();
+  /** The routing map one provider's declarations accumulate into. */
+  const routingSeenFor = (provider: string): Map<string, OpenRouterRouting> => {
+    const existing = routingByProvider.get(provider);
+    if (existing !== undefined) return existing;
+    const created = new Map<string, OpenRouterRouting>();
+    routingByProvider.set(provider, created);
+    return created;
+  };
+
   for (const override of overrides) {
     if (introduced.has(override.provider)) {
       throw new Error(`Provider "${override.provider}" was already introduced in this override list.`);
     }
+    const routingById = routingSeenFor(override.provider);
     const base = models.getProvider(override.provider);
     if (base === undefined) {
-      models.setProvider(introduceProvider(override));
+      models.setProvider(introduceProvider(override, routingById));
       introduced.add(override.provider);
       continue;
     }
@@ -1163,12 +1211,8 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
     // disagree about which model an id names, which is the whole class of bug
     // this seam exists to close.
     const byId = new Map<string, Model<Api>>();
-    // The routing each id has already been declared with, so a later
-    // declaration of the same id that states none keeps the restriction
-    // instead of dropping it (finding 6). Kept beside byId rather than read
-    // back off it: the earlier model is gone from byId the moment it is
-    // replaced, which is exactly the loss this map prevents.
-    const routingById = new Map<string, OpenRouterRouting>();
+    // `routingById` is kept beside byId rather than read back off it: the earlier model is gone
+    // from byId the moment it is replaced, which is exactly the loss that map prevents.
     for (const model of override.models ?? []) {
       // Rejected before synthesis, so the two catalogs refuse the same config
       // with the same message rather than one of them building a model whose

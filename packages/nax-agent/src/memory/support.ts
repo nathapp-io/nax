@@ -18,7 +18,7 @@
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
-import type { MemoryProvider, MemoryWriteKind } from "./provider-types.ts";
+import { isMemoryUndispatched, type MemoryProvider, type MemoryWriteKind } from "./provider-types.ts";
 import { MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
 
 /** The stage every memory-origin log line carries. */
@@ -126,13 +126,16 @@ export function unknownDeliveryReason(error: unknown): string {
  * Whether a failed push of a non-replayable write may have been committed — that is, whether the
  * write's fate is unknown rather than its being a write a later run can safely send again.
  *
- * Three facts decide it, in this order. A provider that declares this kind replay-safe answers
+ * Four facts decide it, in this order. A provider that declares this kind replay-safe answers
  * `false`: repeating the write is safe by declaration, and the legacy retry stands. A timeout
  * answers `true` only while the abandoned dispatch can still reach the provider (the default,
  * `timeoutAftermath: "late"`); a provider that discards the dispatch on the deadline has left a
- * definite unsent write behind, and `false` lets the next sync deliver it. Any other failure of a
- * non-replayable write answers `true`: the request left this process and the provider's answer
- * says nothing about whether it was applied.
+ * definite unsent write behind, and `false` lets the next sync deliver it. A failure the provider
+ * marks as preceding any dispatch (`markUndispatched`) answers `false` on the same ground: nothing
+ * reached the wire, so the next sync may deliver it — the listing, the connection or the pooled
+ * client it needed is what failed. Any other failure of a non-replayable write answers `true`:
+ * the request left this process and the provider's answer says nothing about whether it was
+ * applied.
  *
  * A permanent refusal is not this question's business — it is decided before this is asked — and
  * neither is a bad response, whose caller keeps the counting that parks such an entry.
@@ -141,6 +144,7 @@ export function possiblyCommitted(provider: MemoryProvider, kind: MemoryWriteKin
   const contract = provider.replay;
   if (contract === undefined || !contract.nonReplayable.includes(kind)) return false;
   if (isMemoryTimeout(error)) return contract.timeoutAftermath !== "none";
+  if (isMemoryUndispatched(error)) return false;
   return true;
 }
 

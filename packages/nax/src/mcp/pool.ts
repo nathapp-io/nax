@@ -191,10 +191,19 @@ interface AttemptRequest {
   readonly connection: McpConnection;
 }
 
-/** The per-hop failure a call answers when no live connection could take it (spec R8). */
-function unavailableForHop(serverId: string): McpCallResult {
+/**
+ * The per-hop failure a call answers when no live connection could take it (spec R8).
+ *
+ * `dispatch: "never"` is what the answer says beyond the error: no connection existed to send
+ * the call on, so nothing reached the server — the fact a caller that may not repeat its write
+ * needs in order to know a retry cannot duplicate anything. `dispatched` is the opposite case: a
+ * replay-safe call whose first attempt WAS sent and whose replacement could not connect. It
+ * answers this same pinned message, without the marker, because that write's fate is unknown.
+ */
+function unavailableForHop(serverId: string, dispatched = false): McpCallResult {
   const content = `MCP server "${serverId}" is unavailable; its tools cannot be called for this hop.`;
-  return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
+  const answer = { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
+  return dispatched ? answer : { ...answer, dispatch: "never" };
 }
 
 /** Error AS DATA for a call a connection rejected (ADR-029 section 5, spec US-006). */
@@ -527,7 +536,10 @@ export function createMcpPool(opts: {
       // reconnects, or reads the pinned-unavailable state the budget left. This
       // is pool-internal re-dispatch, not an agent dispatch-tier retry.
       const replacement = await entry(serverId, workdir);
-      if (replacement === undefined) return unavailableForHop(serverId);
+      // The first attempt WAS dispatched, so a failure to reconnect is not an undispatched one:
+      // the pinned answer carries no `dispatch` marker, and a caller that may not repeat its
+      // write keeps treating the call as one that may have committed.
+      if (replacement === undefined) return unavailableForHop(serverId, true);
       // Retried once and only once: whatever this attempt returns is the answer,
       // so a second exit cannot buy a third dispatch.
       const retried = await attemptOf(request(replacement.connection));

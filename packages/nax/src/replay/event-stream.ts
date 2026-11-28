@@ -37,16 +37,26 @@ function addRecord(index: ReplayEventIndex, line: string): void {
 }
 
 /**
- * Feed a decoded chunk to `addRecord`, carrying an incomplete trailing line into
- * the next chunk. The carry is only concatenated when a chunk actually ends a
- * line, so a single record spanning many reads is not re-copied per read.
+ * Feed a decoded chunk to `addRecord`, carrying an incomplete trailing record into the next
+ * chunk as its own segment.
+ *
+ * The carry is a list of segments rather than one growing string, and it is joined only when a
+ * chunk actually ends the record. Appending to a string re-copies everything already held, so one
+ * record spanning many reads — a log line holding a whole prompt, say — would cost the quadratic
+ * sum of its own length, once per read, for a record that is parsed exactly once at the end.
  */
-function feedChunk(index: ReplayEventIndex, carry: string, chunk: string): string {
+function feedChunk(index: ReplayEventIndex, carry: string[], chunk: string): void {
   const parts = chunk.split("\n");
-  if (parts.length === 1) return carry + chunk;
-  addRecord(index, carry + (parts[0] ?? ""));
+  if (parts.length === 1) {
+    // Still inside one record: keep the segment and copy nothing already held.
+    carry.push(chunk);
+    return;
+  }
+  addRecord(index, carry.join("") + (parts[0] ?? ""));
+  carry.length = 0;
   for (let i = 1; i < parts.length - 1; i++) addRecord(index, parts[i] ?? "");
-  return parts[parts.length - 1] ?? "";
+  // The chunk's last segment is the next record's head, unless the chunk ended on the newline.
+  carry.push(parts[parts.length - 1] ?? "");
 }
 
 /**
@@ -59,15 +69,15 @@ function feedChunk(index: ReplayEventIndex, carry: string, chunk: string): strin
  */
 export function ingestReplayLog(path: string, options: IngestReplayLogOptions = {}): ReplayEventIndex {
   const index = createReplayEventIndex();
-  let carry = "";
+  const carry: string[] = [];
   forEachLogChunk(
     path,
     (chunk) => {
-      carry = feedChunk(index, carry, chunk);
+      feedChunk(index, carry, chunk);
     },
     options,
   );
-  addRecord(index, carry);
+  addRecord(index, carry.join(""));
   return index;
 }
 

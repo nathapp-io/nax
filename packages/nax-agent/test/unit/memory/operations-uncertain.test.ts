@@ -34,6 +34,8 @@ import {
   type MemorySaveInput,
   type MemorySaveResult,
   type MemoryStore,
+  markUndispatched,
+  NaxError,
   saveMemoryNote,
   syncMemory,
 } from "@nathapp/nax-agent";
@@ -269,6 +271,27 @@ describe("saveMemoryNote when the provider may have committed the write", () => 
       expect(result).toMatchObject({ delivered: false, pending: { clientId: stored.id, delivery: "unknown" } });
       expect(result.pending?.reason).toContain("connection reset by peer");
       expect(await soleEntry(h)).toMatchObject({ clientId: stored.id, state: "uncertain" });
+    });
+  });
+
+  test("AC-7: a pre-dispatch failure the provider marks leaves the write queued, not held", async () => {
+    await withTempDir(async (dir) => {
+      // The add could not be discovered or connected: nothing was written to the wire, so the
+      // write is a definite unsent one even on a provider whose writes may not be repeated.
+      const undispatched = markUndispatched(
+        new NaxError("server is unavailable: no live connection", "MEMORY_MCP_UNAVAILABLE", { stage: "memory" }),
+      );
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: undispatched });
+
+      const result = await h.save();
+
+      const stored = await mirrored(h);
+      expect(result).toMatchObject({ delivered: false, pending: { clientId: stored.id, delivery: "queued" } });
+      expect(await soleEntry(h)).toMatchObject({ clientId: stored.id, state: "queued" });
+      const provider = makeMemoryProvider({});
+      const run = await syncWith(h, provider);
+      expect(run).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(await h.outbox.list()).toEqual([]);
     });
   });
 

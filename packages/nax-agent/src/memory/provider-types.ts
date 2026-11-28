@@ -11,7 +11,15 @@
  * unless the provider declares the write non-replayable (`MemoryReplayContract`),
  * in which case a dispatch that left no answer is an unknown outcome and nothing
  * resends it.
+ *
+ * One failure is neither unknown nor retryable-by-default: a push that failed
+ * before anything was written to the wire. A provider that can tell says so by
+ * throwing the error `markUndispatched` returns (`MemoryUndispatchedError`), and
+ * `possiblyCommitted` answers `false` for it — the write is a definite unsent one,
+ * queued for the next sync rather than parked as an unknown delivery. Discovery,
+ * connection setup and pooled-client acquisition are exactly that case.
  */
+import { NaxError } from "#src/infra/nax-error";
 import type { MemoryDecision, MemoryHit, MemoryNote, MemoryNoteStatus, MemoryScope } from "./types.ts";
 
 /** One write to hand a provider: a note to store, or a slug to forget (a tombstone). */
@@ -62,6 +70,41 @@ export interface MemoryReplayContract {
 export interface MemoryPushResult {
   readonly id: string;
   readonly status: MemoryNoteStatus;
+}
+
+/**
+ * A push failure the provider knows preceded any dispatch.
+ *
+ * A provider often learns a write cannot be sent before it sends it: the tool listing it needs
+ * to find the write's endpoint, the connection it would send on, the pooled client it would take.
+ * Nothing reached the server in any of those, so the write is a definite unsent one — the next
+ * sync may deliver it, and holding it as an unknown delivery would park a note nothing was ever
+ * sent for, behind a key no later write of that note could pass.
+ *
+ * A class rather than a code, because the code is the provider's own and must keep reaching
+ * callers unchanged (`MEMORY_MCP_UNAVAILABLE` is still that outage): the marker is additional to
+ * the failure, never a replacement for it. A *timeout* is deliberately not this: the abandoned
+ * attempt is still running and may yet reach the provider, which is what
+ * `MemoryReplayContract.timeoutAftermath` is for.
+ */
+export class MemoryUndispatchedError extends NaxError {
+  constructor(message: string, code: string, context: Record<string, unknown> = {}, cause?: unknown) {
+    super(message, code, cause === undefined ? context : { ...context, cause });
+    this.name = "MemoryUndispatchedError";
+  }
+}
+
+/**
+ * `error` as the failure a provider throws when nothing was dispatched, keeping its own code,
+ * message and context so every caller that reads them sees what it saw before.
+ */
+export function markUndispatched<E extends NaxError>(error: E): MemoryUndispatchedError {
+  return new MemoryUndispatchedError(error.message, error.code, error.context ?? {}, error);
+}
+
+/** Whether a failed push is one that certainly never left this process. */
+export function isMemoryUndispatched(error: unknown): boolean {
+  return error instanceof MemoryUndispatchedError;
 }
 
 /** One page of a pull; `done` is only true on the last page. */

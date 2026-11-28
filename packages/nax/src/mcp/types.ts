@@ -24,6 +24,13 @@ export interface McpCallResult {
   readonly isError: boolean;
   /** Result size before the maxBytes slice, so elision is visible in the ledger. */
   readonly bytesPreTruncation: number;
+  /**
+   * Whether the call reached the server at all. Absent means it may have: a deadline or a
+   * transport error is an interruption of something that was sent. `"never"` is the other fact —
+   * no live connection could take the call, so nothing was written to the wire and a caller
+   * holding a write it may not repeat can safely send it again.
+   */
+  readonly dispatch?: "never";
 }
 
 export interface McpConnection {

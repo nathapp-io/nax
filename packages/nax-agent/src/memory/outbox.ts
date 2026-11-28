@@ -128,6 +128,17 @@ export interface MemoryOutbox {
    */
   removeIfRejected(clientId: string): Promise<boolean>;
   /**
+   * Remove an entry only while it still holds an **undelivered** one — `rejected`, or
+   * `uncertain` — answering whether it did. This is what the operator's `discard` runs on:
+   * both states hold a write nothing will send again, so both are the operator's to drop.
+   *
+   * The claim protocol is `removeIfRejected`'s, for the same reason: the entry file is claimed
+   * by rename and read there, so the entry that is removed is the one that was checked, and a
+   * `queued` entry (put back by `requeue` between a caller's listing and this call) is renamed
+   * back untouched rather than thrown away as a write nobody delivered.
+   */
+  removeIfUndelivered(clientId: string): Promise<boolean>;
+  /**
    * Mark an entry as one whose dispatch may have been committed: `MEMORY_OP_TIMEOUT_MS` fired on
    * a non-replayable write, or its provider failed it without an answer. The reason replaces
    * whatever the entry carried (the request's own reason moves to `requestReason`, as a rejection
@@ -399,20 +410,20 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   }
 
   /**
-   * One entry file, removed only if it still holds a rejected entry.
+   * One entry file, removed only while the entry it holds is one `removable` accepts.
    *
    * The file is claimed by rename before it is read, because the read and the removal have to
    * see the same bytes: `requeue` in another process rewrites the entry in place, so a name
    * checked and then removed could take back the queued retry that landed in between. A claim
    * name is not an entry name (`entryFileNamed` refuses it), so nothing else can rewrite the
-   * claim while it is held, and an entry that turns out not to be rejected is renamed back
+   * claim while it is held, and an entry the caller would not remove is renamed back
    * untouched. Losing the race the other way — the entry left before the claim — removes
    * nothing, which is what the caller asked for anyway. The outbox lock covers the whole claim
    * and every writer, so a requeue cannot rewrite the entry during this decision. A claim left
    * by a crash is restored under that same lock before the next reader or writer runs; the
    * removal was not committed until the claim was deleted, whatever state its bytes carry.
    */
-  async function removeOneIfRejected(file: EntryFile): Promise<boolean> {
+  async function removeOneWhile(file: EntryFile, removable: (entry: MemoryOutboxEntry) => boolean): Promise<boolean> {
     const path = join(dir, file.name);
     const claim = join(dir, `${file.name}${CLAIM_SUFFIX}`);
     try {
@@ -423,7 +434,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       throw error;
     }
     const claimed = await readEntryAt(claim);
-    if (claimed === null || claimed.state !== "rejected") {
+    if (claimed === null || !removable(claimed)) {
       await _memoryStoreDeps.rename(claim, path);
       return false;
     }
@@ -434,7 +445,16 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   async function removeIfRejected(clientId: string): Promise<boolean> {
     let removed = false;
     for (const file of await filesFor(clientId)) {
-      if (await removeOneIfRejected(file)) removed = true;
+      if (await removeOneWhile(file, (entry) => entry.state === "rejected")) removed = true;
+    }
+    return removed;
+  }
+
+  /** The other removal `removeOneWhile` serves: `rejected` and `uncertain` are both undelivered. */
+  async function removeIfUndelivered(clientId: string): Promise<boolean> {
+    let removed = false;
+    for (const file of await filesFor(clientId)) {
+      if (await removeOneWhile(file, (entry) => entry.state !== "queued")) removed = true;
     }
     return removed;
   }
@@ -506,6 +526,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     remove: (clientId) => locked(() => remove(clientId), undefined),
     held: (clientId) => reading(() => held(clientId), undefined),
     removeIfRejected: (clientId) => locked(() => removeIfRejected(clientId), false),
+    removeIfUndelivered: (clientId) => locked(() => removeIfUndelivered(clientId), false),
     markRejected: (clientId, reason) => locked(() => markRejected(clientId, reason), undefined),
     markUncertain: (clientId, reason) => locked(() => markUncertain(clientId, reason), undefined),
     recordBadResponse: (clientId, error) => locked(() => recordBadResponse(clientId, error), 0),

@@ -44,14 +44,34 @@ export function formatMemoryStatus(status: MemoryStatus, index?: string): string
 }
 
 /**
- * What one sync did: one line, then one more per entry the run parked.
+ * What one sync did: one line, then one more per entry the run parked or left with an unknown
+ * delivery.
+ *
+ * An uncertain line is the operator's instruction as much as a report: the entry it names will
+ * never be sent again on its own, so the line carries the client id that `nax memory requeue`
+ * and `nax memory discard` take.
  *
  * `failed` names the message the run ended with; the field is optional on the result, so a
  * failure that carried none says `unknown error` rather than printing an empty tail.
  */
 export function formatMemorySyncResult(result: MemorySyncResult): string {
   const parked = (result.parked ?? []).map((entry) => `memory sync: parked ${entryLabel(entry)} (${entry.reason})`);
-  return [syncOutcomeLine(result), ...parked].join("\n");
+  const uncertain = (result.uncertain ?? []).map(uncertainLine);
+  return [syncOutcomeLine(result), ...parked, ...uncertain].join("\n");
+}
+
+/**
+ * One held write, as the run reports it: `MemorySyncResult`'s own element type, read from the
+ * result rather than imported, so this file cannot drift from what a sync actually returns.
+ */
+type UncertainEntry = NonNullable<MemorySyncResult["uncertain"]>[number];
+
+/** One held write: which note, the handle the operator acts on, and the two commands that take it. */
+function uncertainLine(entry: UncertainEntry): string {
+  return (
+    `memory sync: held ${entryLabel(entry)} (delivery unknown; client ${entry.clientId} — ` +
+    `nax memory requeue --client ${entry.clientId} --allow-duplicate, or nax memory discard --client ${entry.clientId})`
+  );
 }
 
 /** An outbox entry as the status and the sync line name it: `<kind> <scope>/<slug>`. */

@@ -78,7 +78,7 @@ import { kodaHeldForgetKeys, readForgetPendingKeys } from "./host-forget-keys";
 import { createIndexOverflows, readIndex } from "./host-index";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { type MemoryRejectedEntry, readStatus } from "./host-status";
-import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
+import { createHostWrites, type HostWrites } from "./host-writes";
 import { createKodaApprovals, type KodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 import { createKodaMemoryProvider } from "./koda-provider";
@@ -144,23 +144,22 @@ export interface MemoryHost extends Partial<HostCompaction> {
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
   /**
-   * Requeue (`nax memory requeue`) or drop (`nax memory discard`) rejected outbox entries;
-   * each answers how many. Optional so a hand-built host (a test double) stays valid.
+   * Requeue (`nax memory requeue`) or drop (`nax memory discard`) undelivered entries — rejected
+   * or uncertain — answering what each moved. Optional so a hand-built test double stays valid;
+   * `host-writes.ts` carries the rules, including why an uncertain requeue needs `allowDuplicate`.
    */
-  requeue?(target: MemoryRejectedTarget): Promise<number>;
-  discard?(target: MemoryRejectedTarget): Promise<number>;
+  requeue?: HostWrites["requeue"];
+  discard?: HostWrites["discard"];
   /**
    * Every note a forget still holds, keyed `"<scope>/<slug>"`: the mirror's own pending-forget
-   * record (a proposal forget, answered and recorded), the ones this mirror has queued and not
-   * yet delivered, and the holds koda's approvals file records — a forget koda answered with a
-   * `202` and has not settled. Read now, never cached — a sync, an approval or a pull's
-   * resolution between two calls changes the answer. Optional so a hand-built host (a test
-   * double) stays valid; `createMemoryHost` always sets it.
+   * record, the ones this mirror has queued and not yet delivered, and the holds koda's
+   * approvals file records. Read now, never cached — a sync, an approval or a pull between two
+   * calls changes the answer. Optional, as above; `createMemoryHost` always sets it.
    */
   forgetPendingKeys?(): Promise<ReadonlySet<string>>;
   /**
-   * Release what the host owns: the MCP pool of an MCP-backed host. Safe to call twice.
-   * Optional so a hand-built host (a test double) stays valid; `createMemoryHost` always sets it.
+   * Release what the host owns — the MCP pool of an MCP-backed host. Safe to call twice, and
+   * optional like the rest; `createMemoryHost` always sets it.
    */
   close?(): Promise<void>;
 }

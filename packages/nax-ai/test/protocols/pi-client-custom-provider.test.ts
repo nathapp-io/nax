@@ -296,3 +296,91 @@ describe("openRouterRouting across successively declared catalogs (finding 6)", 
     expect(body).not.toContain("host-a");
   });
 });
+
+/** A real bundled openrouter id: the api that sends routing. */
+const BUNDLED_ID = "deepseek/deepseek-chat";
+
+/**
+ * A real bundled openrouter model as an override declaration.
+ *
+ * Real id and real provider template, because the case below turns on a template an
+ * earlier override of the *same bundled provider* produced: a synthetic provider could not
+ * show whether the restriction a synthesised model carries survives into the next override.
+ */
+async function bundledDeclaration(overrides: Partial<ResolvedModel> = {}): Promise<ResolvedModel> {
+  const providers = await defaultProviders(["openrouter"]);
+  const bundled = providers.flatMap((provider) => provider.models).find((model) => model.id === BUNDLED_ID);
+  if (bundled === undefined) throw new Error(`expected openrouter to bundle ${BUNDLED_ID}`);
+  return {
+    id: bundled.id,
+    provider: "openrouter",
+    protocol: "openai-completions",
+    pricing: bundled.pricing,
+    contextWindow: bundled.contextWindow,
+    supportsTools: bundled.supportsTools,
+    thinkingLevels: bundled.thinkingLevels,
+    ...overrides,
+  };
+}
+
+/**
+ * The serialized request body one `client.complete` puts on the wire for a bundled provider
+ * declared as `overrides`, in order.
+ *
+ * Only `fetch` is stubbed, so this covers the whole path: both catalogs, createClient's
+ * comparison of them, the protocol's override sequence and pi-ai's own request builder.
+ */
+async function bundledWireRequest(overrides: readonly ProviderOverride[]): Promise<string> {
+  let body: string | undefined;
+  vi.stubGlobal("fetch", async (_input: unknown, init?: { readonly body?: unknown }) => {
+    body = String(init?.body);
+    throw new Error("intercepted: no network");
+  });
+  const providers = await defaultProviders(["openrouter"]);
+  const client = createClient({
+    providers,
+    providerOverrides: overrides,
+    protocols: defaultProtocols({
+      credentials: createMemoryCredentialStore({ openrouter: { kind: "api-key", key: "test-key" } }),
+      providerOverrides: overrides,
+    }),
+    transportRetries: 0,
+  });
+  const model = await client.model("openrouter", BUNDLED_ID);
+  await client.complete(model, { messages: [{ role: "user", content: "hi" }] }).catch(() => undefined);
+  if (body === undefined) throw new Error("expected the request to reach fetch");
+  return body;
+}
+
+describe("B3 routing across successive overrides of one bundled provider", () => {
+  it("inherits an earlier override's restriction in a later override that states none", async () => {
+    const routed = await bundledDeclaration({ openRouterRouting: { only: ["deepinfra"] } });
+    const repriced = await bundledDeclaration({ pricing: { input: 9, output: 9, cacheRead: 0, cacheWrite: 0 } });
+
+    const body = await bundledWireRequest([
+      { provider: "openrouter", models: [routed] },
+      { provider: "openrouter", models: [repriced] },
+    ]);
+
+    // The restriction was declared in the first override and never replaced, so it is still
+    // the request's — the same effective value the two-catalog comparison computes.
+    expect(JSON.parse(body)).toMatchObject({ provider: { only: ["deepinfra"] } });
+  });
+
+  it("clears a synthesised template's routing when the effective routing is cleared, so nothing reaches the wire", async () => {
+    const routed = await bundledDeclaration({ openRouterRouting: { only: ["deepinfra"] } });
+    const moved = await bundledDeclaration({ protocol: "anthropic-messages" });
+    const plain = await bundledDeclaration();
+
+    const body = await bundledWireRequest([
+      { provider: "openrouter", models: [routed] },
+      // The middle declaration cannot send routing, which clears what the first declared; the
+      // last therefore inherits nothing. The wire must agree, and the model the last one is
+      // templated from is the FIRST override's synthesised model — which still carries it.
+      { provider: "openrouter", models: [moved, plain] },
+    ]);
+
+    expect(JSON.parse(body)).not.toHaveProperty("provider");
+    expect(body).not.toContain("deepinfra");
+  });
+});

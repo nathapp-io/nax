@@ -28,6 +28,7 @@ import {
   type MemoryStore,
   type MemorySyncState,
   type MemoryWriteRequest,
+  markUndispatched,
   NaxError,
   syncMemory,
 } from "@nathapp/nax-agent";
@@ -712,6 +713,32 @@ describe("US-001: drainOutbox when the provider may have committed the write", (
       expect(await h.outbox.list()).toEqual([queued]);
 
       const second = await syncMemory(h.input());
+      expect(second).toMatchObject({ outcome: "synced", pushed: 1 });
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-7: a settled pre-dispatch failure of a non-replayable write stays queued, not parked", async () => {
+    await withTempDir(async (dir) => {
+      // Discovery failed before the add could be sent: no connection, so nothing was written to
+      // the wire. The provider says so, which is what keeps this off the unknown-delivery path.
+      const undispatched = markUndispatched(
+        new NaxError("server is unavailable: no live connection", "MEMORY_MCP_UNAVAILABLE", {
+          stage: "memory",
+        }),
+      );
+      const h = harness(dir, { replay: NON_REPLAYABLE_SAVES, push: [undispatched, ANSWER_ACTIVE] });
+      const queued = await h.outbox.enqueue(saveRequest(note(), "client-a"));
+
+      const first = await syncMemory(h.input());
+
+      // A definite unsent write: queued, and the run claims no unresolved delivery.
+      expect(first).toMatchObject({ outcome: "failed", pushed: 0 });
+      expect(first.uncertain).toBeUndefined();
+      expect(await h.outbox.list()).toEqual([queued]);
+
+      const second = await syncMemory(h.input());
+
       expect(second).toMatchObject({ outcome: "synced", pushed: 1 });
       expect(await h.outbox.list()).toEqual([]);
     });

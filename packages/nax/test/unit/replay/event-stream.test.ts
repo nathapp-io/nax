@@ -101,6 +101,24 @@ describe("ingestReplayLog — AC6: records split across read chunks", () => {
     expect(storyInputs(index, "US-001").phases).toEqual([{ name: "implémenter→gate", status: "pass" }]);
   });
 
+  test("M1: one large record over hundreds of chunks is reassembled without re-copying its head", () => {
+    // The carry holds the record's segments and joins them once, when the record ends: appending
+    // to a string instead re-copies everything already held on every read, so a record of n bytes
+    // spread over k reads costs n·k bytes of copying for a record parsed once. The cost is not
+    // observable from outside (the produced index is identical either way, and a wall-clock bound
+    // would measure the machine), so what is pinned here is the shape that makes it bounded: a
+    // record far longer than any chunk still arrives whole, with every chunk contributing.
+    const message = `Phase passed: ${"x".repeat(200_000)}`;
+    const path = writeLog(dir, "huge.jsonl", [`${record("US-001", message)}\n`]);
+
+    const index = ingestReplayLog(path, { chunkBytes: 512 });
+
+    expect(index.recordsInspected).toBe(1);
+    expect(storyInputs(index, "US-001").phases).toEqual([
+      { name: message.slice("Phase passed: ".length), status: "pass" },
+    ]);
+  });
+
   test("AC6: blank and malformed records are still skipped, valid ones kept", () => {
     const path = writeLog(dir, "mixed.jsonl", [
       record("US-001", "Phase passed: test-writer"),

@@ -15,6 +15,13 @@
  * an absent slug stays `MEMORY_NOTE_NOT_FOUND`, and a queued write stays a result
  * rather than an error — this module adds no error translation of its own.
  *
+ * The one recovery surface lives here too: `requeue` and `discard` act on every entry
+ * nothing will deliver again, which is both `rejected` and `uncertain`. An `uncertain`
+ * entry may already have committed on the provider, so requeueing it is the one decision
+ * the operator has to make explicitly (`allowDuplicate`); discarding it is a loss they
+ * have already accepted. Both are reachable from the CLI by the note, by the entry's
+ * client id — the handle every "delivery unknown" answer prints — or for everything at once.
+ *
  * The operations are handed in rather than imported, because the host that
  * composes them owns the `_memoryHostDeps` seam a test replaces; passing the
  * object through keeps a stub installed after the host was opened visible here.
@@ -71,8 +78,39 @@ export interface HostWritesInput {
   readonly operations: MemoryWriteOperations;
 }
 
-/** Which rejected outbox entries a requeue or a discard acts on: one note's, or every one. */
-export type MemoryRejectedTarget = { readonly scope: MemoryScope; readonly slug: string } | "all";
+/**
+ * Which undelivered outbox entries a requeue or a discard acts on.
+ *
+ * Three identities, because the operator has three: a note's scope and slug (the write they
+ * remember), one entry's client id (the handle every "delivery unknown" answer prints), and
+ * `"all"`. A client id is not a slug — the outbox mints UUIDs, which are a legal slug shape —
+ * so the id is its own target rather than a guess made from the positional argument.
+ */
+export type MemoryRecoveryTarget =
+  | { readonly scope: MemoryScope; readonly slug: string }
+  | { readonly clientId: string }
+  | "all";
+
+/** What one recovery moved, and what it left for the operator to decide. */
+export interface MemoryRecoveryResult {
+  /** How many entries the operation moved. */
+  readonly moved: number;
+  /**
+   * The client ids of the uncertain entries a requeue left in place, because the duplicate risk
+   * was not acknowledged. Empty for a discard, which takes them.
+   */
+  readonly heldBack: readonly string[];
+}
+
+/** What a requeue takes beyond the entries: the operator's acceptance of the duplicate risk. */
+export interface MemoryRequeueOptions {
+  /**
+   * Requeue entries whose dispatch may already have committed. An uncertain entry is exactly
+   * that, so the next sync would send it again and the server may hold two copies: only the
+   * operator can decide that is what they want.
+   */
+  readonly allowDuplicate?: boolean;
+}
 
 /** The write surface a host exposes: one method per host write. */
 export interface HostWrites {
@@ -83,10 +121,13 @@ export interface HostWrites {
     readonly reason: string;
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
-  /** Put the rejected entries `target` names back in the queue; answers how many were requeued. */
-  requeue(target: MemoryRejectedTarget): Promise<number>;
-  /** Drop the rejected entries `target` names from the outbox; answers how many were dropped. */
-  discard(target: MemoryRejectedTarget): Promise<number>;
+  /**
+   * Put the undelivered entries `target` names back in the queue — `rejected` ones, and the
+   * `uncertain` ones `options.allowDuplicate` accepts.
+   */
+  requeue(target: MemoryRecoveryTarget, options?: MemoryRequeueOptions): Promise<MemoryRecoveryResult>;
+  /** Drop the undelivered entries `target` names from the outbox: `rejected` and `uncertain`. */
+  discard(target: MemoryRecoveryTarget): Promise<MemoryRecoveryResult>;
 }
 
 /** The refusal for a slug only the repository holds: the note is the repository's to edit. */
@@ -178,41 +219,69 @@ export function createHostWrites(input: HostWritesInput): HostWrites {
     save: (write) => save(input, write),
     forget: (request) => forget(input, request),
     approve: (request) => approve(input, request),
-    requeue: (target) => requeue(input.outbox, target),
+    requeue: (target, options) => requeue(input.outbox, target, options),
     discard: (target) => discard(input, target),
   };
 }
 
-/** Whether a rejected entry is one `target` names. */
-function rejectedMatches(entry: MemoryOutboxEntry, target: MemoryRejectedTarget): boolean {
-  if (entry.state !== "rejected") return false;
-  return target === "all" || (entry.scope === target.scope && entry.slug === target.slug);
+/**
+ * Whether an entry is one `target` names, and one nothing will deliver again.
+ *
+ * Both undelivered states are the operator's: `rejected` was refused, and `uncertain` was
+ * dispatched without an answer by a provider that may not repeat it. A `queued` write is still
+ * on its way, so neither operation touches it.
+ */
+function undeliveredMatches(entry: MemoryOutboxEntry, target: MemoryRecoveryTarget): boolean {
+  if (entry.state === "queued") return false;
+  if (target === "all") return true;
+  if ("clientId" in target) return entry.clientId === target.clientId;
+  return entry.scope === target.scope && entry.slug === target.slug;
 }
 
 /**
- * Put rejected entries back in the queue, oldest first, so the next sync pushes them again.
+ * Put undelivered entries back in the queue, oldest first, so the next sync pushes them again.
  *
  * A parked entry (one a provider kept answering badly) and a refused one are both `rejected`;
  * requeueing either restores the write as it was taken, and the next sync decides it afresh.
+ * An `uncertain` entry is the different case this option exists for: its dispatch may already
+ * have committed, so requeueing it makes a second copy unless the operator says the risk is
+ * theirs — it is left in place, and named in `heldBack`, until they do.
  */
-async function requeue(outbox: MemoryOutbox, target: MemoryRejectedTarget): Promise<number> {
-  const matches = (await outbox.list()).filter((entry) => rejectedMatches(entry, target));
-  let requeued = 0;
+async function requeue(
+  outbox: MemoryOutbox,
+  target: MemoryRecoveryTarget,
+  options: MemoryRequeueOptions = {},
+): Promise<MemoryRecoveryResult> {
+  const matches = (await outbox.list()).filter((entry) => undeliveredMatches(entry, target));
+  const heldBack: string[] = [];
+  let moved = 0;
   for (const entry of matches) {
-    if (await outbox.requeue(entry.clientId)) requeued += 1;
+    if (entry.state === "uncertain" && options.allowDuplicate !== true) {
+      heldBack.push(entry.clientId);
+      continue;
+    }
+    if (await outbox.requeue(entry.clientId)) moved += 1;
   }
-  return requeued;
+  return { moved, heldBack };
 }
 
 /**
- * Drop rejected entries for good. Only `rejected` ones: a queued write is still on its way and
- * is never dropped here. Each scope a discard touched has its pull rewound: a discarded forget
- * leaves its note active on the provider, and an incremental pull would never send that note
- * again, so the next sync reads the scope in full and the mirror takes the provider's copy.
+ * Drop undelivered entries for good — `rejected` and `uncertain` alike. A queued write is still
+ * on its way and is never dropped here.
+ *
+ * The entry file is claimed and re-read before it is removed (`removeIfUndelivered`), so a
+ * `requeue` that landed between the listing and this call survives: a write nobody has delivered
+ * is never thrown away on the strength of a stale listing. Each scope a discard actually moved
+ * has its pull rewound: a discarded forget leaves its note active on the provider, and an
+ * incremental pull would never send that note again, so the next sync reads the scope in full and
+ * the mirror takes the provider's copy.
  */
-async function discard(input: HostWritesInput, target: MemoryRejectedTarget): Promise<number> {
-  const matches = (await input.outbox.list()).filter((entry) => rejectedMatches(entry, target));
-  for (const entry of matches) await input.outbox.remove(entry.clientId);
-  for (const scope of new Set(matches.map((entry) => entry.scope))) await rewindPullCursor(input.store, scope);
-  return matches.length;
+async function discard(input: HostWritesInput, target: MemoryRecoveryTarget): Promise<MemoryRecoveryResult> {
+  const matches = (await input.outbox.list()).filter((entry) => undeliveredMatches(entry, target));
+  const removed: MemoryOutboxEntry[] = [];
+  for (const entry of matches) {
+    if (await input.outbox.removeIfUndelivered(entry.clientId)) removed.push(entry);
+  }
+  for (const scope of new Set(removed.map((entry) => entry.scope))) await rewindPullCursor(input.store, scope);
+  return { moved: removed.length, heldBack: [] };
 }

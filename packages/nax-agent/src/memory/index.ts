@@ -47,6 +47,11 @@ export type {
   MemoryWriteKind,
   MemoryWriteRequest,
 } from "./provider-types.ts";
+export {
+  isMemoryUndispatched,
+  MemoryUndispatchedError,
+  markUndispatched,
+} from "./provider-types.ts";
 export { searchMemoryNotes, tokenizeMemoryQuery } from "./search.ts";
 export {
   createMemoryStore,

@@ -213,8 +213,12 @@ describe("nax memory save — the two undelivered answers read differently", () 
     await runMemory(h, [...SAVE_ARGS, "--body", "2048 MiB"]);
 
     // The distinction the operator acts on: this note may exist on the server, and no
-    // automatic retry will make a second one — the entry is theirs to requeue or discard.
-    expect(h.out).toEqual(["saved project/replay-budget (active) — delivery unknown; no automatic retry (client c_7)"]);
+    // automatic retry will make a second one — the entry is theirs to requeue or discard,
+    // by the client id, which is why both commands are spelled with it.
+    expect(h.out).toEqual([
+      "saved project/replay-budget (active) — delivery unknown; no automatic retry (client c_7; " +
+        "nax memory requeue --client c_7 --allow-duplicate, or nax memory discard --client c_7)",
+    ]);
     expect(h.codes).toEqual([0]);
   });
 

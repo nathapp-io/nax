@@ -20,6 +20,7 @@ import {
   createMemoryStore,
   type MemoryTimers,
   type MemoryWriteRequest,
+  saveMemoryNote,
   syncMemory,
 } from "@nathapp/nax-agent";
 import { McpCallError, type McpCallResult, type McpToolInfo } from "@nathapp/nax-agent/mcp";
@@ -76,6 +77,10 @@ interface ServerOptions {
   readonly errorOnAdd?: boolean;
   /** What an answering add says; the default names a remote id, `"ok"` names none. */
   readonly addAnswer?: string;
+  /** The tool listing this connection offers; `[]` is a server that can take no call at all. */
+  readonly tools?: readonly McpToolInfo[];
+  /** Report an exit as soon as the pool listens, so the next call must open a new connection. */
+  readonly exitOnListen?: string;
 }
 
 /** One fake memory server: what it received, what it applied, and how to let a held add go. */
@@ -101,7 +106,10 @@ const ADD_ANSWER = JSON.stringify({ results: [{ id: REMOTE_ID, event: "ADD" }] }
  * `Protocol._onclose` uses, so the pool has already recorded the close when the call rejects.
  */
 function fakeServer(options: ServerOptions = {}): FakeServer {
-  const connection = makeFakeMcpConnection({ tools: TOOLS });
+  const connection = makeFakeMcpConnection({
+    tools: options.tools ?? TOOLS,
+    ...(options.exitOnListen === undefined ? {} : { exitOnListen: options.exitOnListen }),
+  });
   const dispatches: string[] = [];
   let applied = 0;
   const released = Promise.withResolvers<void>();
@@ -456,5 +464,186 @@ describe("US-002 an add that outlives the drain's own deadline", () => {
     } finally {
       await pool.close();
     }
+  });
+});
+
+describe("US-001 B2 a save whose add was never dispatched", () => {
+  let dir: string;
+  let logger: MockLogger;
+
+  /** The mirror, the outbox and a provider over the pool of whoever the seam builds next. */
+  function parts(): {
+    store: ReturnType<typeof createMemoryStore>;
+    outbox: ReturnType<typeof createMemoryOutbox>;
+    provider: (pool: ReturnType<typeof createMcpPool>) => ReturnType<typeof createMcpMemoryProvider>;
+  } {
+    const projectDir = join(dir, "projects", "p-1");
+    const userDir = join(dir, "user");
+    const store = createMemoryStore({ projectDir, userDir, logger });
+    return {
+      store,
+      outbox: createMemoryOutbox({ dir: store.paths.outboxDir }),
+      provider: (pool) =>
+        createMcpMemoryProvider({
+          pool,
+          serverId: "mem",
+          workdir: "/repo",
+          mcp: { ...MCP_CONFIG, tools: { ...MCP_CONFIG.tools }, args: { ...MCP_CONFIG.args } },
+          idMap: createMcpIdMap({ dirs: { root: dir, projectDir, userDir }, server: "mem" }),
+          logger,
+          callTimeoutMs: 60_000,
+        }),
+    };
+  }
+
+  beforeEach(() => {
+    dir = makeTempDir("nax-mcp-undispatched-");
+    logger = makeLogger();
+  });
+
+  afterEach(() => cleanupTempDir(dir));
+
+  /**
+   * One save through the production composition, over the connections `attempts` names.
+   *
+   * Everything above the shared transport is real: the MCP provider, the run's pool and the
+   * immediate-save path in the operations layer. The seam decides what each connect attempt
+   * finds, which is how a failure that precedes any dispatch is staged.
+   */
+  async function saveOver(
+    attempts: (attempt: number) => FakeServer["connection"],
+  ): Promise<{ saved: Awaited<ReturnType<typeof saveMemoryNote>> }> {
+    const { store, outbox, provider } = parts();
+    const first = fakeServer({ exitOnListen: EXIT_REASON });
+    fakeMcpConnect((attempt) => (attempt === 1 ? first.connection : attempts(attempt)));
+    const pool = createMcpPool({ servers: { mem: serverConfig() } });
+    const staged = requestOf().note;
+    assertDefined(staged, "the staged note");
+    await store.writeNote(staged);
+    try {
+      const saved = await saveMemoryNote({
+        store,
+        outbox,
+        provider: provider(pool),
+        logger,
+        write: NOTE_WRITE,
+        writeMode: "direct",
+        source: "nax-chat",
+        timers: realDeadlines(),
+      });
+      // A definite unsent write: queued for the next sync, not held as an unknown delivery.
+      expect(saved).toMatchObject({ slug: SLUG, delivered: false, pending: { delivery: "queued" } });
+      expect(first.dispatches).toEqual([]);
+      expect(await outbox.list()).toMatchObject([{ state: "queued" }]);
+      return { saved };
+    } finally {
+      await pool.close();
+    }
+  }
+
+  /** The next sync, over a working server: whatever the failure held back must be delivered. */
+  async function recoveredSync(): Promise<{ pushed: number; dispatches: readonly string[] }> {
+    const { store, outbox, provider } = parts();
+    const recovered = fakeServer({});
+    fakeMcpConnect(() => recovered.connection);
+    const pool = createMcpPool({ servers: { mem: serverConfig() } });
+    try {
+      const run = await syncMemory({ store, outbox, provider: provider(pool), logger, timers: realDeadlines() });
+      return { pushed: run.pushed, dispatches: recovered.dispatches };
+    } finally {
+      await pool.close();
+    }
+  }
+
+  test("B2: a discovery failure after the probe answered leaves the write queued, and the next sync sends it", async () => {
+    const { saved } = await saveOver(() => fakeServer({ tools: [] }).connection);
+
+    expect(saved.pending?.delivery).toBe("queued");
+
+    const run = await recoveredSync();
+
+    expect(run).toMatchObject({ pushed: 1, dispatches: [ADD] });
+  });
+
+  test("B2: an add the pool never dispatched leaves the write queued, and the next sync sends it", async () => {
+    // Attempt 2 answers the add's discovery and exits, attempt 3 cannot connect at all: the add
+    // itself never finds a connection, and the probe before it had already succeeded.
+    const { saved } = await saveOver((attempt) => {
+      if (attempt === 2) return fakeServer({ exitOnListen: EXIT_REASON }).connection;
+      throw new Error("connection refused");
+    });
+
+    expect(saved.pending?.delivery).toBe("queued");
+
+    const run = await recoveredSync();
+
+    expect(run).toMatchObject({ pushed: 1, dispatches: [ADD] });
+  });
+});
+
+describe("US-002 B1 the operator's two ways out of an unknown delivery", () => {
+  let repoRoot: string;
+  let logger: MockLogger;
+
+  /** A host over this test's repository: a fresh pool and connection, the mirror on disk. */
+  async function open(): Promise<MemoryHost> {
+    const host = await createMemoryHost({ config: mcpConfig(), repoRoot, source: "nax-chat", logger });
+    assertDefined(host, "the memory host");
+    return host;
+  }
+
+  /** One ambiguous save through the host, answering the client id its entry is held under. */
+  async function ambiguousSave(): Promise<string> {
+    const host = await open();
+    const saved = await host.save(NOTE_WRITE);
+    const pending = saved.pending;
+    assertDefined(pending, "the uncertain entry");
+    await host.close?.();
+    return pending.clientId;
+  }
+
+  beforeEach(() => {
+    repoRoot = makeTempDir("nax-mcp-recovery-");
+    logger = makeLogger();
+  });
+
+  afterEach(() => cleanupTempDir(repoRoot));
+
+  test("B1: an unacknowledged requeue leaves the entry held, and the acknowledged one sends it again", async () => {
+    const { servers } = connect((attempt) => (attempt === 1 ? { loseReplyOnAdd: true } : {}));
+    const clientId = await ambiguousSave();
+
+    const host = await open();
+    const refused = await host.requeue?.({ clientId });
+    // The duplicate risk is the operator's to accept: nothing is sent on their behalf.
+    expect(refused).toEqual({ moved: 0, heldBack: [clientId] });
+
+    const accepted = await host.requeue?.({ clientId }, { allowDuplicate: true });
+    const sync = await host.sync();
+    await host.close?.();
+
+    expect(accepted).toEqual({ moved: 1, heldBack: [] });
+    expect(sync.pushed).toBe(1);
+    // The acknowledged requeue is the second dispatch, on a fresh connection: exactly the
+    // duplicate the operator agreed to, and none from the refused attempt before it.
+    expect(servers.flatMap((server) => server.dispatches.filter((name) => name === ADD))).toHaveLength(2);
+  });
+
+  test("B1: discard drops the entry, so a later save of that note reaches the server again", async () => {
+    const { servers } = connect((attempt) => (attempt === 1 ? { loseReplyOnAdd: true } : {}));
+    const clientId = await ambiguousSave();
+
+    const host = await open();
+    const discarded = await host.discard?.({ clientId });
+    const saved = await host.save(NOTE_WRITE);
+    const again = await host.discard?.({ clientId });
+    await host.close?.();
+
+    expect(discarded).toEqual({ moved: 1, heldBack: [] });
+    // Gone, so the next save of that note is dispatched rather than queued behind a write
+    // nothing will ever send (the block the un-recoverable state left behind).
+    expect(saved.delivered).toBe(true);
+    expect(again).toEqual({ moved: 0, heldBack: [] });
+    expect(servers.flatMap((server) => server.dispatches.filter((name) => name === ADD))).toHaveLength(2);
   });
 });

@@ -67,9 +67,10 @@ const QUEUED_SUFFIX = " — queued for sync";
  * The suffix a save whose delivery is unknown is reported with: the write was dispatched and its
  * provider never answered, so it may exist on the server and nothing will retry it.
  *
- * The client id follows, because it is the handle the operator has: `nax memory requeue` or
- * `nax memory discard` names it. Saying "queued" here instead would promise a retry that must not
- * happen — a second dispatch is the duplicate this wording exists to prevent.
+ * The client id follows, because it is the handle the operator has: `nax memory requeue --client
+ * <id> --allow-duplicate` or `nax memory discard --client <id>` names it. Saying "queued" here
+ * instead would promise a retry that must not happen — a second dispatch is the duplicate this
+ * wording exists to prevent.
  */
 const UNKNOWN_DELIVERY_SUFFIX = " — delivery unknown; no automatic retry";
 
@@ -146,7 +147,16 @@ function formatSaveLine(scope: MemoryScope, result: MemorySaveResult): string {
   if (result.delivered) return saved;
   const pending = result.pending;
   if (pending?.delivery !== "unknown") return `${saved}${QUEUED_SUFFIX}`;
-  return `${saved}${UNKNOWN_DELIVERY_SUFFIX} (client ${pending.clientId})`;
+  return `${saved}${UNKNOWN_DELIVERY_SUFFIX} (client ${pending.clientId}; ${recoveryHint(pending.clientId)})`;
+}
+
+/**
+ * Where the operator goes next with an unknown delivery, spelled with the client id they were
+ * just given: the two commands that act on an entry nothing will resend, and the flag a requeue
+ * needs because the server may already hold the write.
+ */
+function recoveryHint(clientId: string): string {
+  return `nax memory requeue --client ${clientId} --allow-duplicate, or nax memory discard --client ${clientId}`;
 }
 
 /**

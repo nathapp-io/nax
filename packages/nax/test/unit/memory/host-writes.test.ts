@@ -304,4 +304,172 @@ describe("host writes", () => {
       expect(caught.code).toBe("MEMORY_NOTE_NOT_FOUND");
     });
   });
+
+  describe("recovery", () => {
+    /** The client id the uncertain entry below is keyed by. */
+    const UNCERTAIN_CLIENT = "c_uncertain_replay_budget";
+
+    /**
+     * Leave the note's entry in the outbox as one whose dispatch never came back, through the
+     * real outbox: the save path is stubbed, because only a provider that may not repeat a write
+     * can produce that state, and this suite runs against the local one.
+     */
+    function leaveUncertainEntry(): void {
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: UNCERTAIN_CLIENT,
+          scope: REPLAY_BUDGET.scope,
+          slug: REPLAY_BUDGET.slug,
+          writeMode: "direct",
+          note: {
+            id: UNCERTAIN_CLIENT,
+            slug: REPLAY_BUDGET.slug,
+            type: REPLAY_BUDGET.type,
+            scope: REPLAY_BUDGET.scope,
+            description: REPLAY_BUDGET.description,
+            source: input.source,
+            updatedAt: "2026-11-28T00:00:00.000Z",
+            status: "active",
+            body: REPLAY_BUDGET.body,
+          },
+        });
+        await input.outbox.markUncertain(UNCERTAIN_CLIENT, "delivery unknown: socket closed; not retried");
+        return {
+          slug: REPLAY_BUDGET.slug,
+          status: "active",
+          delivered: false,
+          pending: {
+            delivery: "unknown",
+            clientId: UNCERTAIN_CLIENT,
+            reason: "delivery unknown: socket closed; not retried",
+          },
+        };
+      };
+    }
+
+    /** The host's requeue, which every recovery case needs and `createMemoryHost` always sets. */
+    function requeueOf(): NonNullable<MemoryHost["requeue"]> {
+      const requeue = host.requeue;
+      assertDefined(requeue, "host.requeue");
+      return requeue;
+    }
+
+    /** The host's discard, on the same terms. */
+    function discardOf(): NonNullable<MemoryHost["discard"]> {
+      const discard = host.discard;
+      assertDefined(discard, "host.discard");
+      return discard;
+    }
+
+    test("blocks a later save of the note while its uncertain entry is held", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+      // The real save path again: the entry's key is held, so this write queues behind it.
+      _memoryHostDeps.saveMemoryNote = originalDeps.saveMemoryNote;
+
+      const blocked = await host.save(REPLAY_BUDGET);
+
+      expect(blocked.delivered).toBe(false);
+      expect(blocked.pending?.delivery).toBe("queued");
+    });
+
+    test("leaves an uncertain entry in place and names it when the duplicate risk is unacknowledged", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+
+      const result = await requeueOf()({ clientId: UNCERTAIN_CLIENT });
+
+      expect(result).toEqual({ moved: 0, heldBack: [UNCERTAIN_CLIENT] });
+    });
+
+    test("requeues the uncertain entry once the duplicate risk is accepted, and the sync delivers it", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+
+      const result = await requeueOf()({ clientId: UNCERTAIN_CLIENT }, { allowDuplicate: true });
+      const sync = await host.sync();
+
+      expect(result).toEqual({ moved: 1, heldBack: [] });
+      expect(sync.pushed).toBe(1);
+    });
+
+    test("requeues an uncertain entry named by its note as well as by its client id", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+
+      const byNote = await requeueOf()({ scope: "project", slug: "replay-budget" }, { allowDuplicate: true });
+
+      expect(byNote).toEqual({ moved: 1, heldBack: [] });
+    });
+
+    test("requeues a rejected entry without asking for the duplicate risk", async () => {
+      await openHost();
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: "c_rejected",
+          scope: "project",
+          slug: "replay-budget",
+          writeMode: "direct",
+        });
+        await input.outbox.markRejected("c_rejected", "quota exceeded");
+        return { slug: "replay-budget", status: "active", delivered: false };
+      };
+      await host.save(REPLAY_BUDGET);
+
+      const result = await requeueOf()("all");
+
+      expect(result).toEqual({ moved: 1, heldBack: [] });
+    });
+
+    test("discards an uncertain entry and lets the next save of that note through", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+      _memoryHostDeps.saveMemoryNote = originalDeps.saveMemoryNote;
+
+      const discarded = await discardOf()({ clientId: UNCERTAIN_CLIENT });
+      const saved = await host.save(REPLAY_BUDGET);
+
+      expect(discarded).toEqual({ moved: 1, heldBack: [] });
+      expect(saved.delivered).toBe(true);
+    });
+
+    test("answers nothing to discard once the uncertain entry is gone", async () => {
+      await openHost();
+      leaveUncertainEntry();
+      await host.save(REPLAY_BUDGET);
+      await discardOf()({ clientId: UNCERTAIN_CLIENT });
+
+      expect(await discardOf()({ clientId: UNCERTAIN_CLIENT })).toEqual({ moved: 0, heldBack: [] });
+    });
+
+    test("leaves a queued write alone: it is still on its way", async () => {
+      await openHost();
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: "c_queued",
+          scope: "project",
+          slug: "replay-budget",
+          writeMode: "direct",
+        });
+        return {
+          slug: "replay-budget",
+          status: "active",
+          delivered: false,
+          pending: { delivery: "queued", clientId: "c_queued" },
+        };
+      };
+      await host.save(REPLAY_BUDGET);
+
+      expect(await requeueOf()("all")).toEqual({ moved: 0, heldBack: [] });
+      expect(await discardOf()("all")).toEqual({ moved: 0, heldBack: [] });
+    });
+  });
 });

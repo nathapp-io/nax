@@ -62,8 +62,8 @@ nax memory save --slug <slug> --type <type> --description <text> (--body <text> 
 nax memory forget <slug> --reason <text> [--scope S]
 nax memory approve <slug> [--scope S]
 nax memory sync
-nax memory requeue (<slug> [--scope S] | --all)
-nax memory discard (<slug> [--scope S] | --all)
+nax memory requeue (<slug> [--scope S] | --client <id> | --all) [--allow-duplicate]
+nax memory discard (<slug> [--scope S] | --client <id> | --all)
 ```
 
 With the koda provider, koda decides the write mode per agent, so `nax memory status` prints `write mode: decided by koda` and `--json` reports `"writeMode": "koda"`.
@@ -89,6 +89,25 @@ for the next sync; `nax memory discard` drops it for good. A parked or discarded
 the note active on the provider, so parking or discarding a write makes the next sync read that
 scope in full, and the mirror takes the provider's copy. Once a newer write of the same note is
 delivered, an older rejected one is dropped, so it can never be requeued over the newer one.
+
+### Held writes (MCP)
+
+An MCP add is not safe to repeat: the server takes the note's text, not an idempotency key, so
+an add whose reply is lost may already have been applied. Such a write is held in the outbox as
+`uncertain` and reported as "delivery unknown; no automatic retry" (with its client id). Nothing
+sends it again, and a later write of the same note queues behind it, so both commands act on it
+by that client id:
+
+```bash
+nax memory requeue --client <id> --allow-duplicate   # send it again, accepting a second copy
+nax memory discard --client <id>                     # forget the write; the note stays local
+```
+
+A requeue of an `uncertain` write needs `--allow-duplicate` because the server may already hold
+it; `rejected` writes requeue without it. A failure that certainly preceded any dispatch — the
+tool listing, the connection, the pooled client — is not held at all: the write stays queued and
+the next sync delivers it. `nax memory sync` prints one `held` line per unresolved write, with
+the same two commands.
 
 ### Proposal mode
 
