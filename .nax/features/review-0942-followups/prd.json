@@ -3,7 +3,7 @@
   "feature": "review-0942-followups",
   "branchName": "feat/review-0942-followups",
   "createdAt": "2026-11-28T04:10:17.466Z",
-  "updatedAt": "2026-11-28T05:53:19.578Z",
+  "updatedAt": "2026-11-28T06:06:40.584Z",
   "userStories": [
     {
       "id": "US-001",
@@ -218,14 +218,17 @@
         "context-engine"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Medium: one resolver file where forward and reverse paths must agree, tested on real temp files; single-session TDD suffices."
+        "reasoning": "Medium: one resolver file where forward and reverse paths must agree, tested on real temp files; single-session TDD suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/context/engine/providers/code-neighbor-phases.ts"
@@ -244,7 +247,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ee4c4110c4625bddba74d339bbd5844aee6e5b47"
     },
     {
       "id": "US-006",
