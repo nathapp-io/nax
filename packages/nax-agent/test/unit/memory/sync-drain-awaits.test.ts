@@ -39,6 +39,7 @@ import {
   NaxError,
   syncMemory,
 } from "@nathapp/nax-agent";
+import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import type { MemorySyncInput } from "#src/memory/index";
 import { type DrainResult, drainOutbox, type MemoryDrainInput } from "#src/memory/sync-drain";
 import {
@@ -553,6 +554,33 @@ describe("drainOutbox: a retirement waiting on a discarded replacement", () => {
       expect(pushed(h)).toEqual([]);
       expect(result).toEqual({ pushed: 0, rejected: 0, parked: [] });
       expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "rejected" });
+    });
+  });
+
+  test("a partial discard does not release retirements after the outbox is reopened", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      const second = "client-second";
+      await h.outbox.enqueue(forgetRequest("budget-c", second, SAVE_ID));
+      const rename = _atomicWriteDeps.rename;
+      const full = Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+      _atomicWriteDeps.rename = async (from, to) => {
+        if (String(to).endsWith(`-${second}.json`)) throw full;
+        await rename(from, to);
+      };
+      try {
+        await expect(h.outbox.discardUndelivered(SAVE_ID)).rejects.toBe(full);
+      } finally {
+        _atomicWriteDeps.rename = rename;
+      }
+
+      const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+      await drain(h, { outbox: reopened });
+
+      expect(pushed(h)).toEqual([]);
+      expect(await reopened.held(SAVE_ID)).toMatchObject({ state: "uncertain" });
+      expect(await reopened.held(FORGET_ID)).toMatchObject({ state: "rejected" });
+      expect(await reopened.held(second)).toMatchObject({ state: "queued", awaits: SAVE_ID });
     });
   });
 

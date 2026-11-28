@@ -131,20 +131,27 @@ async function refuseWaiters(
 /**
  * Drop an undelivered entry for good and refuse the writes that wait on it.
  *
- * `removeOne` is the outbox's own claim-and-read removal: it drops the entry only while it is
- * still undelivered, and answers the entry it dropped, so the refusal below names the bytes that
- * actually left the queue.
+ * Under the writer lock, select undelivered entries and persist the refusals before claiming
+ * any entry for removal. If a refusal write fails, a later drain still sees the dependency.
+ * `removeOne` rechecks the claimed entry before committing its removal.
  */
 export async function discardEntry(
   access: OutboxEntryAccess,
   clientId: string,
   removeOne: (file: EntryFile) => Promise<MemoryOutboxEntry | null>,
 ): Promise<MemoryDiscardOutcome> {
-  const dropped: MemoryOutboxEntry[] = [];
+  const targets: { file: EntryFile; entry: MemoryOutboxEntry }[] = [];
   for (const file of await access.filesFor(clientId)) {
-    const removed = await removeOne(file);
-    if (removed !== null) dropped.push(removed);
+    const entry = await access.read(file);
+    if (entry !== null && entry.state !== "queued") targets.push({ file, entry });
   }
-  if (dropped.length === 0) return { discarded: false, refused: [] };
-  return { discarded: true, refused: await refuseWaiters(access, dropped) };
+  const refused = await refuseWaiters(
+    access,
+    targets.map(({ entry }) => entry),
+  );
+  let discarded = false;
+  for (const { file } of targets) {
+    if ((await removeOne(file)) !== null) discarded = true;
+  }
+  return { discarded, refused };
 }
