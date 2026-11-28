@@ -11,7 +11,7 @@ import { pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { runPipeline } from "../pipeline/runner";
+import { type PipelineRunResult, runPipeline } from "../pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../pipeline/types";
 import { savePRD, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
@@ -30,6 +30,8 @@ export interface IterationResult {
   prdDirty: boolean;
   finalAction?: string;
   reason?: string;
+  /** True when an operator PAUSE stopped the run at this story's boundary; the run must stop dispatching. */
+  operatorPause?: true;
   /** Set when finalAction === "decomposed" — number of sub-stories created */
   subStoryCount?: number;
 }
@@ -53,6 +55,49 @@ export function releaseHeavyPipelineContext(ctx: PipelineContext): void {
   ctx.builtContext = undefined;
   ctx.contextBundle = undefined;
   ctx.constitution = undefined;
+}
+
+/**
+ * Consume the run queue at the between-story boundary. A PAUSE written while the story was in
+ * flight is only seen by the NEXT story's queue-check stage, which never runs after the final story.
+ * Reusing the stage keeps one parser, one ordering and one dropped-command audit.
+ */
+async function consumeBoundaryQueue(
+  pipelineContext: PipelineContext,
+  finalAction: string,
+): Promise<{ pause: boolean; mutated: boolean }> {
+  // The pipeline's own queue-check already consumed the queue for a pause outcome.
+  if (finalAction === "pause") return { pause: false, mutated: false };
+  const { queueCheckStage } = await import("../pipeline/stages");
+  const result = await queueCheckStage.execute(pipelineContext);
+  return { pause: result.action === "pause" && result.runPause === true, mutated: result.action !== "continue" };
+}
+
+/**
+ * An operator PAUSE stops the run, not the selected story: it is neither failed nor paused, so
+ * the resumed run selects it again. Every other non-success goes to the failure handler.
+ */
+async function settleNonSuccess(
+  handlerCtx: Parameters<typeof handlePipelineFailure>[0],
+  pipelineResult: PipelineRunResult,
+): Promise<Awaited<ReturnType<typeof handlePipelineFailure>>> {
+  if (!pipelineResult.operatorPause) return handlePipelineFailure(handlerCtx, pipelineResult);
+  getLogger().warn("pipeline", "Run paused by operator", {
+    storyId: handlerCtx.story.id,
+    reason: pipelineResult.reason,
+  });
+  return { prd: handlerCtx.prd, prdDirty: false, costDelta: pipelineResult.stageCost ?? 0 };
+}
+
+/** Flags the iteration as an operator pause, whether the in-stage or the boundary queue read saw it. */
+async function applyBoundaryPause(
+  iterResult: IterationResult,
+  pipelineContext: PipelineContext,
+  pipelineResult: PipelineRunResult,
+): Promise<void> {
+  const boundary = await consumeBoundaryQueue(pipelineContext, pipelineResult.finalAction);
+  if (boundary.pause || boundary.mutated) iterResult.prdDirty = true;
+  if (boundary.pause || pipelineResult.operatorPause) iterResult.operatorPause = true;
 }
 
 export async function runIteration(
@@ -257,7 +302,7 @@ export async function runIteration(
       finalAction: pipelineResult.finalAction,
     };
   } else {
-    const r = await handlePipelineFailure(handlerCtx, pipelineResult);
+    const r = await settleNonSuccess(handlerCtx, pipelineResult);
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: 0,
@@ -269,6 +314,8 @@ export async function runIteration(
       subStoryCount: pipelineResult.subStoryCount,
     };
   }
+
+  await applyBoundaryPause(iterResult, pipelineContext, pipelineResult);
 
   releaseHeavyPipelineContext(pipelineContext);
 

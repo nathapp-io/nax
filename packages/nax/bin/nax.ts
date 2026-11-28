@@ -421,6 +421,7 @@ program
       eventEmitter,
       statusFilePath,
       logFilePath,
+      runId,
       formatterMode,
       useHeadless,
       chatAsksDir,

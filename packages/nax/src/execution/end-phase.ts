@@ -67,6 +67,12 @@ async function runWorkflowEnd(
     // nax#2550: the workflow did not run, so it cannot be reported as passed.
     return { passed: false, reasons: [ABORTED_REASON] };
   }
+  if (options.exitReason === "queue-paused") {
+    getSafeLogger()?.info("workflow", "Feature workflow held — the run was paused by the operator", {
+      storyId: "_run",
+    });
+    return { passed: false, reasons: ["run paused by operator"] };
+  }
   try {
     const result = await deps.runWorkflowFeature({
       runtime: options.runtime,

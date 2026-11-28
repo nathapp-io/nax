@@ -15,11 +15,13 @@ import { join } from "node:path";
 import { NaxError } from "../errors";
 import type { MetaJson } from "../pipeline/subscribers/registry";
 import { getRunsDir } from "../utils/paths";
+import { resolveRegisteredLogPath } from "../utils/registered-log";
 
 /** Resolved pair for a discovered run: registry metadata + backing JSONL path. */
 export interface DiscoveredRun {
   meta: MetaJson;
-  jsonlPath: string;
+  /** Backing JSONL, or null when the registered log is unavailable. */
+  jsonlPath: string | null;
 }
 
 /** Swappable dependencies for testing. */
@@ -51,11 +53,27 @@ function matches(meta: MetaJson, query: string): boolean {
   return meta.runId === query || meta.runId.startsWith(query);
 }
 
+function startInstant(meta: MetaJson): number | null {
+  if (typeof meta.registeredAt !== "string") return null;
+  const t = Date.parse(meta.registeredAt);
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Later valid start wins; dated beats undated; ties keep the greater run ID. */
+function isNewer(a: MetaJson, b: MetaJson): boolean {
+  const ta = startInstant(a);
+  const tb = startInstant(b);
+  if (ta !== null && tb === null) return true;
+  if (ta === null && tb !== null) return false;
+  if (ta !== null && tb !== null && ta !== tb) return ta > tb;
+  return a.runId > b.runId;
+}
+
 /**
  * Resolve a run query to registry metadata + the backing JSONL path.
  *
  * - When `query` is omitted/empty, returns the entry with the lexicographically
- *   greatest `runId` (operator-friendly "latest" default).
+ *   latest `registeredAt` (ties: greatest `runId`; operator-friendly "latest" default).
  * - When `query` is provided, returns the single entry whose `runId` equals
  *   or starts with the query.
  *
@@ -73,8 +91,8 @@ export async function discoverRun(
     if (metas.length === 0) {
       throw new NaxError("No runs registered", "RUN_NOT_FOUND", { runsDir });
     }
-    const latest = metas.reduce((acc, m) => (m.runId > acc.runId ? m : acc));
-    return { meta: latest, jsonlPath: join(latest.eventsDir, `${latest.runId}.jsonl`) };
+    const latest = metas.reduce((acc, m) => (isNewer(m, acc) ? m : acc));
+    return { meta: latest, jsonlPath: resolveRegisteredLogPath(latest) };
   }
 
   const matched = metas.filter((m) => matches(m, query));
@@ -94,5 +112,5 @@ export async function discoverRun(
 
   // biome-ignore lint/style/noNonNullAssertion: length-1 invariant above guarantees matched[0] is defined
   const meta = matched[0]!;
-  return { meta, jsonlPath: join(meta.eventsDir, `${meta.runId}.jsonl`) };
+  return { meta, jsonlPath: resolveRegisteredLogPath(meta) };
 }

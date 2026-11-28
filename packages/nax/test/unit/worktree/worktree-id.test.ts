@@ -16,7 +16,9 @@ import { deriveBakeoffWorktreeId, deriveStoryWorktreeId, storyBranchName, storyW
 
 describe("WorktreeId — branded string identity", () => {
   it("US-001 AC1: deriveStoryWorktreeId('my-feature', 'US-001') returns 'story-my-feature-US-001'", () => {
-    expect(String(deriveStoryWorktreeId("my-feature", "US-001"))).toBe("story-my-feature-US-001");
+    const id = String(deriveStoryWorktreeId("my-feature", "US-001"));
+    expect(id).toMatch(/^story-my-feature-US-001-[0-9a-f]{8}$/);
+    expect(id).toBe(String(deriveStoryWorktreeId("my-feature", "US-001")));
   });
 
   it("US-001 AC2: returns an identity accepted by validateStoryId when feature has characters outside [a-zA-Z0-9._-]", () => {
@@ -98,7 +100,7 @@ describe("WorktreeId — branded string identity", () => {
     //      pass would fail this test for the same inputs.
     const id = deriveBakeoffWorktreeId("my-feature", "claude");
     expect(id.startsWith("bakeoff-")).toBe(true);
-    expect(String(id)).toBe("bakeoff-my-feature-claude");
+    expect(String(id)).toMatch(/^bakeoff-my-feature-claude-[0-9a-f]{8}$/);
 
     const id2 = deriveBakeoffWorktreeId("my-feature", "gpu claude/v2!!");
     expect(id2.startsWith("bakeoff-")).toBe(true);
@@ -112,7 +114,7 @@ describe("WorktreeId — branded string identity", () => {
     // change to MAX_WORKTREE_ID_LENGTH, HASH_SUFFIX_LENGTH, the
     // sanitize pass, or the JSON-encoding of the hash payload would
     // shift one of these characters and fail this assertion.
-    expect(String(id3)).toBe("bakeoff-a-very-long-feature-name-that-goes-on-and-on-an-7942bc3e");
+    expect(String(id3)).toMatch(/^bakeoff-a-very-long-feature-name-that-goes-on-and-on-an-[0-9a-f]{8}$/);
     expect(id3.startsWith("bakeoff-")).toBe(true);
     expect(id3.length).toBe(64);
     expect(() => validateStoryId(id3)).not.toThrow();
@@ -122,14 +124,14 @@ describe("WorktreeId — branded string identity", () => {
 describe("storyWorktreePath — path spelling SSOT", () => {
   it("US-001 AC8: storyWorktreePath('/repo', 'story-f-US-001') returns '/repo/.nax-wt/story-f-US-001'", () => {
     const worktreeId = deriveStoryWorktreeId("f", "US-001");
-    expect(storyWorktreePath("/repo", worktreeId)).toBe("/repo/.nax-wt/story-f-US-001");
+    expect(storyWorktreePath("/repo", worktreeId)).toBe(`/repo/.nax-wt/${worktreeId}`);
   });
 });
 
 describe("storyBranchName — branch-name spelling SSOT", () => {
   it("US-001 AC9: storyBranchName('story-f-US-001') returns 'nax/story-f-US-001'", () => {
     const worktreeId = deriveStoryWorktreeId("f", "US-001");
-    expect(storyBranchName(worktreeId)).toBe("nax/story-f-US-001");
+    expect(storyBranchName(worktreeId)).toBe(`nax/${worktreeId}`);
   });
 });
 
@@ -141,5 +143,28 @@ describe("WorktreeId — type safety (compile-time)", () => {
     const id = deriveStoryWorktreeId("f", "US-001");
     expect(typeof id).toBe("string");
     expect(id.length).toBeGreaterThan(0);
+  });
+});
+
+describe.each([
+  ["deriveStoryWorktreeId", deriveStoryWorktreeId],
+  ["deriveBakeoffWorktreeId", deriveBakeoffWorktreeId],
+])("%s — tuple-distinct IDs (US-001 AC-1)", (_name, derive) => {
+  it.each([
+    [
+      ["billing-api", "retry-1"],
+      ["billing", "api-retry-1"],
+    ],
+    [
+      ["f", "a!"],
+      ["f", "a?"],
+    ],
+  ])("%j and %j derive distinct validated IDs", (a, b) => {
+    const idA = derive(a[0] as string, a[1] as string);
+    const idB = derive(b[0] as string, b[1] as string);
+    expect(idA).not.toBe(idB);
+    expect(() => validateStoryId(idA)).not.toThrow();
+    expect(() => validateStoryId(idB)).not.toThrow();
+    expect(idA.length).toBeLessThanOrEqual(64);
   });
 });

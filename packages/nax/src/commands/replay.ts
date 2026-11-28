@@ -51,9 +51,11 @@ export interface ReplayCommandDeps {
   stderr: (text: string) => void;
 }
 
+import { readLogTextNoFollow } from "../utils/registered-log";
+
 async function readJsonlLenient(path: string): Promise<LogEntry[]> {
   if (!existsSync(path)) return [];
-  const content = await Bun.file(path).text();
+  const content = readLogTextNoFollow(path);
   const lines = content.split("\n");
   const entries: LogEntry[] = [];
   for (const line of lines) {
@@ -126,7 +128,7 @@ export async function runReplay(
     throw err;
   }
 
-  const entries = await deps.readJsonl(discovered.jsonlPath);
+  const entries = discovered.jsonlPath === null ? [] : await deps.readJsonl(discovered.jsonlPath);
   const metrics = await deps.readMetrics({
     runId: discovered.meta.runId,
     eventsDir: discovered.meta.eventsDir,

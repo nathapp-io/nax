@@ -32,13 +32,21 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 export const _queueCheckDeps = { savePrdProgress };
 
 /**
+ * The run queue root. Operator commands are written at the project root; `workdir` is the
+ * selected story's package, which stays the base for package-relative payloads (INJECT).
+ */
+function queueRoot(ctx: PipelineContext): string {
+  return ctx.projectDir ?? ctx.workdir;
+}
+
+/**
  * Resolve the PRD path for this pipeline context. Prefers the feature directory
  * when known; falls back to the canonical `.nax/features/unknown/prd.json` path
  * (matching the layout documented in `.gitignore` / `.naxignore`) so a missing
  * featureDir never writes an untracked, un-ignored file into the repo root.
  */
 function resolvePrdPath(ctx: PipelineContext): string {
-  return path.join(ctx.featureDir ?? featureDir(ctx.workdir, "unknown"), "prd.json");
+  return path.join(ctx.featureDir ?? featureDir(queueRoot(ctx), "unknown"), "prd.json");
 }
 
 /**
@@ -95,7 +103,7 @@ export const queueCheckStage: PipelineStage = {
     // critical section (processQueueFile) — a crash between "commands applied"
     // and "processing file cleared" used to leave the same commands to be
     // re-read and re-applied on the next run.
-    const result = await processQueueFile(ctx.workdir, (queueCommands) =>
+    const result = await processQueueFile(queueRoot(ctx), (queueCommands) =>
       processQueueCommands(ctx, logger, queueCommands),
     );
 
@@ -116,7 +124,7 @@ async function processQueueCommands(
     if (cmd.type === "PAUSE") {
       logger.warn("queue", "Paused by user", { storyId: ctx.story?.id ?? "unknown", command: "PAUSE" });
       logDroppedCommands(logger, ctx, queueCommands, index);
-      return { action: "pause", reason: "User requested pause via .queue.txt" };
+      return { action: "pause", reason: "User requested pause via .queue.txt", runPause: true };
     }
 
     if (cmd.type === "ABORT") {

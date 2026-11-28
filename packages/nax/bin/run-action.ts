@@ -41,6 +41,7 @@ import { CHAT_ASK_SECRET_READ_MS, parseChatAsksFlag, readChatAskSecret } from ".
 import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
 import { resolveUseHeadless } from "../src/cli/run-mode";
 import { findProjectDir, type NaxConfig, validateDirectory } from "../src/config";
+import { buildRunId } from "../src/execution/run-id";
 import { initLogger, type LogLevel } from "../src/logger";
 import type { PlanResult } from "../src/plan/strategies";
 import { loadPRD } from "../src/prd";
@@ -485,8 +486,8 @@ export function initRunLogging(params: {
   const runsDir = join(outputDir, "features", options.feature, "runs");
   mkdirSync(runsDir, { recursive: true });
 
-  // Generate run ID from ISO timestamp
-  const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+  // Canonical run ID (workdir hash + ms timestamp), the same producer the runner and resume use
+  const runId = buildRunId(workdir, new Date());
   const logFilePath = join(runsDir, `${runId}.jsonl`);
 
   // Determine TUI vs headless mode — see resolveUseHeadless() for the rule.

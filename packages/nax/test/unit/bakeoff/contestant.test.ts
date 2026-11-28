@@ -244,6 +244,7 @@ describe("runContestant (worktree lifecycle around the pipeline)", () => {
       create: mock(async (root: string, storyId: string) => {
         order.push("create");
         wt.calls.createArgs.push([root, storyId]);
+        return { worktreeId: storyId, token: "t" };
       }),
       remove: mock(async (root: string, storyId: string) => {
         order.push("remove");
@@ -258,6 +259,28 @@ describe("runContestant (worktree lifecycle around the pipeline)", () => {
     await runContestant("claude", baseOptions(), makeDeps({ worktreeManager: wt, pipeline }));
 
     expect(order).toEqual(["create", "pipeline", "remove"]);
+  });
+
+  it("AC-5: a refused create makes zero remove calls (no ownership proof)", async () => {
+    const wt = makeWorktreeManager();
+    wt.create = mock(async () => {
+      throw new Error("occupied");
+    });
+
+    const result = await runContestant("agent", baseOptions({ feature: "f" }), makeDeps({ worktreeManager: wt }));
+
+    expect(result.status).toBe("dnf-crashed");
+    expect(wt.remove).not.toHaveBeenCalled();
+  });
+
+  it("passes the create allocation to remove", async () => {
+    const wt = makeWorktreeManager();
+    const allocation = { worktreeId: "x", token: "tok" };
+    wt.create = mock(async () => allocation);
+
+    await runContestant("agent", baseOptions(), makeDeps({ worktreeManager: wt }));
+
+    expect(wt.remove.mock.calls[0]?.[2]).toBe(allocation);
   });
 
   it("does not throw when worktreeManager.create rejects — returns dnf-crashed instead (BUG-03)", async () => {

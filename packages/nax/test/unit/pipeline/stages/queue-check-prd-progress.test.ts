@@ -42,7 +42,11 @@ function targets(calls: ProgressCall[]): Array<[string, string]> {
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory({ id: "US-001", status: "pending" });
   const prd = makePRD({ userStories: [story] });
-  return Object.assign(makeTestContext({ workdir, prd, stories: [story], story }), { featureDir: workdir }, overrides);
+  return Object.assign(
+    makeTestContext({ workdir, projectDir: workdir, prd, stories: [story], story }),
+    { featureDir: workdir },
+    overrides,
+  );
 }
 
 beforeEach(() => {

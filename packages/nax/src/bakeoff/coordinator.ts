@@ -9,6 +9,8 @@
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { featureDir } from "../config";
+import { LockAcquisitionError } from "../errors";
+import { acquireLock, releaseLock } from "../execution/lock";
 import { assertPrdCommitted } from "../prd";
 import { WorktreeManager } from "../worktree/manager";
 import type { ContestantOptions } from "./contestant";
@@ -155,6 +157,9 @@ export interface BakeoffCliDeps {
    * the single-agent path never calls this dep.
    */
   assertPrdCommitted: (prdPath: string, projectRoot: string) => Promise<void>;
+  /** Comparison-wide checkout lock (defaults to the execution lock). */
+  acquireLock?: typeof acquireLock;
+  releaseLock?: typeof releaseLock;
 }
 
 export const _bakeoffCliDeps: BakeoffCliDeps = {
@@ -180,18 +185,29 @@ export async function handleRunAction(
     return deps.runSingleAgent(options);
   }
 
-  const prdPath = join(featureDir(options.projectRoot, options.feature), "prd.json");
-  await deps.assertPrdCommitted(prdPath, options.projectRoot);
+  // Hold the checkout for the whole comparison — before the stale-branch sweep
+  // or any contestant create — and release it on every exit path. Contestant
+  // runs lock their own worktrees, not this directory.
+  const lock = await (deps.acquireLock ?? acquireLock)(options.projectRoot);
+  if (!lock.acquired) {
+    throw new LockAcquisitionError({ workdir: options.projectRoot, pid: lock.holder.pid, host: lock.holder.host });
+  }
+  try {
+    const prdPath = join(featureDir(options.projectRoot, options.feature), "prd.json");
+    await deps.assertPrdCommitted(prdPath, options.projectRoot);
 
-  const agents = options.agents ?? compareList;
-  return deps.runBakeoff({
-    agents,
-    feature: options.feature,
-    projectRoot: options.projectRoot,
-    outputDir: options.outputDir,
-    config: options.config,
-    maxCostUsd: options.maxCostUsd,
-  });
+    const agents = options.agents ?? compareList;
+    return await deps.runBakeoff({
+      agents,
+      feature: options.feature,
+      projectRoot: options.projectRoot,
+      outputDir: options.outputDir,
+      config: options.config,
+      maxCostUsd: options.maxCostUsd,
+    });
+  } finally {
+    await (deps.releaseLock ?? releaseLock)(options.projectRoot);
+  }
 }
 
 // Re-exports for downstream wiring that already imports these names.

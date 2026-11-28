@@ -326,3 +326,79 @@ test("US-001 AC-11 (control): an unparseable pre-read fails open to green", asyn
   expect((await readChecksOnce("github", "7", once)).outcome).toBe("green");
   expect(seen.headReads()).toHaveLength(1);
 });
+
+// --- US-004: a SHA-less green poll takes the stable head its bracket recovered ---
+
+/** A head read's script: a SHA, a failed read, or `undefined` for a read that names no head. */
+type Head = string | Error | undefined;
+const PASS = '[{"name":"test","bucket":"pass"}]';
+
+/** Independently scripted head-only reads (before/after), checks and mergeability. */
+function wireHeads(script: {
+  readonly heads: (readIndex: number) => Head;
+  readonly merge?: Record<string, unknown> | Error;
+}) {
+  let clock = 0;
+  let headReads = 0;
+  _ciWaitDeps.now = () => clock;
+  _ciWaitDeps.schedule = () => () => {};
+  _ciWaitDeps.sleep = async (ms) => {
+    clock += ms;
+  };
+  _ciWaitDeps.run = async (cmd) => {
+    if (cmd[2] === "checks") return { exitCode: 0, stderr: "", stdout: PASS };
+    if (isHeadOnly(cmd)) {
+      const head = script.heads(headReads++);
+      return answer(head instanceof Error ? head : head === undefined ? {} : { headRefOid: head });
+    }
+    return answer(script.merge ?? {});
+  };
+  return { headReads: () => headReads };
+}
+const B = "b".repeat(40);
+const A = "a".repeat(40);
+const bOpts = { ...opts, expectedSha: B };
+
+test("US-004 AC-1: A/A bracket with no inline SHA does not satisfy expected B", async () => {
+  wireHeads({ heads: () => A });
+  expect(await waitForChecks("github", "b", bOpts)).toEqual({
+    outcome: "unavailable",
+    detail: `checks report ${A.slice(0, 8)} but HEAD is ${B.slice(0, 8)}`,
+  });
+});
+
+test("US-004 AC-2: A/A bracket with rejected mergeability read still refuses green for B", async () => {
+  wireHeads({ heads: () => A, merge: new Error("view failed") });
+  const result = await waitForChecks("github", "b", bOpts);
+  expect(result.outcome).toBe("unavailable");
+  expect(result.detail).toContain("but HEAD is");
+});
+
+test("US-004 AC-4: a different inline SHA throughout the wait is unavailable", async () => {
+  wireHeads({ heads: () => B, merge: { headRefOid: A } });
+  expect((await waitForChecks("github", "b", bOpts)).outcome).toBe("unavailable");
+});
+
+test.each([A, B])("US-004 AC-5: an A then B bracket is never green (expected %p)", async (expectedSha) => {
+  wireHeads({ heads: (i) => (i % 2 === 0 ? A : B) });
+  const result = await waitForChecks("github", "b", { ...opts, expectedSha });
+  expect(result.outcome).toBe("unavailable");
+  expect(result.detail).toContain("the PR head moved from");
+});
+
+test("US-004 AC-6: no inline and no readable head stays green", async () => {
+  wireHeads({ heads: () => undefined, merge: {} });
+  expect((await waitForChecks("github", "b", bOpts)).outcome).toBe("green");
+});
+
+test("US-004 AC-7: readChecksOnce keeps its final lookup (A/A bracket, final B) green for B", async () => {
+  // reads 0,1 = bracket (A/A); read 2 = readChecksOnce's own final lookup.
+  wireHeads({ heads: (i) => (i < 2 ? A : B) });
+  const result = await readChecksOnce("github", "b", { cwd: "/repo", expectedSha: B });
+  expect(result.outcome).toBe("green");
+});
+
+test("US-004 AC-8: one unreadable bracket endpoint and no inline SHA stays green", async () => {
+  wireHeads({ heads: (i) => (i === 0 ? A : new Error("head failed")) });
+  expect((await waitForChecks("github", "b", bOpts)).outcome).toBe("green");
+});

@@ -17,7 +17,7 @@ import { naxOrphanRefName } from "@/worktree/nax-orphan-ref";
 describe("naxOrphanRefName", () => {
   test("AC-7: returns refs/nax/orphan/story-f-US-001 for the identity derived for feature 'f' and storyId 'US-001'", () => {
     const worktreeId = deriveStoryWorktreeId("f", "US-001");
-    expect(naxOrphanRefName(worktreeId)).toBe("refs/nax/orphan/story-f-US-001");
+    expect(naxOrphanRefName(worktreeId)).toBe(`refs/nax/orphan/${worktreeId}`);
   });
 
   test("returns refs/nax/orphan/<worktreeId> for an arbitrary composed identity", () => {

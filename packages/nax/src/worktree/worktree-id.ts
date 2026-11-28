@@ -41,50 +41,34 @@ function sanitize(value: string): string {
 }
 
 /**
- * Derives a `story-<feature>-<storyId>` worktree ID, sanitized to
- * validateStoryId's alphabet and truncated to at most 64 characters. When
- * truncation would collide two distinct overlong inputs, a stable hash of
- * the untruncated natural ID is appended as a distinguishing suffix.
+ * Derives a `story-<feature>-<storyId>-<hash8>` worktree ID. The hash is of
+ * the raw (feature, storyId) tuple, taken before lossy sanitization or
+ * truncation, so distinct tuples never share an ID even when they sanitize
+ * to the same characters or concatenate to the same string. Bounded to 64
+ * characters and accepted by validateStoryId.
  */
 export function deriveStoryWorktreeId(feature: string, storyId: string): WorktreeId {
-  const natural = `story-${sanitize(feature)}-${sanitize(storyId)}`;
-  const id = natural.length <= MAX_WORKTREE_ID_LENGTH ? natural : collapse(natural, feature, storyId);
-  validateStoryId(id);
-  return id as WorktreeId;
+  return tupleId("story", feature, storyId);
 }
 
 /**
- * Derives a `bakeoff-<feature>-<profile>` worktree ID. Behaviour is unchanged
- * from the pre-US-001 `src/bakeoff/worktree-id.ts` implementation; only the
- * return type narrows to `WorktreeId` so the producers below carry it.
+ * Derives a `bakeoff-<feature>-<profile>-<hash8>` worktree ID; same tuple
+ * disambiguation as `deriveStoryWorktreeId`, in the `bakeoff-` namespace.
  */
 export function deriveBakeoffWorktreeId(feature: string, profile: string): WorktreeId {
-  const natural = `bakeoff-${sanitize(feature)}-${sanitize(profile)}`;
-  const id = natural.length <= MAX_WORKTREE_ID_LENGTH ? natural : collapse(natural, feature, profile);
-  validateStoryId(id);
-  return id as WorktreeId;
+  return tupleId("bakeoff", feature, profile);
 }
 
-/**
- * Returns the natural identity truncated to fit `MAX_WORKTREE_ID_LENGTH`,
- * with a stable hash of the raw inputs appended so two distinct overlong
- * pairs that share their natural first `MAX_WORKTREE_ID_LENGTH` characters
- * still derive distinct identities.
- *
- * Hashes the raw feature/storyId pair (JSON-encoded to disambiguate the
- * pairing) rather than `natural` — distinct raw inputs that sanitize to
- * the same characters (e.g. names differing only by a trailing '!' vs
- * '?', both replaced with '-') must still hash differently, or they
- * would collide on the same truncated ID.
- */
-function collapse(natural: string, rawA: string, rawB: string): string {
+function tupleId(namespace: string, rawA: string, rawB: string): WorktreeId {
   const hash = createHash("sha256")
-    .update(JSON.stringify([rawA, rawB]))
+    .update(JSON.stringify([namespace, rawA, rawB]))
     .digest("hex")
     .slice(0, HASH_SUFFIX_LENGTH);
   const suffix = `-${hash}`;
-  const prefixBudget = MAX_WORKTREE_ID_LENGTH - suffix.length;
-  return natural.slice(0, prefixBudget) + suffix;
+  const natural = `${namespace}-${sanitize(rawA)}-${sanitize(rawB)}`;
+  const id = natural.slice(0, MAX_WORKTREE_ID_LENGTH - suffix.length) + suffix;
+  validateStoryId(id);
+  return id as WorktreeId;
 }
 
 /**

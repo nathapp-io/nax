@@ -34,9 +34,17 @@ function baseOptions(overrides: Partial<HandleRunActionOptions> = {}): HandleRun
 
 function withCliDeps<T>(overrides: Partial<BakeoffCliDeps>, fn: () => Promise<T>): Promise<T> {
   const saved = { ..._bakeoffCliDeps };
-  Object.assign(_bakeoffCliDeps, overrides);
+  // The fictitious project root has no checkout to lock; isolate the outer lock.
+  Object.assign(
+    _bakeoffCliDeps,
+    { acquireLock: async () => ({ acquired: true as const }), releaseLock: async () => {} },
+    overrides,
+  );
   return fn().finally(() => {
     Object.assign(_bakeoffCliDeps, saved);
+    // Drop the lock doubles so they do not leak into later files.
+    _bakeoffCliDeps.acquireLock = saved.acquireLock;
+    _bakeoffCliDeps.releaseLock = saved.releaseLock;
   });
 }
 

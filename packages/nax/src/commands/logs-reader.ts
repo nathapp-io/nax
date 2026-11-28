@@ -2,13 +2,15 @@
  * Log reading and parsing utilities
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { NaxError } from "../errors";
 import type { LogEntry } from "../logger/types";
 import type { MetaJson } from "../pipeline/subscribers/registry";
 import { getRunsDir } from "../utils/paths";
+import { readLogTextNoFollow, resolveRegisteredLogPath } from "../utils/registered-log";
+import { logFileTimestamp } from "./log-file-name";
 
 /**
  * Swappable dependencies for testing
@@ -69,34 +71,31 @@ export async function resolveRunFileFromRegistry(runId: string): Promise<string 
     throw new NaxError(`Run not found in registry: ${runId}`, "RUN_NOT_FOUND", { stage: "logs", runId });
   }
 
-  if (!existsSync(matched.eventsDir)) {
-    console.log(`Log directory unavailable for run: ${runId}`);
+  const resolved = resolveRegisteredLogPath(matched);
+  if (!resolved) {
+    console.log(`Log unavailable for run: ${runId}`);
     return null;
   }
-
-  const files = readdirSync(matched.eventsDir)
-    .filter((f) => f.endsWith(".jsonl") && f !== "latest.jsonl")
-    .sort()
-    .reverse();
-
-  if (files.length === 0) {
-    console.log(`No log files found for run: ${runId}`);
-    return null;
-  }
-
-  const specificFile = files.find((f) => f === `${matched.runId}.jsonl`);
-  return join(matched.eventsDir, specificFile ?? files[0]);
+  return resolved;
 }
 
 /**
  * Select latest run file from directory
  */
-export async function selectRunFile(runsDir: string): Promise<string | null> {
-  const files = readdirSync(runsDir)
+/** Run log files, newest first by the timestamp in the filename (name desc on ties). */
+export function listRunLogFiles(runsDir: string): string[] {
+  return readdirSync(runsDir)
     .filter((f) => f.endsWith(".jsonl") && f !== "latest.jsonl")
-    .sort()
-    .reverse();
+    .sort((a, b) => {
+      const ta = logFileTimestamp(a);
+      const tb = logFileTimestamp(b);
+      if (ta !== tb) return ta < tb ? 1 : -1;
+      return a < b ? 1 : a > b ? -1 : 0;
+    });
+}
 
+export async function selectRunFile(runsDir: string): Promise<string | null> {
+  const files = listRunLogFiles(runsDir);
   if (files.length === 0) {
     return null;
   }
@@ -128,8 +127,7 @@ export async function extractRunSummary(filePath: string): Promise<{
   startedAt: string;
   completedAt: string | undefined;
 } | null> {
-  const file = Bun.file(filePath);
-  const content = await file.text();
+  const content = readLogTextNoFollow(filePath);
   const lines = content.trim().split("\n");
 
   let total = 0;

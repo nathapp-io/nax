@@ -20,6 +20,8 @@ export interface PollOptions {
   readonly commitSha?: string;
   /** Read the checks for `bindSha`: the poll is bracketed by the head it was read for. */
   readonly bindSha?: string;
+  /** Wait only: a green poll with no inline SHA takes the stable head its bracket recovered. */
+  readonly bindGreenSha?: boolean;
 }
 
 /**
@@ -50,6 +52,8 @@ export async function bindPollToHead(input: {
   readonly prRef: string;
   readonly cwd: string;
   readonly run: CiRun;
+  /** Give a SHA-less green poll the recovered head (the wait only; a one-shot read looks again). */
+  readonly bindGreen?: boolean;
 }): Promise<Poll> {
   const { poll, headBefore, prRef, cwd, run } = input;
   if (headBefore === undefined) return poll;
@@ -64,7 +68,6 @@ export async function bindPollToHead(input: {
   }
   // A failed poll carries no `sha`. Returned with the head the bracket agreed on, a one-shot read
   // (`readChecksOnce` → `verdictForHead`) makes no further head read of its own.
-  return poll.state === "failed" && poll.sha === undefined && headAfter !== undefined
-    ? { ...poll, sha: headAfter }
-    : poll;
+  const takesHead = poll.state === "failed" || (poll.state === "green" && input.bindGreen === true);
+  return takesHead && poll.sha === undefined && headAfter !== undefined ? { ...poll, sha: headAfter } : poll;
 }

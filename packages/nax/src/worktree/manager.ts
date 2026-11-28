@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, type Stats, symlinkSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
+import { tryExclusiveCreate } from "../execution/lock";
 import { getSafeLogger } from "../logger";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_GITIGNORE_ENTRIES, NAX_RETIRED_GITIGNORE_ENTRIES } from "../utils/gitignore";
@@ -57,6 +59,28 @@ async function resolveGitInfoDir(projectRoot: string): Promise<string> {
   }
   // rev-parse prints a path relative to its cwd when the common dir is below it.
   return join(resolve(projectRoot, commonDir), "info");
+}
+
+/**
+ * Proof that a caller created a worktree. `create()` returns it; `remove()`
+ * given one deletes the tree only while the on-disk owner record still
+ * carries the same token, so a stale owner can never remove a successor's tree.
+ */
+export interface WorktreeAllocation {
+  readonly worktreeId: WorktreeId;
+  readonly token: string;
+}
+
+const OWNER_DIR = "nax-wt-owners";
+
+async function ownerRecordPath(projectRoot: string, worktreeId: WorktreeId): Promise<string> {
+  return join(await resolveGitInfoDir(projectRoot), OWNER_DIR, worktreeId);
+}
+
+async function readOwnerToken(recordPath: string): Promise<string | null> {
+  return Bun.file(recordPath)
+    .text()
+    .catch(() => null);
 }
 
 const NAX_EXCLUDE_HEADER = "# nax — generated files (auto-added by nax parallel)";
@@ -117,6 +141,44 @@ function dropRetiredLines(content: string, retired: ReadonlySet<string>): string
     return next === undefined || next.trim() === NAX_EXCLUDE_HEADER;
   };
   return lines.filter((line, index) => line.trim() !== NAX_EXCLUDE_HEADER || !headsEmptySection(index)).join("\n");
+}
+
+async function ownsRecord(
+  recordPath: string,
+  allocation: WorktreeAllocation,
+  worktreeId: WorktreeId,
+): Promise<boolean> {
+  return allocation.worktreeId === worktreeId && (await readOwnerToken(recordPath)) === allocation.token;
+}
+
+/** Unlink the owner record only while it still carries this allocation's token. */
+async function releaseOwnerRecord(recordPath: string | undefined, allocation?: WorktreeAllocation): Promise<void> {
+  if (recordPath === undefined || allocation === undefined) return;
+  if ((await readOwnerToken(recordPath)) === allocation.token) await unlink(recordPath).catch(() => {});
+}
+
+/** `git worktree add <path> -b <branch>`, mapping failures to WORKTREE_ERROR. */
+async function addWorktree(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+  const context = { stage: "worktree", worktreeId, projectRoot };
+  try {
+    const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(
+      ["worktree", "add", storyWorktreePath(projectRoot, worktreeId), "-b", storyBranchName(worktreeId)],
+      projectRoot,
+    );
+    if (exitCode !== 0) {
+      throw new NaxError(`Failed to create worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
+        ...context,
+        stderr,
+      });
+    }
+  } catch (error) {
+    if (error instanceof NaxError) throw error;
+    if (error instanceof Error && error.message.includes("not a git repository")) {
+      throw new NaxError(`Not a git repository: ${projectRoot}`, "WORKTREE_ERROR", context);
+    }
+    const message = error instanceof Error ? error.message : `Failed to create worktree: ${String(error)}`;
+    throw new NaxError(message, "WORKTREE_ERROR", { ...context, ...(error instanceof Error ? { cause: error } : {}) });
+  }
 }
 
 export class WorktreeManager {
@@ -275,150 +337,49 @@ export class WorktreeManager {
    * slate. The orphan-ref probe at `refs/nax/orphan/<worktreeId>` is the
    * Step-3 evidence described in BUG-28.
    */
-  async create(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+  async create(projectRoot: string, worktreeId: WorktreeId): Promise<WorktreeAllocation> {
+    // Serialize competing creates for one ID: the loser sees the winner's tree
+    // and refuses instead of racing it into git.
+    return this.withIdLock(projectRoot, worktreeId, () => this.createExclusive(projectRoot, worktreeId));
+  }
+
+  private async createExclusive(projectRoot: string, worktreeId: WorktreeId): Promise<WorktreeAllocation> {
     const worktreePath = storyWorktreePath(projectRoot, worktreeId);
-    const branchName = storyBranchName(worktreeId);
-    const orphanRef = naxOrphanRefName(worktreeId);
 
-    // BUG-28: Step 3 below force-deletes `branchName` when remove() (Step 2)
-    // found no live worktree to remove it via — that path used to run
-    // unconditionally, which can destroy an unmerged *user* branch that
-    // happens to share this name. `git worktree list` is captured before any
-    // cleanup runs specifically so a since-pruned/deleted-directory worktree
-    // still counts as proof this branch pair was actually created by nax's
-    // own create() — only then is Step 3's force-delete "known-orphaned"
-    // rather than a guess.
-    //
-    // US-002: `hasNaxOwnershipRecord` is the second form of evidence the
-    // owning run may have left behind. `removeWorktreeDirectory` writes
-    // `refs/nax/orphan/<worktreeId>` after a non-conflict merge failure,
-    // so a retry path can still distinguish a nax-created orphan from a
-    // user branch. Step 3 fires on EITHER signal; the orphan ref is
-    // cleared in the same step that deletes the branch, so the record
-    // cannot outlive what it records. A user branch named
-    // `nax/<something-else>` that nax never created has neither form of
-    // evidence and is still never force-deleted.
-    const hadWorktreeRecord = await this.hasWorktreeRecord(projectRoot, branchName);
-    const hadNaxOwnershipRecord = await this.hasNaxOwnershipRecord(projectRoot, worktreeId);
-    const orphanCommit = hadNaxOwnershipRecord ? await this.resolveGitRef(projectRoot, orphanRef) : undefined;
-    const branchRef = `refs/heads/${branchName}`;
-    const branchCommit = await this.resolveGitRef(projectRoot, branchRef);
-    const orphanMatchesBranch = orphanCommit !== undefined && orphanCommit === branchCommit;
-
-    // Clean up any stale worktree/branch from a previous crashed run.
-    // Three cleanup steps handle all orphaned-worktree scenarios:
-    // 1. `git worktree prune` — removes admin refs whose directories no longer exist
-    // 2. `git worktree remove --force` — removes worktree (and its branch) if directory still exists
-    // 3. `git branch -D` — removes a leftover branch whose worktree directory is already
-    //    gone, but ONLY when hadWorktreeRecord OR hadNaxOwnershipRecord proved it
-    //    as a nax-created orphan. The orphan ref is then cleared with `git update-ref -d`.
-    try {
-      // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
-      // BUG-5: route through gitWithTimeout so a wedged git (NFS hang) can't stall create().
-      await _worktreeManagerDeps.gitWithTimeout(["worktree", "prune"], projectRoot);
-    } catch {
-      // prune is best-effort
-    }
-
-    let removedLiveWorktree = false;
-    try {
-      // Step 2: Remove worktree if it still exists as a live worktree (remove()
-      // also force-deletes branchName once the worktree removal succeeds).
-      await this.remove(projectRoot, worktreeId);
-      removedLiveWorktree = true;
-    } catch (error) {
-      // remove() throws WORKTREE_NOT_FOUND when there is nothing to clean up —
-      // that is the expected clean-slate case for a fresh run, so stay silent.
-      // Any other NaxError carries a genuine git failure (e.g. could not lock
-      // ref) that the subsequent `worktree add` will surface again — log it now
-      // so the upstream cause is visible before the second failure masks it.
-      if (!(error instanceof NaxError) || error.code !== "WORKTREE_NOT_FOUND") {
-        const logger = getSafeLogger();
-        logger?.warn("worktree", "Step-2 remove failed before create", {
-          worktreeId,
-          projectRoot,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    let clearedBranch = removedLiveWorktree;
-    if (!removedLiveWorktree && (hadWorktreeRecord || orphanMatchesBranch)) {
-      // Step 3: the worktree directory is already gone (remove() found
-      // nothing), but hadWorktreeRecord OR hadNaxOwnershipRecord proves
-      // this branch/worktree pair was created by a prior nax run — safe
-      // to force-delete the orphan. BUG-5: route through gitWithTimeout
-      // so a wedged git can't stall create().
-      if (orphanMatchesBranch) {
-        const result = await _worktreeManagerDeps
-          .gitWithTimeout(["update-ref", "-d", branchRef, orphanCommit], projectRoot)
-          .catch(() => undefined);
-        clearedBranch = result?.exitCode === 0;
-      } else {
-        const result = await _worktreeManagerDeps
-          .gitWithTimeout(["branch", "-D", branchName], projectRoot)
-          .catch(() => undefined);
-        clearedBranch = result?.exitCode === 0;
-      }
-    }
-
-    // US-002: Always clear the orphan ref at the end of cleanup, regardless
-    // of which step fired. The record cannot outlive what it records — and
-    // if Step 2 succeeded, `remove()` already deleted the branch, so the ref
-    // would be dangling at a now-unreachable commit. If neither step fired
-    // (no evidence), `update-ref -d` is a no-op (the ref doesn't exist).
-    // Best-effort: a stale ref that survives one more run is acceptable;
-    // a dangling ref that misleads Step-3 evidence on a *later* run is
-    // not — that is the BUG-28 hole this record was designed to close.
-    if (hadNaxOwnershipRecord && (clearedBranch || !orphanMatchesBranch)) {
-      try {
-        await _worktreeManagerDeps.gitWithTimeout(["update-ref", "-d", orphanRef], projectRoot);
-      } catch {
-        // ref may already be absent
-      }
-    }
-
-    try {
-      // Create worktree with new branch. The branch name and worktree path
-      // are routed through the producers above; this call is the only place
-      // that names them on the git command line.
-      const { exitCode, stderr } = await _worktreeManagerDeps.gitWithTimeout(
-        ["worktree", "add", worktreePath, "-b", branchName],
-        projectRoot,
-      );
-      if (exitCode !== 0) {
-        throw new NaxError(`Failed to create worktree: ${stderr || "unknown error"}`, "WORKTREE_ERROR", {
-          stage: "worktree",
-          worktreeId,
-          projectRoot,
-          stderr,
-        });
-      }
-    } catch (error) {
-      if (error instanceof NaxError) {
-        throw error;
-      }
-      if (error instanceof Error) {
-        // Enhance error messages for common scenarios
-        if (error.message.includes("not a git repository")) {
-          throw new NaxError(`Not a git repository: ${projectRoot}`, "WORKTREE_ERROR", {
-            stage: "worktree",
-            worktreeId,
-            projectRoot,
-          });
-        }
-        throw new NaxError(error.message, "WORKTREE_ERROR", {
-          stage: "worktree",
-          worktreeId,
-          projectRoot,
-          cause: error,
-        });
-      }
-      throw new NaxError(`Failed to create worktree: ${String(error)}`, "WORKTREE_ERROR", {
+    // A live tree at this path is never replaced: refuse before mutating any
+    // Git state so the occupant's working files and branch tip stay intact.
+    if (existsSync(worktreePath)) {
+      throw new NaxError(`Worktree path is already occupied: ${worktreePath}`, "WORKTREE_OCCUPIED", {
         stage: "worktree",
         worktreeId,
         projectRoot,
+        worktreePath,
       });
+    }
+
+    await this.reclaimOrphanBranch(projectRoot, worktreeId);
+
+    const recordPath = await ownerRecordPath(projectRoot, worktreeId);
+    await mkdir(join(recordPath, ".."), { recursive: true });
+    const token = randomUUID();
+    // The tree path is free (checked above), so any existing record is a dead
+    // allocation's; replace it.
+    await unlink(recordPath).catch(() => {});
+    if (!(await tryExclusiveCreate(recordPath, token))) {
+      throw new NaxError(`Worktree allocation is contested: ${worktreePath}`, "WORKTREE_OCCUPIED", {
+        stage: "worktree",
+        worktreeId,
+        projectRoot,
+        worktreePath,
+      });
+    }
+    const allocation: WorktreeAllocation = { worktreeId, token };
+
+    try {
+      await addWorktree(projectRoot, worktreeId);
+    } catch (error) {
+      if ((await readOwnerToken(recordPath)) === token) await unlink(recordPath).catch(() => {});
+      throw error;
     }
 
     // Keep a checked-out .env or mirror an ignored one into the new worktree.
@@ -426,8 +387,44 @@ export class WorktreeManager {
       projectRoot,
       worktreePath,
       worktreeId,
-      removeWorktree: () => this.remove(projectRoot, worktreeId),
+      removeWorktree: () => this.removeLocked(projectRoot, worktreeId, allocation),
     });
+    return allocation;
+  }
+
+  /**
+   * Branch-only orphan recovery (BUG-28 / US-002). The tree directory is known
+   * to be gone; a leftover branch is force-deleted only when a prior nax
+   * worktree record or a `refs/nax/orphan/<id>` ref proves nax created it. A
+   * user branch of the same name has neither and is never deleted.
+   */
+  private async reclaimOrphanBranch(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+    const branchName = storyBranchName(worktreeId);
+    const orphanRef = naxOrphanRefName(worktreeId);
+    const hadWorktreeRecord = await this.hasWorktreeRecord(projectRoot, branchName);
+    const hadNaxOwnershipRecord = await this.hasNaxOwnershipRecord(projectRoot, worktreeId);
+    const orphanCommit = hadNaxOwnershipRecord ? await this.resolveGitRef(projectRoot, orphanRef) : undefined;
+    const branchRef = `refs/heads/${branchName}`;
+    const branchCommit = await this.resolveGitRef(projectRoot, branchRef);
+    const orphanMatchesBranch = orphanCommit !== undefined && orphanCommit === branchCommit;
+
+    // Prune admin refs whose directories no longer exist (best-effort; BUG-5 timeout).
+    await _worktreeManagerDeps.gitWithTimeout(["worktree", "prune"], projectRoot).catch(() => undefined);
+
+    let clearedBranch = false;
+    if (hadWorktreeRecord || orphanMatchesBranch) {
+      const args = orphanMatchesBranch
+        ? ["update-ref", "-d", branchRef, orphanCommit as string]
+        : ["branch", "-D", branchName];
+      const result = await _worktreeManagerDeps.gitWithTimeout(args, projectRoot).catch(() => undefined);
+      clearedBranch = result?.exitCode === 0;
+    }
+
+    // The orphan record must not outlive what it records; keep it only when the
+    // branch it describes survived a failed delete.
+    if (hadNaxOwnershipRecord && (clearedBranch || !orphanMatchesBranch)) {
+      await _worktreeManagerDeps.gitWithTimeout(["update-ref", "-d", orphanRef], projectRoot).catch(() => undefined);
+    }
   }
 
   /**
@@ -437,9 +434,36 @@ export class WorktreeManager {
    * branch are derived through the same producers `create()` uses, so
    * this method spells neither inline.
    */
-  async remove(projectRoot: string, worktreeId: WorktreeId): Promise<void> {
+  async remove(projectRoot: string, worktreeId: WorktreeId, allocation?: WorktreeAllocation): Promise<void> {
+    // Same per-ID lock as create(): ownership is rechecked while holding it.
+    return this.withIdLock(projectRoot, worktreeId, () => this.removeLocked(projectRoot, worktreeId, allocation));
+  }
+
+  private async withIdLock<T>(projectRoot: string, worktreeId: WorktreeId, fn: () => Promise<T>): Promise<T> {
+    const { withPathFileLock } = await import("@nathapp/nax-agent/internal");
+    const lockTarget = join(await resolveGitInfoDir(projectRoot), `${OWNER_DIR}.${worktreeId}`);
+    await mkdir(join(lockTarget, ".."), { recursive: true });
+    return withPathFileLock(lockTarget, fn);
+  }
+
+  private async removeLocked(
+    projectRoot: string,
+    worktreeId: WorktreeId,
+    allocation?: WorktreeAllocation,
+  ): Promise<void> {
     const worktreePath = storyWorktreePath(projectRoot, worktreeId);
     const branchName = storyBranchName(worktreeId);
+
+    // With an allocation, remove only what that allocation still owns.
+    const recordPath = allocation === undefined ? undefined : await ownerRecordPath(projectRoot, worktreeId);
+    if (
+      allocation !== undefined &&
+      recordPath !== undefined &&
+      !(await ownsRecord(recordPath, allocation, worktreeId))
+    ) {
+      getSafeLogger()?.warn("worktree", "Not removing worktree: allocation no longer owns it", { worktreeId });
+      return;
+    }
 
     // Remove worktree
     try {
@@ -478,6 +502,8 @@ export class WorktreeManager {
         cause: error instanceof Error ? error : undefined,
       });
     }
+
+    await releaseOwnerRecord(recordPath, allocation);
 
     // Delete branch
     try {

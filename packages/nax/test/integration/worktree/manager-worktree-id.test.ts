@@ -75,7 +75,7 @@ describe("US-002 WorktreeManager.create/remove — branded WorktreeId acceptance
     await manager.create(projectRoot, worktreeId);
 
     const expectedDir = storyWorktreePath(projectRoot, worktreeId);
-    expect(expectedDir.endsWith(join(".nax-wt", "story-f-US-001"))).toBe(true);
+    expect(expectedDir.endsWith(join(".nax-wt", worktreeId))).toBe(true);
     expect(existsSync(expectedDir)).toBe(true);
   });
 
@@ -86,7 +86,7 @@ describe("US-002 WorktreeManager.create/remove — branded WorktreeId acceptance
     await manager.create(projectRoot, worktreeId);
 
     const expectedBranch = storyBranchName(worktreeId);
-    expect(expectedBranch).toBe("nax/story-f-US-001");
+    expect(expectedBranch).toBe(`nax/${worktreeId}`);
     expect(await branchExists(projectRoot, expectedBranch)).toBe(true);
   });
 
@@ -195,11 +195,15 @@ describe("US-002 WorktreeManager.create — AC-10/AC-11: linked-worktree create"
     // The ids are distinct: same raw storyId, different features.
     expect(worktreeIdMain).not.toBe(worktreeIdLinked);
 
-    await expect(manager.create(projectRoot, worktreeIdMain)).resolves.toBeUndefined();
-    await expect(manager.create(linkedPath, worktreeIdLinked)).resolves.toBeUndefined();
+    await expect(manager.create(projectRoot, worktreeIdMain)).resolves.toMatchObject({
+      worktreeId: expect.any(String),
+    });
+    await expect(manager.create(linkedPath, worktreeIdLinked)).resolves.toMatchObject({
+      worktreeId: expect.any(String),
+    });
   });
 
-  test("AC-11: after the AC-10 linked-worktree create, the branch nax/story-a-US-001 created from the main checkout still exists", async () => {
+  test("AC-11: after the AC-10 linked-worktree create, the main-checkout branch created from the main checkout still exists", async () => {
     const manager = new WorktreeManager();
     const worktreeIdMain: WorktreeId = deriveStoryWorktreeId("a", "US-001");
     const worktreeIdLinked: WorktreeId = deriveStoryWorktreeId("b", "US-001");
@@ -209,8 +213,8 @@ describe("US-002 WorktreeManager.create — AC-10/AC-11: linked-worktree create"
 
     const expectedMainBranch = storyBranchName(worktreeIdMain);
     const expectedLinkedBranch = storyBranchName(worktreeIdLinked);
-    expect(expectedMainBranch).toBe("nax/story-a-US-001");
-    expect(expectedLinkedBranch).toBe("nax/story-b-US-001");
+    expect(expectedMainBranch).toBe(`nax/${worktreeIdMain}`);
+    expect(expectedLinkedBranch).toBe(`nax/${worktreeIdLinked}`);
 
     expect(await branchExists(projectRoot, expectedMainBranch)).toBe(true);
     expect(await branchExists(projectRoot, expectedLinkedBranch)).toBe(true);
@@ -227,7 +231,7 @@ describe("US-002 WorktreeId — branded type narrows the worktree API", () => {
   test("deriveStoryWorktreeId returns a WorktreeId-shaped string", () => {
     const id = deriveStoryWorktreeId("f", "US-001");
     expect(typeof id).toBe("string");
-    expect(String(id)).toBe("story-f-US-001");
+    expect(String(id)).toMatch(/^story-f-US-001-[0-9a-f]{8}$/);
     // And a WorktreeId parameter accepts the derived value (compile-time
     // brand check).
     const typed: WorktreeId = id;

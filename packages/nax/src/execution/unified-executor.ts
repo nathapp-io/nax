@@ -137,7 +137,10 @@ export async function executeUnified(
     wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime, ctx.runtime.projectKey),
     wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config),
     wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir),
-    wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir),
+    wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir, ctx.runtime.outputDir, {
+      logFilePath: ctx.logFilePath,
+      startTime: ctx.startTime,
+    }),
   ];
   _prevRunUnsubscribers = thisRunUnsubscribers;
 

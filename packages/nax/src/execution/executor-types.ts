@@ -67,7 +67,7 @@ export type ExitReason =
   | "pre-merge-aborted"
   /** The run's AbortSignal was aborted during an iteration delay (BUG-2 fix). */
   | "aborted"
-  /** A queued PAUSE/ABORT command was applied at a parallel-batch boundary (BUG-9). */
+  /** An operator PAUSE stopped the run at a between-story boundary; the run status is persisted as paused. */
   | "queue-paused";
 
 export interface SequentialExecutionResult {

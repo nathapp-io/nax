@@ -150,18 +150,64 @@ describe("WorktreeManager", () => {
       );
     });
 
-    test("cleanly replaces an existing worktree for the same story", async () => {
+    test("refuses a second create for a live tree and preserves its sentinel and branch tip (AC-3, AC-4)", async () => {
       const manager = new WorktreeManager();
       const worktreeId = deriveFor("story-duplicate");
+      const git = async (args: string[], cwd: string) =>
+        (await new Response(Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" }).stdout).text()).trim();
 
-      // Create a worktree
       await manager.create(projectRoot, worktreeId);
       const worktreePath = storyWorktreePath(projectRoot, worktreeId);
-      expect(existsSync(worktreePath)).toBe(true);
+      writeFileSync(join(worktreePath, "unique.txt"), "winner");
+      await git(["add", "unique.txt"], worktreePath);
+      await git(["-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-m", "winner"], worktreePath);
+      const tip = await git(["rev-parse", storyBranchName(worktreeId)], projectRoot);
+      writeFileSync(join(worktreePath, "sentinel.txt"), "dirty");
 
-      // Create the same worktree again — should succeed (removes stale one first)
+      await expect(manager.create(projectRoot, worktreeId)).rejects.toMatchObject({ code: "WORKTREE_OCCUPIED" });
+
+      expect(await Bun.file(join(worktreePath, "sentinel.txt")).text()).toBe("dirty");
+      expect(await git(["rev-parse", storyBranchName(worktreeId)], projectRoot)).toBe(tip);
+    });
+
+    test("concurrent creates for one id: exactly one wins and its sentinel survives (AC-3)", async () => {
+      const manager = new WorktreeManager();
+      const worktreeId = deriveFor("story-race");
+      const results = await Promise.allSettled([
+        manager.create(projectRoot, worktreeId),
+        manager.create(projectRoot, worktreeId),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(true);
+    });
+
+    test("two stale cleanups racing a successor leave the successor's tree and record (AC-6)", async () => {
+      const manager = new WorktreeManager();
+      const worktreeId = deriveFor("story-reuse-race");
+      const first = await manager.create(projectRoot, worktreeId);
+      await Promise.all([
+        manager.remove(projectRoot, worktreeId, first),
+        manager.remove(projectRoot, worktreeId, first),
+      ]);
+      const second = await manager.create(projectRoot, worktreeId);
+      await manager.remove(projectRoot, worktreeId, first);
+      expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(true);
+      await manager.remove(projectRoot, worktreeId, second);
+      expect(existsSync(storyWorktreePath(projectRoot, worktreeId))).toBe(false);
+    });
+
+    test("a stale allocation cannot remove a successor's tree (AC-6)", async () => {
+      const manager = new WorktreeManager();
+      const worktreeId = deriveFor("story-reuse");
+      const first = await manager.create(projectRoot, worktreeId);
+      await manager.remove(projectRoot, worktreeId, first);
       await manager.create(projectRoot, worktreeId);
-      expect(existsSync(worktreePath)).toBe(true); // still exists, just recreated
+      const path = storyWorktreePath(projectRoot, worktreeId);
+      writeFileSync(join(path, "sentinel.txt"), "successor");
+
+      await manager.remove(projectRoot, worktreeId, first); // delayed old cleanup
+
+      expect(await Bun.file(join(path, "sentinel.txt")).text()).toBe("successor");
     });
   });
 

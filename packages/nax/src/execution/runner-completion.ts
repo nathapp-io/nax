@@ -142,7 +142,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   });
 
   // Fire on-all-stories-complete before regression gate (RL-001)
-  if (isComplete(options.prd)) {
+  if (isComplete(options.prd) && options.exitReason !== "queue-paused") {
     await fireHook(
       options.hooks,
       "on-all-stories-complete",
