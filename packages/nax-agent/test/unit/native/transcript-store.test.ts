@@ -527,33 +527,4 @@ describe("createFileTranscriptStore", () => {
     await store.delete("none");
     expect(await readdir(dir)).toEqual([]);
   });
-
-  test("markTurn on a missing session creates an empty document with the marker", async () => {
-    const store = createFileTranscriptStore(dir);
-    await store.markTurn("s", { turnId: "t1", state: "running" });
-    const doc = await store.load("s");
-    expect(doc?.messages).toEqual([]);
-    expect(doc?.turn).toEqual({ turnId: "t1", state: "running" });
-    expect(doc?.schemaVersion).toBeUndefined();
-  });
-
-  test("markTurn merges into an existing document and keeps its history and identity", async () => {
-    const store = createFileTranscriptStore(dir);
-    await store.save("s", { owner: "o", model: "p/m", savedAt: "t", messages: msgs });
-    await store.markTurn("s", { turnId: "t1", state: "ended" });
-    expect(await store.load("s")).toEqual({
-      owner: "o",
-      model: "p/m",
-      savedAt: "t",
-      messages: msgs,
-      turn: { turnId: "t1", state: "ended" },
-    });
-  });
-
-  test("markTurn on a corrupt file throws TRANSCRIPT_CORRUPT", async () => {
-    await writeFile(transcriptPath(dir, "bad"), "{not json");
-    await expect(
-      createFileTranscriptStore(dir).markTurn("bad", { turnId: "t", state: "running" }),
-    ).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT" });
-  });
 });

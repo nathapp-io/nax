@@ -13,7 +13,13 @@ import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
 import { writeFileAtomic } from "#src/internal/atomic-write";
 import { historyFromTranscript, type TranscriptIdentity, transcriptDocFor } from "./transcript-identity.ts";
-import { rehydrateTranscriptImages, splitTranscriptImages, transcriptImagesPath } from "./transcript-images.ts";
+import {
+  assertStoredImageLists,
+  assertSupportedSchema,
+  rehydrateTranscriptImages,
+  splitTranscriptImages,
+  transcriptImagesPath,
+} from "./transcript-images.ts";
 
 import type { TranscriptDoc, TranscriptStore, TurnMarker } from "./transcript-types.ts";
 
@@ -36,6 +42,27 @@ function corruptTranscript(sessionName: string, reason: string): NaxError {
 }
 
 /**
+ * The stored bytes, parsed. `undefined` — never a JSON value — means "no file", so a body
+ * of `null` still reads as the corrupt document it is.
+ */
+async function readStoredJson(dir: string, sessionName: string): Promise<unknown> {
+  let raw: string;
+  try {
+    raw = await readFile(transcriptPath(dir, sessionName), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    // Deliberately not null: silently restarting a conversation would drop the
+    // history the model is mid-way through and look like a fresh session.
+    throw corruptTranscript(sessionName, err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
  * Missing file means no document. Anything else unreadable is a real failure.
  *
  * The file wraps the messages rather than storing a bare array, which is what
@@ -47,33 +74,50 @@ function corruptTranscript(sessionName: string, reason: string): NaxError {
  * then drops for any reader that has an owner.
  */
 export async function readTranscriptDoc(dir: string, sessionName: string): Promise<TranscriptDoc | null> {
-  let raw: string;
-  try {
-    raw = await readFile(transcriptPath(dir, sessionName), "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    // Deliberately not null: silently restarting a conversation would drop the
-    // history the model is mid-way through and look like a fresh session.
-    throw corruptTranscript(sessionName, err instanceof Error ? err.message : String(err));
-  }
+  const parsed = await readStoredJson(dir, sessionName);
+  if (parsed === undefined) return null;
   if (Array.isArray(parsed)) return { savedAt: LEGACY_SAVED_AT, messages: parsed as ConversationMessage[] };
   if (typeof parsed !== "object" || parsed === null) throw corruptTranscript(sessionName, "not a transcript document");
   const doc = await rehydrateTranscriptImages(transcriptPath(dir, sessionName), parsed);
   return { ...doc, messages: doc.messages ?? [] };
 }
 
-async function writeTranscriptDoc(dir: string, sessionName: string, doc: TranscriptDoc): Promise<void> {
-  const path = transcriptPath(dir, sessionName);
-  const stored = await splitTranscriptImages(path, doc);
+/** Publish a document exactly as given; splitting images is the caller's decision. */
+async function writeStoredDocument(dir: string, sessionName: string, doc: unknown): Promise<void> {
   await mkdir(dir, { recursive: true });
+  await writeFileAtomic(transcriptPath(dir, sessionName), JSON.stringify(doc, null, 2), { mode: 0o600 });
+}
+
+async function writeTranscriptDoc(dir: string, sessionName: string, doc: TranscriptDoc): Promise<void> {
+  const stored = await splitTranscriptImages(transcriptPath(dir, sessionName), doc);
   // Publish JSON only after all image files have been published successfully.
-  await writeFileAtomic(path, JSON.stringify(stored, null, 2), { mode: 0o600 });
+  await writeStoredDocument(dir, sessionName, stored);
+}
+
+/**
+ * The document a marker write starts from: the stored JSON, validated but never hydrated.
+ *
+ * Hydrating here would defeat the point of a marker write (review finding 10): an image
+ * that is temporarily absent would come back as a persisted `[image missing]` note with
+ * its ref dropped, and every sidecar would be re-published for a write that changes one
+ * field. So the format checks run on the parsed JSON and touch no file, and the document's
+ * own fields — `owner`, `model`, `savedAt`, `schemaVersion`, the stored refs with their
+ * metadata — are republished exactly as they stand.
+ */
+function markerDocument(sessionName: string, stored: unknown): Record<string, unknown> {
+  if (stored === undefined) return { savedAt: new Date().toISOString(), messages: [] };
+  // A pre-#1877 bare array: wrap it, and do not migrate its inline images to sidecars.
+  if (Array.isArray(stored)) return { savedAt: LEGACY_SAVED_AT, messages: stored };
+  if (typeof stored !== "object" || stored === null) {
+    throw corruptTranscript(sessionName, "not a transcript document");
+  }
+  const doc = stored as Record<string, unknown>;
+  assertSupportedSchema(doc);
+  const messages = doc.messages === undefined ? [] : doc.messages;
+  // A v2 container that is not a list is unreadable: reject before publishing anything.
+  if (!Array.isArray(messages)) throw corruptTranscript(sessionName, "messages is not an array");
+  assertStoredImageLists(doc.schemaVersion, messages);
+  return { ...doc, messages };
 }
 
 /**
@@ -95,9 +139,12 @@ export function createFileTranscriptStore(dir: string): TranscriptStore {
     },
     delete: (sessionId) => deleteTranscript(dir, sessionId),
     markTurn: async (sessionId: string, marker: TurnMarker) => {
-      const existing = await readTranscriptDoc(dir, sessionId);
-      const base: TranscriptDoc = existing ?? { savedAt: new Date().toISOString(), messages: [] };
-      await writeTranscriptDoc(dir, sessionId, { ...base, turn: marker });
+      // A metadata-only update: read the stored JSON, publish it with `turn` replaced.
+      // Hydrating here would rewrite image refs from sidecars (review finding 10).
+      // Read afresh on every call — `running` and `ended` straddle the turn's save, so a
+      // snapshot cached from the start of the turn would publish the pre-turn document back.
+      const base = markerDocument(sessionId, await readStoredJson(dir, sessionId));
+      await writeStoredDocument(dir, sessionId, { ...base, turn: marker });
     },
   };
 }
