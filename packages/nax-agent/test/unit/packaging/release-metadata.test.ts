@@ -17,11 +17,17 @@ test("release staging carries a real release version and preserves dependency pi
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
     "./mcp": "./src/mcp/index.ts",
+    "./credentials": "./src/light/credentials.ts",
+    "./runtime": "./src/light/runtime.ts",
+    "./redact": "./src/light/redact.ts",
   });
   expect(staged.exports).toEqual({
     ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
     "./internal": { types: "./dist/internal.d.ts", import: "./dist/internal.js" },
     "./mcp": { types: "./dist/mcp/index.d.ts", import: "./dist/mcp/index.js" },
+    "./credentials": { types: "./dist/light/credentials.d.ts", import: "./dist/light/credentials.js" },
+    "./runtime": { types: "./dist/light/runtime.d.ts", import: "./dist/light/runtime.js" },
+    "./redact": { types: "./dist/light/redact.d.ts", import: "./dist/light/redact.js" },
   });
   expect(staged.engines).toEqual({ node: ">=22.19.0" });
   expect(staged.publishConfig).toMatchObject({ provenance: true, tag: "latest" });

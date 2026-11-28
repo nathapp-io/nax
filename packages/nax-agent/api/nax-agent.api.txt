@@ -576,6 +576,11 @@ writeApprovalsFile
 writeSpill
 writeTool
 
+[./credentials]
+type CredentialAuthConfig
+type CredentialsConfig
+configureCredentials
+
 [./internal]
 AGENT_OUTPUT_MARKERS
 ASK_CANCELLED_REASON
@@ -1230,3 +1235,17 @@ type McpToolInfo
 type McpTransportConfig
 connectMcp
 resultText
+
+[./redact]
+capStrings
+redactSecrets
+
+[./runtime]
+type AgentGlobOptions
+type AgentRuntime
+type AgentSpawnOptions
+type AgentSpawnResult
+type AgentSpawnStdin
+getAgentRuntime
+nodeRuntime
+setAgentRuntime

@@ -17,6 +17,7 @@ Requires **Node.js >= 22.19.0**. The package is ESM only and ships no Bun code: 
 - **`@nathapp/nax-agent`** is the supported entry. Every export is named, and none starts with `_`. Its exact names are pinned in [`api/nax-agent.api.txt`](api/nax-agent.api.txt), which CI compares with the built declarations.
 - **`@nathapp/nax-agent/internal`** is **nax-only and outside semver.** nax bundles this package and reaches below the public entry for shared helpers, `NaxError`, deep modules and the `_*Deps` test seams. Names, shapes and behaviour there can change in any release, patch included, and a change there is not a breaking change. Do not import it from another project.
 - **`@nathapp/nax-agent/mcp`** — the shared MCP connection layer; see below.
+- **`@nathapp/nax-agent/credentials`**, **`/runtime`** and **`/redact`** are light entries; see [Light entries](#light-entries).
 
 ## Process-wide slots
 
@@ -29,6 +30,28 @@ The host installs these once, near startup. They are module-level, so they apply
 | Runtime | `setAgentRuntime(runtime)` (`null` clears) | `getAgentRuntime()` returns `nodeRuntime`, built on `node:child_process` and `node:fs`. |
 
 `AgentRuntime` is the process and glob contract (`spawn`, `glob`, `globSync`). The Node default is complete; install your own only to change how the agent spawns processes or expands globs.
+
+## Light entries
+
+The root entry loads the whole agent: sessions, tools, the sandbox and the provider client. A process that is mostly idle, such as a daemon that creates a session only when a job arrives, can install the slots and redact its logs without that cost:
+
+| Entry | Exports |
+|:------|:--------|
+| `@nathapp/nax-agent/credentials` | `configureCredentials`, types `CredentialsConfig`, `CredentialAuthConfig` |
+| `@nathapp/nax-agent/runtime` | `getAgentRuntime`, `setAgentRuntime`, `nodeRuntime`, the `AgentRuntime` types |
+| `@nathapp/nax-agent/redact` | `redactSecrets`, `capStrings` |
+
+```ts
+import { configureCredentials } from "@nathapp/nax-agent/credentials";
+import { redactSecrets } from "@nathapp/nax-agent/redact";
+
+configureCredentials({ configDir, readAuthConfig });
+
+// Later, only when a session is needed:
+const { createAgentSession } = await import("@nathapp/nax-agent");
+```
+
+These are the same functions and the same slots the root entry exports, so what you install through a light entry is what a later session reads. Each light entry loads a handful of small modules and no dependency. Measured on Bun 1.4.5 (macOS arm64), importing all three adds about 4 MiB of resident memory, against about 26 MiB for the root entry.
 
 ## Ports the host supplies
 
