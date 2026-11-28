@@ -217,6 +217,28 @@ describe("nax memory discard", () => {
     expect(h.out).toEqual(["no undelivered writes to discard"]);
   });
 
+  test("[B5] names the source retirements the discard refused, and how to override it", async () => {
+    const h = harness({ moved: 1, heldBack: [], refused: ["c_retire"] });
+    await runMemory(h, ["discard", "--client", "c_7"]);
+    const line = h.out.join("\n");
+    expect(line).toContain("discarded 1 undelivered write");
+    expect(line).toContain("1 write(s) that waited on it refused (--client c_retire)");
+    expect(line).toContain("their sources stay on the provider; requeue one to send it anyway");
+    expect(h.codes).toEqual([0]);
+  });
+
+  test("[B5] --json reports the refused writes beside what moved", async () => {
+    const h = harness({ moved: 1, heldBack: [], refused: ["c_retire"] });
+    await runMemory(h, ["discard", "--client", "c_7", "--json"]);
+    expect(h.out).toEqual([JSON.stringify({ discarded: 1, heldBack: [], refused: ["c_retire"] })]);
+  });
+
+  test("a discard that refused nothing says nothing about refusals", async () => {
+    const h = harness({ moved: 1, heldBack: [] });
+    await runMemory(h, ["discard", "--client", "c_7", "--json"]);
+    expect(h.out).toEqual([JSON.stringify({ discarded: 1, heldBack: [] })]);
+  });
+
   test("neither a slug, --client nor --all is a usage error, and the host is never opened", async () => {
     const h = harness();
     await runMemory(h, ["discard"]);

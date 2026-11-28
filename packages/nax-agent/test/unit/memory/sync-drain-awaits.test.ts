@@ -358,14 +358,14 @@ describe("drainOutbox: what the outbox currently holds under an awaited id", () 
     });
   });
 
-  test("[B4] a replacement discarded while the drain runs leaves nothing to wait for", async () => {
+  test("[B4] a replacement a delivery removed in another process leaves nothing to wait for", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir);
       h.provider.push.mockImplementation(async (request) => {
         if (request.clientId === SAVE_ID) throw refusal();
         if (request.clientId === "client-other") {
-          // `nax memory discard` from another process: the outbox no longer holds the id, which
-          // is the same answer a delivered replacement gives.
+          // The outbox no longer holds the id, which is the answer a *delivered* replacement gives:
+          // `settle` removes the entry it delivered, so the forget that waited on it is free to go.
           await h.outbox.remove(SAVE_ID);
           return ANSWER_ACTIVE;
         }
@@ -500,6 +500,106 @@ describe("drainOutbox: a retirement waiting on a replacement whose delivery is u
       expect(await entryOf(reopened, FORGET_ID)).toMatchObject({ state: "queued", awaits: SAVE_ID });
       // Neither entry is destroyed: an operator can still requeue or discard the held save.
       expect(await reopened.list()).toHaveLength(2);
+    });
+  });
+});
+
+/** The reason a discard records on the retirements that waited on the write it dropped. */
+const DISCARDED = `not sent: the replacement it waits on (${MERGED_SLUG}) was discarded`;
+
+/**
+ * B5: the replacement the operator discarded.
+ *
+ * `nax memory discard` drops a held write for good, so the outbox no longer holds the id the
+ * merge's source retirements wait on — and the drain reads a vanished dependency as "delivered,
+ * there is nothing left to wait for". That is the one reading the `awaits` link exists to prevent
+ * when the delivery was never proven: the sources would be retired from the provider with nothing
+ * in their place. So a discard refuses the writes that wait on it (and the writes that wait on
+ * those) in the same lock that removes it, and they are `rejected` before any drain can read them.
+ */
+describe("drainOutbox: a retirement waiting on a discarded replacement", () => {
+  /** The pair a merge stages: the replacement whose delivery is unknown, and the source's retire. */
+  async function heldReplacement(dir: string): Promise<Harness> {
+    const h = harness(dir, { push: ANSWER_DELETED });
+    await h.store.writeNote(note(MERGED_SLUG));
+    await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+    await h.outbox.markUncertain(SAVE_ID, "delivery unknown: socket closed; not retried");
+    await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+    return h;
+  }
+
+  test("[B5] the discard refuses the retirement that waits on it, naming the replacement", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+
+      const outcome = await h.outbox.discardUndelivered(SAVE_ID);
+
+      expect(outcome.discarded).toBe(true);
+      expect(outcome.refused.map((entry) => entry.clientId)).toEqual([FORGET_ID]);
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "rejected", reason: DISCARDED });
+      // The forget's own justification is the queue's, and the refusal does not lose it.
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ requestReason: `merged into ${MERGED_SLUG}` });
+      expect(await h.outbox.held(SAVE_ID)).toBeUndefined();
+    });
+  });
+
+  test("[B5] the next drain does not send the retirement, so the source stays on the provider", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      await h.outbox.discardUndelivered(SAVE_ID);
+
+      const result = await drain(h);
+
+      expect(pushed(h)).toEqual([]);
+      expect(result).toEqual({ pushed: 0, rejected: 0, parked: [] });
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "rejected" });
+    });
+  });
+
+  test("[B5] a retirement waiting on a refused retirement is refused too", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      // A second-order wait: the queue chains, and the id a discard drops may be an entry that
+      // waits on another. Releasing the chain one step down would undo the rule above.
+      await h.outbox.enqueue(forgetRequest("budget-c", "client-chained", FORGET_ID));
+
+      const outcome = await h.outbox.discardUndelivered(SAVE_ID);
+
+      expect(outcome.refused.map((entry) => entry.clientId)).toEqual([FORGET_ID, "client-chained"]);
+      expect(await entryOf(h.outbox, "client-chained")).toMatchObject({ state: "rejected" });
+      expect(pushed(h)).toEqual([]);
+    });
+  });
+
+  test("[B5] a discard of a refused replacement refuses its retirements as well", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: ANSWER_DELETED });
+      await h.store.writeNote(note(MERGED_SLUG));
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      await h.outbox.markRejected(SAVE_ID, REFUSAL_MESSAGE);
+      await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+
+      await h.outbox.discardUndelivered(SAVE_ID);
+      const result = await drain(h);
+
+      // A refused replacement's retirement is normally refused by the drain itself; removing the
+      // refusal it reads is the same loss, so the discard refuses it instead.
+      expect(result.pushed).toBe(0);
+      expect(pushed(h)).toEqual([]);
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "rejected", reason: DISCARDED });
+    });
+  });
+
+  test("[B5] a queued write is never dropped, and nothing is refused for it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: ANSWER_DELETED });
+      await h.outbox.enqueue(saveRequest(note(MERGED_SLUG), SAVE_ID));
+      await h.outbox.enqueue(forgetRequest(SOURCE_SLUG, FORGET_ID, SAVE_ID));
+
+      expect(await h.outbox.discardUndelivered(SAVE_ID)).toEqual({ discarded: false, refused: [] });
+
+      expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "queued", awaits: SAVE_ID });
+      expect(await entryOf(h.outbox, SAVE_ID)).toMatchObject({ state: "queued" });
     });
   });
 });

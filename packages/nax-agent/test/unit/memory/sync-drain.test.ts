@@ -754,7 +754,7 @@ describe("US-001: drainOutbox when the provider may have committed the write", (
       await running;
       expect(await h.outbox.held("client-add")).toMatchObject({ state: "uncertain" });
       // The operator takes the duplicate risk the hold was protecting them from.
-      expect(await h.outbox.requeue("client-add")).toBe(true);
+      expect(await h.outbox.requeue("client-add", { allowDuplicate: true })).toBe("requeued");
       const reopened = createMemoryOutbox({ dir: h.store.paths.outboxDir });
       expect(await reopened.held("client-add")).toMatchObject({ state: "queued" });
 

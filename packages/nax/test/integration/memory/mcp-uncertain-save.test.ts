@@ -565,6 +565,9 @@ describe("US-001 B2 a save whose add was never dispatched", () => {
     expect(run).toMatchObject({ pushed: 1, dispatches: [ADD] });
   });
 
+  // The budget is the fixture's, not the assertion's: five spawned servers (the probe, the two
+  // attempts, the recovered sync's) and a pool that has to give up on each cost ~6s on their own,
+  // which the suite's 5s per-test default cuts off. Its sibling above spawns one fewer.
   test("B2: an add the pool never dispatched leaves the write queued, and the next sync sends it", async () => {
     // Attempt 2 answers the add's discovery and exits, attempt 3 cannot connect at all: the add
     // itself never finds a connection, and the probe before it had already succeeded.
@@ -578,7 +581,7 @@ describe("US-001 B2 a save whose add was never dispatched", () => {
     const run = await recoveredSync();
 
     expect(run).toMatchObject({ pushed: 1, dispatches: [ADD] });
-  });
+  }, 30_000);
 });
 
 describe("US-002 B1 the operator's two ways out of an unknown delivery", () => {

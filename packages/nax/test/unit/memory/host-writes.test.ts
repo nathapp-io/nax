@@ -16,10 +16,10 @@
  * AC-18 name is stubbed, and only in the cases that assert its input.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { MemoryNoteWrite, MemorySaveInput } from "@nathapp/nax-agent";
+import type { MemoryNoteWrite, MemoryOutbox, MemorySaveInput } from "@nathapp/nax-agent";
 import {
   assertDefined,
   assertNaxError,
@@ -80,6 +80,8 @@ describe("host writes", () => {
   let host: MemoryHost;
   let savedGlobalEnv: string | undefined;
   let originalDeps: typeof _memoryHostDeps;
+  /** Every outbox the hosts opened under this case were built over, so a case can interleave one. */
+  let outboxes: MemoryOutbox[];
 
   /** The directory the repository's team notes are committed to. */
   function repoMemoryDir(): string {
@@ -104,6 +106,19 @@ describe("host writes", () => {
     host = created;
   }
 
+  /**
+   * The outbox the host under test was built over.
+   *
+   * A recovery runs against the queue file, so the one interesting interleaving — another process
+   * changing an entry between the listing and the write — needs the queue the host itself holds.
+   * The seam hands every outbox it builds back here.
+   */
+  function hostOutbox(): MemoryOutbox {
+    const [outbox] = outboxes;
+    assertDefined(outbox, "the host's outbox");
+    return outbox;
+  }
+
   beforeEach(() => {
     globalDir = makeTempDir("nax-host-writes-global-");
     repoRoot = makeTempDir("nax-host-writes-repo-");
@@ -111,9 +126,16 @@ describe("host writes", () => {
     savedGlobalEnv = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
     originalDeps = { ..._memoryHostDeps };
+    outboxes = [];
+    _memoryHostDeps.createMemoryOutbox = (seam) => {
+      const outbox = originalDeps.createMemoryOutbox(seam);
+      outboxes.push(outbox);
+      return outbox;
+    };
   });
 
   afterEach(() => {
+    _memoryHostDeps.createMemoryOutbox = originalDeps.createMemoryOutbox;
     _memoryHostDeps.saveMemoryNote = originalDeps.saveMemoryNote;
     _memoryHostDeps.forgetMemoryNote = originalDeps.forgetMemoryNote;
     _memoryHostDeps.approveMemoryNote = originalDeps.approveMemoryNote;
@@ -308,6 +330,11 @@ describe("host writes", () => {
   describe("recovery", () => {
     /** The client id the uncertain entry below is keyed by. */
     const UNCERTAIN_CLIENT = "c_uncertain_replay_budget";
+    /** The source a merge folds into `REPLAY_BUDGET`, and the retirement that waits on its save. */
+    const FOLDED_SLUG = "replay-budget-v1";
+    const RETIRED_CLIENT = "c_retire_replay_budget_v1";
+    /** Why a non-replayable write is held: the answer every "delivery unknown" line prints. */
+    const UNKNOWN_REASON = "delivery unknown: socket closed; not retried";
 
     /**
      * Leave the note's entry in the outbox as one whose dispatch never came back, through the
@@ -334,7 +361,7 @@ describe("host writes", () => {
             body: REPLAY_BUDGET.body,
           },
         });
-        await input.outbox.markUncertain(UNCERTAIN_CLIENT, "delivery unknown: socket closed; not retried");
+        await input.outbox.markUncertain(UNCERTAIN_CLIENT, UNKNOWN_REASON);
         return {
           slug: REPLAY_BUDGET.slug,
           status: "active",
@@ -342,7 +369,7 @@ describe("host writes", () => {
           pending: {
             delivery: "unknown",
             clientId: UNCERTAIN_CLIENT,
-            reason: "delivery unknown: socket closed; not retried",
+            reason: UNKNOWN_REASON,
           },
         };
       };
@@ -470,6 +497,117 @@ describe("host writes", () => {
 
       expect(await requeueOf()("all")).toEqual({ moved: 0, heldBack: [] });
       expect(await discardOf()("all")).toEqual({ moved: 0, heldBack: [] });
+    });
+
+    test("[B1] holds back an entry a sync made uncertain after the recovery listed it", async () => {
+      await openHost();
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: UNCERTAIN_CLIENT,
+          scope: "project",
+          slug: REPLAY_BUDGET.slug,
+          writeMode: "direct",
+        });
+        await input.outbox.markRejected(UNCERTAIN_CLIENT, "quota exceeded");
+        return { slug: REPLAY_BUDGET.slug, status: "active", delivered: false };
+      };
+      await host.save(REPLAY_BUDGET);
+      // The window the race lives in: the entry was `rejected` when the recovery listed it, and a
+      // sync dispatched it before the requeue got to the file. The listing is a snapshot, so the
+      // decision has to be re-made against the entry itself.
+      const outbox = hostOutbox();
+      const listed = outbox.list.bind(outbox);
+      spyOn(outbox, "list").mockImplementation(async () => {
+        const snapshot = await listed();
+        await outbox.markUncertain(UNCERTAIN_CLIENT, UNKNOWN_REASON);
+        return snapshot;
+      });
+
+      const result = await requeueOf()({ clientId: UNCERTAIN_CLIENT });
+
+      expect(result).toEqual({ moved: 0, heldBack: [UNCERTAIN_CLIENT] });
+      expect(await outbox.held(UNCERTAIN_CLIENT)).toMatchObject({ state: "uncertain" });
+    });
+
+    test("[B5] refuses the source retirements a discarded replacement was folded into", async () => {
+      await openHost();
+      // The source a merge folded is live in the mirror, so a retirement sent on a guess shows.
+      await host.save({ ...REPLAY_BUDGET, slug: FOLDED_SLUG });
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: UNCERTAIN_CLIENT,
+          scope: "project",
+          slug: REPLAY_BUDGET.slug,
+          writeMode: "direct",
+        });
+        await input.outbox.markUncertain(UNCERTAIN_CLIENT, UNKNOWN_REASON);
+        await input.outbox.enqueue({
+          kind: "forget",
+          clientId: RETIRED_CLIENT,
+          scope: "project",
+          slug: FOLDED_SLUG,
+          writeMode: "direct",
+          reason: `merged into ${REPLAY_BUDGET.slug}`,
+          awaits: UNCERTAIN_CLIENT,
+        });
+        return {
+          slug: REPLAY_BUDGET.slug,
+          status: "active",
+          delivered: false,
+          pending: { delivery: "unknown", clientId: UNCERTAIN_CLIENT, reason: UNKNOWN_REASON },
+        };
+      };
+      await host.save(REPLAY_BUDGET);
+
+      const discarded = await discardOf()({ clientId: UNCERTAIN_CLIENT });
+      _memoryHostDeps.saveMemoryNote = originalDeps.saveMemoryNote;
+      const sync = await host.sync();
+
+      expect(discarded.moved).toBe(1);
+      // Nothing proved the replacement was ever written, so its source must stay where it is.
+      expect(sync.pushed).toBe(0);
+      expect(await host.getNote("project", FOLDED_SLUG)).not.toBeNull();
+      expect(discarded.refused).toEqual([RETIRED_CLIENT]);
+    });
+    test("[B5] refuses the retirement under --all too, and leaves it for a later discard", async () => {
+      await openHost();
+      await host.save({ ...REPLAY_BUDGET, slug: FOLDED_SLUG });
+      _memoryHostDeps.saveMemoryNote = async (input) => {
+        await input.outbox.enqueue({
+          kind: "save",
+          clientId: UNCERTAIN_CLIENT,
+          scope: "project",
+          slug: REPLAY_BUDGET.slug,
+          writeMode: "direct",
+        });
+        await input.outbox.markUncertain(UNCERTAIN_CLIENT, UNKNOWN_REASON);
+        await input.outbox.enqueue({
+          kind: "forget",
+          clientId: RETIRED_CLIENT,
+          scope: "project",
+          slug: FOLDED_SLUG,
+          writeMode: "direct",
+          reason: `merged into ${REPLAY_BUDGET.slug}`,
+          awaits: UNCERTAIN_CLIENT,
+        });
+        return {
+          slug: REPLAY_BUDGET.slug,
+          status: "active",
+          delivered: false,
+          pending: { delivery: "unknown", clientId: UNCERTAIN_CLIENT, reason: UNKNOWN_REASON },
+        };
+      };
+      await host.save(REPLAY_BUDGET);
+
+      const discarded = await discardOf()("all");
+
+      // The held save goes; the retirement waiting on it was queued, and a queued write is never
+      // dropped — so it is refused, named, and left for the second discard to take.
+      expect(discarded).toEqual({ moved: 1, heldBack: [], refused: [RETIRED_CLIENT] });
+      expect(await discardOf()("all")).toEqual({ moved: 1, heldBack: [] });
+      expect(await hostOutbox().list()).toEqual([]);
     });
   });
 });

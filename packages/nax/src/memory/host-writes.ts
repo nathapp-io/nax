@@ -22,6 +22,11 @@
  * have already accepted. Both are reachable from the CLI by the note, by the entry's
  * client id — the handle every "delivery unknown" answer prints — or for everything at once.
  *
+ * Neither decision is taken from the listing these methods read: the outbox re-makes it against
+ * the entry file under its own lock, because a sync may have changed that entry since. And a
+ * discard takes the writes that waited on what it dropped (`refused`): their replacement is not
+ * known to be on the provider, so releasing them would retire a source with nothing in its place.
+ *
  * The operations are handed in rather than imported, because the host that
  * composes them owns the `_memoryHostDeps` seam a test replaces; passing the
  * object through keeps a stub installed after the host was opened visible here.
@@ -100,6 +105,15 @@ export interface MemoryRecoveryResult {
    * was not acknowledged. Empty for a discard, which takes them.
    */
   readonly heldBack: readonly string[];
+  /**
+   * The client ids a discard refused because they waited on the write it dropped — absent when a
+   * discard refused none.
+   *
+   * Removing a replacement leaves its source retirements naming an id nothing holds, which a sync
+   * reads as a delivered replacement and sends. Its delivery was never proven, so they are refused
+   * instead: their sources stay on the provider, and this names them for the operator.
+   */
+  readonly refused?: readonly string[];
 }
 
 /** What a requeue takes beyond the entries: the operator's acceptance of the duplicate risk. */
@@ -246,6 +260,11 @@ function undeliveredMatches(entry: MemoryOutboxEntry, target: MemoryRecoveryTarg
  * An `uncertain` entry is the different case this option exists for: its dispatch may already
  * have committed, so requeueing it makes a second copy unless the operator says the risk is
  * theirs — it is left in place, and named in `heldBack`, until they do.
+ *
+ * The listing this starts from is a snapshot, so the decision is not taken from it: the outbox
+ * re-reads each entry under its own lock and answers what it did. A `rejected` entry a sync has
+ * since dispatched and left unanswered is `held` — not requeued on the strength of how it looked
+ * a moment ago — and one another recovery already put back is `unchanged`, not moved.
  */
 async function requeue(
   outbox: MemoryOutbox,
@@ -253,14 +272,13 @@ async function requeue(
   options: MemoryRequeueOptions = {},
 ): Promise<MemoryRecoveryResult> {
   const matches = (await outbox.list()).filter((entry) => undeliveredMatches(entry, target));
+  const allowDuplicate = options.allowDuplicate === true;
   const heldBack: string[] = [];
   let moved = 0;
   for (const entry of matches) {
-    if (entry.state === "uncertain" && options.allowDuplicate !== true) {
-      heldBack.push(entry.clientId);
-      continue;
-    }
-    if (await outbox.requeue(entry.clientId)) moved += 1;
+    const outcome = await outbox.requeue(entry.clientId, { allowDuplicate });
+    if (outcome === "requeued") moved += 1;
+    else if (outcome === "held") heldBack.push(entry.clientId);
   }
   return { moved, heldBack };
 }
@@ -269,19 +287,35 @@ async function requeue(
  * Drop undelivered entries for good — `rejected` and `uncertain` alike. A queued write is still
  * on its way and is never dropped here.
  *
- * The entry file is claimed and re-read before it is removed (`removeIfUndelivered`), so a
+ * The entry file is claimed and re-read before it is removed (`discardUndelivered`), so a
  * `requeue` that landed between the listing and this call survives: a write nobody has delivered
  * is never thrown away on the strength of a stale listing. Each scope a discard actually moved
  * has its pull rewound: a discarded forget leaves its note active on the provider, and an
  * incremental pull would never send that note again, so the next sync reads the scope in full and
  * the mirror takes the provider's copy.
+ *
+ * A discard also takes the writes that waited on what it dropped (`refused`). Their replacement
+ * is not known to be on the provider, so releasing them would retire a source with nothing in its
+ * place; they are refused instead, and their scopes' pulls are rewound for the same reason as a
+ * discarded forget's — the provider's copy of the source is the mirror's only remaining one.
+ *
+ * A refused dependent is not itself discarded here: it is `rejected` now, so a later `discard`
+ * drops it as any other undelivered write, and the two decisions stay the operator's.
  */
 async function discard(input: HostWritesInput, target: MemoryRecoveryTarget): Promise<MemoryRecoveryResult> {
   const matches = (await input.outbox.list()).filter((entry) => undeliveredMatches(entry, target));
   const removed: MemoryOutboxEntry[] = [];
+  const refused: MemoryOutboxEntry[] = [];
   for (const entry of matches) {
-    if (await input.outbox.removeIfUndelivered(entry.clientId)) removed.push(entry);
+    const outcome = await input.outbox.discardUndelivered(entry.clientId);
+    if (outcome.discarded) removed.push(entry);
+    refused.push(...outcome.refused);
   }
-  for (const scope of new Set(removed.map((entry) => entry.scope))) await rewindPullCursor(input.store, scope);
-  return { moved: removed.length, heldBack: [] };
+  for (const scope of new Set([...removed, ...refused].map((entry) => entry.scope)))
+    await rewindPullCursor(input.store, scope);
+  return {
+    moved: removed.length,
+    heldBack: [],
+    ...(refused.length === 0 ? {} : { refused: refused.map((entry) => entry.clientId) }),
+  };
 }

@@ -38,7 +38,14 @@ export {
   type MemorySaveResult,
   saveMemoryNote,
 } from "./operations.ts";
-export { createMemoryOutbox, type MemoryOutbox, type MemoryOutboxEntry } from "./outbox.ts";
+export {
+  createMemoryOutbox,
+  type MemoryDiscardOutcome,
+  type MemoryOutbox,
+  type MemoryOutboxEntry,
+  type MemoryRequeueOptions,
+  type MemoryRequeueOutcome,
+} from "./outbox.ts";
 export type {
   MemoryPage,
   MemoryProvider,

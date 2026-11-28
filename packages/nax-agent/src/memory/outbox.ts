@@ -45,7 +45,14 @@
  * the reconcile step (`sync-drain.ts`) is what enforces the order — the queue only records it.
  * The dependency is therefore bookkeeping, not content: it is validated when the entry is taken
  * (an id the queue could never hold is refused with the entry's own id check) and it is never
- * part of the request a provider is handed.
+ * part of the request a provider is handed. The one place the queue acts on it is a discard: an
+ * entry that leaves with writes waiting on it refuses them in the same lock
+ * (`discardUndelivered`), because a dependency that simply vanished reads as a delivered one.
+ *
+ * Both decisions a caller makes from a listing — requeue (`allowDuplicate`) and discard — are
+ * re-made here against the entry file, under the lock that guards every writer: a sync may have
+ * turned a `rejected` entry `uncertain` since the caller read it, and that entry must not be sent
+ * again without an acknowledgement nor released to the writes that wait on it.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -61,9 +68,16 @@ import {
   entryFileNamed,
   type MemoryOutboxEntry,
   toEntry,
-  toQueued,
   undelivered,
 } from "./outbox-entry.ts";
+import {
+  discardEntry,
+  type MemoryDiscardOutcome,
+  type MemoryRequeueOptions,
+  type MemoryRequeueOutcome,
+  type OutboxEntryAccess,
+  requeueEntry,
+} from "./outbox-recovery.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps } from "./store.ts";
 import { MEMORY_CLIENT_ID_RE, type MemoryWriteRefusal, memoryNoteKey } from "./types.ts";
@@ -97,6 +111,17 @@ type PreparedRequest = MemoryWriteRequest & { readonly awaits?: string };
  */
 export type { MemoryOutboxEntry } from "./outbox-entry.ts";
 
+/**
+ * The operator's two decisions — requeue and discard — are declared and implemented in
+ * `outbox-recovery.ts`, which runs under this queue's lock; their types are re-exported here so a
+ * caller imports the queue's whole surface from one module.
+ */
+export type {
+  MemoryDiscardOutcome,
+  MemoryRequeueOptions,
+  MemoryRequeueOutcome,
+} from "./outbox-recovery.ts";
+
 /** The durable queue of unacknowledged writes. */
 export interface MemoryOutbox {
   /**
@@ -128,16 +153,22 @@ export interface MemoryOutbox {
    */
   removeIfRejected(clientId: string): Promise<boolean>;
   /**
-   * Remove an entry only while it still holds an **undelivered** one — `rejected`, or
-   * `uncertain` — answering whether it did. This is what the operator's `discard` runs on:
-   * both states hold a write nothing will send again, so both are the operator's to drop.
+   * Drop an undelivered entry for good — `rejected`, or `uncertain` — and refuse the writes that
+   * wait on it. This is what the operator's `discard` runs on: both states hold a write nothing
+   * will send again, so both are the operator's to drop.
    *
    * The claim protocol is `removeIfRejected`'s, for the same reason: the entry file is claimed
    * by rename and read there, so the entry that is removed is the one that was checked, and a
    * `queued` entry (put back by `requeue` between a caller's listing and this call) is renamed
    * back untouched rather than thrown away as a write nobody delivered.
+   *
+   * The writes waiting on it are refused in the same lock, and so are the writes waiting on
+   * those. Removing the entry leaves them with an id the outbox no longer holds, which a drain
+   * reads as "delivered, there is nothing left to wait for" — the one reading the `awaits` link
+   * exists to prevent, because the dropped write's delivery was never proven. A discard therefore
+   * cancels its dependent retirements instead of releasing them, with the reason that names it.
    */
-  removeIfUndelivered(clientId: string): Promise<boolean>;
+  discardUndelivered(clientId: string): Promise<MemoryDiscardOutcome>;
   /**
    * Mark an entry as one whose dispatch may have been committed: `MEMORY_OP_TIMEOUT_MS` fired on
    * a non-replayable write, or its provider failed it without an answer. The reason replaces
@@ -160,13 +191,15 @@ export interface MemoryOutbox {
   recordBadResponse(clientId: string, error: string): Promise<number>;
   /**
    * Put an undelivered entry back in the queue as it was taken: its own reason restored, the
-   * rejection (or the unknown-delivery hold) and any bad-response count dropped. Answers whether
-   * an entry was requeued; a queued or absent one is left alone.
+   * rejection (or the unknown-delivery hold) and any bad-response count dropped. A queued or
+   * absent entry is left alone.
    *
-   * Requeueing an `uncertain` entry is the operator saying the duplicate risk is theirs to take:
-   * the write may already have committed, and the next sync will send it anyway.
+   * The state is read here, inside the outbox lock, rather than taken from the caller's listing:
+   * a sync may have marked the entry `uncertain` since that read, and requeueing such a write
+   * sends one that may already have committed. Requeueing it takes `options.allowDuplicate` —
+   * the operator saying the duplicate risk is theirs — and only then does the next sync send it.
    */
-  requeue(clientId: string): Promise<boolean>;
+  requeue(clientId: string, options?: MemoryRequeueOptions): Promise<MemoryRequeueOutcome>;
   /**
    * The keys of the notes this queue still holds a delivery for — every entry that is not
    * `rejected`, an `uncertain` one included: its write has not been answered, so the local copy
@@ -343,6 +376,14 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return (await entryFiles()).filter((file) => file.clientId === clientId);
   }
 
+  /** What the operator's two decisions read and write: entry files, one at a time, under the lock. */
+  const recovery: OutboxEntryAccess = {
+    files: entryFiles,
+    filesFor,
+    read: readEntry,
+    write: (file, entry) => writeFileAtomic(join(dir, file.name), `${JSON.stringify(entry)}\n`),
+  };
+
   /** The request with its ids settled: a supplied client id is kept, a missing one is minted. */
   function withClientId(request: OutboxRequest): PreparedRequest {
     const clientId = request.clientId ?? randomUUID();
@@ -410,7 +451,8 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   }
 
   /**
-   * One entry file, removed only while the entry it holds is one `removable` accepts.
+   * One entry file, removed only while the entry it holds is one `removable` accepts. Answers the
+   * entry it removed — the bytes it claimed and read — or `null` when it removed nothing.
    *
    * The file is claimed by rename before it is read, because the read and the removal have to
    * see the same bytes: `requeue` in another process rewrites the entry in place, so a name
@@ -423,40 +465,39 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
    * by a crash is restored under that same lock before the next reader or writer runs; the
    * removal was not committed until the claim was deleted, whatever state its bytes carry.
    */
-  async function removeOneWhile(file: EntryFile, removable: (entry: MemoryOutboxEntry) => boolean): Promise<boolean> {
+  async function removeOneWhile(
+    file: EntryFile,
+    removable: (entry: MemoryOutboxEntry) => boolean,
+  ): Promise<MemoryOutboxEntry | null> {
     const path = join(dir, file.name);
     const claim = join(dir, `${file.name}${CLAIM_SUFFIX}`);
     try {
       await _memoryStoreDeps.rename(path, claim);
     } catch (error) {
       // Gone between the listing and now: there is nothing left to remove.
-      if (isMissing(error)) return false;
+      if (isMissing(error)) return null;
       throw error;
     }
     const claimed = await readEntryAt(claim);
     if (claimed === null || !removable(claimed)) {
       await _memoryStoreDeps.rename(claim, path);
-      return false;
+      return null;
     }
     await _memoryStoreDeps.rm(claim, { force: true });
-    return true;
+    return claimed;
   }
 
   async function removeIfRejected(clientId: string): Promise<boolean> {
     let removed = false;
     for (const file of await filesFor(clientId)) {
-      if (await removeOneWhile(file, (entry) => entry.state === "rejected")) removed = true;
+      if ((await removeOneWhile(file, (entry) => entry.state === "rejected")) !== null) removed = true;
     }
     return removed;
   }
 
-  /** The other removal `removeOneWhile` serves: `rejected` and `uncertain` are both undelivered. */
-  async function removeIfUndelivered(clientId: string): Promise<boolean> {
-    let removed = false;
-    for (const file of await filesFor(clientId)) {
-      if (await removeOneWhile(file, (entry) => entry.state !== "queued")) removed = true;
-    }
-    return removed;
+  /** The operator's discard, over the claim protocol: only an undelivered entry leaves the queue. */
+  function discardUndelivered(clientId: string): Promise<MemoryDiscardOutcome> {
+    return discardEntry(recovery, clientId, (file) => removeOneWhile(file, (entry) => entry.state !== "queued"));
   }
 
   /**
@@ -495,16 +536,9 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return count;
   }
 
-  async function requeue(clientId: string): Promise<boolean> {
-    let requeued = false;
-    for (const file of await filesFor(clientId)) {
-      const entry = await readEntry(file);
-      // A queued entry is already going to be delivered: the operator asked for it back, and it is.
-      if (entry === null || entry.state === "queued") continue;
-      await writeFileAtomic(join(dir, file.name), `${JSON.stringify(toQueued(entry))}\n`);
-      requeued = true;
-    }
-    return requeued;
+  /** The operator's requeue, deciding from the entry file rather than from a caller's listing. */
+  function requeue(clientId: string, allowDuplicate: boolean): Promise<MemoryRequeueOutcome> {
+    return requeueEntry(recovery, clientId, allowDuplicate);
   }
 
   async function heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>> {
@@ -526,11 +560,11 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     remove: (clientId) => locked(() => remove(clientId), undefined),
     held: (clientId) => reading(() => held(clientId), undefined),
     removeIfRejected: (clientId) => locked(() => removeIfRejected(clientId), false),
-    removeIfUndelivered: (clientId) => locked(() => removeIfUndelivered(clientId), false),
+    discardUndelivered: (clientId) => locked(() => discardUndelivered(clientId), { discarded: false, refused: [] }),
     markRejected: (clientId, reason) => locked(() => markRejected(clientId, reason), undefined),
     markUncertain: (clientId, reason) => locked(() => markUncertain(clientId, reason), undefined),
     recordBadResponse: (clientId, error) => locked(() => recordBadResponse(clientId, error), 0),
-    requeue: (clientId) => locked(() => requeue(clientId), false),
+    requeue: (clientId, options) => locked(() => requeue(clientId, options?.allowDuplicate === true), "unchanged"),
     heldKeys: (kind) => reading(() => heldKeys(kind), new Set<string>()),
   };
 }

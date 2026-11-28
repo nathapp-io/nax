@@ -40,6 +40,8 @@ const STAMP = "2026-11-05T09:20:00.000Z";
 const SYNC_PID = 5151;
 const ANSWER_ACTIVE: MemoryPushResult = { id: "mem_remote_1", status: "active" };
 const BAD_MESSAGE = '[memory] koda POST memory answered a save for "replay-budget" without an id';
+/** The reason a non-replayable write is held with: dispatched, and never answered. */
+const UNKNOWN_REASON = "delivery unknown: socket closed; not retried";
 
 function badResponse(): NaxError {
   return new NaxError(BAD_MESSAGE, "MEMORY_KODA_BAD_RESPONSE", { stage: "memory", status: 200 });
@@ -370,21 +372,41 @@ describe("outbox requeue", () => {
       await outbox.recordBadResponse("client-f1", "first");
       await outbox.markRejected("client-f1", "parked after 3 bad responses: first");
 
-      expect(await outbox.requeue("client-f1")).toBe(true);
+      expect(await outbox.requeue("client-f1")).toBe("requeued");
 
       expect(await outbox.list()).toEqual([taken]);
       expect(await outbox.heldKeys("forget")).toEqual(new Set(["project/replay-budget"]));
     });
   });
 
-  test("leaves a queued entry alone and answers false for one it does not hold", async () => {
+  test("leaves a queued entry alone and answers unchanged for one it does not hold", async () => {
     await withTempDir(async (dir) => {
       const outbox = createMemoryOutbox({ dir, now: () => new Date(STAMP) });
       const taken = await outbox.enqueue(saveRequest("export-window", "client-s1"));
 
-      expect(await outbox.requeue("client-s1")).toBe(false);
-      expect(await outbox.requeue("client-missing")).toBe(false);
+      expect(await outbox.requeue("client-s1")).toBe("unchanged");
+      expect(await outbox.requeue("client-missing")).toBe("unchanged");
       expect(await outbox.list()).toEqual([taken]);
+    });
+  });
+
+  test("[B1] holds an entry that turned uncertain after a caller listed it as rejected", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir, now: () => new Date(STAMP) });
+      await outbox.enqueue(saveRequest("export-window", "client-u1"));
+      await outbox.markRejected("client-u1", "quota exceeded");
+      // The listing a caller read is a snapshot: a sync took the entry over after it, and this one
+      // was dispatched without an answer. Requeueing it would send a write that may already exist.
+      const listed = await outbox.list();
+      expect(listed).toMatchObject([{ state: "rejected" }]);
+      await outbox.markUncertain("client-u1", UNKNOWN_REASON);
+
+      expect(await outbox.requeue("client-u1")).toBe("held");
+
+      expect(await outbox.held("client-u1")).toMatchObject({ state: "uncertain", reason: UNKNOWN_REASON });
+      // The operator's own acknowledgement is still the one flag that sends it again.
+      expect(await outbox.requeue("client-u1", { allowDuplicate: true })).toBe("requeued");
+      expect(await outbox.held("client-u1")).toMatchObject({ state: "queued" });
     });
   });
 });

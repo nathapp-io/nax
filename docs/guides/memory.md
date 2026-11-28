@@ -90,6 +90,10 @@ the note active on the provider, so parking or discarding a write makes the next
 scope in full, and the mirror takes the provider's copy. Once a newer write of the same note is
 delivered, an older rejected one is dropped, so it can never be requeued over the newer one.
 
+Both commands decide from the queue file rather than from the listing they read: a sync may have
+turned a rejected entry into a held one in between, and only `--allow-duplicate` sends one of
+those again.
+
 ### Held writes (MCP)
 
 An MCP add is not safe to repeat: the server takes the note's text, not an idempotency key, so
@@ -108,6 +112,14 @@ it; `rejected` writes requeue without it. A failure that certainly preceded any 
 tool listing, the connection, the pooled client — is not held at all: the write stays queued and
 the next sync delivers it. `nax memory sync` prints one `held` line per unresolved write, with
 the same two commands.
+
+A discarded write takes its dependents with it. A merge stages one save for the note it wrote and
+one forget per source it folded, and each of those forgets waits on the save (`awaits`) so nothing
+retires a source before its replacement is known to be on the provider. Dropping the save removes
+the answer a sync reads, so `nax memory discard` refuses those retirements in the same breath
+rather than leaving them to look delivered: they stay in the outbox as `rejected`, their sources
+stay on the provider, and the line names them. `nax memory requeue --client <id>` sends one anyway
+if the operator knows the replacement landed.
 
 ### Proposal mode
 

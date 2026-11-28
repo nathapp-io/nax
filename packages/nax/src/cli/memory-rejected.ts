@@ -11,7 +11,10 @@
  *   For an `uncertain` entry that means sending it again, which is why it takes
  *   `--allow-duplicate`: the operator is the only one who can decide a second copy is acceptable.
  * - `discard` drops it for good. A discarded forget leaves its note active on the provider, so
- *   the next sync brings the note back; the line says so.
+ *   the next sync brings the note back; the line says so. And a discarded write takes the writes
+ *   waiting on it with it: a merge's source retirements are refused rather than sent, because
+ *   nothing proved the replacement they were folded into reached the provider, and the line names
+ *   them — `requeue` is how an operator overrides that.
  *
  * Each takes exactly one of a slug (with `--scope`), an entry's client id (`--client`, the handle
  * a "delivery unknown" answer prints) or `--all`. Every check runs before the host is opened.
@@ -73,7 +76,9 @@ function rejectedTargetOf(op: RejectedOp, slug: string | undefined, opts: Memory
  * acknowledged — which uncertain entries were left behind and the flag that takes them.
  *
  * A held-back entry is not a failure: refusing to send a write that may already have committed
- * is the safe answer, and the client id is what the operator acts on next.
+ * is the safe answer, and the client id is what the operator acts on next. A discard names the
+ * writes it refused for waiting on what it dropped for the same reason: they are safe, and they
+ * are waiting on a decision the operator has just made.
  */
 function formatRejectedLine(op: RejectedOp, result: MemoryRecoveryResult): string {
   const lines: string[] = [];
@@ -87,6 +92,7 @@ function formatRejectedLine(op: RejectedOp, result: MemoryRecoveryResult): strin
     lines.push(`${count}; run nax memory sync to ${deliver}`);
   }
   if (result.heldBack.length > 0) lines.push(heldBackLine(result.heldBack));
+  if (result.refused !== undefined && result.refused.length > 0) lines.push(refusedLine(result.refused));
   return lines.join("\n");
 }
 
@@ -98,10 +104,23 @@ function heldBackLine(heldBack: readonly string[]): string {
   return `${heldBack.length} uncertain write(s) left in place (${clients}): ${them}, so nothing resends it automatically; add --allow-duplicate to send ${heldBack.length === 1 ? "it" : "them"} again`;
 }
 
+/**
+ * What a discard took with it: the retirements that waited on the write it dropped.
+ *
+ * They are refused rather than sent, because nothing proved the replacement they were folded into
+ * reached the provider — sending one would retire a source with nothing in its place. Naming them
+ * matters: they are still in the outbox, and `requeue` is how the operator overrides this.
+ */
+function refusedLine(refused: readonly string[]): string {
+  const clients = refused.map((client) => `--client ${client}`).join(", ");
+  return `${refused.length} write(s) that waited on it refused (${clients}): nothing proved the replacement they were folded into was delivered, so their sources stay on the provider; requeue one to send it anyway`;
+}
+
 /** The document `--json` prints: what moved, and what it left for the operator. */
 function rejectedDocument(op: RejectedOp, result: MemoryRecoveryResult): string {
   const key = op === "requeue" ? "requeued" : "discarded";
-  return JSON.stringify({ [key]: result.moved, heldBack: result.heldBack });
+  const refused = result.refused === undefined ? {} : { refused: result.refused };
+  return JSON.stringify({ [key]: result.moved, heldBack: result.heldBack, ...refused });
 }
 
 /** One requeue through the host's optional member; a host without it is a disabled mirror. */
