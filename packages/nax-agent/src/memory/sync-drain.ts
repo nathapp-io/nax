@@ -270,9 +270,12 @@ async function awaitsOutcome(run: DrainRun, entry: MemoryOutboxEntry): Promise<A
   const awaitedId = entry.awaits;
   if (awaitedId === undefined) return { kind: "free" };
   const seen = run.outbox.held(awaitedId);
-  if (seen === undefined) return { kind: "free" };
-  const awaited = seen.state === "rejected" ? await run.outbox.refresh(awaitedId) : seen;
-  if (awaited === undefined) return { kind: "free" };
+  const awaited = seen === undefined || seen.state === "rejected" ? await run.outbox.refresh(awaitedId) : seen;
+  if (awaited === undefined) {
+    // Delivery and discard both remove the dependency. Only delivery leaves its waiter queued.
+    const current = await run.outbox.refresh(entry.clientId);
+    return { kind: current?.state === "queued" && current.seq === entry.seq ? "free" : "waiting" };
+  }
   if (awaited.state !== "rejected") return { kind: "waiting" };
   return { kind: "refused", slug: awaited.slug };
 }
@@ -530,13 +533,13 @@ async function proveAndPark(run: DrainRun, candidate: ParkCandidate, tally: Drai
   // A write that waits on an entry the outbox still holds is not a proof: the head's fault
   // cannot be read from an answer to work whose own fate is not settled yet. Neither is a write
   // an unresolved one holds: that one must not be dispatched at all.
-  const proof = rest.find(
-    (entry) =>
-      !proven.has(entry.clientId) &&
-      entryKey(entry) !== entryKey(head) &&
-      !run.blocked.has(entryKey(entry)) &&
-      !waitsOnHeld(entry, run.outbox),
-  );
+  let proof: MemoryOutboxEntry | undefined;
+  for (const entry of rest) {
+    if (proven.has(entry.clientId) || entryKey(entry) === entryKey(head) || run.blocked.has(entryKey(entry))) continue;
+    if (waitsOnHeld(entry, run.outbox) || (await awaitsOutcome(run, entry)).kind !== "free") continue;
+    proof = entry;
+    break;
+  }
   if (proof === undefined) return { kind: "stopped", answered: true };
   const outcome = await pushEntry(run, proof);
   // A proof whose own outcome is unknown proves nothing, and is held like any other.

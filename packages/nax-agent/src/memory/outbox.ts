@@ -336,24 +336,22 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       .filter((file): file is EntryFile => file !== null)
       .sort((a, b) => byNumber(a.seq, b.seq) || byCodePoint(a.clientId, b.clientId));
   }
-  /** One entry file's text; `null` when it cannot be read, which makes it an invalid entry. */
-  async function readEntryText(path: string): Promise<string | null> {
+  /** A malformed entry is null; an I/O failure is not evidence about the entry's contents. */
+  async function readEntryStrict(path: string): Promise<MemoryOutboxEntry | null> {
+    const file = await _memoryStoreDeps.open(path, READ_FLAGS);
     try {
-      const file = await _memoryStoreDeps.open(path, READ_FLAGS);
-      try {
-        return await file.readText();
-      } finally {
-        await file.close();
-      }
-    } catch {
-      // A file that vanished or cannot be read is not an entry the caller can act on.
-      return null;
+      return toEntry(await file.readText());
+    } finally {
+      await file.close();
     }
   }
-  /** One path as an entry, or `null` when its content is not one. */
+  /** Best-effort reads classify unreadable files as invalid and never rewrite them. */
   async function readEntryAt(path: string): Promise<MemoryOutboxEntry | null> {
-    const text = await readEntryText(path);
-    return text === null ? null : toEntry(text);
+    try {
+      return await readEntryStrict(path);
+    } catch {
+      return null;
+    }
   }
   /** One named file as an entry, or `null` when its content is not one. */
   async function readEntry(file: EntryFile): Promise<MemoryOutboxEntry | null> {
@@ -468,6 +466,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   async function removeOneWhile(
     file: EntryFile,
     removable: (entry: MemoryOutboxEntry) => boolean,
+    beforeRemoval?: (claimed: MemoryOutboxEntry) => Promise<void>,
   ): Promise<MemoryOutboxEntry | null> {
     const path = join(dir, file.name);
     const claim = join(dir, `${file.name}${CLAIM_SUFFIX}`);
@@ -483,6 +482,8 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       await _memoryStoreDeps.rename(claim, path);
       return null;
     }
+    // If preparation fails the claim survives, just as after an interrupted removal.
+    await beforeRemoval?.(claimed);
     await _memoryStoreDeps.rm(claim, { force: true });
     return claimed;
   }
@@ -497,7 +498,10 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
 
   /** The operator's discard, over the claim protocol: only an undelivered entry leaves the queue. */
   function discardUndelivered(clientId: string): Promise<MemoryDiscardOutcome> {
-    return discardEntry(recovery, clientId, (file) => removeOneWhile(file, (entry) => entry.state !== "queued"));
+    const access = { ...recovery, read: (file: EntryFile) => readEntryStrict(join(dir, file.name)) };
+    return discardEntry(access, clientId, (file, beforeRemoval) =>
+      removeOneWhile(file, (entry) => entry.state !== "queued", beforeRemoval),
+    );
   }
 
   /**
@@ -558,7 +562,8 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     list: () => reading(list, []),
     listInvalid: () => reading(listInvalid, []),
     remove: (clientId) => locked(() => remove(clientId), undefined),
-    held: (clientId) => reading(() => held(clientId), undefined),
+    // Absence can authorize a push. Never observe the gap while a claim is in progress.
+    held: (clientId) => locked(() => held(clientId), undefined),
     removeIfRejected: (clientId) => locked(() => removeIfRejected(clientId), false),
     discardUndelivered: (clientId) => locked(() => discardUndelivered(clientId), { discarded: false, refused: [] }),
     markRejected: (clientId, reason) => locked(() => markRejected(clientId, reason), undefined),

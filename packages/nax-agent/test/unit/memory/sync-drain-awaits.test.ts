@@ -41,6 +41,7 @@ import {
 } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import type { MemorySyncInput } from "#src/memory/index";
+import { _memoryStoreDeps } from "#src/memory/store";
 import { type DrainResult, drainOutbox, type MemoryDrainInput } from "#src/memory/sync-drain";
 import {
   assertDefined,
@@ -554,6 +555,94 @@ describe("drainOutbox: a retirement waiting on a discarded replacement", () => {
       expect(pushed(h)).toEqual([]);
       expect(result).toEqual({ pushed: 0, rejected: 0, parked: [] });
       expect(await entryOf(h.outbox, FORGET_ID)).toMatchObject({ state: "rejected" });
+    });
+  });
+
+  test("a retirement read error aborts discard and the next drain still waits", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      const open = _memoryStoreDeps.open;
+      const fault = Object.assign(new Error("retirement unreadable"), { code: "EIO" });
+      _memoryStoreDeps.open = async (path, flags) => {
+        if (path.endsWith(`-${FORGET_ID}.json`)) throw fault;
+        return open(path, flags);
+      };
+      try {
+        await expect(h.outbox.discardUndelivered(SAVE_ID)).rejects.toBe(fault);
+      } finally {
+        _memoryStoreDeps.open = open;
+      }
+      await drain(h);
+      expect(pushed(h)).toEqual([]);
+      expect(await h.outbox.held(SAVE_ID)).toMatchObject({ state: "uncertain" });
+      expect(await h.outbox.held(FORGET_ID)).toMatchObject({ state: "queued" });
+    });
+  });
+
+  test("a claim read failure leaves the retirement untouched", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      const open = _memoryStoreDeps.open;
+      _memoryStoreDeps.open = async (path, flags) => {
+        if (path.endsWith(".claim")) throw new Error("claim unreadable");
+        return open(path, flags);
+      };
+      try {
+        expect(await h.outbox.discardUndelivered(SAVE_ID)).toEqual({ discarded: false, refused: [] });
+      } finally {
+        _memoryStoreDeps.open = open;
+      }
+      expect(await h.outbox.held(SAVE_ID)).toMatchObject({ state: "uncertain" });
+      expect(await h.outbox.held(FORGET_ID)).toMatchObject({ state: "queued" });
+    });
+  });
+
+  test("a discard after the drain's listing cancels the listed retirement", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      await h.outbox.markRejected(SAVE_ID, REFUSAL_MESSAGE);
+      await drain(h, {
+        outbox: {
+          ...h.outbox,
+          list: async () => {
+            const snapshot = await h.outbox.list();
+            expect(await h.outbox.discardUndelivered(SAVE_ID)).toMatchObject({
+              discarded: true,
+              refused: [{ clientId: FORGET_ID }],
+            });
+            return snapshot;
+          },
+        },
+      });
+      expect(pushed(h)).toEqual([]);
+      expect(await h.outbox.held(FORGET_ID)).toMatchObject({ state: "rejected", reason: DISCARDED });
+    });
+  });
+
+  test("retrying discard completes a partially refused chain", async () => {
+    await withTempDir(async (dir) => {
+      const h = await heldReplacement(dir);
+      const last = "client-chained";
+      await h.outbox.enqueue(forgetRequest("budget-c", last, FORGET_ID));
+      const rename = _atomicWriteDeps.rename;
+      const fault = new Error("second refusal failed");
+      _atomicWriteDeps.rename = async (from, to) => {
+        if (String(to).endsWith(`-${last}.json`)) throw fault;
+        return rename(from, to);
+      };
+      try {
+        await expect(h.outbox.discardUndelivered(SAVE_ID)).rejects.toBe(fault);
+      } finally {
+        _atomicWriteDeps.rename = rename;
+      }
+      expect(await h.outbox.held(FORGET_ID)).toMatchObject({ state: "rejected" });
+      expect(await h.outbox.held(last)).toMatchObject({ state: "queued" });
+      expect(await h.outbox.discardUndelivered(SAVE_ID)).toMatchObject({
+        discarded: true,
+        refused: [{ clientId: last }],
+      });
+      expect(await h.outbox.held(last)).toMatchObject({ state: "rejected" });
+      expect(await h.outbox.held(SAVE_ID)).toBeUndefined();
     });
   });
 

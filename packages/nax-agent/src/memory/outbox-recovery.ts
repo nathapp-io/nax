@@ -103,55 +103,51 @@ export async function requeueEntry(
   return held ? "held" : "unchanged";
 }
 
-/**
- * Refuse every write that waits on one of `dropped`, and every write that waits on those.
- *
- * Only a queued write has a delivery to cancel: an undelivered one is already held, and one this
- * pass refused is no longer queued, so neither is touched twice.
- */
-async function refuseWaiters(
-  access: OutboxEntryAccess,
-  dropped: readonly MemoryOutboxEntry[],
-): Promise<MemoryOutboxEntry[]> {
+/** Walk the waiter graph under the writer lock. A rejected link may be from a partial discard. */
+async function refuseWaiters(access: OutboxEntryAccess, target: MemoryOutboxEntry): Promise<MemoryOutboxEntry[]> {
+  const waiters = new Map<string, { file: EntryFile; entry: MemoryOutboxEntry }[]>();
+  for (const file of await access.files()) {
+    const entry = await access.read(file);
+    if (entry?.awaits === undefined || entry.state === "uncertain") continue;
+    const siblings = waiters.get(entry.awaits) ?? [];
+    siblings.push({ file, entry });
+    waiters.set(entry.awaits, siblings);
+  }
+
   const refused: MemoryOutboxEntry[] = [];
-  const pending = [...dropped];
-  for (let dependency = pending.shift(); dependency !== undefined; dependency = pending.shift()) {
-    for (const file of await access.files()) {
-      const entry = await access.read(file);
-      if (entry === null || entry.state !== "queued" || entry.awaits !== dependency.clientId) continue;
-      const refusal = undelivered(entry, "rejected", waitsOnDiscarded(dependency.slug));
-      await access.write(file, refusal);
-      refused.push(refusal);
-      pending.push(refusal);
+  const pending = [target];
+  for (const dependency of pending) {
+    const children = waiters.get(dependency.clientId) ?? [];
+    // Consume each set of edges only once, even when the links form a cycle.
+    waiters.delete(dependency.clientId);
+    for (const { entry, file } of children) {
+      if (entry.state === "queued") {
+        const refusal = undelivered(entry, "rejected", waitsOnDiscarded(dependency.slug));
+        await access.write(file, refusal);
+        refused.push(refusal);
+      }
+      pending.push(entry);
     }
   }
   return refused;
 }
 
-/**
- * Drop an undelivered entry for good and refuse the writes that wait on it.
- *
- * Under the writer lock, select undelivered entries and persist the refusals before claiming
- * any entry for removal. If a refusal write fails, a later drain still sees the dependency.
- * `removeOne` rechecks the claimed entry before committing its removal.
- */
+/** Refuse dependents only after validating the claim, but before committing its removal. */
 export async function discardEntry(
   access: OutboxEntryAccess,
   clientId: string,
-  removeOne: (file: EntryFile) => Promise<MemoryOutboxEntry | null>,
+  removeOne: (
+    file: EntryFile,
+    beforeRemoval: (claimed: MemoryOutboxEntry) => Promise<void>,
+  ) => Promise<MemoryOutboxEntry | null>,
 ): Promise<MemoryDiscardOutcome> {
-  const targets: { file: EntryFile; entry: MemoryOutboxEntry }[] = [];
-  for (const file of await access.filesFor(clientId)) {
-    const entry = await access.read(file);
-    if (entry !== null && entry.state !== "queued") targets.push({ file, entry });
-  }
-  const refused = await refuseWaiters(
-    access,
-    targets.map(({ entry }) => entry),
-  );
+  const refused: MemoryOutboxEntry[] = [];
   let discarded = false;
-  for (const { file } of targets) {
-    if ((await removeOne(file)) !== null) discarded = true;
+  for (const file of await access.filesFor(clientId)) {
+    const removed = await removeOne(file, async (claimed) => {
+      for (const entry of await refuseWaiters(access, claimed)) refused.push(entry);
+    });
+    if (removed !== null) discarded = true;
   }
   return { discarded, refused };
 }
