@@ -288,6 +288,29 @@ describe("turn markers on real transcript files (US-002)", () => {
     },
   );
 
+  test.each([undefined, 1] as const)(
+    "AC-6: an accepted document with schemaVersion %s and no messages keeps having no messages",
+    async (schemaVersion) => {
+      const store = createFileTranscriptStore(dir);
+      const body = {
+        ...(schemaVersion === undefined ? {} : { schemaVersion }),
+        owner: "o",
+        savedAt: "2026-02-02T00:00:00.000Z",
+      };
+      await writeFile(transcriptPath(dir, "bare"), JSON.stringify(body, null, 2), "utf8");
+      await store.markTurn("bare", { turnId: "t1", state: "running" });
+      const stored = await storedDocument("bare");
+      expect(stored).toMatchObject({ ...body, turn: { turnId: "t1", state: "running" } });
+      expect(stored.savedAt).toBe(body.savedAt);
+      expect(stored.owner).toBe("o");
+      // An absent messages field is a stored field too: the marker changes only `turn`.
+      expect("messages" in stored).toBe(false);
+      expect("schemaVersion" in stored).toBe(schemaVersion !== undefined);
+      // Still loadable, and still the same empty history the loader gives a missing field.
+      expect((await store.load("bare"))?.messages).toEqual([]);
+    },
+  );
+
   test.each(["{not json", "null", "42", '"x"', "true"])(
     "AC-7: %s rejects TRANSCRIPT_CORRUPT and leaves the original bytes",
     async (body) => {

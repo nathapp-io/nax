@@ -113,11 +113,14 @@ function markerDocument(sessionName: string, stored: unknown): Record<string, un
   }
   const doc = stored as Record<string, unknown>;
   assertSupportedSchema(doc);
-  const messages = doc.messages === undefined ? [] : doc.messages;
-  // A v2 container that is not a list is unreadable: reject before publishing anything.
-  if (!Array.isArray(messages)) throw corruptTranscript(sessionName, "messages is not an array");
-  assertStoredImageLists(doc.schemaVersion, messages);
-  return { ...doc, messages };
+  // A container that IS present must be a list: reject before publishing anything. A
+  // document that never recorded `messages` keeps not recording one — the marker changes
+  // `turn` and nothing else, and the loader already reads a missing field as no history.
+  if (doc.messages !== undefined) {
+    if (!Array.isArray(doc.messages)) throw corruptTranscript(sessionName, "messages is not an array");
+    assertStoredImageLists(doc.schemaVersion, doc.messages);
+  }
+  return doc;
 }
 
 /**
